@@ -79,8 +79,8 @@ const CONTROLS = [
   ['SWAP WEAPON', ['1', '2', 'WHEEL'], null, ['Y', 'DL', 'DR']], ['SWAP SHOULDER', ['C'], null, ['DD']], ['PAUSE', ['ESC'], null, ['MENU', 'VIEW']],
 ];
 // Xbox glyphs for the Controls card: face buttons (coloured letters), bumpers, triggers, sticks, D-pad arms, Menu / View.
-const DPAD_ARM = { DL: 'M5 16h10v8H5z', DR: 'M25 16h10v8H25z', DD: 'M16 25h8v10h-8z', DU: 'M16 5h8v10h-8z' };
-const DPAD_SVG = (arm) => `<svg viewBox="0 0 40 40"><path d="M15 4h10v11h11v10H25v11H15V25H4V15h11z" fill="#4A3A30" stroke="#F6E7C8" stroke-width="2" stroke-linejoin="round"/><path d="${DPAD_ARM[arm]}" fill="#FFC23A"/></svg>`;
+const DPAD_ARM = { DL: 'M4 14.5h11v11H4z', DR: 'M25 14.5h11v11H25z', DD: 'M14.5 25h11v11h-11z', DU: 'M14.5 4h11v11h-11z' };
+const DPAD_SVG = (arm) => `<svg viewBox="0 0 40 40"><path d="M14.5 4h11v10.5H36v11H25.5V36h-11V25.5H4v-11h10.5z" fill="rgba(246,231,200,.3)"/><path d="${DPAD_ARM[arm]}" fill="#FFC23A"/></svg>`;
 function padGlyph(g) {
   if (g.length === 1) return `<span class="xb face xb-${g.toLowerCase()}">${g}</span>`;
   if (g === 'LB' || g === 'RB') return `<span class="xb bump">${g}</span>`;
@@ -273,7 +273,7 @@ const CSS = `
 .mn .ctl .xb.bump{min-width:50px;border-radius:14px 14px 7px 7px;font-size:17px}
 .mn .ctl .xb.trig{min-width:44px;height:42px;border-radius:16px 16px 8px 8px;font-size:17px}
 .mn .ctl .xb.stick{width:40px;border-radius:50%;font-size:15px;box-shadow:0 3px 0 #140C08,inset 0 0 0 3px #6A5A50,inset 0 1px 0 rgba(255,255,255,.2)}
-.mn .ctl .xb.dpad{width:40px;background:none;box-shadow:none}.mn .ctl .xb.dpad svg{width:38px;height:38px}
+.mn .ctl .xb.dpad{width:40px;border-radius:10px}.mn .ctl .xb.dpad svg{width:32px;height:32px}
 .mn .ctl .xb.sys{width:40px;border-radius:50%}.mn .ctl .xb.sys svg{width:22px;height:22px}
 .mn .dymo .kc.pad{border-radius:50%;width:46px;padding:0;color:#7EDB5A;background:radial-gradient(circle at 42% 34%,#34343C,#18181D 70%)}
 .mn .ctl .k{display:flex;gap:8px;justify-content:flex-end;align-items:center}
@@ -1635,7 +1635,7 @@ export class Menu {
     const o = this.options;
     const rows = [
       { key: 'sensitivity', label: 'MOUSE SENSITIVITY', type: 'slider', min: 0.2, max: 3, step: 0.05, fmt: (v) => v.toFixed(2) },
-      { key: 'padSens', label: 'PAD LOOK SENSITIVITY', type: 'slider', min: 0.3, max: 2.5, step: 0.05, fmt: (v) => v.toFixed(2) },
+      { key: 'padSens', label: 'PAD SENSITIVITY', type: 'slider', min: 0.3, max: 2.5, step: 0.05, fmt: (v) => v.toFixed(2) },
       { key: 'invertY', label: 'INVERT Y', type: 'toggle' },
       { key: 'fov', label: 'FIELD OF VIEW', type: 'slider', min: 60, max: 90, step: 1, fmt: (v) => `${Math.round(v)}°` },
       { key: 'aim', label: 'AIM', type: 'seg', opts: [['hold', 'HOLD'], ['toggle', 'TOGGLE']] },

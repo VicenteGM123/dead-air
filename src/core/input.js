@@ -125,7 +125,8 @@ export class Input {
     this.pad.init();
     const ev = this.game.events;
     if (ev) {
-      ev.on('state', (p) => { if (p && !WORLD.has(p.to)) { this.pad.stopRumble(); this._snap.t = 0; } });
+      // pause / menus silence the motors at once (game over lets the lethal hit's short rumble finish)
+      ev.on('state', (p) => { if (p && (p.to === 'paused' || p.to === 'menu')) { this.pad.stopRumble(); this._snap.t = 0; } });
       ev.on('weapon:fire', (e) => this._fireRumble(e));
       ev.on('player:hurt', (e) => {
         const d = Math.max(0, +(e && e.dmg) || 0);
@@ -367,10 +368,11 @@ export class Input {
       if (this._rl(BTN.LT)) PR.add('aim');
     }
 
-    // left stick (analog move)
-    const ls = pad.ls;
-    this._padMove.x = ls.x;
-    this._padMove.y = ls.y;
+    // left stick (analog move). The sticks count only while the pad is the device: a resting pad with a drifting
+    // stick never creeps the player of a keyboard/mouse session (a push past 0.35 or any press switches at once).
+    const ls = pad.ls, analog = this.device === 'pad';
+    this._padMove.x = analog ? ls.x : 0;
+    this._padMove.y = analog ? ls.y : 0;
 
     // L3 sprint: CoD toggle while moving forward
     if (this._pr(BTN.L3)) {
@@ -402,7 +404,7 @@ export class Input {
     const g = this.game, o = this.options, rs = this.pad.rs, L = this._padLook;
     L.yaw = L.pitch = L.snapYaw = L.snapPitch = 0;
     const world = WORLD.has(g.state);
-    if (rs.m > 0 && world) {
+    if (rs.m > 0 && world && this.device === 'pad') {
       this._edgeT = rs.m >= EDGE ? this._edgeT + dt : 0;
       const e = Math.min(1, Math.max(0, (this._edgeT - EDGE_DELAY) / EDGE_RAMP));
       const boost = 1 + EDGE_BOOST * e * e * (3 - 2 * e);

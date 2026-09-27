@@ -10,12 +10,15 @@ estilo *Plants vs. Zombies: Garden Warfare*). Todo está hecho con código, en T
 
 ## Cómo jugar
 
-1. Haz **doble clic en `index.html`**. Se abre en el navegador (Chrome o Edge recomendados) y no necesita
+**Jugar online:** https://vicentegm123.github.io/dead-air/
+
+1. O descarga el repo y haz **doble clic en `index.html`**. Se abre en el navegador (Chrome o Edge recomendados) y no necesita
    servidor ni conexión.
 2. La primera carga tarda un poco, porque se construye toda la emisora.
 3. En la pantalla de título pulsa cualquier tecla. En el dial de la tele elige personaje con **A/D** (o la
    rueda del ratón) y sintonízalo con **E / Enter / Espacio**.
-4. Haz clic en la ventana para capturar el ratón. **Esc** abre la pausa (opciones, controles y salir).
+4. Haz clic en la ventana para capturar el ratón (con el mando de Xbox no hace falta). **Esc** abre la pausa
+   (opciones, controles y salir).
 
 Si cambias el código fuente, recompila con `npm install` (solo la primera vez) y luego `npm run build`. Tiene que
 salir `build ok`.
@@ -39,6 +42,41 @@ salir `build ok`.
 | Cambiar de arma | 1, 2 o rueda del ratón |
 | Cambiar de hombro | C |
 | Pausa | Esc |
+
+## Control de Xbox
+
+Conecta un mando de Xbox (por cable o Bluetooth) y pulsa cualquier botón: el juego lo detecta solo. Chrome y Edge
+lo reconocen sin instalar nada. Con el mando no hace falta capturar el ratón. Mientras juegues con él, los carteles
+de interacción muestran el botón del mando (**[X] 950**, con el anillo de carga alrededor de la X al mantenerlo) y
+vuelven a **[E]** en cuanto toques el teclado o el ratón. El mando vibra un poco al disparar armas pesadas, al
+recibir daño, con las explosiones y con el rayo del jefe.
+
+| Acción | Botón |
+|---|---|
+| Moverse | Stick izquierdo (cuanto más lo inclinas, más rápido vas) |
+| Mirar | Stick derecho |
+| Correr | L3 (pulsa el stick izquierdo mientras avanzas; sigues corriendo hasta que te paras, apuntas o disparas) |
+| Saltar | A |
+| Apuntar | LT |
+| Disparar | RT (mantenlo con las automáticas y para grabar con el Boom Mic) |
+| Recargar | X (cuando no hay nada con lo que interactuar) |
+| Usar / comprar / coger | X |
+| Reparar ventanas / girar manivelas / el interruptor | Mantener X |
+| Cuerpo a cuerpo | B |
+| Granada de válvula | RB (mantenlo para cocinarla) |
+| Tiny Tele | LB |
+| Cambiar de arma | Y, o la cruceta izquierda / derecha para el arma 1 / 2 |
+| Cambiar de hombro | Cruceta abajo |
+| Pausa | Menú o Vista |
+
+En los menús se navega con la cruceta o el stick izquierdo, **A** acepta y **B** vuelve. En el título vale
+cualquier botón; en el dial de la tele, izquierda / derecha cambian de canal y **A** lo sintoniza. En la pausa, **B**
+vuelve al juego y los deslizadores de Opciones se mueven con izquierda / derecha. En la pantalla final, **A** es sí y
+**B** es no.
+
+En Opciones hay una sensibilidad propia para el mando, invertir Y (compartido con el ratón), la asistencia de
+apuntado (ligera: la mira frena un poco sobre los zombis y se acerca a ellos al pulsar LT) y la vibración. La tarjeta
+de Controles de la pausa enseña las dos distribuciones, teclado y mando.
 
 ## Lo básico
 
