@@ -1,0 +1,24 @@
+# ALLOWLIST: only the game is published. Everything is ignored unless explicitly re-included below.
+/*
+!/.gitignore
+!/.nojekyll
+!/index.html
+!/README.md
+!/package.json
+!/package-lock.json
+!/build/
+!/src/
+!/assets/
+!/tools/
+/tools/*
+!/tools/build.mjs
+!/tools/bake/
+
+# never, even inside allowed folders
+node_modules/
+*.log
+.env*
+*.pem
+*.key
+.DS_Store
+Thumbs.db

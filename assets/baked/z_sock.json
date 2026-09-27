@@ -1,0 +1,243 @@
+{
+ "id": "z_sock",
+ "version": 4,
+ "hash": "55a6f6e62ecefb09",
+ "kind": "zombie",
+ "bones": [
+  "root",
+  "s1",
+  "s2",
+  "s3",
+  "head",
+  "jaw"
+ ],
+ "parents": {
+  "root": null,
+  "s1": "root",
+  "s2": "s1",
+  "s3": "s2",
+  "head": "s3",
+  "jaw": "head"
+ },
+ "bindPose": {},
+ "rig": {
+  "custom": true,
+  "joints": [
+   {
+    "name": "root",
+    "parent": null,
+    "pos": [
+     0,
+     0,
+     0
+    ],
+    "tail": [
+     0,
+     0.13,
+     0
+    ],
+    "blend": 0.06,
+    "gate": 0.22
+   },
+   {
+    "name": "s1",
+    "parent": "root",
+    "pos": [
+     0,
+     0.13,
+     0
+    ],
+    "blend": 0.07,
+    "gate": 0.22
+   },
+   {
+    "name": "s2",
+    "parent": "s1",
+    "pos": [
+     0,
+     0.13,
+     0
+    ],
+    "blend": 0.07,
+    "gate": 0.22
+   },
+   {
+    "name": "s3",
+    "parent": "s2",
+    "pos": [
+     0,
+     0.13,
+     0
+    ],
+    "blend": 0.07,
+    "gate": 0.22
+   },
+   {
+    "name": "head",
+    "parent": "s3",
+    "pos": [
+     0,
+     0.14,
+     0
+    ],
+    "tail": [
+     0,
+     0.03,
+     -0.2
+    ],
+    "blend": 0.07,
+    "gate": 0.22
+   },
+   {
+    "name": "jaw",
+    "parent": "head",
+    "pos": [
+     0,
+     -0.012,
+     -0.02
+    ],
+    "tail": [
+     0,
+     -0.02,
+     -0.18
+    ],
+    "blend": 0.035,
+    "gate": 0.16
+   }
+  ],
+  "bindPose": {},
+  "dims": {
+   "height": 0.72,
+   "headH": 0.2
+  }
+ },
+ "humanoid": false,
+ "materials": {
+  "leg": {
+   "color": "#ffffff",
+   "rough": 0.85,
+   "fuzz": 0.55,
+   "wrap": 0.6,
+   "cav": 0.4,
+   "pattern": {
+    "type": "stripes",
+    "colors": [
+     "#EDE0C4",
+     "#E0392F",
+     "#EDE0C4",
+     "#F7C630",
+     "#EDE0C4",
+     "#2F63D8",
+     "#EDE0C4"
+    ],
+    "widths": [
+     3,
+     2,
+     1,
+     2,
+     1,
+     2,
+     3
+    ],
+    "scale": 0.44,
+    "soft": 0.02,
+    "vertical": false
+   }
+  },
+  "sock": {
+   "color": "#EDE0C4",
+   "rough": 0.85,
+   "fuzz": 0.55,
+   "wrap": 0.6,
+   "cav": 0.4
+  },
+  "cuff": {
+   "color": "#ffffff",
+   "rough": 0.85,
+   "fuzz": 0.5,
+   "wrap": 0.6,
+   "cav": 0.5,
+   "bump": 0.25,
+   "pattern": {
+    "type": "knit",
+    "color": "#EDE0C4",
+    "ribs": 10,
+    "scale": 0.12
+   }
+  },
+  "mouth": {
+   "color": "#2A1430",
+   "rough": 0.9,
+   "spec": 0.1,
+   "cav": 1
+  },
+  "tongue": {
+   "color": "#E75A74",
+   "rough": 0.9,
+   "fuzz": 0.8,
+   "sss": 0.3,
+   "wrap": 0.6
+  },
+  "yarn": {
+   "color": "#F08A24",
+   "rough": 0.9,
+   "fuzz": 0.9,
+   "wrap": 0.6,
+   "cav": 0.6
+  },
+  "patch": {
+   "color": "#5FB36A",
+   "rough": 0.95,
+   "fuzz": 0.8,
+   "wrap": 0.6,
+   "lines": true
+  }
+ },
+ "matNames": [
+  "leg",
+  "sock",
+  "cuff",
+  "mouth",
+  "tongue",
+  "yarn",
+  "patch"
+ ],
+ "qbox": [
+  -0.1459200382232666,
+  -0.027736935764551163,
+  -0.30264562368392944,
+  0.29175586998462677,
+  0.7882322408258915,
+  0.4424254894256592
+ ],
+ "morphs": [],
+ "parts": {},
+ "stitches": "21 segments",
+ "stitchChunks": [
+  [
+   -0.09370895006441114,
+   0.2555327136901446,
+   -0.027496417985260493,
+   0.0502666975296396,
+   0,
+   16
+  ],
+  [
+   -0.10201647574620423,
+   0.22787235075896412,
+   -0.0008755766407829727,
+   0.03385025085903505,
+   16,
+   5
+  ]
+ ],
+ "stats": {
+  "tris": 5199,
+  "bodyTris": 5199,
+  "verts": 2857,
+  "rawTris": 168648,
+  "voxel": 0.0036,
+  "bakeMs": 6158,
+  "stitchSegs": 21
+ }
+}

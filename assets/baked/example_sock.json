@@ -1,0 +1,150 @@
+{
+ "id": "example_sock",
+ "version": 4,
+ "hash": "b575f443d13cad1c",
+ "kind": "zombie",
+ "bones": [
+  "root",
+  "s1",
+  "s2",
+  "s3",
+  "head"
+ ],
+ "parents": {
+  "root": null,
+  "s1": "root",
+  "s2": "s1",
+  "s3": "s2",
+  "head": "s3"
+ },
+ "bindPose": {},
+ "rig": {
+  "custom": true,
+  "joints": [
+   {
+    "name": "root",
+    "parent": null,
+    "pos": [
+     0,
+     0.02,
+     0
+    ],
+    "tail": [
+     0,
+     0.13,
+     0
+    ],
+    "blend": 0.05,
+    "gate": 0.2
+   },
+   {
+    "name": "s1",
+    "parent": "root",
+    "pos": [
+     0,
+     0.13,
+     0
+    ],
+    "blend": 0.05,
+    "gate": 0.2
+   },
+   {
+    "name": "s2",
+    "parent": "s1",
+    "pos": [
+     0,
+     0.13,
+     0
+    ],
+    "blend": 0.05,
+    "gate": 0.2
+   },
+   {
+    "name": "s3",
+    "parent": "s2",
+    "pos": [
+     0,
+     0.13,
+     0
+    ],
+    "blend": 0.05,
+    "gate": 0.2
+   },
+   {
+    "name": "head",
+    "parent": "s3",
+    "pos": [
+     0,
+     0.13,
+     0
+    ],
+    "tail": [
+     0,
+     0.12,
+     -0.05
+    ],
+    "blend": 0.05,
+    "gate": 0.2
+   }
+  ],
+  "bindPose": {}
+ },
+ "humanoid": false,
+ "materials": {
+  "sock": {
+   "color": "#ffffff",
+   "rough": 0.8,
+   "fuzz": 0.5,
+   "pattern": {
+    "type": "stripes",
+    "colors": [
+     "#E23B3B",
+     "#F4F1E8",
+     "#F4E03A",
+     "#F4F1E8",
+     "#3A58E4",
+     "#F4F1E8"
+    ],
+    "widths": [
+     1,
+     1,
+     1,
+     1,
+     1,
+     1
+    ],
+    "vertical": false,
+    "scale": 0.18
+   }
+  },
+  "mouth": {
+   "color": "#3B2340",
+   "rough": 0.6
+  }
+ },
+ "matNames": [
+  "sock",
+  "mouth"
+ ],
+ "qbox": [
+  -0.10969223827123642,
+  0.019999999552965164,
+  -0.18996784090995789,
+  0.21961339563131332,
+  0.7098783068358898,
+  0.31988847255706787
+ ],
+ "morphs": [],
+ "parts": {},
+ "stitches": "0 segments",
+ "stitchChunks": [],
+ "stats": {
+  "tris": 3500,
+  "bodyTris": 3500,
+  "verts": 1828,
+  "rawTris": 52478,
+  "voxel": 0.005,
+  "bakeMs": 1438,
+  "stitchSegs": 0
+ }
+}

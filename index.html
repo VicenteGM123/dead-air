@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dead Air</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#120c14}</style>
+</head>
+<body>
+<!-- shown while the script loads; the menu replaces it with its own PLEASE STAND BY (menu.showLoading) -->
+<div id="da-boot">PLEASE STAND BY</div>
+<style>#da-boot{--s:min(calc(100vw / 1920),calc(100vh / 1080));position:fixed;left:0;right:0;bottom:calc((100vh - 1080 * var(--s)) / 2 + 92 * var(--s));text-align:center;font:calc(40 * var(--s)) "Arial Black",sans-serif;letter-spacing:.28em;color:#FFF4DC;animation:dab 1.6s ease-in-out infinite}@keyframes dab{0%,100%{opacity:1}55%{opacity:.18}}</style>
+<script src="build/game.js"></script>
+</body>
+</html>

@@ -1,0 +1,348 @@
+{
+ "id": "z_bigshot",
+ "version": 4,
+ "hash": "23791078b23dc51f",
+ "kind": "zombie",
+ "bones": [
+  "base",
+  "column",
+  "torso",
+  "head",
+  "shoulderL",
+  "elbowL",
+  "handL",
+  "shoulderR",
+  "elbowR",
+  "handR"
+ ],
+ "parents": {
+  "base": null,
+  "column": "base",
+  "torso": "column",
+  "head": "torso",
+  "shoulderL": "torso",
+  "elbowL": "shoulderL",
+  "handL": "elbowL",
+  "shoulderR": "torso",
+  "elbowR": "shoulderR",
+  "handR": "elbowR"
+ },
+ "bindPose": {},
+ "rig": {
+  "custom": true,
+  "joints": [
+   {
+    "name": "base",
+    "parent": null,
+    "pos": [
+     0,
+     0,
+     0
+    ],
+    "tail": [
+     0,
+     0.2,
+     0
+    ],
+    "blend": 0.03,
+    "gate": 0.5
+   },
+   {
+    "name": "column",
+    "parent": "base",
+    "pos": [
+     0,
+     0.2,
+     0
+    ],
+    "tail": [
+     0,
+     0.72,
+     0
+    ],
+    "blend": 0.03,
+    "gate": 0.2
+   },
+   {
+    "name": "torso",
+    "parent": "column",
+    "pos": [
+     0,
+     0.74,
+     0
+    ],
+    "tail": [
+     0,
+     0.5,
+     0
+    ],
+    "blend": 0.06,
+    "gate": 0.35
+   },
+   {
+    "name": "head",
+    "parent": "torso",
+    "pos": [
+     0,
+     0.56,
+     0
+    ],
+    "tail": [
+     0,
+     0.28,
+     -0.3
+    ],
+    "blend": 0.03,
+    "gate": 0.3
+   },
+   {
+    "name": "shoulderL",
+    "parent": "torso",
+    "pos": [
+     -0.3,
+     0.42,
+     0.02
+    ],
+    "blend": 0.07,
+    "gate": 0.13
+   },
+   {
+    "name": "elbowL",
+    "parent": "shoulderL",
+    "pos": [
+     -0.08,
+     -0.22,
+     -0.1
+    ],
+    "blend": 0.06,
+    "gate": 0.11
+   },
+   {
+    "name": "handL",
+    "parent": "elbowL",
+    "pos": [
+     0.06,
+     -0.04,
+     -0.22
+    ],
+    "tail": [
+     0,
+     0,
+     -0.08
+    ],
+    "blend": 0.04,
+    "gate": 0.1
+   },
+   {
+    "name": "shoulderR",
+    "parent": "torso",
+    "pos": [
+     0.3,
+     0.42,
+     0.02
+    ],
+    "blend": 0.07,
+    "gate": 0.13
+   },
+   {
+    "name": "elbowR",
+    "parent": "shoulderR",
+    "pos": [
+     0.08,
+     -0.22,
+     -0.1
+    ],
+    "blend": 0.06,
+    "gate": 0.11
+   },
+   {
+    "name": "handR",
+    "parent": "elbowR",
+    "pos": [
+     -0.06,
+     -0.04,
+     -0.22
+    ],
+    "tail": [
+     0,
+     0,
+     -0.08
+    ],
+    "blend": 0.04,
+    "gate": 0.1
+   }
+  ],
+  "bindPose": {},
+  "dims": {
+   "height": 2.2,
+   "headH": 0.5
+  }
+ },
+ "humanoid": false,
+ "materials": {
+  "skin": {
+   "color": "#A3C99C",
+   "rough": 0.48,
+   "sss": 0.25,
+   "wrap": 0.5,
+   "cav": 0.5,
+   "spec": 0.7
+  },
+  "lid": {
+   "color": "#557590",
+   "rough": 0.36,
+   "spec": 0.6,
+   "wrap": 0.45,
+   "cav": 0.5
+  },
+  "mouth": {
+   "color": "#3B2340",
+   "rough": 0.7,
+   "spec": 0.3
+  },
+  "teeth": {
+   "color": "#F4EDD6",
+   "rough": 0.3,
+   "spec": 0.8,
+   "cav": 0.3
+  },
+  "tongue": {
+   "color": "#B25A78",
+   "rough": 0.35,
+   "sss": 0.3,
+   "spec": 0.8
+  },
+  "camera": {
+   "color": "#5C7E97",
+   "rough": 0.34,
+   "spec": 0.7,
+   "wrap": 0.45,
+   "cav": 0.6
+  },
+  "cream": {
+   "color": "#EADFC4",
+   "rough": 0.4,
+   "spec": 0.6,
+   "wrap": 0.5,
+   "cav": 0.5
+  },
+  "stripe": {
+   "color": "#E2452F",
+   "rough": 0.4,
+   "spec": 0.6,
+   "wrap": 0.5
+  },
+  "metal": {
+   "color": "#40464F",
+   "rough": 0.5,
+   "metal": 0,
+   "spec": 0.6,
+   "cav": 0.6
+  },
+  "chrome": {
+   "color": "#D3D8DE",
+   "metal": 1,
+   "rough": 0.16
+  },
+  "rubber": {
+   "color": "#232126",
+   "rough": 0.72,
+   "spec": 0.3,
+   "cav": 0.5
+  },
+  "glass": {
+   "color": "#0E1626",
+   "rough": 0.04,
+   "spec": 1.2,
+   "wrap": 0.3
+  },
+  "headset": {
+   "color": "#2A2A31",
+   "rough": 0.45,
+   "spec": 0.5
+  },
+  "foam": {
+   "color": "#F07A2A",
+   "rough": 0.95,
+   "fuzz": 0.8,
+   "wrap": 0.6
+  },
+  "shirt": {
+   "color": "#E0532C",
+   "rough": 0.75,
+   "fuzz": 0.3,
+   "wrap": 0.55,
+   "lines": true
+  },
+  "ringer": {
+   "color": "#F4ECD8",
+   "rough": 0.75,
+   "fuzz": 0.3,
+   "wrap": 0.55
+  }
+ },
+ "matNames": [
+  "skin",
+  "lid",
+  "mouth",
+  "teeth",
+  "tongue",
+  "camera",
+  "cream",
+  "stripe",
+  "metal",
+  "chrome",
+  "rubber",
+  "glass",
+  "headset",
+  "foam",
+  "shirt",
+  "ringer"
+ ],
+ "qbox": [
+  -0.4731846749782562,
+  0.02020932547748089,
+  -0.6200000047683716,
+  0.9463246464729309,
+  2.029590593650937,
+  1.0593777894973755
+ ],
+ "morphs": [],
+ "parts": {},
+ "stitches": "36 segments",
+ "stitchChunks": [
+  [
+   0.18776588512063216,
+   1.0685660903772298,
+   -0.2551642498142255,
+   0.10819650119510733,
+   0,
+   16
+  ],
+  [
+   0.06297721288116503,
+   1.0252971379003297,
+   -0.2452539906535795,
+   0.06193738422963385,
+   16,
+   16
+  ],
+  [
+   0.08511231476738226,
+   1.0802030015432857,
+   -0.25719089780212356,
+   0.02607507638882639,
+   32,
+   4
+  ]
+ ],
+ "stats": {
+  "tris": 9794,
+  "bodyTris": 9794,
+  "verts": 5758,
+  "rawTris": 547906,
+  "voxel": 0.0052,
+  "bakeMs": 18352,
+  "stitchSegs": 36
+ }
+}
