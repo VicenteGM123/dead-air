@@ -76,7 +76,7 @@ rest-rotation-identity joints with the bind-pose inverses; to drive it with the 
 | `ARRAY_TEX_UV2` | TEXCOORD_1 | `(pco.z, cavity)`; cavity = `(aux.y − 128)/127` (−1 concave … +1 convex) |
 | `ARRAY_CUSTOM0` (RGBA_FLOAT) | TEXCOORD_2+3 | `(matId, patternMode, pw.x, pw.y)`; matId = `aux.z` (index into matNames), patternMode = `aux.w` (0 triplanar, 1 cylindrical), pw = triplanar weights `/255` |
 | `ARRAY_CUSTOM1` (RGBA_FLOAT) | TEXCOORD_4+5 | `(pw.z, flow.x, flow.y, flow.z)`; flow = hair strand direction (int8/127), zero when none |
-| `ARRAY_CUSTOM2` (RGBA_FLOAT) | TEXCOORD_6+7 | `(dc0, dc1, dc2, 0)` morph COLOUR deltas of morphs 0..2 (§4.1); 0 on parts / characters without morphs |
+| `ARRAY_CUSTOM2` (RGBA_FLOAT) | TEXCOORD_6+7 | `(dc0, dc1, dc2, 0)` morph COLOUR deltas of morphs 0..2 (§4.1); the neutral code 8421504 (= no delta) everywhere else (parts, zombies) |
 | `ARRAY_BONES/WEIGHTS` | JOINTS_0/WEIGHTS_0 | top-4 skin weights (JS u8/255), body only |
 | blend shapes | targets POSITION+NORMAL | morph `i` = `header.morphs[i]`: position delta `dp` (JS int16/20000) and normal delta `dn` (JS int8/63); Godot stores blend shapes as absolute `base + delta` (normal renormalised) |
 

@@ -1102,4 +1102,923 @@ def _product_double_vision(game, opts=None):
 registerProp('product_double_vision', _product_double_vision,
              {'category': 'sponsors', 'tags': ['product', 'double_vision'], 'size': [0.86, 1.35, 0.44], 'desc': 'Double Vision striped toothpaste tube in a chrome clamp (parts.cap spins)', 'hero': True})
 
-# @@PART2@@
+# =============================================================================================== DROPS
+# drop_<type>: the item floats inside a 0.6 m glass "screen bubble" (glossy glass + additive fresnel shell with
+# rolling scanlines in the drop's glow color, GDD §12) over a glowing gold floor ring. Local: floor at y=0; the
+# bubble center sits at y=1.0 (parts.float). parts.model = the item; animated sub-parts listed per type.
+# animateDrop(drop, t) (Godot powerups.gd) runs the bob (0.1 m @ 1 Hz), the 90°/s spin and the item's own loop.
+DROP_TYPES = ['cancelled', 'full_reel', 'one_take', 'sweeps_week', 'gaffer_tape', 'please_stand_by']
+DROP_GLOW = {'cancelled': '#E3662B', 'full_reel': '#FFC23A', 'one_take': '#FF3B30', 'sweeps_week': '#FF4FA0', 'gaffer_tape': '#DDE3EA', 'please_stand_by': '#EDEDED'}
+
+# BUBBLE_VERT / BUBBLE_FRAG (fresnel edge + scanlines + rolling band, additive, uColor * a * uIntensity) live in
+# godot/shaders/bubble.gdshader; the spec here is materials.gd bubble(color, intensity).
+_bubbleMats = {}
+
+
+def bubbleMat(game, color, intensity=1.1):
+    m = _bubbleMats.get(id(game))
+    if m is None:
+        m = _bubbleMats[id(game)] = {}
+    key = '%s|%s' % (color, js_str(intensity))
+    if key not in m:
+        mat = K.material('bubble', color, {'intensity': intensity}, type='ShaderMaterial', transparent=True,
+                         blending=THREE.AdditiveBlending, depthWrite=False)
+        mat.name = 'bubble:%s' % color
+        m[key] = mat
+    return m[key]
+
+
+def radialTex():
+    def draw(ctx, w, h, rand):
+        g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2)
+        g.addColorStop(0, 'rgba(255,255,255,0.9)')
+        g.addColorStop(0.35, 'rgba(255,255,255,0.35)')
+        g.addColorStop(0.72, 'rgba(255,255,255,0.12)')
+        g.addColorStop(0.86, 'rgba(255,255,255,0.5)')
+        g.addColorStop(0.93, 'rgba(255,255,255,0.08)')
+        g.addColorStop(1, 'rgba(255,255,255,0)')
+        ctx.fillStyle = g
+        ctx.fillRect(0, 0, w, h)
+    return K.tex.canvas('sp.radial', 256, 256, draw, {'repeat': False})
+
+
+# Shared shell: gold floor ring + bubble. Returns { g, float, model }.
+def dropShell(game, type):
+    g = K.prop('drop_%s' % type)
+    glowCol = DROP_GLOW[type]
+    # glowing gold floor ring (flat glow ring + soft pool + a glossy gold torus)
+    ringG = THREE.Group()
+    ringG.add(K.m(THREE.RingGeometry(0.32, 0.375, 40).rotateX(-math.pi / 2), K.glow(game, PAL.marqueeGold, 1.5), {'pos': [0, 0.012, 0], 'cast': False}))
+    pool = K.m(THREE.CircleGeometry(0.58, 32).rotateX(-math.pi / 2), K.glow(game, PAL.marqueeGold, 0.7, {'map': radialTex(), 'additive': True}), {'pos': [0, 0.008, 0], 'cast': False})
+    ringG.add(pool)
+    ringG.add(K.m(flatTorus(0.385, 0.016, 5, 40), pm(game, 'brass', '#D6A13C'), {'pos': [0, 0.018, 0]}))
+
+    def flags(o):
+        if getattr(o, 'isMesh', False):
+            o.userData.noAO = True
+            o.userData.noOcclude = True
+            o.userData.noShadow = True
+    ringG.traverse(flags)
+    g.add(ringG)
+    # the floating screen bubble
+    float_ = THREE.Group()
+    float_.position.y = 1.0
+    float_.userData.noMerge = True
+    shellG = K.cushion(0.6, 0.6, 0.6, {'r': 0.16, 'puff': 0.04, 'seg': [6, 6, 6]})
+    glassM = game.mats.toon('#ffffff', {'transparent': True, 'opacity': 0.07, 'rough': 0.06, 'env': 0.35, 'rim': 0.12, 'rimColor': '#ffffff',
+                                        'depthWrite': False, 'keepColor': True, 'name': 'bubble_glass'})
+    glass = K.m(shellG, glassM, {'name': 'bubble_glass', 'cast': False})
+    rim = K.m(shellG, bubbleMat(game, glowCol), {'name': 'bubble_rim', 'cast': False, 'scale': 1.004})
+    for o in (glass, rim):
+        o.userData.noAO = True
+        o.userData.noShadow = True
+        o.renderOrder = 2
+    model = THREE.Group()
+    model.name = 'model'
+    model.scale.setScalar(1.22)
+    float_.add(model, glass, rim)
+    g.add(float_)
+    g.userData.colliders = []
+    g.userData.dropType = type
+    g.userData.glow = glowCol
+    g.userData.lightAnchors = [{'pos': [0, 0.15, 0], 'color': glowCol, 'intensity': 0.8, 'distance': 2.2}]  # floor glow, below the item
+    g.userData.parts = {'float': float_, 'model': model, 'bubble': glass, 'rim': rim, 'ring': ringG}
+    return {'g': g, 'float': float_, 'model': model}
+
+
+# AO once, merge the static item meshes, then finish without re-baking.
+def finishDrop(game, g, model):
+    K.bakeAO(g, {'strength': 0.75, 'height': 0})
+    K.merge(model)
+    return K.finish(game, g, {'ao': False, 'merge': False, 'cast': 0.1})
+
+
+# ------------------------------------------------------------------ CANCELLED: rubber stamp over a stamped ticket
+def stampTicketTex():
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = '#FBF3DE'
+        ctx.fillRect(0, 0, w, h)
+        ctx.strokeStyle = 'rgba(47,91,211,0.25)'
+        ctx.lineWidth = 2
+        y = 26
+        while y < h:
+            ctx.beginPath()
+            ctx.moveTo(0, y)
+            ctx.lineTo(w, y)
+            ctx.stroke()
+            y += 18
+        ctx.save()
+        ctx.translate(w / 2, h / 2)
+        ctx.rotate(-0.12)
+        ctx.strokeStyle = '#E23B3B'
+        ctx.lineWidth = 7
+        rrp(ctx, -108, -38, 216, 76, 10)
+        ctx.stroke()
+        text(ctx, 'CANCELLED', 0, 2, {'fam': FONT['sign'], 'px': 34, 'fill': '#E23B3B', 'maxW': 196})
+        ctx.restore()
+        ctx.globalCompositeOperation = 'destination-out'
+        for i in range(90):
+            ctx.globalAlpha = 0.25 + rand() * 0.4
+            ctx.beginPath()
+            ctx.arc(40 + rand() * 180, 40 + rand() * 80, 1 + rand() * 2.5, 0, TAU)
+            ctx.fill()
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.globalAlpha = 1
+    return texC('drop.ticket', 256, 160, draw)
+
+
+def stampFaceTex():  # the rubber die: raised mirrored letters (seen from below)
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = '#9E1E24'
+        ctx.fillRect(0, 0, w, h)
+        ctx.save()
+        ctx.translate(w / 2, h / 2)
+        ctx.scale(-1, 1)
+        ctx.strokeStyle = '#E8454A'
+        ctx.lineWidth = 8
+        rrp(ctx, -112, -46, 224, 92, 10)
+        ctx.stroke()
+        text(ctx, 'CANCELLED', 0, 3, {'fam': FONT['sign'], 'px': 36, 'fill': '#E8454A', 'maxW': 200})
+        ctx.restore()
+    return texC('drop.stampface', 256, 128, draw)
+
+
+def _drop_cancelled(game, opts=None):
+    sh = dropShell(game, 'cancelled')
+    g, model = sh['g'], sh['model']
+    red = pm(game, 'lacquer', '#E23B3B', {'rough': 0.24})
+    wood = pm(game, 'lacquer', '#ffffff', {'map': K.tex.wood('#8A5A34', {'dark': 0.35})})
+    label = pm(game, 'plastic', '#ffffff', {'map': K.tex.label('CANCELLED', {'bg': '#F6E7C8', 'fg': '#E23B3B', 'accent': '#5A3A22', 'w': 512, 'h': 128, 'border': 0.08, 'wear': 0.15})})
+    face = pm(game, 'rubber', '#ffffff', {'map': stampFaceTex()})
+    paper = pm(game, 'paint', '#ffffff', {'map': stampTicketTex(), 'side': THREE.DoubleSide, 'rim': 0.05})
+    brass = pm(game, 'brass', '#C8963C')
+    # stamped ticket at the bubble floor
+    tk = K.m(THREE.PlaneGeometry(0.3, 0.19, 4, 1).rotateX(-math.pi / 2).rotateY(math.pi), paper, {'pos': [0, -0.2, 0], 'rot': [0, 0.18, 0]})
+
+    def curl(v):
+        v.y += 0.012 * math.cos((v.x / 0.15) * 1.6)
+    deform(tk.geometry, curl)
+    model.add(tk)
+    # the stamp (parts.stamp moves down to the ticket)
+    stamp = THREE.Group()
+    stamp.userData.noMerge = True
+    stamp.position.y = -0.1
+    stamp.add(K.m(K.box(0.27, 0.022, 0.13, 0.008), face, {'pos': [0, 0.011, 0]}))
+    stamp.add(K.m(THREE.PlaneGeometry(0.25, 0.115).rotateX(math.pi / 2), face, {'pos': [0, -0.0005, 0]}))
+    stamp.add(K.m(K.box(0.29, 0.07, 0.15, 0.018, {'uv': 3}), wood, {'pos': [0, 0.057, 0]}))
+    stamp.add(K.m(K.box(0.24, 0.042, 0.004, 0.002), label, {'pos': [0, 0.057, -0.076]}))
+    stamp.add(K.m(K.box(0.24, 0.042, 0.004, 0.002), label, {'pos': [0, 0.057, 0.076], 'rot': [0, math.pi, 0]}))
+    stamp.add(K.m(K.lathe([[0, 0], [0.045, 0], [0.032, 0.03], [0.03, 0.06], [0.04, 0.075], [0.028, 0.095], [0, 0.095]], {'seg': 16, 'round': 0.008, 'steps': 1}), wood, {'pos': [0, 0.09, 0]}))
+    stamp.add(K.m(flatTorus(0.036, 0.008, 5, 16), brass, {'pos': [0, 0.16, 0]}))
+    stamp.add(K.m(K.lathe([[0, 0], [0.04, 0], [0.075, 0.025], [0.085, 0.06], [0.07, 0.095], [0.035, 0.112], [0, 0.114]], {'seg': 20, 'round': 0.012, 'steps': 1}), red, {'pos': [0, 0.18, 0]}))
+    model.add(stamp)
+    model.rotation.set(0.12, -0.3, 0.05)
+    g.userData.parts.stamp = stamp
+    return finishDrop(game, g, model)
+
+
+registerProp('drop_cancelled', _drop_cancelled,
+             {'category': 'sponsors_drop', 'tags': ['drop', 'cancelled'], 'size': [0.84, 1.3, 0.84], 'desc': 'CANCELLED drop: red-knob rubber stamp over a stamped ticket (parts.stamp)'})
+
+
+# ------------------------------------------------------------------ FULL REEL: 2-inch aluminium quad tape reel
+def packTex():
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = '#6B4630'
+        ctx.fillRect(0, 0, w, h)
+        r = 20
+        while r < 128:
+            ctx.strokeStyle = 'rgba(40,22,12,0.5)' if rand() < 0.5 else 'rgba(190,140,100,0.4)'
+            ctx.lineWidth = 0.8 + rand()
+            ctx.beginPath()
+            ctx.arc(w / 2, h / 2, r, 0, TAU)
+            ctx.stroke()
+            r += 1.6
+    return K.tex.canvas('sp.tapepack', 256, 256, draw, {'repeat': False})
+
+
+def hubTex():
+    def draw(ctx, w, h, rand):
+        cx, cy = w / 2, h / 2
+        ctx.fillStyle = '#FFC23A'
+        ctx.beginPath()
+        ctx.arc(cx, cy, 126, 0, TAU)
+        ctx.fill()
+        ctx.strokeStyle = '#8A5A10'
+        ctx.lineWidth = 8
+        ctx.stroke()
+        ctx.fillStyle = '#FFF4D0'
+        ctx.beginPath()
+        ctx.arc(cx, cy, 40, 0, TAU)
+        ctx.fill()
+        text(ctx, 'FULL', cx, cy - 72, {'fam': FONT['sign'], 'px': 34, 'fill': '#5A3A10'})
+        text(ctx, 'REEL', cx, cy + 74, {'fam': FONT['sign'], 'px': 34, 'fill': '#5A3A10'})
+        text(ctx, '2" QUAD', cx, cy, {'fam': FONT['round'], 'px': 18, 'fill': '#8A5A10'})
+    return texC('drop.hub', 256, 256, draw)
+
+
+def reelFlangeShape(R):
+    s = THREE.Shape()
+    s.absarc(0, 0, R, 0, TAU, False)
+    for i in range(3):
+        a0 = (i / 3) * TAU + 0.28
+        a1 = a0 + TAU / 3 - 0.56
+        r0, r1 = R * 0.36, R * 0.86
+        p = THREE.Path()
+        p.absarc(0, 0, r1, a0, a1, False)
+        p.absarc(0, 0, r0, a1, a0, True)
+        p.closePath()
+        s.holes.append(p)
+    return s
+
+
+def _drop_full_reel(game, opts=None):
+    sh = dropShell(game, 'full_reel')
+    g, model = sh['g'], sh['model']
+    alu = pm(game, 'metal', '#C9CFD8', {'rough': 0.3, 'map': K.tex.brushed('#D8DDE4'), 'side': THREE.DoubleSide})
+    pack = pm(game, 'lacquer', '#ffffff', {'map': packTex(), 'rough': 0.25})
+    hubM = pm(game, 'plastic', '#ffffff', {'map': hubTex()})
+    R, W = 0.2, 0.09
+    reel = THREE.Group()
+    reel.userData.noMerge = True
+    fl = THREE.ShapeGeometry(reelFlangeShape(R), 10)
+    K.uvScale(fl, 3, 3)
+    reel.add(K.m(fl, alu, {'pos': [0, 0, -W / 2]}), K.m(fl, alu, {'pos': [0, 0, W / 2]}))
+    for z in (-W / 2, W / 2):
+        reel.add(K.m(THREE.TorusGeometry(R, 0.007, 5, 40), alu, {'pos': [0, 0, z]}))
+    # wound tape pack (concentric-ring caps show through the windows) + hub
+    pk = THREE.CylinderGeometry(R * 0.8, R * 0.8, W - 0.012, 40, 1).rotateX(math.pi / 2)
+    reel.add(K.m(pk, pack))
+    reel.add(K.m(THREE.CylinderGeometry(0.065, 0.065, W + 0.03, 24).rotateX(math.pi / 2), alu))
+    for s in (-1, 1):
+        lab = THREE.CircleGeometry(0.062, 24)
+        if s > 0:
+            lab.rotateY(math.pi)
+        reel.add(K.m(lab, hubM, {'pos': [0, 0, s * -(W / 2 + 0.0155)]}))
+    # loose tape tail with a white leader
+    reel.add(K.m(paint(K.tube([[R * 0.8, 0, 0], [R * 0.95, -0.08, 0], [R * 0.9, -0.17, 0.01]], 0.01, {'seg': 10, 'radial': 4}), '#3B2A22'), pm(game, 'plastic', '#ffffff')))
+    model.add(reel)
+    model.rotation.set(0.15, -0.35, 0)
+    g.userData.parts.reel = reel
+    return finishDrop(game, g, model)
+
+
+registerProp('drop_full_reel', _drop_full_reel,
+             {'category': 'sponsors_drop', 'tags': ['drop', 'full_reel'], 'size': [0.84, 1.3, 0.84], 'desc': 'FULL REEL drop: spinning 2-inch aluminium quad tape reel (parts.reel spins on z)'})
+
+
+# ------------------------------------------------------------------ ONE TAKE: clapperboard that keeps clapping
+def slateTex():
+    def draw(ctx, w, h, rand):
+        # slate face (top 384 px)
+        ctx.fillStyle = '#26222E'
+        ctx.fillRect(0, 0, w, 384)
+        ctx.strokeStyle = '#F4F1E8'
+        ctx.lineWidth = 5
+        rrp(ctx, 14, 14, w - 28, 356, 16)
+        ctx.stroke()
+        ctx.lineWidth = 4
+        for y in (96, 196, 290):
+            ctx.beginPath()
+            ctx.moveTo(14, y)
+            ctx.lineTo(w - 14, y)
+            ctx.stroke()
+        for x in (180, 346):
+            ctx.beginPath()
+            ctx.moveTo(x, 196)
+            ctx.lineTo(x, 290)
+            ctx.stroke()
+        text(ctx, 'ONE TAKE', w / 2, 56, {'fam': FONT['groovy'], 'px': 60, 'fill': '#FFD23A', 'stroke': '#E23B3B', 'lw': 8})
+        text(ctx, 'PROD.', 60, 124, {'fam': FONT['round'], 'px': 20, 'fill': '#CFC8D8'})
+        text(ctx, 'DEAD AIR', w / 2 + 30, 150, {'fam': FONT['sign'], 'px': 44, 'fill': '#F4F1E8'})
+        for a, b, x in [['ROLL', '13', 97], ['SCENE', '1', 263], ['TAKE', '1', 428]]:
+            text(ctx, a, x, 214, {'fam': FONT['round'], 'px': 18, 'fill': '#CFC8D8'})
+            text(ctx, b, x, 256, {'fam': FONT['sign'], 'px': 44, 'fill': '#FFD23A' if b == '1' and a == 'TAKE' else '#F4F1E8'})
+        text(ctx, 'WZTV 13 · 1977', w / 2, 330, {'fam': FONT['round'], 'px': 24, 'fill': '#F4F1E8'})
+        # clapper stripes (bottom 128 px)
+        ctx.fillStyle = '#F4F1E8'
+        ctx.fillRect(0, 384, w, 128)
+        ctx.fillStyle = '#26222E'
+        for i in range(-2, 10):
+            ctx.beginPath()
+            ctx.moveTo(i * 64, 384)
+            ctx.lineTo(i * 64 + 32, 384)
+            ctx.lineTo(i * 64 + 72, 512)
+            ctx.lineTo(i * 64 + 40, 512)
+            ctx.closePath()
+            ctx.fill()
+    return texC('drop.slate', 512, 512, draw)
+
+
+def _drop_one_take(game, opts=None):
+    sh = dropShell(game, 'one_take')
+    g, model = sh['g'], sh['model']
+    tx = slateTex()
+    slateM = pm(game, 'plastic', '#ffffff', {'map': tx, 'rough': 0.5})
+    body = pm(game, 'plastic', '#2A2632', {'rough': 0.45})
+    chrome = pm(game, 'chrome', '#98A0AC')
+    W, H = 0.4, 0.29
+    model.add(K.m(K.box(W, H, 0.03, 0.012), body, {'pos': [0, -0.04, 0]}))
+    face = K.uvRect(THREE.PlaneGeometry(W - 0.02, H - 0.02), 0, 0.25, 1, 1).rotateY(math.pi)
+    model.add(K.m(face, slateM, {'pos': [0, -0.04, -0.0155]}))
+
+    def stick(y):
+        s = uvPlanar(K.box(W + 0.01, 0.055, 0.032, 0.01).clone(), 'x', W / 2 + 0.01, -W / 2 - 0.01, 'y', -0.2, 0.2)
+        uv = s.attributes.uv
+        for i in range(uv.count):
+            uv.setY(i, 0.0 + clamp(uv.getY(i), 0, 1) * 0.25 * (0.99))
+        return K.m(s, slateM, {'pos': [0, y, 0]})
+    model.add(stick(H / 2 - 0.04 + 0.03))
+    # hinged top clapper (parts.clapper: rotate z to open, pivot at the left hinge = +x seen from the front)
+    clap = THREE.Group()
+    clap.userData.noMerge = True
+    clap.position.set(W / 2, H / 2 - 0.04 + 0.09, 0)
+    top = stick(0)
+    top.position.set(-W / 2, 0, 0)
+    clap.add(top)
+    clap.rotation.z = -0.3
+    model.add(clap)
+    model.scale.setScalar(1.02)
+    model.position.y = -0.035
+    model.add(K.m(K.cyl(0.018, 0.018, 0.05, {'bevel': 0.006, 'seg': 12}), chrome, {'pos': [W / 2, H / 2 - 0.04 + 0.06, -0.025], 'rot': [math.pi / 2, 0, 0]}))
+    model.rotation.set(0.1, 0.35, 0.06)
+    g.userData.parts.clapper = clap
+    return finishDrop(game, g, model)
+
+
+registerProp('drop_one_take', _drop_one_take,
+             {'category': 'sponsors_drop', 'tags': ['drop', 'one_take'], 'size': [0.84, 1.3, 0.84], 'desc': 'ONE TAKE drop: clapperboard, hinged clapper (parts.clapper rotates on z)'})
+
+
+# ------------------------------------------------------------------ SWEEPS WEEK: little TV with ×2 + ratings meter
+def x2Tex():
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = lin(ctx, 0, 0, 0, h, ['#FF6FB8', '#D8307E'])
+        ctx.fillRect(0, 0, w, h)
+        rays(ctx, w / 2, h / 2, 220, 16, 'rgba(255,230,150,0.2)')
+        text(ctx, '×2', w / 2, h / 2 - 8, {'fam': FONT['groovy'], 'px': 118, 'fill': lin(ctx, 0, 40, 0, 140, ['#FFF6B0', '#FFC23A', '#E89A1A']), 'stroke': '#5A1440', 'lw': 10, 'depth': 5, 'depthFill': '#5A1440'})
+        text(ctx, 'SWEEPS WEEK', w / 2, h - 22, {'fam': FONT['sign'], 'px': 22, 'fill': '#FFFFFF', 'stroke': '#5A1440', 'lw': 4})
+    return texC('drop.x2', 256, 192, draw)
+
+
+def meterTex():
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = '#FFF4D8'
+        ctx.fillRect(0, 0, w, h)
+        cx, cy = w / 2, h - 18
+        for i in range(21):
+            a, r0 = math.pi + (i / 20) * math.pi, 96 if i % 5 else 86
+            ctx.strokeStyle = '#E23B3B' if i > 14 else '#E8A92E' if i > 9 else '#3FA34A'
+            ctx.lineWidth = 3 if i % 5 else 5
+            ctx.beginPath()
+            ctx.moveTo(cx + math.cos(a) * r0, cy + math.sin(a) * r0)
+            ctx.lineTo(cx + math.cos(a) * 108, cy + math.sin(a) * 108)
+            ctx.stroke()
+        ctx.lineWidth = 12
+        ctx.strokeStyle = 'rgba(226,59,59,0.85)'
+        ctx.beginPath()
+        ctx.arc(cx, cy, 116, math.pi * 1.72, math.pi * 2)
+        ctx.stroke()
+        text(ctx, 'RATINGS', cx, cy - 40, {'fam': FONT['sign'], 'px': 22, 'fill': '#2A1D3A'})
+        text(ctx, '+', 34, 40, {'fam': FONT['sign'], 'px': 26, 'fill': '#E23B3B'})
+    return texC('drop.meter', 256, 144, draw)
+
+
+def _drop_sweeps_week(game, opts=None):
+    sh = dropShell(game, 'sweeps_week')
+    g, model = sh['g'], sh['model']
+    shell = pm(game, 'plastic', '#F6E7C8', {'rough': 0.3})
+    trim = pm(game, 'plastic', '#FF4FA0', {'rough': 0.3})
+    dark = pm(game, 'plastic', '#2A2230', {'rough': 0.35})
+    scr = K.glow(game, '#ffffff', 1.0, {'map': x2Tex()})
+    meter = pm(game, 'plastic', '#ffffff', {'map': meterTex(), 'rough': 0.4})
+    W, H, D = 0.34, 0.25, 0.22
+    model.add(K.m(K.box(W, H, D, 0.048), shell, {'pos': [0, -0.07, 0]}))
+    model.add(K.m(K.taper(K.box(W * 0.8, H * 0.78, 0.1, 0.04), {'axis': 'z', 'k': 0.6}), trim, {'pos': [0, -0.07, D / 2 + 0.03]}))
+    bez = K.roundRect(0.25, 0.19, 0.045)
+    bez.holes.append(THREE.Path(K.roundRect(0.21, 0.155, 0.035).getPoints(8)))
+    model.add(K.m(K.extrude(bez, 0.02, {'bevel': 0.006, 'bevelSeg': 1, 'curveSeg': 6}), trim, {'pos': [-0.03, -0.07, -D / 2 - 0.004]}))
+    sg = THREE.PlaneGeometry(0.212, 0.157, 6, 5)
+
+    def dome(v):
+        v.z = 0.008 * (1 - (v.x / 0.106) ** 2 * 0.5 - (v.y / 0.078) ** 2 * 0.5)
+    deform(sg, dome)
+    sg.rotateY(math.pi)
+    screen = K.m(sg, scr, {'pos': [-0.03, -0.07, -D / 2 - 0.002], 'cast': False})
+    screen.userData.noAO = True
+    model.add(screen)
+    for dy, mm in [[0.04, dark], [-0.03, trim]]:
+        model.add(K.m(K.cyl(0.022, 0.024, 0.02, {'bevel': 0.006, 'seg': 14}), mm, {'pos': [0.132, -0.07 + dy, -D / 2 - 0.004], 'rot': [-math.pi / 2, 0, 0]}))
+    model.add(K.m(K.box(0.05, 0.03, 0.006, 0.003), dark, {'pos': [0.132, -0.17, -D / 2 - 0.002]}))
+    for sx in (-1, 1):
+        model.add(K.m(K.cyl(0.018, 0.022, 0.03, {'bevel': 0.006, 'seg': 10}), dark, {'pos': [sx * 0.11, -0.225, 0]}))
+    # the ratings meter perched on top (half-dome housing, printed face, red needle = parts.needle)
+    hous = THREE.Group()
+    hous.position.set(0, -0.07 + H / 2, 0)
+    hous.add(K.m(K.extrude(K.roundRect(0.2, 0.12, 0.05), 0.08, {'bevel': 0.012, 'curveSeg': 8}), trim, {'pos': [0, 0.07, 0]}))
+    face = THREE.PlaneGeometry(0.17, 0.095).rotateY(math.pi)
+    hous.add(K.m(face, meter, {'pos': [0, 0.07, -0.041]}))
+    needle = THREE.Group()
+    needle.userData.noMerge = True
+    needle.position.set(0, 0.03, -0.047)
+    needle.add(K.m(paint(K.box(0.006, 0.085, 0.004, 0.002), '#E23B3B'), pm(game, 'plastic', '#ffffff'), {'pos': [0, 0.042, 0]}))
+    needle.add(K.m(THREE.CylinderGeometry(0.009, 0.009, 0.008, 10).rotateX(math.pi / 2), dark))
+    needle.rotation.z = -0.95
+    hous.add(needle)
+    model.add(hous)
+    model.rotation.set(0.1, -0.35, 0)
+    g.userData.parts.needle = needle
+    return finishDrop(game, g, model)
+
+
+registerProp('drop_sweeps_week', _drop_sweeps_week,
+             {'category': 'sponsors_drop', 'tags': ['drop', 'sweeps_week'], 'size': [0.84, 1.3, 0.84], 'desc': 'SWEEPS WEEK drop: little TV showing ×2 with a ratings meter on top (parts.needle)'})
+
+
+# ------------------------------------------------------------------ GAFFER TAPE: roll of silver gaffer tape
+def woundTex():
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = '#A9B0BA'
+        ctx.fillRect(0, 0, w, h)
+        r = 60
+        while r < 128:
+            ctx.strokeStyle = 'rgba(70,76,88,0.35)' if rand() < 0.5 else 'rgba(235,240,246,0.4)'
+            ctx.lineWidth = 0.7 + rand()
+            ctx.beginPath()
+            ctx.arc(w / 2, h / 2, r, 0, TAU)
+            ctx.stroke()
+            r += 1.4
+    return K.tex.canvas('sp.wound', 256, 256, draw, {'repeat': False})
+
+
+def _drop_gaffer_tape(game, opts=None):
+    sh = dropShell(game, 'gaffer_tape')
+    g, model = sh['g'], sh['model']
+    cloth = pm(game, 'metal', '#ffffff', {'map': K.tex.weave('#B7BEC8', {'pattern': 'plain', 'scale': 3}), 'rough': 0.5, 'env': 0.25})
+    side = pm(game, 'metal', '#ffffff', {'map': woundTex(), 'rough': 0.45, 'env': 0.25})
+    core = pm(game, 'paint', '#B8915F', {'rim': 0.08})
+    R0, R1, W = 0.085, 0.17, 0.11
+    roll = THREE.Group()
+    roll.userData.noMerge = True
+    tread = THREE.CylinderGeometry(R1, R1, W, 44, 1, True)
+    K.uvScale(tread, 5, 1)
+    roll.add(K.m(tread, cloth))
+    for s in (-1, 1):
+        face = THREE.RingGeometry(R0 + 0.005, R1, 44, 1).rotateX(s * -math.pi / 2)
+        roll.add(K.m(face, side, {'pos': [0, (s * W) / 2, 0]}))
+        roll.add(K.m(flatTorus(R1 - 0.004, 0.006, 5, 44), cloth, {'pos': [0, (s * (W - 0.008)) / 2, 0]}))
+    coreG = lathe2([[R0 + 0.008, W / 2 + 0.006], [R0, W / 2 + 0.006], [R0, -W / 2 - 0.006], [R0 + 0.008, -W / 2 - 0.006], [R0 + 0.008, W / 2 + 0.006]], {'seg': 32, 'v': False})
+    roll.add(K.m(coreG, core))
+    # the torn tail curling off the roll
+    # local axis = y (the roll is turned so y faces the viewer); world "down" is local +z
+    tail = THREE.PlaneGeometry(W - 0.006, 0.2, 6, 10)
+    p = tail.attributes.position
+    for i in range(p.count):
+        col, row = i % 7, i // 7
+        s, s1, y = (row / 10) * 0.2, 0.07, p.getX(i)
+        if s < s1:
+            a = math.pi / 2 + (s1 - s) / R1
+            x = math.sin(a) * (R1 + 0.002)
+            z = math.cos(a) * (R1 + 0.002)
+        else:
+            d = s - s1
+            x = R1 + 0.002 + d * 0.2 + d * d * 1.2
+            z = d
+        if row == 10:
+            z += 0.014 if col % 2 else -0.004
+        p.setXYZ(i, x, y, z)
+    tail.computeVertexNormals()
+    tailM = pm(game, 'metal', '#ffffff', {'map': K.tex.weave('#B7BEC8', {'pattern': 'plain', 'scale': 3}), 'rough': 0.5, 'env': 0.25, 'side': THREE.DoubleSide})
+    roll.add(K.m(tail, tailM))
+    roll.rotation.x = math.pi / 2
+    model.add(roll)
+    model.rotation.set(0.25, -0.5, 0.15)
+    g.userData.parts.roll = roll
+    return finishDrop(game, g, model)
+
+
+registerProp('drop_gaffer_tape', _drop_gaffer_tape,
+             {'category': 'sponsors_drop', 'tags': ['drop', 'gaffer_tape'], 'size': [0.84, 1.3, 0.84], 'desc': 'GAFFER TAPE drop: roll of silver cloth tape with a torn tail (parts.roll)'})
+
+
+# ------------------------------------------------------------------ PLEASE STAND BY: tiny space-age TV with the test card
+def _drop_please_stand_by(game, opts=None):
+    sh = dropShell(game, 'please_stand_by')
+    g, model = sh['g'], sh['model']
+    shell = pm(game, 'plastic', '#E23B3B', {'rough': 0.24})
+    cream = pm(game, 'plastic', '#F6E7C8', {'rough': 0.3})
+    dark = pm(game, 'plastic', '#2A2230', {'rough': 0.35})
+    chrome = pm(game, 'chrome', '#98A0AC')
+    scr = K.glow(game, '#ffffff', 0.78, {'map': getCard('test_card')})
+    # Videosphere-style helmet TV: ball body, cream face ring, chain loop on top, pedestal
+    R = 0.16
+    ball = THREE.SphereGeometry(R, 22, 15)
+    model.add(K.m(ball, shell, {'pos': [0, 0, 0]}))
+    ringG = K.extrude(K.roundRect(0.23, 0.19, 0.07), 0.05, {'bevel': 0.014, 'curveSeg': 8})
+    model.add(K.m(ringG, cream, {'pos': [0, 0, -R + 0.022]}))
+    sg = THREE.PlaneGeometry(0.19, 0.143, 8, 6)
+
+    def dome(v):
+        v.z = 0.012 * (1 - (v.x / 0.095) ** 2 * 0.5 - (v.y / 0.072) ** 2 * 0.5)
+    deform(sg, dome)
+    sg.rotateY(math.pi)
+    screen = K.m(sg, scr, {'pos': [0, 0, -R - 0.006], 'cast': False})
+    screen.userData.noAO = True
+    model.add(screen)
+    model.add(K.m(K.box(0.2, 0.012, 0.006, 0.003), dark, {'pos': [0, -0.086, -R + 0.003]}))
+    model.add(K.m(THREE.TorusGeometry(0.05, 0.009, 6, 20), chrome, {'pos': [0, R + 0.04, 0]}))
+    model.add(K.m(K.cyl(0.03, 0.035, 0.03, {'bevel': 0.008, 'seg': 14}), chrome, {'pos': [0, R - 0.02, 0]}))
+    model.add(K.m(K.lathe([[0, 0], [0.11, 0], [0.115, 0.012], [0.08, 0.03], [0.045, 0.05], [0.04, 0.07], [0, 0.07]], {'seg': 24, 'round': 0.008, 'steps': 1}), cream, {'pos': [0, -R - 0.06, 0]}))
+    for sx in (-1, 1):
+        model.add(K.m(K.cyl(0.018, 0.02, 0.018, {'bevel': 0.005, 'seg': 12}), dark, {'pos': [sx * R * 0.72, -0.02, R * 0.62], 'rot': [0, 0, sx * math.pi / 2]}))
+    model.rotation.set(0.12, -0.3, 0)
+    model.position.y = 0.03
+    return finishDrop(game, g, model)
+
+
+registerProp('drop_please_stand_by', _drop_please_stand_by,
+             {'category': 'sponsors_drop', 'tags': ['drop', 'please_stand_by'], 'size': [0.84, 1.3, 0.84], 'desc': 'PLEASE STAND BY drop: tiny red space-age TV showing the test card'})
+
+# animateDrop(drop, t): runtime (Godot powerups.gd / sponsors.gd), see the module docstring.
+
+
+# =============================================================================================== COSTUMES
+# costume_<name> and costume_<name>_gold (Sign-Off reward: gold leaf). Each root holds userData.parts.<slot>
+# (head | handL | footL/footR | back | wristL/wristR/neck), every part built around its SLOT ORIGIN with the
+# hero convention (+y up, face toward -z, hero's left = -x). The root lays the parts out for the gallery only:
+# reparent a part to hero.slots.<slot> and reset its position/rotation (scale by userData.fit when needed).
+# userData.fit = { slot:{...} reference sizes }, userData.perk = perkId. No colliders.
+GOLD = {'light': '#F4D885', 'mid': '#E2B04A', 'deep': '#B98232', 'rose': '#EBAE72'}
+
+
+def goldLeafTex():
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = '#F6EEDC'
+        ctx.fillRect(0, 0, w, h)
+        n = 4
+        s = w / n
+        for y in range(n):
+            for x in range(-1, n):
+                ox = (y % 2) * s * 0.5
+                ctx.fillStyle = _hsl(38 + rand() * 8, 40 + rand() * 20, 84 + rand() * 12)
+                ctx.fillRect(x * s + ox, y * s, s, s)
+        ctx.strokeStyle = 'rgba(120,80,20,0.35)'
+        ctx.lineWidth = 1.4
+        for y in range(n + 1):
+            ctx.beginPath()
+            ctx.moveTo(0, y * s + rand() * 2)
+            ctx.lineTo(w, y * s + rand() * 2)
+            ctx.stroke()
+        for i in range(260):
+            ctx.strokeStyle = 'rgba(255,255,255,0.55)' if rand() < 0.5 else 'rgba(140,96,30,0.35)'
+            ctx.lineWidth = 0.6 + rand()
+            x, y, a, ln = rand() * w, rand() * h, rand() * TAU, 2 + rand() * 9
+            ctx.beginPath()
+            ctx.moveTo(x, y)
+            ctx.lineTo(x + math.cos(a) * ln, y + math.sin(a) * ln)
+            ctx.stroke()
+    return K.tex.canvas('sp.goldleaf', 256, 256, draw)
+
+
+# Material provider: normal preset/color, or gold leaf in a tone that keeps the pattern readable.
+def cmat(game, gold):
+    def M(preset, color, tone='mid', extra=None):
+        extra = extra if extra is not None else {}
+        if gold:
+            o = {'map': extra['goldMap'] if extra.get('goldMap') is not None else goldLeafTex(), 'keepColor': True, 'rough': 0.28}
+            o.update(extra.get('goldExtra') or {})
+            return K.mat(game, 'brass', GOLD.get(tone) or tone, o)
+        return pm(game, preset, color, extra.get('normal') or {})
+    return M
+
+
+def finishCostume(game, g, parts):
+    for p in parts.values():
+        p.userData.noMerge = True
+        if not p.parent:
+            g.add(p)
+    K.bakeAO(g, {'floor': False, 'height': 0, 'strength': 0.7, 'dist': 0.12})
+    for p in parts.values():
+        K.merge(p)
+    g.userData.parts = parts
+    g.userData.colliders = []
+    return K.finish(game, g, {'ao': False, 'merge': False, 'cast': 0.08})
+
+
+def costumeMeta(perk, slot, gold, desc):
+    return {'category': 'sponsors_costume', 'tags': ['costume', perk, slot] + (['gold'] if gold else []),
+            'desc': ('GOLD LEAF · ' if gold else '') + desc}
+
+
+# ------------------------------------------------------------------ Wobble-Up: gelatin ring-mold helmet (head)
+def buildJellyHelmet(game, gold):
+    id = 'costume_jelly_helmet%s' % ('_gold' if gold else '')
+    g = K.prop(id)
+    jellyM = pm(game, 'plastic', '#E6A21C', {'transparent': True, 'opacity': 0.86, 'rough': 0.08, 'env': 0.3, 'emissive': '#9A5A08', 'emissiveIntensity': 0.5, 'rim': 0.4, 'rimColor': '#FFE7A0', 'rimPower': 2.4}) \
+        if gold else pm(game, 'plastic', '#067A30', {'transparent': True, 'opacity': 0.88, 'rough': 0.1, 'env': 0.2, 'emissive': '#046A28', 'emissiveIntensity': 0.6, 'rim': 0.3, 'rimColor': '#6CFFA0', 'rimPower': 2.6})
+    M = cmat(game, gold)
+    fruitM = M('', '', 'mid') if gold else pm(game, 'lacquer', '#ffffff', {'rough': 0.3})
+    creamM = M('ceramic', '#FFF6E6', 'light', {'normal': {'rough': 0.55}})
+    head = THREE.Group()
+
+    def cav(y):
+        return math.sqrt(max(0, 0.285 ** 2 - (y + 0.2) ** 2))
+    prof = [[0, 0.085], [cav(0.05), 0.05], [cav(0.0), 0.0], [cav(-0.05), -0.05], [cav(-0.1), -0.1], [0.285, -0.128], [0.3, -0.13], [0.312, -0.115],
+            [0.318, -0.03], [0.285, -0.004], [0.268, 0.012], [0.248, 0.1], [0.205, 0.145], [0.14, 0.168], [0.1, 0.163], [0.084, 0.13], [0, 0.125]]
+    hg = lathe2(prof, {'seg': 40, 'round': 0.012, 'steps': 1, 'v': False})
+
+    def flutes(th, y, r):
+        if r < cav(y) + 0.02 or y < -0.128:
+            return 1
+        t, w = smoothstep(y, -0.02, 0.02), smoothstep(r - cav(y), 0.02, 0.04) * (1 - smoothstep(y, 0.13, 0.16))
+        return 1 + 0.055 * w * math.cos(th * 10 + math.pi * t)
+    radial(hg, flutes)
+    head.add(K.m(hg, jellyM, {'name': 'jelly'}))
+    # suspended fruit (gold: gold-leaf flakes) in the thick upper tier
+    for i in range(7):
+        a, rr, y = (i / 7) * TAU + 0.3, 0.2, 0.05 + (i % 2) * 0.03
+        geo = THREE.OctahedronGeometry(0.022, 0) if gold else [lambda: paint(THREE.SphereGeometry(0.024, 8, 6), '#D81E3A'), lambda: paint(K.box(0.04, 0.03, 0.035, 0.01), '#FFD84A'), lambda: paint(THREE.SphereGeometry(0.02, 8, 6), '#8A3C9A')][i % 3]()
+        head.add(K.m(geo, fruitM, {'pos': [math.sin(a) * rr, y, math.cos(a) * rr], 'rot': [i, a, i * 0.5]}))
+    cg = lathe2([[0, 0], [0.105, 0], [0.098, 0.025], [0.07, 0.05], [0.04, 0.072], [0.01, 0.088], [0, 0.09]], {'seg': 32, 'v': False})
+    radial(cg, lambda th, y, r: 1 + 0.13 * math.cos(th * 8 + y * 50))
+    head.add(K.m(cg, creamM, {'pos': [0, 0.125, 0]}))
+    head.add(K.m(THREE.SphereGeometry(0.035, 14, 10) if gold else paint(THREE.SphereGeometry(0.035, 14, 10), '#E0183A'), M('', '', 'rose') if gold else fruitM, {'pos': [0.005, 0.24, 0]}))
+    head.add(K.m(K.tube([[0.005, 0.27, 0], [0.02, 0.31, 0.005], [0.045, 0.33, 0.01]], 0.004, {'seg': 6, 'radial': 4}) if gold else paint(K.tube([[0.005, 0.27, 0], [0.02, 0.31, 0.005], [0.045, 0.33, 0.01]], 0.004, {'seg': 6, 'radial': 4}), '#6B8A2A'), M('', '', 'deep') if gold else fruitM))
+    head.position.y = 0.14
+    g.userData.fit = {'head': {'anchor': 'crown', 'headRadius': 0.25, 'note': 'scale = hairBounds*1.05/0.25; cavity fits a 0.285 m sphere centered 0.2 m below the crown'}}
+    g.userData.perk = 'wobble_up'
+    g.userData.wobble = 'parts.head: squash y / stretch xz on hits (damped spring)'
+    return finishCostume(game, g, {'head': head})
+
+
+registerProp('costume_jelly_helmet', lambda game, opts=None: buildJellyHelmet(game, False), costumeMeta('wobble_up', 'head', False, 'translucent emerald gelatin ring-mold helmet with fruit, cream and a cherry'))
+registerProp('costume_jelly_helmet_gold', lambda game, opts=None: buildJellyHelmet(game, True), costumeMeta('wobble_up', 'head', True, 'honey-gold gelatin helmet with gold-leaf flakes'))
+
+
+# ------------------------------------------------------------------ Jump Cut: oversized oven mitt (handL)
+def quiltTex(gold):
+    def draw(ctx, w, h, rand):
+        base = '#F2E2BC' if gold else '#F07A28'
+        line = 'rgba(130,86,20,0.55)' if gold else 'rgba(150,50,10,0.55)'
+        hi = 'rgba(255,255,255,0.5)' if gold else 'rgba(255,200,150,0.45)'
+        ctx.fillStyle = base
+        ctx.fillRect(0, 0, w, h)
+        ctx.lineWidth = 3
+        for k in range(-12, 20):
+            for dir in (1, -1):
+                ctx.strokeStyle = line
+                ctx.setLineDash([7, 4])
+                ctx.beginPath()
+                ctx.moveTo(k * 36, 0)
+                ctx.lineTo(k * 36 + dir * h, h)
+                ctx.stroke()
+                ctx.strokeStyle = hi
+                ctx.setLineDash([])
+                ctx.lineWidth = 2
+                ctx.beginPath()
+                ctx.moveTo(k * 36 + 4, 0)
+                ctx.lineTo(k * 36 + 4 + dir * h, h)
+                ctx.stroke()
+                ctx.lineWidth = 3
+        ctx.setLineDash([])
+        # logo roundel with the lightning bolt
+        cx, cy = w * 0.5, h * 0.52
+        ctx.beginPath()
+        ctx.arc(cx, cy, 62, 0, TAU)
+        ctx.fillStyle = '#FFF6DA' if gold else '#F6E7C8'
+        ctx.fill()
+        ctx.lineWidth = 9
+        ctx.strokeStyle = '#A87428' if gold else '#5A3A22'
+        ctx.stroke()
+        boltP(ctx, cx, cy, 96)
+        ctx.fillStyle = '#C8902E' if gold else '#FFD23A'
+        ctx.fill()
+        ctx.lineWidth = 6
+        ctx.lineJoin = 'round'
+        ctx.strokeStyle = '#7A5210' if gold else '#4A1E0E'
+        ctx.stroke()
+    return texC('quilt.%s' % ('g' if gold else 'n'), 256, 384, draw)
+
+
+def tickingTex(gold):
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = '#F6ECD2' if gold else '#F6E7C8'
+        ctx.fillRect(0, 0, w, h)
+        ctx.fillStyle = '#B98232' if gold else '#C0392B'
+        for x in range(0, w, 16):
+            ctx.fillRect(x, 0, 5, h)
+            ctx.fillRect(x + 8, 0, 2, h)
+    return texC('ticking.%s' % ('g' if gold else 'n'), 128, 64, draw, {'repeat': True})
+
+
+def buildOvenMitt(game, gold):
+    id = 'costume_oven_mitt%s' % ('_gold' if gold else '')
+    g = K.prop(id)
+    M = cmat(game, gold)
+    mitt = M('fabric', '#ffffff', 'mid', {'goldMap': quiltTex(True), 'normal': {'map': quiltTex(False), 'rim': 0.3}})
+    cuff = M('fabric', '#ffffff', 'light', {'goldMap': tickingTex(True), 'normal': {'map': tickingTex(False), 'rim': 0.3}})
+    loopM = M('fabric', '#5A3A22', 'deep')
+    hand = THREE.Group()
+    # mitten outline in (u = forward, v = up); fingertips down; thumb forward
+    pts = [[-0.075, 0.07], [-0.08, -0.12], [-0.07, -0.2], [-0.035, -0.235], [0.02, -0.235], [0.055, -0.205], [0.07, -0.15],
+           [0.07, -0.12], [0.1, -0.135], [0.13, -0.11], [0.132, -0.075], [0.105, -0.035], [0.075, -0.005], [0.07, 0.07]]
+    sh = K.extrude(pts, 0.12, {'bevel': 0.045, 'round': 0.03, 'curveSeg': 6, 'bevelSeg': 3})
+    uvPlanar(sh, 'x', -0.09, 0.14, 'y', -0.25, 0.08)
+    sh.rotateY(math.pi / 2)  # shape u -> -z (forward), thickness along x
+    hand.add(K.m(sh, mitt))
+    # padded ticking-stripe cuff + hanging loop
+    cuffG = THREE.CylinderGeometry(1, 1.06, 0.07, 24, 1, True)
+    cuffG.scale(0.074, 1, 0.09)
+    K.uvScale(cuffG, 4, 1)
+    hand.add(K.m(cuffG, cuff, {'pos': [0, 0.085, 0.005]}))
+    roll = THREE.TorusGeometry(1, 0.26, 8, 24).rotateX(math.pi / 2)
+    roll.scale(0.08, 0.1, 0.097)
+    hand.add(K.m(roll, cuff, {'pos': [0, 0.12, 0.005]}))
+    hand.add(K.m(THREE.TorusGeometry(0.022, 0.006, 5, 12), loopM, {'pos': [0, 0.155, 0.09], 'rot': [0, math.pi / 2, 0]}))
+    hand.position.set(0, 0.3, 0)
+    hand.rotation.y = -0.5
+    g.userData.fit = {'handL': {'anchor': 'palm center (hand slot)', 'note': 'fingertips toward -y, thumb toward -z; about 2.3x a 0.14 m hand'}}
+    g.userData.perk = 'jump_cut'
+    return finishCostume(game, g, {'handL': hand})
+
+
+registerProp('costume_oven_mitt', lambda game, opts=None: buildOvenMitt(game, False), costumeMeta('jump_cut', 'handL', False, 'oversized quilted orange oven mitt with the Jump Cut lightning-bolt logo'))
+registerProp('costume_oven_mitt_gold', lambda game, opts=None: buildOvenMitt(game, True), costumeMeta('jump_cut', 'handL', True, 'gold-leaf oven mitt'))
+
+
+# ------------------------------------------------------------------ Roller Boogie: roller-skate wheel sets (feet)
+def buildSkates(game, gold):
+    id = 'costume_skates%s' % ('_gold' if gold else '')
+    g = K.prop(id)
+    M = cmat(game, gold)
+    chrome = M('', '', 'light') if gold else pm(game, 'chrome', '#98A0AC')
+    plastic = None if gold else pm(game, 'lacquer', '#ffffff', {'rough': 0.3})
+    wheelTone = ['rose', 'light', 'mid', 'deep']
+    cols = [BAR['red'], BAR['yellow'], BAR['green'], BAR['blue']]
+    WR, WY = 0.05, -0.068
+    wheel = K.lathe([[0.02, -0.026], [0.042, -0.026], [0.05, -0.016], [0.05, 0.016], [0.042, 0.026], [0.02, 0.026]], {'seg': 12, 'round': 0.007, 'steps': 1})
+    hub = THREE.CylinderGeometry(0.02, 0.02, 0.056, 8).rotateZ(math.pi / 2)
+    parts = {}
+    for side in ('L', 'R'):
+        f = THREE.Group()
+        wi = 0
+        for z in (-0.088, 0.088):
+            for x in (-0.066, 0.066):
+                f.add(K.m(wheel if gold else paint(wheel, cols[wi]), M('', '', wheelTone[wi]) if gold else plastic, {'pos': [x, WY, z], 'rot': [0, 0, math.pi / 2]}))
+                f.add(K.m(hub if gold else paint(hub, '#F4F1E8'), M('', '', 'light') if gold else plastic, {'pos': [x, WY, z]}))
+                wi += 1
+            f.add(K.m(THREE.CylinderGeometry(0.006, 0.006, 0.17, 6).rotateZ(math.pi / 2), chrome, {'pos': [0, WY, z]}))
+            f.add(K.m(K.box(0.05, 0.04, 0.036, 0.01), chrome, {'pos': [0, -0.036, z]}))
+        # pink enamel plate (the "grown" chassis), purple heel strap, big pink toe stop
+        f.add(K.m(K.box(0.105, 0.02, 0.28, 0.008) if gold else paint(K.box(0.105, 0.02, 0.28, 0.008), '#FF5FA2'), M('', '', 'mid') if gold else plastic, {'pos': [0, -0.01, 0]}))
+        cup = THREE.TorusGeometry(0.066, 0.013, 5, 14, math.pi).rotateX(math.pi / 2)
+        cup.scale(1.05, 1, 0.8)
+        f.add(K.m(cup if gold else paint(cup, '#8A4ADC'), M('', '', 'deep') if gold else plastic, {'pos': [0, 0.014, 0.075]}))
+        stop = K.lathe([[0, 0], [0.032, 0], [0.037, 0.009], [0.037, 0.045], [0.029, 0.054], [0, 0.054]], {'seg': 12, 'round': 0.006, 'steps': 1})
+        f.add(span(K.m(stop if gold else paint(stop, '#FF4F9A'), M('', '', 'rose') if gold else plastic), [0, -0.02, -0.13], [0, -0.08, -0.168]))
+        f.position.set(-0.13 if side == 'L' else 0.13, 0.12, 0)
+        parts['foot' + side] = f
+        g.add(f)
+    g.userData.fit = {'footL': {'anchor': 'shoe sole center, plate top at y=0', 'lift': 0.118, 'note': 'wheels hang 0.118 m below the sole: raise the hero by lift while worn (or accept a little clipping)'}}
+    g.userData.perk = 'roller_boogie'
+    return finishCostume(game, g, parts)
+
+
+registerProp('costume_skates', lambda game, opts=None: buildSkates(game, False), costumeMeta('roller_boogie', 'feet', False, 'retro roller-skate wheel sets per foot: 4 colored wheels + pink toe stop'))
+registerProp('costume_skates_gold', lambda game, opts=None: buildSkates(game, True), costumeMeta('roller_boogie', 'feet', True, 'gold-leaf roller-skate wheel sets'))
+
+
+# ------------------------------------------------------------------ Double Vision: giant striped toothbrush (back)
+def brushTex(gold):
+    def draw(ctx, w, h, rand):
+        cols = ['#E8C06A', '#FFF4D6', '#B98232'] if gold else ['#E23B3B', '#F7F3EA', '#2F5BD3']
+        P = 256 / 2
+        bw = P / 3
+        for k in range(-6, 12):
+            for b, c in enumerate(cols):
+                y = k * P + b * bw
+                ctx.beginPath()
+                ctx.moveTo(0, y)
+                ctx.lineTo(w, y + w * 0.9)
+                ctx.lineTo(w, y + w * 0.9 + bw + 0.8)
+                ctx.lineTo(0, y + bw + 0.8)
+                ctx.closePath()
+                ctx.fillStyle = c
+                ctx.fill()
+    return texC('brush.%s' % ('g' if gold else 'n'), 256, 512, draw, {'repeat': True})
+
+
+def buildToothbrush(game, gold):
+    id = 'costume_toothbrush%s' % ('_gold' if gold else '')
+    g = K.prop(id)
+    M = cmat(game, gold)
+    handleM = M('plastic', '#ffffff', 'mid', {'goldMap': brushTex(True), 'normal': {'map': brushTex(False), 'rough': 0.25}})
+    headM = M('plastic', '#F7F3EA', 'light', {'normal': {'rough': 0.25}})
+    bristleM = M('', '', 'light') if gold else pm(game, 'plastic', '#ffffff', {'rough': 0.45})
+    leather = M('vinyl', '#7A4A2A', 'deep', {'normal': {'map': K.tex.pebble('#7A4A2A')}})
+    brass = M('', '', 'light') if gold else pm(game, 'brass', '#C8963C')
+    back = THREE.Group()
+    # handle along +y (grip bulge, thinner neck), bristle head at the top
+    rings = []
+    L = 0.66
+    for i in range(17):
+        t = i / 16
+        grip = 1 + 0.28 * math.sin(math.pi * clamp(t / 0.7, 0, 1)) - 0.25 * smoothstep(t, 0.7, 0.95)
+        rings.append([0.038 * grip, 0.021 * grip, -L / 2 + t * L, 3])
+    hg = loft(rings, 20)
+    K.uvScale(hg, 1, 2.2)
+    back.add(K.m(hg, handleM))
+    back.add(K.m(THREE.SphereGeometry(1, 16, 10).scale(0.038, 0.03, 0.021), handleM, {'pos': [0, -L / 2, 0]}))
+    # head: rounded paddle + bristle tufts facing outward (+z, away from the hero's back)
+    headY = L / 2 + 0.09
+    back.add(K.m(K.box(0.075, 0.2, 0.035, 0.016), headM, {'pos': [0, headY, 0]}))
+    tuft = THREE.CylinderGeometry(0.009, 0.0095, 0.07, 6).rotateX(math.pi / 2)
+    for r in range(7):
+        for c in range(3):
+            geo = tuft if gold else paint(tuft, '#5FE3FF' if r % 3 == 1 else '#FFFFFF')
+            back.add(K.m(geo, bristleM, {'pos': [(c - 1) * 0.022, headY - 0.078 + r * 0.026, 0.05 + (r % 2) * 0.004]}))
+    # leather holster: back plate + two strap loops around the handle, brass rivets
+    patch = K.extrude(K.roundRect(0.13, 0.36, 0.06), 0.02, {'bevel': 0.007, 'curveSeg': 6})
+    back.add(K.m(patch, leather, {'pos': [0, -0.02, -0.036]}))
+    for y in (-0.15, 0.11):
+        band = THREE.TorusGeometry(1, 0.34, 5, 18).rotateX(math.pi / 2)
+        band.scale(0.047, 0.045, 0.03)
+        back.add(K.m(band, leather, {'pos': [0, y, -0.006]}))
+        for sx in (-1, 1):
+            back.add(K.m(THREE.SphereGeometry(0.008, 8, 6), brass, {'pos': [sx * 0.05, y, -0.028]}))
+    # the slot-space pose lives on an inner group (bristles over the hero's LEFT shoulder = -x, 0.05 m behind the slot);
+    # the part itself only carries the gallery transform (turned to show its outside), which the game resets
+    brush = THREE.Group()
+    brush.add(*list(back.children))
+    brush.rotation.z = 0.62
+    brush.position.z = 0.05
+    back.add(brush)
+    back.position.set(0, 0.55, 0)
+    back.rotation.y = math.pi
+    g.userData.fit = {'back': {'anchor': 'back slot (chest back surface)', 'note': 'diagonal, bristles over the left shoulder, handle toward the right hip, sits 0.05 m behind the slot'}}
+    g.userData.perk = 'double_vision'
+    return finishCostume(game, g, {'back': back})
+
+
+registerProp('costume_toothbrush', lambda game, opts=None: buildToothbrush(game, False), costumeMeta('double_vision', 'back', False, 'giant red-white-blue striped toothbrush holstered diagonally on the back'))
+registerProp('costume_toothbrush_gold', lambda game, opts=None: buildToothbrush(game, True), costumeMeta('double_vision', 'back', True, 'gold-leaf toothbrush'))
+
+
+# ------------------------------------------------------------------ Replay-Ade: terry wristbands + whistle lanyard
+def terryTex(gold):
+    def draw(ctx, w, h, rand):
+        base, stripe = ('#F4E2B0', '#B98232') if gold else ('#F4C81E', '#2F5BD3')
+        ctx.fillStyle = base
+        ctx.fillRect(0, 0, w, h)
+        ctx.fillStyle = stripe
+        ctx.fillRect(0, h * 0.28, w, h * 0.12)
+        ctx.fillRect(0, h * 0.6, w, h * 0.12)
+        for i in range(3200):
+            ctx.fillStyle = 'rgba(255,255,255,0.25)' if rand() < 0.5 else 'rgba(80,50,0,0.18)'
+            ctx.beginPath()
+            ctx.arc(rand() * w, rand() * h, 0.8 + rand() * 1.3, 0, TAU)
+            ctx.fill()
+    return K.tex.canvas('sp.terry.%s' % ('g' if gold else 'n'), 256, 128, draw)
+
+
+def buildWristbands(game, gold):
+    id = 'costume_wristbands%s' % ('_gold' if gold else '')
+    g = K.prop(id)
+    M = cmat(game, gold)
+    terry = M('fabric', '#ffffff', 'mid', {'goldMap': terryTex(True), 'normal': {'map': terryTex(False), 'rim': 0.4}})
+    cord = M('fabric', '#F4C81E', 'light', {'normal': {'rim': 0.3}})
+    chrome = M('', '', 'light') if gold else pm(game, 'chrome', '#A8B0BA')
+    parts = {}
+    band = lathe2([[0.058, -0.04], [0.07, -0.042], [0.077, -0.032], [0.079, 0], [0.077, 0.032], [0.07, 0.042], [0.058, 0.04], [0.056, 0], [0.058, -0.04]], {'seg': 24, 'round': 0.008, 'steps': 1})
+    K.uvScale(band, 3, 1)
+    for side in ('L', 'R'):
+        w = THREE.Group()
+        w.add(K.m(band, terry))
+        w.position.set(-0.2 if side == 'L' else 0.2, 0.06, 0.1)
+        parts['wrist' + side] = w
+        g.add(w)
+    # lanyard: loop around the neck, V down to the whistle on the chest
+    neck = THREE.Group()
+    pts = [[0, -0.155, -0.13], [-0.05, -0.08, -0.12], [-0.085, 0.0, -0.06], [-0.085, 0.02, 0.02], [-0.04, 0.025, 0.075], [0.04, 0.025, 0.075], [0.085, 0.02, 0.02], [0.085, 0.0, -0.06], [0.05, -0.08, -0.12]]
+    neck.add(K.m(K.tube(pts, 0.007, {'seg': 40, 'radial': 5, 'closed': True}), cord))
+    wh = THREE.Group()
+    wh.position.set(0, -0.19, -0.14)
+    wh.add(K.m(THREE.TorusGeometry(0.012, 0.0035, 5, 12), chrome, {'pos': [0, 0.03, 0]}))
+    wh.add(K.m(THREE.CylinderGeometry(0.024, 0.024, 0.042, 16).rotateZ(math.pi / 2), chrome, {'pos': [0, 0, 0]}))
+    wh.add(K.m(K.box(0.042, 0.014, 0.04, 0.005), chrome, {'pos': [0, 0.018, -0.02]}))
+    wh.add(K.m(K.box(0.036, 0.012, 0.035, 0.005), chrome, {'pos': [0, 0.02, -0.055]}))
+    wh.add(K.m(K.box(0.014, 0.012, 0.004, 0.002), pm(game, 'plastic', '#2A2230'), {'pos': [0, 0.02, -0.0735]}))
+    wh.rotation.set(-0.3, 0.3, 0)
+    neck.add(wh)
+    neck.position.set(0, 0.34, 0)
+    parts['neck'] = neck
+    g.add(neck)
+    g.userData.fit = {'wristL': {'anchor': 'wrist slot', 'innerRadius': 0.056}, 'neck': {'anchor': 'neck slot', 'loopRadius': 0.085, 'note': 'whistle hangs on the chest ~0.19 m below, 0.14 m forward'}}
+    g.userData.perk = 'replay_ade'
+    return finishCostume(game, g, parts)
+
+
+registerProp('costume_wristbands', lambda game, opts=None: buildWristbands(game, False), costumeMeta('replay_ade', 'wrists+neck', False, 'yellow/blue terry wristbands (L+R) + chrome referee whistle on a yellow lanyard'))
+registerProp('costume_wristbands_gold', lambda game, opts=None: buildWristbands(game, True), costumeMeta('replay_ade', 'wrists+neck', True, 'gold-leaf wristbands + whistle'))
+
+# @@PART3@@

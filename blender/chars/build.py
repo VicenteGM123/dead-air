@@ -171,6 +171,7 @@ def build_attachments(d, R, header, anchors):
             if c.name.startswith('__joint_'):
                 continue
             tops.append((n, c))
+    tops.sort(key=lambda t: t[1].id)     # JS creation order
     for n, c in tops:
         local = O(pos=[c.position.x, c.position.y, c.position.z], quat=[c.quaternion.x, c.quaternion.y, c.quaternion.z, c.quaternion.w],
                   scale=[c.scale.x, c.scale.y, c.scale.z], rot=[c.rotation.x, c.rotation.y, c.rotation.z], order=c.rotation.order)

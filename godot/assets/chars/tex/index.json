@@ -1,0 +1,9 @@
+{
+ "eye|{\"x\":0.066,\"y\":0.25,\"z\":-0.14,\"r\":0.046,\"iris\":\"#6A3C1C\",\"irisSize\":0.6,\"pupilSize\":0.46,\"sclera\":\"#FBF6EE\",\"lid\":\"#F3B590\",\"lash\":\"#2A1A14\",\"lidOpen\":1.0,\"lowerLid\":0.6,\"tilt\":0,\"lidScale\":1.04,\"yaw\":0.07,\"glint\":1.1}": {
+  "file": "ch_eye_x_0_066_y_0_25_z_0_14_r_0_046_iris_6A3C1C_ir_10c936a1.png",
+  "w": 512,
+  "h": 256,
+  "wrap": "clamp",
+  "ns": "ch"
+ }
+}

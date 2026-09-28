@@ -4899,3 +4899,1005 @@ static func gagPanel(ctx, x: float, y: float, w: float, h: float, n: int, S: Dic
 	circle(ctx, x + 17, y + 17, 12)
 	inked(ctx, S.main, 2.5)
 	label(ctx, str(n), x + 17, y + 18, {"fam": FONT.round, "px": 15, "fill": "#FFFFFF", "stroke": C.ink, "lw": 3})
+
+static func _reg_sponsorPosters() -> void:
+	for id in PERK_IDS:
+		var S: Dictionary = SPONSORS[id]
+		card("sponsor_poster_%s" % id, {"w": 384, "h": 512}, func(ctx, w, h, t, o):
+			ctx.fillStyle = linear(ctx, 0, 0, 0, h, [lighten(S.main, 0.25), S.main])
+			ctx.fillRect(0, 0, w, h)
+			var hh := 118.0
+			ctx.save()
+			ctx.beginPath()
+			ctx.rect(0, 0, w, hh)
+			ctx.clip()
+			starburst(ctx, w, hh, w / 2, hh * 0.6, lighten(S.main, 0.2), lighten(S.main, 0.45), 18)
+			ctx.restore()
+			PRODUCTS[id].call(ctx, w / 2, hh * 0.56, hh * 0.78, 0.0)
+			sparkle(ctx, w * 0.3, hh * 0.3, 12)
+			sparkle(ctx, w * 0.72, hh * 0.62, 9)
+			ctx.fillStyle = S.deep
+			ctx.fillRect(0, hh - 4, w, 6)
+			var m := 20.0
+			var gap := 12.0
+			var pw: float = (w - m * 2 - gap) / 2
+			var ph: float = (h - hh - m - gap - 10) / 2
+			var gags: Array = GAGS[id]
+			for i in gags.size():
+				gagPanel(ctx, m + (i % 2) * (pw + gap), hh + 10 + (i / 2) * (ph + gap), pw, ph, i + 1, S, gags[i])
+			posterFinish(ctx, w, h, hash_(id) & 255))
+
+static func wordmark(ctx, S: Dictionary, x: float, y: float, px: float, maxW: float, rot: float = -0.06) -> void:
+	var words: PackedStringArray = String(S.name).split(" ")
+	var lpx := px * 0.82 if words.size() > 1 else px
+	for i in words.size():
+		label(ctx, words[i], x, y + (i - (words.size() - 1) / 2.0) * lpx * 0.92, {
+			"fam": FONT.groovy, "px": lpx, "maxW": maxW, "fill": vgrad(["#FFFFFF", lighten(S.main, 0.7), lighten(S.main, 0.45)]),
+			"stroke": S.deep, "lw": lpx * 0.11, "depth": jround(lpx * 0.1), "depthFill": S.deep, "rot": rot,
+		})
+
+static func _reg_sponsorLogos() -> void:
+	for id in PERK_IDS:
+		var S: Dictionary = SPONSORS[id]
+		card("sponsor_logo_%s" % id, {"w": 512, "h": 384}, func(ctx, w, h, t, o):
+			starburst(ctx, w, h, w * 0.28, h * 0.5, S.main, lighten(S.main, 0.3), 24)
+			circle(ctx, w * 0.27, h * 0.48, h * 0.33)
+			fill(ctx, radial(ctx, w * 0.27, h * 0.48, 0, h * 0.33, ["rgba(255,255,255,0.9)", "rgba(255,255,255,0.5)", "rgba(255,255,255,0)"]))
+			PRODUCTS[id].call(ctx, w * 0.27, h * 0.48, h * 0.56, 0.1)
+			wordmark(ctx, S, w * 0.66, h * 0.36, 74, w * 0.56)
+			label(ctx, S.sub, w * 0.7, h * 0.63, {"fam": FONT.sign, "px": 26, "maxW": w * 0.5, "fill": S.deep, "stroke": "#FFFFFF", "lw": 6, "track": 4, "rot": -0.06})
+			ribbon(ctx, w / 2, h * 0.86, w * 0.7, h * 0.12, S.deep if S.second == "#5A3A22" else S.second)
+			label(ctx, S.tag, w / 2, h * 0.865, {"fam": FONT.sign, "px": 22, "maxW": w * 0.64, "fill": "#FFFFFF", "stroke": darken(S.second, 0.4), "lw": 3, "track": 1})
+			for sp in [[0.08, 0.12, 12], [0.92, 0.14, 16], [0.5, 0.08, 8], [0.95, 0.6, 9]]:
+				sparkle(ctx, w * sp[0], h * sp[1], sp[2])
+			vignette(ctx, w, h, 0.25, "40,20,40", 0.55))
+
+## Neon-tube lettering: coloured glass tube with a hot white core; dim when unlit.
+static func neonText(ctx, s: String, x: float, y: float, px: float, fam: String, col: String, lit: bool, maxW = null) -> void:
+	ctx.save()
+	var size: float
+	if maxW:
+		size = fitFont(ctx, s, fam, px, maxW)
+	else:
+		setFont(ctx, px, fam)
+		size = px
+	ctx.textAlign = "center"
+	ctx.textBaseline = "middle"
+	ctx.lineJoin = "round"
+	ctx.lineWidth = size * 0.11
+	ctx.strokeStyle = col if lit else darken(col, 0.55)
+	if lit:
+		ctx.shadowColor = col
+		ctx.shadowBlur = size * 0.5
+		ctx.strokeText(s, x, y)
+	ctx.strokeText(s, x, y)
+	ctx.shadowBlur = 0
+	ctx.lineWidth = size * 0.04
+	ctx.strokeStyle = lighten(col, 0.8) if lit else darken(col, 0.35)
+	ctx.strokeText(s, x, y)
+	ctx.restore()
+
+## Neon tube along an arbitrary path built by `build()`.
+static func neonPath(ctx, build: Callable, col: String, lw: float, lit: bool) -> void:
+	ctx.save()
+	ctx.lineCap = "round"
+	ctx.lineJoin = "round"
+	ctx.lineWidth = lw
+	ctx.strokeStyle = col if lit else darken(col, 0.55)
+	if lit:
+		ctx.shadowColor = col
+		ctx.shadowBlur = lw * 4
+		build.call()
+		ctx.stroke()
+	build.call()
+	ctx.stroke()
+	ctx.shadowBlur = 0
+	ctx.lineWidth = lw * 0.36
+	ctx.strokeStyle = lighten(col, 0.8) if lit else darken(col, 0.35)
+	build.call()
+	ctx.stroke()
+	ctx.restore()
+
+static func _niReplay(ctx, x: float, y: float, s: float) -> void:
+	ctx.beginPath()
+	for k in [0, 1]:
+		var ox := x + s * (0.42 - k * 0.5)
+		ctx.moveTo(ox, y - s * 0.3)
+		ctx.lineTo(ox - s * 0.42, y)
+		ctx.lineTo(ox, y + s * 0.3)
+		ctx.closePath()
+
+static func _niWobble(ctx, x: float, y: float, s: float) -> void:
+	ctx.beginPath()
+	ctx.moveTo(x - s * 0.45, y + s * 0.3)
+	ctx.bezierCurveTo(x - s * 0.48, y - s * 0.3, x - s * 0.25, y - s * 0.45, x, y - s * 0.45)
+	ctx.bezierCurveTo(x + s * 0.25, y - s * 0.45, x + s * 0.48, y - s * 0.3, x + s * 0.45, y + s * 0.3)
+	ctx.closePath()
+	for k in [-0.2, 0.2]:
+		ctx.moveTo(x + k * s, y + s * 0.25)
+		ctx.quadraticCurveTo(x + k * s * 0.8, y - s * 0.1, x + k * s * 0.4, y - s * 0.38)
+
+static func _niJump(ctx, x: float, y: float, s: float) -> void:
+	boltPath(ctx, x, y, s * 0.95)
+
+static func _niRoller(ctx, x: float, y: float, s: float) -> void:
+	ctx.beginPath()
+	ctx.moveTo(x - s * 0.3, y - s * 0.42)
+	ctx.lineTo(x - s * 0.02, y - s * 0.42)
+	ctx.lineTo(x, y - s * 0.02)
+	ctx.quadraticCurveTo(x + s * 0.42, y, x + s * 0.42, y + s * 0.16)
+	ctx.lineTo(x - s * 0.38, y + s * 0.16)
+	ctx.closePath()
+	for k in [-0.22, 0.24]:
+		ctx.moveTo(x + k * s + s * 0.1, y + s * 0.34)
+		ctx.arc(x + k * s, y + s * 0.34, s * 0.1, 0, TAU)
+
+static func _niDouble(ctx, x: float, y: float, s: float) -> void:
+	starPath(ctx, x, y, s * 0.46, s * 0.1, 4, 0)
+
+static var NEON_ICONS := {
+	"replay_ade": _niReplay,
+	"wobble_up": _niWobble,
+	"jump_cut": _niJump,
+	"roller_boogie": _niRoller,
+	"double_vision": _niDouble,
+}
+
+static func _reg_sponsorSigns() -> void:
+	for id in PERK_IDS:
+		var S: Dictionary = SPONSORS[id]
+		card("sponsor_sign_%s" % id, {"w": 512, "h": 192, "alpha": true, "opts": "lit: false = unpowered (dark tubes)"}, func(ctx, w, h, t, o):
+			var lit: bool = o.get("lit") != false
+			ctx.save()
+			ctx.shadowColor = "rgba(10,6,20,0.5)"
+			ctx.shadowBlur = 8
+			ctx.shadowOffsetY = 3
+			rr(ctx, 10, 14, w - 20, h - 28, 30)
+			fill(ctx, linear(ctx, 0, 14, 0, h - 14, ["#2E2240", "#1A1228"]))
+			ctx.restore()
+			rr(ctx, 10, 14, w - 20, h - 28, 30)
+			stroke(ctx, "#120C1C", 4)
+			rr(ctx, 20, 24, w - 40, h - 48, 22)
+			stroke(ctx, alpha(S.main, 0.55 if lit else 0.25), 3)
+			for p in [[30, 34], [w - 30, 34], [30, h - 34], [w - 30, h - 34]]:
+				circle(ctx, p[0], p[1], 4)
+				inked(ctx, "#8A90A8", 1.5, "#120C1C")
+			if lit:
+				ctx.save()
+				ctx.globalCompositeOperation = "lighter"
+				glowBlob(ctx, w * 0.58, h * 0.45, w * 0.4, S.neon, 0.22)
+				glowBlob(ctx, w * 0.15, h * 0.5, h * 0.5, S.neon2, 0.25)
+				ctx.restore()
+			var icon: Callable = NEON_ICONS[id]
+			if id == "double_vision":
+				neonPath(ctx, func(): icon.call(ctx, w * 0.13, h * 0.47, h * 0.56), S.neon, 6, lit)
+				neonPath(ctx, func(): icon.call(ctx, w * 0.17, h * 0.53, h * 0.56), S.neon2, 6, lit)
+			else:
+				neonPath(ctx, func(): icon.call(ctx, w * 0.15, h * 0.5, h * 0.56), S.neon2, 7, lit)
+			neonText(ctx, S.name, w * 0.6, h * 0.42, 62, FONT.groovy, S.neon, lit, w * 0.66)
+			neonText(ctx, S.sub, w * 0.6, h * 0.74, 22, FONT.sign, S.neon2, lit, w * 0.5))
+
+# ---------------------------------------------------------------------------------------------------------
+# Newsroom weather map + magnets, Master Control rundown board (GDD §5.7, §13)
+# ---------------------------------------------------------------------------------------------------------
+
+static func _reg_weather() -> void:
+	card("weather_map", {"w": 512, "h": 384, "opts": "bare map: the magnets are separate cards (magnet_*)"}, func(ctx, w, h, t, o):
+		rr(ctx, 0, 0, w, h, 14)
+		fill(ctx, linear(ctx, 0, 0, 0, h, ["#E8ECF6", "#9AA4BC", "#C9CED8", "#7A8098"]))
+		rr(ctx, 12, 12, w - 24, h - 24, 6)
+		fill(ctx, "#23307A")
+		var hh := 50.0
+		ctx.fillStyle = linear(ctx, 0, 12, 0, 12 + hh, ["#2F5BD3", "#1E3A9A"])
+		ctx.fillRect(12, 12, w - 24, hh)
+		ctx.fillStyle = C.red
+		ctx.fillRect(12, 12 + hh - 5, w - 24, 5)
+		badge13(ctx, 44, 12 + hh / 2 - 2, 17, {"ol": 2})
+		label(ctx, "TRI-COUNTY WEATHER", w / 2 + 16, 12 + hh / 2 - 1, {"fam": FONT.sign, "px": 26, "maxW": w * 0.76, "fill": "#FFFFFF", "stroke": "#0E1A4A", "lw": 4, "track": 2})
+		weatherMapArt(ctx, 12, 12 + hh, w - 24, h - 24 - hh, {"names": true})
+		# compass rose
+		var cx := 52.0
+		var cy: float = h - 56
+		circle(ctx, cx, cy, 20)
+		inked(ctx, "rgba(255,255,255,0.85)", 2)
+		poly(ctx, [cx, cy - 17, cx + 6, cy, cx, cy + 17, cx - 6, cy])
+		inked(ctx, C.red, 1.5)
+		label(ctx, "N", cx, cy - 28, {"fam": FONT.sign, "px": 12, "fill": "#FFFFFF", "stroke": C.ink, "lw": 3})
+		gloss(ctx, 12, 12, w - 24, h - 24, 6, 0.12))
+
+	for k in MAGNETS:
+		var paint: Callable = MAGNETS[k]
+		card("magnet_%s" % k, {"w": 128, "h": 128, "alpha": true}, func(ctx, w, h, t, o):
+			dieCut(ctx, w, h, func(g, iw, ih):
+				g.translate(iw * 0.1, ih * 0.1)
+				paint.call(g, iw * 0.8, ih * 0.8), 6))
+
+	for i in RUNDOWN.size():
+		var draw: Callable = RUNDOWN[i]
+		card("rundown_card_%d" % (i + 1), {"w": 320, "h": 200, "opts": "star: true adds the gold-star sticker (the step is done)"}, func(ctx, w, h, t, o):
+			indexCard(ctx, w, h, 60 + i)
+			var m := marker(ctx, rng(300 + i), MARK.ink, 4.5)
+			draw.call(ctx, m, w / 2, h / 2 + 14)
+			if o.get("star"):
+				goldStar(ctx, w - 38, 38))
+
+	card("rundown_header", {"w": 512, "h": 128}, func(ctx, w, h, t, o):
+		rr(ctx, 0, 0, w, h, 10)
+		fill(ctx, "#FFF4DC")
+		ctx.save()
+		rr(ctx, 0, 0, w, h, 10)
+		ctx.clip()
+		ctx.fillStyle = linear(ctx, 0, 0, w, 0, [C.orange, C.gold, C.orange])
+		ctx.fillRect(0, 0, w, 14)
+		ctx.fillStyle = C.plum
+		ctx.fillRect(0, h - 12, w, 12)
+		ctx.fillStyle = C.gold
+		ctx.fillRect(0, h - 16, w, 4)
+		grain(ctx, w, h, 0.1, 5)
+		ctx.restore()
+		rr(ctx, 0, 0, w, h, 10)
+		stroke(ctx, C.choc, 3)
+		bat(ctx, 44, 60, 30, C.plum)
+		bat(ctx, w - 44, 56, 26, C.plum)
+		label(ctx, "Spooktacular", w / 2, h * 0.43, {"fam": FONT.groovy, "px": 52, "maxW": w * 0.7, "fill": vgrad(["#FFD27A", C.orange, "#C04A1E"]), "stroke": "#3A1440", "lw": 6, "depth": 4, "depthFill": "#3A1440", "rot": -0.03})
+		label(ctx, "RUNDOWN", w / 2, h * 0.76, {"fam": FONT.sign, "px": 22, "fill": C.plum, "track": 12}))
+
+## Die-cut vinyl magnet: the painted icon gets a thick white border, a gloss and a soft drop shadow.
+static func dieCut(ctx, w: float, h: float, paint: Callable, border: float = 7.0) -> void:
+	var icon := makeCanvas(int(w), int(h))
+	var ig = icon.getContext("2d")
+	ig.lineJoin = "round"
+	ig.lineCap = "round"
+	paint.call(ig, w, h)
+	var sil := makeCanvas(int(w), int(h))
+	var g = sil.getContext("2d")
+	for i in 20:
+		var a := (i / 20.0) * TAU
+		g.drawImage(icon, cos(a) * border, sin(a) * border)
+	g.globalCompositeOperation = "source-in"
+	g.fillStyle = "#FFFFFF"
+	g.fillRect(0, 0, w, h)
+	ctx.save()
+	ctx.shadowColor = "rgba(20,10,40,0.5)"
+	ctx.shadowBlur = 6
+	ctx.shadowOffsetY = 3
+	ctx.drawImage(sil, 0, 0)
+	ctx.restore()
+	ctx.drawImage(icon, 0, 0)
+	ctx.save()
+	ctx.globalCompositeOperation = "source-atop"
+	ctx.fillStyle = linear(ctx, 0, 0, w * 0.6, h * 0.6, ["rgba(255,255,255,0.35)", "rgba(255,255,255,0)"])
+	ctx.fillRect(0, 0, w, h)
+	ctx.restore()
+
+static func cloudFace(ctx, x: float, y: float, s: float, mood: String = "happy") -> void:
+	for k in [-1, 1]:
+		circle(ctx, x + k * s * 0.2, y, s * 0.07)
+		fill(ctx, C.ink)
+		if mood == "grumpy":
+			capsule(ctx, x + k * s * 0.3, y - s * 0.16, x + k * s * 0.1, y - s * 0.1, s * 0.05, C.ink)
+	ctx.beginPath()
+	if mood == "grumpy":
+		ctx.arc(x, y + s * 0.2, s * 0.14, PI + 0.5, TAU - 0.5)
+	else:
+		ctx.arc(x, y + s * 0.04, s * 0.14, 0.4, PI - 0.4)
+	stroke(ctx, C.ink, s * 0.05)
+	if mood == "happy":
+		for k in [-1, 1]:
+			ellipse(ctx, x + k * s * 0.34, y + s * 0.1, s * 0.08, s * 0.05)
+			fill(ctx, "rgba(255,110,120,0.5)")
+
+static func raindrop(ctx, x: float, y: float, s: float, col) -> void:
+	ctx.beginPath()
+	ctx.moveTo(x, y - s)
+	ctx.bezierCurveTo(x + s * 0.7, y - s * 0.1, x + s * 0.6, y + s * 0.6, x, y + s * 0.6)
+	ctx.bezierCurveTo(x - s * 0.6, y + s * 0.6, x - s * 0.7, y - s * 0.1, x, y - s)
+	inked(ctx, col, s * 0.18)
+
+static func _magSun(g, w: float, h: float) -> void:
+	sunIcon(g, w / 2, h / 2, w * 0.36, true)
+
+static func _magCloud(g, w: float, h: float) -> void:
+	cloud(g, w / 2, h * 0.5, w * 0.78, h * 0.46, linear(g, 0, h * 0.25, 0, h * 0.75, ["#FFFFFF", "#D8E6F8"]), C.ink, 3)
+	cloudFace(g, w / 2, h * 0.55, w * 0.5)
+
+static func _magRain(g, w: float, h: float) -> void:
+	for p in [[0.3, 0.74], [0.52, 0.8], [0.72, 0.72]]:
+		raindrop(g, w * p[0], h * p[1], w * 0.08, "#3FA9F5")
+	cloud(g, w / 2, h * 0.38, w * 0.74, h * 0.42, linear(g, 0, h * 0.15, 0, h * 0.6, ["#E8EEF8", "#9AAAC8"]), C.ink, 3)
+	cloudFace(g, w / 2, h * 0.43, w * 0.46, "sad")
+
+static func _magBolt(g, w: float, h: float) -> void:
+	boltPath(g, w / 2, h / 2, h * 0.78)
+	inked(g, linear(g, 0, h * 0.1, 0, h * 0.9, ["#FFF3A0", "#FFD23A", "#F4A020"]), 4)
+
+static func _magStorm(g, w: float, h: float) -> void:
+	boltPath(g, w * 0.56, h * 0.72, h * 0.42)
+	inked(g, "#FFD23A", 3)
+	cloud(g, w / 2, h * 0.36, w * 0.8, h * 0.44, linear(g, 0, h * 0.12, 0, h * 0.6, ["#7A6A9A", "#5B4A7A", "#3E3058"]), C.ink, 3)
+	cloudFace(g, w / 2, h * 0.41, w * 0.5, "grumpy")
+
+static var MAGNETS := {
+	"sun": _magSun,
+	"cloud": _magCloud,
+	"rain": _magRain,
+	"bolt": _magBolt,
+	"storm": _magStorm,
+}
+
+## Lined index card with a red pushpin.
+static func indexCard(ctx, w: float, h: float, seed: int) -> void:
+	var r := rng(seed)
+	ctx.save()
+	ctx.translate(w / 2, h / 2)
+	ctx.rotate((r.call() - 0.5) * 0.03)
+	ctx.translate(-w / 2, -h / 2)
+	ctx.save()
+	ctx.shadowColor = "rgba(40,24,20,0.35)"
+	ctx.shadowBlur = 6
+	ctx.shadowOffsetY = 3
+	rr(ctx, 6, 6, w - 12, h - 12, 4)
+	fill(ctx, "#FFFBEF")
+	ctx.restore()
+	ctx.save()
+	rr(ctx, 6, 6, w - 12, h - 12, 4)
+	ctx.clip()
+	ctx.fillStyle = "rgba(90,150,220,0.35)"
+	var y := 44.0
+	while y < h - 8:
+		ctx.fillRect(6, y, w - 12, 1.2)
+		y += 20
+	ctx.fillStyle = "rgba(226,59,59,0.55)"
+	ctx.fillRect(6, 34, w - 12, 1.6)
+	ctx.fillStyle = linear(ctx, w - 50, h - 50, w, h, ["rgba(120,90,60,0)", "rgba(120,90,60,0.18)"])
+	ctx.fillRect(0, 0, w, h)
+	grain(ctx, w, h, 0.08, seed)
+	ctx.restore()
+	ctx.restore()
+	circle(ctx, w / 2, 16, 7)
+	inked(ctx, radial(ctx, w / 2 - 2, 14, 0, 8, ["#FF8A7A", C.red, "#9A1A20"]), 1.5)
+
+## Gold-foil star sticker (the rundown board's trophy mark).
+static func goldStar(ctx, sx: float, sy: float) -> void:
+	ctx.save()
+	ctx.shadowColor = "rgba(80,40,0,0.4)"
+	ctx.shadowBlur = 4
+	ctx.shadowOffsetY = 2
+	starPath(ctx, sx, sy, 26, 12, 5, -PI / 2 + 0.2)
+	fill(ctx, linear(ctx, sx - 26, sy - 26, sx + 26, sy + 26, GOLDEN))
+	ctx.restore()
+	starPath(ctx, sx, sy, 26, 12, 5, -PI / 2 + 0.2)
+	stroke(ctx, "#B07A16", 1.5)
+	sparkle(ctx, sx - 8, sy - 8, 7)
+
+const MARK := {"ink": "#2A2438", "red": "#D8322B", "blue": "#2F5BD3", "green": "#2E9A4A", "yellow": "#E8B82E", "purple": "#7A3A9A", "brown": "#8A5A3C"}
+
+# Marker pictograms for rundown cards 1-6, drawn in a 320x200 card around (cx, cy). m = marker() helpers.
+static func _rd1(ctx, m: Dictionary, cx: float, cy: float) -> void:
+	m.ink.call([cx - 90, cy - 44, cx + 90, cy - 44])
+	var bars := [[MARK.red, 86], [MARK.yellow, 72], [MARK.green, 58], [MARK.blue, 44]]
+	for i in bars.size():
+		var c: String = bars[i][0]
+		var ln: float = bars[i][1]
+		var x := cx - 60 + i * 40
+		m.ink.call([x, cy - 44, x, cy - 36])
+		var bar := [x - 9, cy - 36, x + 9, cy - 36, x + 9, cy - 36 + ln, x - 9, cy - 36 + ln]
+		m.fillIn.call(bar, c)
+		m.ink.call(bar, true)
+	m.ink.call([cx + 96, cy + 20, cx + 96, cy - 16, cx + 112, cy - 22, cx + 112, cy + 12])
+	m.ink.call(m.ring.call(cx + 91, cy + 21, 6, 5))
+	m.ink.call(m.ring.call(cx + 107, cy + 14, 6, 5))
+
+static func _rd2(ctx, m: Dictionary, cx: float, cy: float) -> void:
+	var ox := cx - 80
+	m.fillIn.call(m.ring.call(ox, cy + 6, 30, 36), MARK.brown)
+	m.ink.call(m.ring.call(ox, cy + 6, 30, 36))
+	m.ink.call([ox - 24, cy - 22, ox - 26, cy - 44, ox - 10, cy - 30])
+	m.ink.call([ox + 24, cy - 22, ox + 26, cy - 44, ox + 10, cy - 30])
+	for s in [-1, 1]:
+		m.ink.call(m.ring.call(ox + s * 12, cy - 4, 10))
+		m.ink.call(m.ring.call(ox + s * 12, cy - 3, 3))
+	m.ink.call([ox - 4, cy + 10, ox, cy + 16, ox + 4, cy + 10])
+	var sx := cx
+	var sock := [sx - 18, cy - 40, sx + 18, cy - 40, sx + 18, cy + 18, sx + 30, cy + 30, sx + 18, cy + 44, sx - 18, cy + 40]
+	m.fillIn.call(sock, MARK.red)
+	m.ink.call(sock, true)
+	for y in [-26, -12]:
+		m.ink.call([sx - 18, cy + y, sx + 18, cy + y])
+	m.ink.call(m.ring.call(sx - 7, cy + 2, 6))
+	m.ink.call(m.ring.call(sx + 9, cy + 2, 6))
+	m.ink.call([sx - 1, cy + 2, sx + 3, cy + 2])
+	var dx := cx + 82
+	var head := [dx - 26, cy + 36, dx - 30, cy - 10, dx - 10, cy - 34, dx + 18, cy - 30, dx + 34, cy - 6, dx + 30, cy + 36]
+	m.fillIn.call(head, MARK.purple)
+	m.ink.call(head, true)
+	m.ink.call([dx - 10, cy - 34, dx - 4, cy - 48, dx + 4, cy - 34, dx + 12, cy - 46, dx + 18, cy - 30])
+	for s in [-1, 1]:
+		m.ink.call(m.ring.call(dx + s * 11, cy - 10, 9))
+		m.ink.call(m.ring.call(dx + s * 11 + 3, cy - 8, 3))
+	m.ink.call([dx - 14, cy + 16, dx + 18, cy + 16])
+
+static func _rd3(ctx, m: Dictionary, cx: float, cy: float) -> void:
+	for s in [-1, 1]:
+		var bx := cx + s * 30
+		var palm_ := [bx - s * 4, cy + 44, bx - s * 26, cy + 6, bx - s * 22, cy - 34, bx - s * 8, cy - 40, bx + s * 8, cy - 20, bx + s * 10, cy + 40]
+		m.fillIn.call(palm_, "#F2C29B")
+		m.ink.call(palm_, true)
+		m.ink.call([bx - s * 12, cy - 30, bx - s * 4, cy - 2])
+	for s in [-1, 1]:
+		for k in 3:
+			var a := -PI / 2 + s * (0.45 + k * 0.4)
+			m.ink.call([cx + cos(a) * 52, cy - 8 + sin(a) * 52, cx + cos(a) * 68, cy - 8 + sin(a) * 68])
+	label(ctx, "$", cx + 100, cy + 4, {"fam": FONT.round, "px": 58, "fill": MARK.green, "rot": 0.12})
+	label(ctx, "$", cx - 100, cy + 10, {"fam": FONT.round, "px": 34, "fill": MARK.green, "rot": -0.2})
+
+static func _rd4(ctx, m: Dictionary, cx: float, cy: float) -> void:
+	var tx := cx + 10
+	var base := cy + 50
+	m.ink.call([tx - 26, base, tx, base - 70, tx + 26, base])
+	m.ink.call([tx - 18, base - 20, tx + 18, base - 20, tx - 10, base - 44, tx + 10, base - 44])
+	m.ink.call([tx - 18, base - 20, tx + 10, base - 44])
+	var cl := []
+	for i in 45:
+		var a := (i / 44.0) * TAU
+		var bump := 1 + 0.22 * absf(sin(a * 3.5)) if sin(a) < 0 else 1.0
+		cl.append(tx - 18 + cos(a) * 58 * bump)
+		cl.append(cy - 46 + sin(a) * 22 * bump * (1.5 if sin(a) < 0 else 1.0))
+	m.fillIn.call(cl, "#6A5A8A")
+	m.ink.call(cl, true)
+	var bolt := [tx + 4, cy - 30, tx - 8, cy - 8, tx + 4, cy - 8, tx - 2, cy + 12, tx + 16, cy - 14, tx + 4, cy - 14, tx + 12, cy - 30]
+	m.fillIn.call(bolt, MARK.yellow)
+	m.ink.call(bolt, true)
+	for s in [-1, 1]:
+		m.ink.call([tx + s * 38, base - 66, tx + s * 50, base - 74])
+
+static func _rd5(ctx, m: Dictionary, cx: float, cy: float) -> void:
+	var rx := cx - 6
+	m.fillIn.call(m.ring.call(rx, cy, 54), "#C9962E")
+	m.ink.call(m.ring.call(rx, cy, 60))
+	m.ink.call(m.ring.call(rx, cy, 54))
+	for i in 3:
+		var a := (i / 3.0) * TAU - PI / 2
+		m.fillIn.call(m.ring.call(rx + cos(a) * 30, cy + sin(a) * 30, 12), "#FFFFFF")
+		m.ink.call(m.ring.call(rx + cos(a) * 30, cy + sin(a) * 30, 12))
+	m.ink.call(m.ring.call(rx, cy, 9))
+	m.ink.call([rx + 56, cy + 20, rx + 110, cy + 44])
+	label(ctx, "13", rx + 104, cy - 20, {"fam": FONT.round, "px": 30, "fill": MARK.red, "rot": 0.1})
+
+static func _rd6(ctx, m: Dictionary, cx: float, cy: float) -> void:
+	var box := [cx - 66, cy - 30, cx + 66, cy - 30, cx + 66, cy + 50, cx - 66, cy + 50]
+	m.fillIn.call(box, MARK.brown)
+	m.ink.call(box, true)
+	m.fillIn.call(m.ring.call(cx - 12, cy + 10, 42, 30), "#FFFFFF")
+	m.ink.call(m.ring.call(cx - 12, cy + 10, 42, 30))
+	m.ink.call([cx - 10, cy - 30, cx - 36, cy - 64])
+	m.ink.call([cx - 10, cy - 30, cx + 18, cy - 62])
+	m.ink.call([cx - 14, cy + 22, cx - 6, cy + 30, cx + 4, cy + 22])
+	m.ink.call([cx - 30, cy + 2, cx - 20, cy + 6])
+	m.ink.call([cx - 4, cy + 6, cx + 6, cy + 2])
+	m.ink.call(m.ring.call(cx + 50, cy + 2, 6))
+	m.ink.call(m.ring.call(cx + 50, cy + 24, 6))
+	label(ctx, "z", cx + 90, cy - 36, {"fam": FONT.round, "px": 22, "fill": MARK.blue, "rot": 0.2})
+	label(ctx, "Z", cx + 108, cy - 58, {"fam": FONT.round, "px": 32, "fill": MARK.blue, "rot": 0.2})
+
+static var RUNDOWN := [_rd1, _rd2, _rd3, _rd4, _rd5, _rd6]
+
+# ---------------------------------------------------------------------------------------------------------
+# Lobby & studio props: letter board, tote flip digits, dust mark, scenery-flat boards, chyron
+# ---------------------------------------------------------------------------------------------------------
+
+## Walnut picture/board frame of thickness `t` around the whole canvas.
+static func woodFrame(ctx, w: float, h: float, t: float, r: float = 10.0) -> void:
+	rr(ctx, 0, 0, w, h, r)
+	fill(ctx, linear(ctx, 0, 0, 0, h, ["#9A6038", C.walnut, "#5A3420"]))
+	ctx.save()
+	rr(ctx, 0, 0, w, h, r)
+	ctx.clip()
+	var g := rng(int(w * 7 + h))
+	ctx.strokeStyle = "rgba(50,24,12,0.3)"
+	ctx.lineWidth = 1.2
+	for i in 30:
+		var y: float = g.call() * h
+		ctx.beginPath()
+		ctx.moveTo(0, y)
+		var c1y: float = y + (g.call() - 0.5) * 10
+		var c2y: float = y + (g.call() - 0.5) * 10
+		var ey: float = y + (g.call() - 0.5) * 6
+		ctx.bezierCurveTo(w * 0.3, c1y, w * 0.6, c2y, w, ey)
+		ctx.stroke()
+	ctx.restore()
+	rr(ctx, t, t, w - t * 2, h - t * 2, r * 0.4)
+	stroke(ctx, "rgba(30,14,8,0.6)", 3)
+	rr(ctx, 1.5, 1.5, w - 3, h - 3, r)
+	stroke(ctx, "rgba(255,220,170,0.35)", 2)
+
+## One white plastic changeable letter, slightly skewed on its groove.
+static func boardLetter(ctx, ch: String, x: float, y: float, px: float, rot: float = 0.0) -> void:
+	ctx.save()
+	ctx.translate(x, y)
+	ctx.rotate(rot)
+	setFont(ctx, px, FONT.sign)
+	ctx.textAlign = "center"
+	ctx.textBaseline = "middle"
+	ctx.fillStyle = "rgba(0,0,0,0.45)"
+	ctx.fillText(ch, 1.5, 2)
+	ctx.fillStyle = "#F4F1E8"
+	ctx.fillText(ch, 0, 0)
+	ctx.restore()
+
+## Lays a line of letters from x0 with fixed pitch; `keep(i)` false leaves a letter's groove empty.
+static func boardLine(ctx, s: String, x0: float, y: float, px: float, pitch: float, seed: int, keep = null) -> void:
+	var r := rng(seed)
+	for i in s.length():
+		var ch := s[i]
+		var jit: float = (r.call() - 0.5) * 0.08
+		if ch != " " and (keep == null or keep.call(i)):
+			boardLetter(ctx, ch, x0 + i * pitch, y + (r.call() - 0.5) * 1.5, px, jit)
+
+const TOTE_CHARS := "0123456789$,"
+static func _toteUv(ch: String) -> Array:
+	var i := maxi(0, TOTE_CHARS.find(ch)) if ch != "" else 0
+	var c := i % 4
+	var r := i / 4
+	return [(c * 128) / 512.0, 1 - ((r + 1) * 168) / 504.0, ((c + 1) * 128) / 512.0, 1 - (r * 168) / 504.0]
+static var TOTE_ATLAS := {"chars": TOTE_CHARS, "cols": 4, "rows": 3, "cellW": 128, "cellH": 168, "uv": _toteUv}
+
+static func _reg_lobby() -> void:
+	card("letter_board", {"w": 512, "h": 320, "opts": "signOff: true = the fallen SIGN OFF letters are back (after the easter egg)"}, func(ctx, w, h, t, o):
+		var f := 18.0
+		woodFrame(ctx, w, h, f, 12)
+		ctx.fillStyle = "#211A26"
+		ctx.fillRect(f, f, w - f * 2, h - f * 2)
+		ctx.fillStyle = "rgba(255,255,255,0.05)"
+		var y := f + 3
+		while y < h - f:
+			ctx.fillRect(f, y, w - f * 2, 2)
+			y += 7
+		ctx.fillStyle = radial(ctx, w * 0.35, h * 0.25, 10, w * 0.8, ["rgba(255,230,190,0.08)", "rgba(0,0,0,0.25)"])
+		ctx.fillRect(f, f, w - f * 2, h - f * 2)
+		var px := 30.0
+		var pitch := 23.0
+		var x0 := 50.0
+		boardLine(ctx, "TONIGHT ON WZTV 13", x0 + pitch * 0.5, 60, px * 0.9, pitch * 0.95, 3)
+		boardLine(ctx, "10:00 PRECINCT 13", x0, 116, px, pitch, 5)
+		boardLine(ctx, "11:00 SPOOKTACULAR", x0, 168, px, pitch, 7)
+		var line := "12:00 SIGN OFF"
+		if o.get("signOff"):
+			boardLine(ctx, line, x0, 220, px, pitch, 9)
+		else:
+			boardLine(ctx, line, x0, 220, px, pitch, 9, func(i): return i < 6)
+			boardLetter(ctx, "G", x0 + 8 * pitch + 4, 226, px, 0.5)
+			boardLetter(ctx, "F", x0 + 12 * pitch + 2, 232, px, -0.9)
+		ctx.fillStyle = C.gold
+		ctx.fillRect(f, h - f - 26, w - f * 2, 3)
+		label(ctx, "THE TRI-COUNTY'S HAPPY CHANNEL", w / 2, h - f - 12, {"fam": FONT.round, "px": 12, "fill": "#E8D8B8", "track": 2}))
+
+	card("tote_digits", {"w": 512, "h": 504, "atlas": TOTE_ATLAS, "opts": "atlas: texture.userData.atlas.uv(ch) -> [u0, v0, u1, v1]"}, func(ctx, w, h, t, o):
+		ctx.fillStyle = "#2A1810"
+		ctx.fillRect(0, 0, w, h)
+		for i in TOTE_CHARS.length():
+			var ch := TOTE_CHARS[i]
+			var x := (i % 4) * 128.0
+			var y := (i / 4) * 168.0
+			var pad := 7.0
+			var cw := 128 - pad * 2
+			var chh := 168 - pad * 2
+			var mid := y + 84
+			rr(ctx, x + pad, y + pad, cw, chh, 14)
+			fill(ctx, linear(ctx, 0, y + pad, 0, y + 168 - pad, ["#5A3424", "#3E2218", [0.5, "#34190F"], [0.5, "#2A140C"], "#3A2016"]))
+			ctx.save()
+			rr(ctx, x + pad, y + pad, cw, chh, 14)
+			ctx.clip()
+			label(ctx, ch, x + 64, y + 90, {"fam": FONT.round, "px": 128, "maxW": cw * 0.86, "fill": vgrad(["#FFE6A0", "#FFB347", "#E8862A"]), "glow": "rgba(255,170,60,0.55)", "glowBlur": 12})
+			ctx.fillStyle = "rgba(255,255,255,0.08)"
+			ctx.fillRect(x, y + pad, 128, 84 - pad)
+			ctx.restore()
+			ctx.fillStyle = "#140A06"
+			ctx.fillRect(x + pad, mid - 2, cw, 4)
+			for s in [-1, 1]:
+				rr(ctx, x + 64 + s * (cw / 2 - 2) - 4, mid - 7, 8, 14, 3)
+				fill(ctx, "#8A90A8")
+			rr(ctx, x + pad, y + pad, cw, chh, 14)
+			stroke(ctx, "#140A06", 3))
+
+	card("dust_rect", {"w": 512, "h": 256, "alpha": true, "opts": "rug decal: grey dust with the clean footprint where Telly stood"}, func(ctx, w, h, t, o):
+		var dust := layer("dust:speckle", int(w), int(h), func(g, _w, _h):
+			var W := int(w)
+			var H := int(h)
+			var img: Dictionary = g.createImageData(W, H)
+			var d: PackedByteArray = img.data
+			var r := Rng.Mulberry32.new(606)
+			var i := 0
+			var n := d.size()
+			while i < n:
+				var v := r.next()
+				d[i] = clampi(int(jround(205 + v * 30)), 0, 255)
+				d[i + 1] = clampi(int(jround(198 + v * 28)), 0, 255)
+				d[i + 2] = clampi(int(jround(186 + v * 26)), 0, 255)
+				var a1 := r.next()
+				var a2 := r.next()
+				d[i + 3] = clampi(int(jround((0.22 + a1 * a2 * 0.55) * 255)), 0, 255)
+				i += 4
+			img.data = d
+			g.putImageData(img, 0, 0))
+		ctx.drawImage(dust, 0, 0)
+		ctx.save()
+		ctx.globalCompositeOperation = "destination-in"
+		ctx.fillStyle = radial(ctx, w / 2, h / 2, h * 0.3, w * 0.52, ["rgba(0,0,0,1)", "rgba(0,0,0,0.85)", "rgba(0,0,0,0)"])
+		ctx.fillRect(0, 0, w, h)
+		ctx.restore()
+		ctx.save()
+		ctx.globalCompositeOperation = "destination-out"
+		ctx.filter = "blur(5px)"
+		rr(ctx, w * 0.25, h * 0.27, w * 0.5, h * 0.46, 18)
+		fill(ctx, "#000")
+		ctx.filter = "blur(2px)"
+		for p in [[0.22, 0.2], [0.78, 0.2], [0.22, 0.8], [0.78, 0.8]]:
+			circle(ctx, w * p[0], h * p[1], 9)
+			fill(ctx, "#000")
+		ctx.restore()
+		ctx.save()
+		ctx.globalCompositeOperation = "source-over"
+		for p in [[0.22, 0.2], [0.78, 0.2], [0.22, 0.8], [0.78, 0.8]]:
+			circle(ctx, w * p[0], h * p[1], 7)
+			fill(ctx, "rgba(70,40,30,0.3)")
+		ctx.restore())
+
+	for i in BOARDS.size():
+		var paint: Callable = BOARDS[i]
+		card("scenery_board_%d" % (i + 1), {"w": 512, "h": 112}, func(ctx, w, h, t, o):
+			ctx.fillStyle = linear(ctx, 0, 0, 0, h, ["#C8905A", "#A8703A"])
+			ctx.fillRect(0, 0, w, h)
+			var r := rng(20 + i)
+			ctx.save()
+			ctx.beginPath()
+			ctx.moveTo(10, 6)
+			var x := 10.0
+			while x <= w - 10:
+				ctx.lineTo(x, 5 + r.call() * 4)
+				x += 16
+			x = w - 10
+			while x >= 10:
+				ctx.lineTo(x, h - 5 - r.call() * 4)
+				x -= 16
+			ctx.closePath()
+			ctx.clip()
+			paint.call(ctx, w, h)
+			for k in 7:
+				var ex: float = r.call() * w
+				var ey: float = r.call() * 12 if r.call() < 0.5 else h - r.call() * 12
+				var erx: float = 8 + r.call() * 14
+				var ery: float = 3 + r.call() * 4
+				var erot: float = r.call()
+				ellipse(ctx, ex, ey, erx, ery, erot)
+				fill(ctx, "#B88048")
+			ctx.restore()
+			ctx.fillStyle = "rgba(255,230,190,0.25)"
+			ctx.fillRect(0, 0, w, 3)
+			ctx.fillStyle = "rgba(40,20,10,0.35)"
+			ctx.fillRect(0, h - 4, w, 4)
+			for bx in [18, w - 18]:
+				for by in [h * 0.3, h * 0.7]:
+					circle(ctx, bx, by, 4.5)
+					inked(ctx, radial(ctx, bx - 1, by - 1, 0, 5, ["#E8ECF6", "#6A7088"]), 1.2, "#2A2230")
+			grain(ctx, w, h, 0.12, i))
+
+	card("chyron", {"w": 512, "h": 128, "alpha": true, "opts": "text / sub: optional lines (the HUD may overlay its own DOM text instead)"}, func(ctx, w, h, t, o):
+		var y := 22.0
+		var bh := 62.0
+		var x0 := 70.0
+		ctx.save()
+		ctx.shadowColor = "rgba(30,12,10,0.5)"
+		ctx.shadowBlur = 10
+		ctx.shadowOffsetY = 4
+		rr(ctx, x0 - 10, y, w - x0 - 4, bh, [0, bh / 2, bh / 2, 0])
+		fill(ctx, linear(ctx, 0, y, 0, y + bh, ["#F08A3A", "#D9602B", "#A8401E"]))
+		rr(ctx, x0 + 20, y + bh - 2, w * 0.62, 30, [0, 0, 15, 15])
+		fill(ctx, linear(ctx, 0, y + bh, 0, y + bh + 30, ["#6A3A22", "#4A2616"]))
+		ctx.restore()
+		ctx.fillStyle = C.gold
+		ctx.fillRect(x0, y + bh - 8, w - x0 - 40, 3)
+		ctx.fillStyle = C.mustard
+		ctx.fillRect(x0, y + bh - 4, w - x0 - 60, 2)
+		ctx.fillStyle = "rgba(255,255,255,0.22)"
+		ctx.fillRect(x0 - 10, y + 4, w - x0 - 36, 10)
+		circle(ctx, x0 - 8, y + bh / 2 + 6, 46)
+		fill(ctx, linear(ctx, 0, y - 20, 0, y + bh + 30, ["#7A4A2A", C.choc]))
+		circle(ctx, x0 - 8, y + bh / 2 + 6, 46)
+		stroke(ctx, C.gold, 4)
+		badge13(ctx, x0 - 8, y + bh / 2 + 6, 34, {"ol": 2})
+		if o.get("text"):
+			label(ctx, str(o.text), x0 + 40, y + bh * 0.46, {"fam": FONT.groovy, "px": 40, "maxW": w - x0 - 90, "align": "left", "fill": vgrad(["#FFFDF0", "#FFE7A8"]), "stroke": "#5A2210", "lw": 5, "depth": 3, "depthFill": "#5A2210"})
+		if o.get("sub"):
+			label(ctx, str(o.sub), x0 + 44, y + bh + 13, {"fam": FONT.sign, "px": 15, "maxW": w * 0.58, "align": "left", "fill": "#FFD27A", "track": 1}))
+
+# Painted scenery-flat slices used as window boards: fn(ctx, w, h) paints the face.
+static func _board1(ctx, w: float, h: float) -> void:
+	ctx.fillStyle = linear(ctx, 0, 0, 0, h, ["#4AA8F0", "#9ED8FF"])
+	ctx.fillRect(0, 0, w, h)
+	cloud(ctx, w * 0.22, h * 0.55, 120, 50, "#FFFFFF")
+	cloud(ctx, w * 0.7, h * 0.4, 150, 58, "#FFFFFF")
+
+static func _board2(ctx, w: float, h: float) -> void:
+	ctx.fillStyle = "#E8D8C0"
+	ctx.fillRect(0, 0, w, h)
+	var bh := h / 4
+	for j in 4:
+		for i in range(-1, 12):
+			rr(ctx, i * 52 + (j & 1) * 26 + 2, j * bh + 2, 48, bh - 4, 3)
+			fill(ctx, mix("#B5472A", "#D2643A", float((i * 5 + j * 3) % 7) / 7.0))
+
+static func _board3(ctx, w: float, h: float) -> void:
+	for i in 10:
+		ctx.fillStyle = mix("#C8905A", "#E0AC70", float(i * 3 % 5) / 5.0)
+		ctx.fillRect(i * (w / 10), 0, w / 10, h)
+		ctx.fillStyle = "rgba(90,50,20,0.5)"
+		ctx.fillRect(i * (w / 10), 0, 2, h)
+	var r := rng(12)
+	for i in 6:
+		var ex: float = r.call() * w
+		var ey: float = r.call() * h
+		ellipse(ctx, ex, ey, 6, 3.5)
+		stroke(ctx, "rgba(110,60,25,0.6)", 1.5)
+
+static func _board4(ctx, w: float, h: float) -> void:
+	ctx.fillStyle = linear(ctx, 0, 0, 0, h, [C.nightTop, C.nightHz])
+	ctx.fillRect(0, 0, w, h)
+	starField(ctx, w, h, 40, 44)
+	circle(ctx, w * 0.8, h * 0.45, 26)
+	fill(ctx, C.moon)
+	circle(ctx, w * 0.8 + 10, h * 0.4, 22)
+	fill(ctx, C.nightTop)
+
+static func _board5(ctx, w: float, h: float) -> void:
+	var cs := [C.shag, C.gold, C.orange, C.rust, C.choc]
+	for i in cs.size():
+		ctx.fillStyle = cs[i]
+		ctx.fillRect(0, (i * h) / 5, w, h / 5 + 1)
+	slicedSun(ctx, w * 0.3, h * 1.05, 60, "#FFF1A0", "#FF8A3A", C.orange)
+
+static func _board6(ctx, w: float, h: float) -> void:
+	ctx.fillStyle = "#E3A04A"
+	ctx.fillRect(0, 0, w, h)
+	for i in 7:
+		var cx := i * 80 + 20.0
+		var cy := h / 2
+		var k := 4
+		while k > 0:
+			circle(ctx, cx, cy, k * 11)
+			fill(ctx, "#7A4A2A" if (k & 1) else "#F0C070")
+			k -= 1
+
+static var BOARDS := [_board1, _board2, _board3, _board4, _board5, _board6]
+
+# ---------------------------------------------------------------------------------------------------------
+# Lobby portrait wall, TV WEEKLY, Perpetua-Tube ad, ticket stub, crew badge, cap badge, dressing rooms
+# ---------------------------------------------------------------------------------------------------------
+
+const PORTRAITS := {
+	"skip": {"name": "SKIP KOWALSKI", "job": "FLOOR CREW", "bg": ["#6FA0F0", "#2F5BD3", "#1B2F7A"]},
+	"roxy": {"name": "ROXY RIVERS", "job": "BOOGIE DOWN SATURDAY", "bg": ["#FFB0C8", "#C2407A", "#5A1A4A"]},
+	"penny": {"name": "PENNY WATTS", "job": "CHIEF ENGINEER", "bg": ["#8ADADA", "#2E8C8C", "#14464A"]},
+	"duke": {"name": "DUKE DALTON", "job": "PRECINCT 13", "bg": ["#FFC08A", "#B5472A", "#4A1A12"]},
+	"baron": {"name": "BARON VON STATIC", "job": "HORROR HOST", "bg": ["#B08ADA", "#6B3A6E", "#24102E"]},
+	"stormy_stu": {"name": "STORMY STU", "job": "WEATHER WATCH 13", "bg": ["#BFE8FF", "#4AA8F0", "#1E4A8A"]},
+}
+
+## Framed 70s studio portrait: mottled backdrop, bust, brass name plate.
+static func portrait(ctx, w: float, h: float, who: String, P: Dictionary, o: Dictionary = {}) -> void:
+	woodFrame(ctx, w, h, 16, 8)
+	var ix := 16.0
+	var iy := 16.0
+	var iw := w - 32
+	var ih := h - 32
+	ctx.save()
+	rr(ctx, ix, iy, iw, ih, 4)
+	ctx.clip()
+	ctx.fillStyle = radial(ctx, w * 0.45, h * 0.36, 10, h * 0.7, P.bg)
+	ctx.fillRect(ix, iy, iw, ih)
+	var r := rng(hash_(who))
+	for i in 14:
+		var ex: float = ix + r.call() * iw
+		var ey: float = iy + r.call() * ih
+		var erx: float = 20 + r.call() * 40
+		var ery: float = 14 + r.call() * 26
+		var erot: float = r.call() * 3
+		ellipse(ctx, ex, ey, erx, ery, erot)
+		fill(ctx, alpha("#FFFFFF" if r.call() < 0.5 else "#1E1030", 0.07))
+	ctx.fillStyle = radial(ctx, w * 0.5, h * 0.38, 10, w * 0.5, ["rgba(255,245,220,0.35)", "rgba(255,245,220,0)"])
+	ctx.fillRect(ix, iy, iw, ih)
+	drawBust(ctx, "stu" if who == "stormy_stu" else who, w / 2, h * 0.43, w * 0.19, o)
+	vignette(ctx, w, h, 0.4, "30,16,30", 0.35)
+	ctx.fillStyle = linear(ctx, ix, iy, ix + iw, iy + ih, ["rgba(255,255,255,0.16)", "rgba(255,255,255,0)", [0.55, "rgba(255,255,255,0)"], [0.6, "rgba(255,255,255,0.1)"], "rgba(255,255,255,0)"])
+	ctx.fillRect(ix, iy, iw, ih)
+	ctx.restore()
+	var pw := w * 0.74
+	var ph := 36.0
+	var px := (w - pw) / 2
+	var py := h - 16 - ph - 8
+	ctx.save()
+	ctx.shadowColor = "rgba(20,10,10,0.5)"
+	ctx.shadowBlur = 4
+	ctx.shadowOffsetY = 2
+	rr(ctx, px, py, pw, ph, 5)
+	fill(ctx, linear(ctx, 0, py, 0, py + ph, GOLDEN))
+	ctx.restore()
+	rr(ctx, px, py, pw, ph, 5)
+	stroke(ctx, "#8A5A12", 1.5)
+	for sx in [px + 7, px + pw - 7]:
+		circle(ctx, sx, py + ph / 2, 2.5)
+		fill(ctx, "#8A5A12")
+	label(ctx, P.name, w / 2, py + 13, {"fam": FONT.sign, "px": 14, "maxW": pw - 26, "fill": "#3A2208"})
+	label(ctx, P.job, w / 2, py + 27, {"fam": FONT.round, "px": 9, "maxW": pw - 26, "fill": "#6A4210", "track": 1})
+
+static func _reg_portraits() -> void:
+	for hero in HERO_IDS:
+		card("hero_portrait_%s" % hero, {"w": 256, "h": 320}, func(ctx, w, h, t, o): portrait(ctx, w, h, hero, PORTRAITS[hero]))
+	card("portrait_baron", {"w": 256, "h": 320}, func(ctx, w, h, t, o): portrait(ctx, w, h, "baron", PORTRAITS.baron, {"mood": "grin", "m": 0.3}))
+	card("portrait_stormy_stu", {"w": 256, "h": 320}, func(ctx, w, h, t, o): portrait(ctx, w, h, "stormy_stu", PORTRAITS.stormy_stu))
+
+	card("magazine_tv_weekly", {"w": 384, "h": 512}, func(ctx, w, h, t, o):
+		ctx.fillStyle = radial(ctx, w * 0.5, h * 0.5, 20, h * 0.7, ["#9A5ACA", "#5A2A8A", "#1E0E36"])
+		ctx.fillRect(0, 0, w, h)
+		ctx.save()
+		ctx.translate(w / 2, h * 0.5)
+		rays(ctx, 0, 0, h, 18, "rgba(156,255,87,0.1)", 0.1)
+		ctx.restore()
+		for b in [[0.14, 0.3, 22], [0.86, 0.36, 26], [0.84, 0.62, 16]]:
+			bat(ctx, w * b[0], h * b[1], b[2], "#140A22")
+		drawBust(ctx, "baron", w / 2, h * 0.5, 64, {"mood": "laugh", "m": 0.7})
+		ctx.fillStyle = C.red
+		ctx.fillRect(0, 0, w, 86)
+		ctx.fillStyle = "#FFFFFF"
+		ctx.fillRect(0, 86, w, 5)
+		label(ctx, "TV", 64, 45, {"fam": FONT.sign, "px": 60, "fill": "#FFFFFF", "stroke": "#7A0E14", "lw": 5})
+		label(ctx, "WEEKLY", 238, 36, {"fam": FONT.sign, "px": 40, "maxW": 210, "fill": "#FFFFFF", "stroke": "#7A0E14", "lw": 5, "track": 2})
+		label(ctx, "OCT 29 – NOV 4, 1977", 238, 70, {"fam": FONT.round, "px": 13, "fill": "#FFE9B0", "track": 1})
+		label(ctx, "35¢", w - 30, 70, {"fam": FONT.round, "px": 14, "fill": "#FFFFFF"})
+		starPath(ctx, w * 0.8, h * 0.28, 50, 36, 16, 0)
+		inked(ctx, linear(ctx, 0, h * 0.2, 0, h * 0.36, ["#FFF08A", "#FFD23A"]), 3)
+		label(ctx, "HORROR", w * 0.8, h * 0.26, {"fam": FONT.sign, "px": 15, "fill": C.red})
+		label(ctx, "HOST OF", w * 0.8, h * 0.285, {"fam": FONT.sign, "px": 11, "fill": C.ink})
+		label(ctx, "THE YEAR!", w * 0.8, h * 0.31, {"fam": FONT.sign, "px": 13, "fill": C.red})
+		ctx.fillStyle = "rgba(20,8,30,0.72)"
+		ctx.fillRect(0, h * 0.8, w, h * 0.2)
+		label(ctx, "THE BARON:", w / 2, h * 0.845, {"fam": FONT.sign, "px": 24, "fill": "#FFE14A", "stroke": "#140A22", "lw": 4})
+		label(ctx, "\"I'LL NEVER SIGN OFF!\"", w / 2, h * 0.9, {"fam": FONT.groovy, "px": 30, "maxW": w * 0.9, "fill": "#FFFFFF", "stroke": "#140A22", "lw": 5})
+		label(ctx, "TRI-COUNTY LISTINGS INSIDE", w / 2, h * 0.955, {"fam": FONT.round, "px": 12, "fill": C.perpetua, "track": 2})
+		paper(ctx, w, h, 9, 0.1))
+
+	card("perpetua_ad", {"w": 384, "h": 512}, func(ctx, w, h, t, o):
+		ctx.fillStyle = "#F4E9D0"
+		ctx.fillRect(0, 0, w, h)
+		halftone(ctx, 0, 0, w, h * 0.7, "rgba(156,255,87,0.35)", 12, func(u, v): return clampf(0.9 - Vector2(u - 0.5, (v - 0.55) * 1.3).length() * 1.6, 0, 1))
+		label(ctx, "ETERNA-VISION PRESENTS", w / 2, 34, {"fam": FONT.sign, "px": 17, "fill": C.red, "track": 2})
+		var tx: float = w / 2
+		var ty: float = h * 0.44
+		ctx.save()
+		ctx.shadowColor = C.perpetua
+		ctx.shadowBlur = 30
+		ctx.beginPath()
+		ctx.moveTo(tx - 58, ty + 70)
+		ctx.bezierCurveTo(tx - 66, ty - 40, tx - 50, ty - 110, tx, ty - 118)
+		ctx.bezierCurveTo(tx + 50, ty - 110, tx + 66, ty - 40, tx + 58, ty + 70)
+		ctx.closePath()
+		fill(ctx, radial(ctx, tx - 15, ty - 40, 10, 120, ["rgba(230,255,210,0.95)", "rgba(156,255,87,0.75)", "rgba(60,160,60,0.8)"]))
+		ctx.restore()
+		ctx.beginPath()
+		ctx.moveTo(tx - 58, ty + 70)
+		ctx.bezierCurveTo(tx - 66, ty - 40, tx - 50, ty - 110, tx, ty - 118)
+		ctx.bezierCurveTo(tx + 50, ty - 110, tx + 66, ty - 40, tx + 58, ty + 70)
+		stroke(ctx, C.ink, 4)
+		poly(ctx, [tx - 4, ty - 118, tx + 4, ty - 118, tx, ty - 132])
+		inked(ctx, "#DFF8FF", 2)
+		ctx.strokeStyle = "rgba(40,90,40,0.7)"
+		ctx.lineWidth = 3
+		ctx.beginPath()
+		for k in [-18, 18]:
+			ctx.moveTo(tx + k, ty + 66)
+			ctx.lineTo(tx + k, ty + 20)
+		ctx.stroke()
+		rr(ctx, tx - 66, ty + 64, 132, 44, 10)
+		inked(ctx, linear(ctx, 0, ty + 64, 0, ty + 108, ["#5A5A6A", "#2A2A38"]), 3)
+		for i in 5:
+			rr(ctx, tx - 44 + i * 20, ty + 108, 6, 16, 2)
+			inked(ctx, "#C9CED8", 1.5)
+		for s in [-1, 1]:
+			ellipse(ctx, tx + s * 22, ty - 46, 11, 15)
+			inked(ctx, "#FFFFFF", 3)
+			circle(ctx, tx + s * 22 + 3, ty - 43, 6)
+			fill(ctx, C.ink)
+		ctx.beginPath()
+		ctx.moveTo(tx - 34, ty - 12)
+		ctx.quadraticCurveTo(tx, ty + 6, tx + 34, ty - 12)
+		ctx.quadraticCurveTo(tx + 26, ty + 26, tx, ty + 26)
+		ctx.quadraticCurveTo(tx - 26, ty + 26, tx - 34, ty - 12)
+		inked(ctx, "#FFFFFF", 3)
+		ctx.strokeStyle = C.ink
+		ctx.lineWidth = 2
+		ctx.beginPath()
+		for k in [-18, -6, 6, 18]:
+			ctx.moveTo(tx + k, ty - 6)
+			ctx.lineTo(tx + k, ty + 22)
+		ctx.stroke()
+		var bx: float = w * 0.08
+		var by: float = h * 0.1
+		var bw: float = w * 0.5
+		var bh := 70.0
+		rr(ctx, bx, by, bw, bh, 30)
+		inked(ctx, "#FFFFFF", 3)
+		poly(ctx, [bx + bw * 0.62, by + bh - 2, bx + bw * 0.86, by + bh + 34, bx + bw * 0.84, by + bh - 2])
+		inked(ctx, "#FFFFFF", 3)
+		ctx.fillStyle = "#FFFFFF"
+		ctx.fillRect(bx + bw * 0.6, by + bh - 5, bw * 0.26, 6)
+		label(ctx, "NEVER", bx + bw / 2, by + 22, {"fam": FONT.groovy, "px": 24, "fill": C.red})
+		label(ctx, "SIGN OFF AGAIN!", bx + bw / 2, by + 48, {"fam": FONT.groovy, "px": 22, "maxW": bw * 0.88, "fill": C.red})
+		label(ctx, "THE PERPETUA-TUBE", w / 2, h * 0.73, {"fam": FONT.sign, "px": 26, "maxW": w * 0.9, "fill": "#2E7A2E", "stroke": "#FFFFFF", "lw": 4})
+		label(ctx, "BROADCAST FOREVER! ONLY $13.13", w / 2, h * 0.775, {"fam": FONT.round, "px": 15, "maxW": w * 0.9, "fill": C.ink})
+		ctx.save()
+		ctx.setLineDash([7, 5])
+		rr(ctx, 22, h * 0.81, w - 44, h * 0.16, 4)
+		stroke(ctx, C.ink, 2)
+		ctx.restore()
+		label(ctx, "MAIL TODAY!", w / 2, h * 0.84, {"fam": FONT.sign, "px": 15, "fill": C.red, "track": 3})
+		ctx.fillStyle = "rgba(42,29,58,0.55)"
+		for i in 3:
+			ctx.fillRect(40, h * 0.87 + i * 14, w - 80, 1.5)
+		paper(ctx, w, h, 13, 0.14))
+
+	card("ticket_stub", {"w": 256, "h": 128, "alpha": true}, func(ctx, w, h, t, o):
+		ctx.beginPath()
+		var n := 9
+		var R: float = h / (n * 2)
+		ctx.moveTo(10, 8)
+		ctx.lineTo(w - 10, 8)
+		for i in n:
+			ctx.arc(w - 10, 8 + R + i * 2 * R * ((h - 16) / h), R * 0.7, -PI / 2, PI / 2, true)
+		ctx.lineTo(10, h - 8)
+		var i2 := n - 1
+		while i2 >= 0:
+			ctx.arc(10, 8 + R + i2 * 2 * R * ((h - 16) / h), R * 0.7, PI / 2, -PI / 2, true)
+			i2 -= 1
+		ctx.closePath()
+		inked(ctx, linear(ctx, 0, 0, 0, h, ["#FF9A4A", C.orange, "#C84E1A"]), 2.5, "#7A2A0E")
+		ctx.save()
+		ctx.clip()
+		grain(ctx, w, h, 0.12, 3)
+		ctx.restore()
+		ctx.save()
+		ctx.setLineDash([4, 4])
+		ctx.beginPath()
+		ctx.moveTo(w * 0.7, 12)
+		ctx.lineTo(w * 0.7, h - 12)
+		stroke(ctx, "#7A2A0E", 2)
+		ctx.restore()
+		rr(ctx, 22, 18, w * 0.7 - 34, h - 36, 6)
+		stroke(ctx, alpha("#FFF1D0", 0.85), 2)
+		label(ctx, "ADMIT ONE", (w * 0.7) / 2 + 6, 38, {"fam": FONT.sign, "px": 20, "maxW": w * 0.55, "fill": "#FFF8E8", "stroke": "#7A2A0E", "lw": 3.5})
+		label(ctx, "WZTV STUDIO AUDIENCE", (w * 0.7) / 2 + 6, h - 32, {"fam": FONT.round, "px": 10, "maxW": w * 0.56, "fill": "#FFF1D0", "track": 1})
+		label(ctx, "No. 001313", (w * 0.7) / 2 + 6, h - 50, {"fam": FONT.type, "px": 11, "fill": "#5A1A08"})
+		label(ctx, "13", w * 0.85, h * 0.52, {"fam": FONT.round, "px": 50, "fill": "#FFF8E8", "stroke": "#7A2A0E", "lw": 5, "depth": 3, "depthFill": "#7A2A0E"}))
+
+	card("badge_crew", {"w": 256, "h": 160}, func(ctx, w, h, t, o):
+		ctx.fillStyle = "#5A6078"
+		ctx.fillRect(0, 0, w, h)
+		rr(ctx, 4, 4, w - 8, h - 8, 14)
+		fill(ctx, "#FFFDF6")
+		ctx.save()
+		rr(ctx, 4, 4, w - 8, h - 8, 14)
+		ctx.clip()
+		ctx.fillStyle = linear(ctx, 0, 0, 0, 52, [lighten(C.blue, 0.1), C.blue])
+		ctx.fillRect(0, 0, w, 52)
+		ctx.fillStyle = C.red
+		ctx.fillRect(0, 52, w, 5)
+		ctx.fillStyle = C.gold
+		ctx.fillRect(0, h - 22, w, 18)
+		ctx.restore()
+		rr(ctx, w / 2 - 22, 12, 44, 10, 5)
+		fill(ctx, "#1E3A8A")
+		drawLogo(ctx, w * 0.5, 36, 17, {"style": "flat"})
+		label(ctx, "CREW", w * 0.5, 94, {"fam": FONT.sign, "px": 46, "fill": C.red, "stroke": "#7A0E14", "lw": 2, "track": 4})
+		label(ctx, "ALL AREAS", w * 0.5, h - 13, {"fam": FONT.round, "px": 11, "fill": "#5A3A08", "track": 3})
+		rr(ctx, 4, 4, w - 8, h - 8, 14)
+		stroke(ctx, "#2A2438", 3)
+		gloss(ctx, 4, 4, w - 8, h - 8, 14, 0.3))

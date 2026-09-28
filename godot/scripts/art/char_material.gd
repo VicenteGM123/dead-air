@@ -361,7 +361,7 @@ static func fromSpec(spec: Dictionary, imported: Material, ctx: Dictionary = {})
 			o.map = tex
 			o.mapWrap = spec.get("mapWrap", "clamp")
 			o.mapFilter = spec.get("mapFilter", "linear")
-			o.flipY = spec.get("flipY", false)
+			o.flipY = spec.get("flipY", true)   # kit convention: canvas PNGs top-down, three flipY
 	if ctx.has("renderOrder"):
 		o.renderOrder = ctx.renderOrder
 	if spec.get("kind") == "basic":

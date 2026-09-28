@@ -2492,7 +2492,7 @@ func _dragTo(clientPos: Vector2) -> void:
 	var sp := _toStage(clientPos)
 	var f := clamp_((sp.x - rect.position.x) / maxf(1.0, rect.size.x), 0.0, 1.0)
 	var r: Dictionary = _optRows()[D.row]
-	var v := floorf((r.min + f * (r.max - r.min)) / r.step + 0.5) * r.step
+	var v: float = floorf((r.min + f * (r.max - r.min)) / r.step + 0.5) * r.step
 	_setRow(r, clamp_(v, r.min, r.max), true)
 
 func _setRow(r: Dictionary, v, fromDrag: bool = false) -> void:
@@ -2876,8 +2876,8 @@ func _tvboxSpec(W: float, H: float, knob2: float) -> Dictionary:
 	var k := 0.0
 	while k < L:
 		for band in [[0.0, 3.0, "#FFDCAA", 0.06], [11.0, 14.0, "#281004", 0.08]]:
-			var p0 := start + dir * (k + band[0])
-			var p1 := start + dir * (k + band[1])
+			var p0: Vector2 = start + dir * (k + float(band[0]))
+			var p1: Vector2 = start + dir * (k + float(band[1]))
 			grain += '<path d="M%s %sL%s %sL%s %sL%s %sZ" fill="%s" fill-opacity="%s"/>' % [HudScript.n_(p0.x - nrm.x), HudScript.n_(p0.y - nrm.y), HudScript.n_(p0.x + nrm.x), HudScript.n_(p0.y + nrm.y),
 				HudScript.n_(p1.x + nrm.x), HudScript.n_(p1.y + nrm.y), HudScript.n_(p1.x - nrm.x), HudScript.n_(p1.y - nrm.y), band[2], HudScript.n_(band[3])]
 		k += 23.0
@@ -3106,7 +3106,7 @@ func _drawOptions(ci: Control) -> void:
 		_txt(ci, "hud", 24, rect.position.x + 16.0, cy, r.label, col, 24.0 * 0.06)
 		if R.has("sld"):
 			var s: Rect2 = R.sld
-			var f := (float(r.value) - r.min) / (r.max - r.min)
+			var f: float = (float(r.value) - r.min) / (r.max - r.min)
 			_paintBox(ci, "sldTr", s.position.x, s.position.y + 11, 300, 8, {"r": 4, "bg": "#5A3A22", "insets": [[0, 2, 2, 0, "rgba(0,0,0,.5)"]]})
 			var fw := 300.0 * clampf(f, 0.0, 1.0)
 			if fw > 0.5:

@@ -1,0 +1,10 @@
+{"frames": [
+ {"dt": 0.016, "st": {"speed": 3.0}, "expr": ["smile", 1.0], "look": [0.5, -0.3]},
+ {"dt": 0.02, "st": {"speed": 3.0, "aiming": true, "aimPitch": 0.3, "aimYaw": 0.2}},
+ {"dt": 0.03, "st": {"speed": 2.0, "aiming": true, "aimPitch": 0.3, "aimYaw": 0.2, "recoil": 0.5}},
+ {"dt": 0.05, "st": {"speed": 0.5, "reload": 0.4}, "poses": {"wave": 0.6}},
+ {"dt": 0.05, "st": {"speed": 0.5, "reload": 0.5}},
+ {"dt": 0.05, "st": {"speed": 0.5, "grounded": false}},
+ {"dt": 0.05, "st": {"speed": 0.5, "hurt": 0.8}, "blink": true},
+ {"dt": 0.04, "st": {"speed": 0.0}}
+]}
