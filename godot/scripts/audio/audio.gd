@@ -587,12 +587,16 @@ func now() -> float:
 func out(_opts := {}):
 	return null
 
-func play(id: String, opts := {}):
+func play(id, opts = {}):
+	if id == null:
+		return null
+	id = String(id)
 	if ctx == null or _n == null or not cues.has(id):
 		return null
 	return _launch(id, opts if opts is Dictionary else {}, false)
 
-func loop(id: String, opts := {}) -> LoopHandle:
+func loop(id, opts = {}) -> LoopHandle:
+	id = String(id) if id != null else ""
 	var h := LoopHandle.new(self, id, opts if opts is Dictionary else {})
 	if not cues.has(id):
 		h.stopped = true

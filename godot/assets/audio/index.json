@@ -1360,6 +1360,9 @@
    "params": [
     "dur"
    ],
+   "defaults": {
+    "dur": 2.6
+   },
    "variants": [
     {
      "k": "",
@@ -1459,6 +1462,9 @@
    "params": [
     "dur"
    ],
+   "defaults": {
+    "dur": 2.2
+   },
    "variants": [
     {
      "k": "",
@@ -1755,6 +1761,13 @@
    "params": [
     "rhythm"
    ],
+   "defaults": {
+    "rhythm": [
+     1.1,
+     0.95,
+     0.85
+    ]
+   },
    "variants": [
     {
      "k": "",
@@ -2335,6 +2348,9 @@
    "params": [
     "dur"
    ],
+   "defaults": {
+    "dur": 3
+   },
    "variants": [
     {
      "k": "",
@@ -2488,6 +2504,9 @@
    "params": [
     "dur"
    ],
+   "defaults": {
+    "dur": 0.8
+   },
    "variants": [
     {
      "k": "",
@@ -2917,6 +2936,9 @@
    "params": [
     "dur"
    ],
+   "defaults": {
+    "dur": 1.5
+   },
    "variants": [
     {
      "k": "",
@@ -5608,6 +5630,9 @@
    "params": [
     "dur"
    ],
+   "defaults": {
+    "dur": 6
+   },
    "variants": [
     {
      "k": "",
@@ -9152,6 +9177,9 @@
    "params": [
     "base"
    ],
+   "defaults": {
+    "base": 200
+   },
    "variants": [
     {
      "k": "",
@@ -10623,6 +10651,9 @@
    "params": [
     "dur"
    ],
+   "defaults": {
+    "dur": 1.5
+   },
    "variants": [
     {
      "k": "",
@@ -10685,6 +10716,17 @@
     "claps",
     "dur"
    ],
+   "defaults": {
+    "dur": 1.45,
+    "claps": [
+     0.16,
+     0.36,
+     0.56,
+     0.76,
+     0.96,
+     1.16
+    ]
+   },
    "variants": [
     {
      "k": "",
@@ -10723,51 +10765,6 @@
      ]
     },
     {
-     "k": "claps=0.16,0.36,0.56,0.76,0.96,1.16",
-     "o": {
-      "claps": [
-       0.16,
-       0.36,
-       0.56,
-       0.76,
-       0.96,
-       1.16
-      ]
-     },
-     "tv": false,
-     "sets": [
-      {
-       "p": 1,
-       "f": [
-        {
-         "f": "sfx/ee_applause_near/v1_p100_0.ogg",
-         "e": 1.46,
-         "l": 1.461,
-         "ch": 2
-        },
-        {
-         "f": "sfx/ee_applause_near/v1_p100_1.ogg",
-         "e": 1.46,
-         "l": 1.459,
-         "ch": 2
-        },
-        {
-         "f": "sfx/ee_applause_near/v1_p100_2.ogg",
-         "e": 1.46,
-         "l": 1.463,
-         "ch": 2
-        },
-        {
-         "f": "sfx/ee_applause_near/v1_p100_3.ogg",
-         "e": 1.46,
-         "l": 1.462,
-         "ch": 2
-        }
-       ]
-      }
-     ]
-    },
-    {
      "k": "claps=[];dur=3.8",
      "o": {
       "dur": 3.8,
@@ -10779,25 +10776,25 @@
        "p": 1,
        "f": [
         {
-         "f": "sfx/ee_applause_near/v2_p100_0.ogg",
+         "f": "sfx/ee_applause_near/v1_p100_0.ogg",
          "e": 3.81,
          "l": 3.812,
          "ch": 2
         },
         {
-         "f": "sfx/ee_applause_near/v2_p100_1.ogg",
+         "f": "sfx/ee_applause_near/v1_p100_1.ogg",
          "e": 3.81,
          "l": 3.811,
          "ch": 2
         },
         {
-         "f": "sfx/ee_applause_near/v2_p100_2.ogg",
+         "f": "sfx/ee_applause_near/v1_p100_2.ogg",
          "e": 3.81,
          "l": 3.812,
          "ch": 2
         },
         {
-         "f": "sfx/ee_applause_near/v2_p100_3.ogg",
+         "f": "sfx/ee_applause_near/v1_p100_3.ogg",
          "e": 3.81,
          "l": 3.811,
          "ch": 2
@@ -10873,6 +10870,9 @@
    "params": [
     "dur"
    ],
+   "defaults": {
+    "dur": 4.2
+   },
    "variants": [
     {
      "k": "",
@@ -11547,12 +11547,13 @@
    "params": [
     "dur"
    ],
+   "defaults": {
+    "dur": 10
+   },
    "variants": [
     {
-     "k": "dur=10",
-     "o": {
-      "dur": 10
-     },
+     "k": "",
+     "o": {},
      "tv": false,
      "sets": [
       {
@@ -11958,6 +11959,9 @@
    "params": [
     "dur"
    ],
+   "defaults": {
+    "dur": 1.5
+   },
    "variants": [
     {
      "k": "",
@@ -15502,8 +15506,8 @@
   "clavZombies": 16
  },
  "stats": {
-  "files": 948,
-  "bytes": 16508931,
-  "seconds": 572.322
+  "files": 108,
+  "bytes": 1866192,
+  "seconds": 59.649
  }
 }

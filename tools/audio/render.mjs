@@ -523,6 +523,7 @@ if (ONLY && fs.existsSync(prevIndexFile)) Object.assign(index, JSON.parse(fs.rea
 const t0 = performance.now();
 const ids = Object.keys(CUES).filter((id) => !ONLY || ONLY.has(id));
 const failures = [];
+let done = 0;
 
 if (!ARGS['no-sfx']) {
   for (const id of ids) {
@@ -578,7 +579,7 @@ if (!ARGS['no-sfx']) {
     }
     await pool(tasks);
     for (const ve of entry.variants) for (const s of ve.sets) s.f.sort((a, b) => a.f.localeCompare(b.f));
-    process.stdout.write(`\r[audio] ${Object.keys(index.cues).length}/${ids.length} ${id}                    `);
+    process.stdout.write(`\r[audio] ${++done}/${ids.length} ${id}                    `);
   }
   process.stdout.write('\n');
 }

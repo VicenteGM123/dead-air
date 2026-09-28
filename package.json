@@ -6,7 +6,8 @@
   "scripts": {
     "build": "node tools/build.mjs",
     "build:min": "node tools/build.mjs --min",
-    "watch": "node tools/build.mjs --watch"
+    "watch": "node tools/build.mjs --watch",
+    "audio": "node tools/audio/render.mjs"
   },
   "dependencies": {
     "@fontsource/bungee": "^5.3.0",

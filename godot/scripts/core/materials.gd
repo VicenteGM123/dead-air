@@ -445,7 +445,7 @@ func basic(color = "#ffffff", opts: Dictionary = {}) -> DAMaterial:
 		return mat
 	mat = _newMat("basic")
 	var bl = opts.get("blending")
-	var additive: bool = bl == AdditiveBlending or bl == "additive"
+	var additive: bool = (bl is String and (bl == "additive" or bl == "AdditiveBlending")) or ((bl is int or bl is float) and int(bl) == AdditiveBlending)
 	mat.variantKey = {"transparent": _t(opts.get("transparent")) or additive, "side": _side(_o(opts, "side", FrontSide)),
 		"depthWrite": _t(_o(opts, "depthWrite", true)), "additive": additive, "ext": ""}
 	_applyVariant(mat)

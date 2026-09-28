@@ -203,8 +203,10 @@ def write_index(built, variants, out_dir=PROPS_OUT):
         if os.path.exists(os.path.join(out_dir, v['key'] + '.glb')):
             idx.setdefault(v['id'], []).append({'key': v['key'], 'opts': v.get('opts') or {}})
     os.makedirs(out_dir, exist_ok=True)
-    with open(p, 'w', encoding='utf-8') as f:
+    tmp = '%s.%d.tmp' % (p, os.getpid())   # several builders may run at once: atomic replace
+    with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(idx, f, indent=1, ensure_ascii=False)
+    os.replace(tmp, p)
     return p
 
 

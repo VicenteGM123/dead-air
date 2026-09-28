@@ -43,32 +43,22 @@ uniform float uEmissiveIntensity = 1.0;
 // morph colour weights (= blend shape values of header.morphs[0..2]), set per instance by face.gd
 instance uniform vec3 uMorphW = vec3(0.0);
 
-varying float vAO;
-varying float vCav;
+// vertex -> fragment (packed: Godot allows few varyings)
+varying vec4 vAux;           // ao, cavity, pattern mode, |flow|^2
 varying flat float vMat;
-varying float vPMode;
 varying vec3 vPco;
 varying vec3 vPw;
 varying vec3 vRest;
-varying float vFl2;
 varying vec3 vColor;
 
-// fragment -> light
-varying vec3 vDiff;
-varying vec3 vSpecB;
-varying float vRough;
-varying vec3 vMsComp;
-varying vec3 vHemiK;
-varying float vFogKeep;
-varying float vAOi;
-varying float vWrap;
-varying float vSSS;
-varying float vAniso;
-varying float vSpec;
-varying float vSheen;
-varying float vSheenExp;
-varying vec3 vFlowV;
-varying vec3 vAlbedo;
+// fragment -> light (packed)
+varying vec4 vDiffR;         // diffuse contribution, roughness
+varying vec4 vSpecBF;        // specular colour (blended), fog keep factor
+varying vec4 vMsAO;          // multi-scattering compensation, AO (indirect)
+varying vec4 vHemiW;         // hemisphere (1 - ss - ms), wrap
+varying vec4 vFlowS;         // view-space hair flow, sss
+varying vec4 vAlbA;          // albedo, aniso
+varying vec4 vSpecSh;        // spec, sheen, sheenExp, -
 
 float daSrgbToLinear(float c) {
 	return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
@@ -84,7 +74,7 @@ vec4 daPattern(float layer, float scale, out float ok) {
 	if (layer < -0.5) return vec4(1.0, 1.0, 1.0, 0.5);
 	ok = 1.0;
 	vec3 p = vPco / scale;
-	if (vPMode > 0.5) return texture(uPatterns, vec3(p.xy, layer));
+	if (vAux.z > 0.5) return texture(uPatterns, vec3(p.xy, layer));
 	vec3 w = vPw / max(1e-4, vPw.x + vPw.y + vPw.z);
 	vec4 c = vec4(0.0);
 	if (w.x > 0.01) c += w.x * texture(uPatterns, vec3(p.zy, layer));
@@ -111,17 +101,17 @@ void vertex() {
 	if (uMorphW.y != 0.0) c += daUnpackDC(CUSTOM2.y) * uMorphW.y;
 	if (uMorphW.z != 0.0) c += daUnpackDC(CUSTOM2.z) * uMorphW.z;
 	vColor = c;
-	vAO = COLOR.a;
-	vCav = UV2.y;
+	vAux = vec4(COLOR.a, UV2.y, CUSTOM0.y, dot(CUSTOM1.yzw, CUSTOM1.yzw));
 	vMat = CUSTOM0.x;
-	vPMode = CUSTOM0.y;
 	vPco = vec3(UV.x, UV.y, UV2.x);
 	vPw = vec3(CUSTOM0.z, CUSTOM0.w, CUSTOM1.x);
 	vRest = CUSTOM3.xyz;
-	vFl2 = dot(CUSTOM1.yzw, CUSTOM1.yzw);
 }
 
 void fragment() {
+	float vAO = vAux.x;
+	float vCav = vAux.y;
+	float vFl2 = vAux.w;
 	float viewZ = -VERTEX.z;
 	bool full = daFullColor(CAMERA_VISIBLE_LAYERS);
 
@@ -240,28 +230,21 @@ void fragment() {
 
 	// fog (three linear fog, as an affine map shared with light())
 	float fogK = daFogF(viewZ, CAMERA_VISIBLE_LAYERS) * uFogK;
-	vFogKeep = 1.0 - fogK;
-	EMISSION = outgoing * vFogKeep + daFogColor * fogK;
+	float fogKeep = 1.0 - fogK;
+	EMISSION = outgoing * fogKeep + daFogColor * fogK;
 	if (uDebug == 1) EMISSION = vec3(vAO);
 	if (uDebug == 2) EMISSION = vec3(0.5 + vCav * 0.5);
 	if (uDebug == 3) EMISSION = N * 0.5 + 0.5;
 	if (uDebug == 4) EMISSION = vec3(clamp(dot(N, normalize(vec3(0.3, 0.8, 0.6))), 0.0, 1.0)) * 0.9 + 0.05;
-	if (uDebug > 0) vFogKeep = 0.0;
+	if (uDebug > 0) fogKeep = 0.0;
 
-	vDiff = diffC;
-	vSpecB = specB;
-	vRough = rough;
-	vMsComp = msComp;
-	vHemiK = 1.0 - ssD - msD;
-	vAOi = ao;
-	vWrap = daB.x;
-	vSSS = daB.y;
-	vAniso = daB.w;
-	vSpec = daC.x;
-	vSheen = daD.x;
-	vSheenExp = daD.y;
-	vFlowV = daFlowV;
-	vAlbedo = daAlbedo;
+	vDiffR = vec4(diffC, rough);
+	vSpecBF = vec4(specB, fogKeep);
+	vMsAO = vec4(msComp, ao);
+	vHemiW = vec4(1.0 - ssD - msD, daB.x);
+	vFlowS = vec4(daFlowV, daB.y);
+	vAlbA = vec4(daAlbedo, daB.w);
+	vSpecSh = vec4(daC.x, daD.x, daD.y, 0.0);
 
 	ALBEDO = vec3(0.0);
 	METALLIC = 0.0;
@@ -270,6 +253,21 @@ void fragment() {
 }
 
 void light() {
+	vec3 vDiff = vDiffR.rgb;
+	float vRough = vDiffR.a;
+	vec3 vSpecB = vSpecBF.rgb;
+	float vFogKeep = vSpecBF.a;
+	vec3 vMsComp = vMsAO.rgb;
+	float vAOi = vMsAO.a;
+	vec3 vHemiK = vHemiW.rgb;
+	float vWrap = vHemiW.a;
+	vec3 vFlowV = vFlowS.rgb;
+	float vSSS = vFlowS.a;
+	vec3 vAlbedo = vAlbA.rgb;
+	float vAniso = vAlbA.a;
+	float vSpec = vSpecSh.x;
+	float vSheen = vSpecSh.y;
+	float vSheenExp = vSpecSh.z;
 	vec3 c;
 	if (daIsHemi(SPECULAR_AMOUNT)) {
 		// hemisphere half: getHemisphereLightIrradiance -> RE_IndirectDiffuse_Physical (x AO)

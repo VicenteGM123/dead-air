@@ -257,7 +257,7 @@ func _updateAmbient(dt: float) -> void:
 	var powered := true
 	if game.machines != null:
 		var pw = game.machines.get("powerOn")
-		powered = pw == true or ((pw is int or pw is float) and pw != 0)
+		powered = (pw is bool and pw) or ((pw is int or pw is float) and pw != 0)
 	# Before Sign-On: the area's emergency-power ambient (layout ambientPre), else the post ambient x0.6.
 	var pre = area.get("ambientPre") if (not powered and area != null) else null
 	var amb = pre if pre else (area.get("ambient") if area != null and area.get("ambient") else DEFAULT_AMBIENT)
