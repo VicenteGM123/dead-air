@@ -81,7 +81,7 @@ var _warned := {}
 func _init(g) -> void:
 	game = g
 	var bars: Array = []
-	for h in Config.PAL.BARS:
+	for h in Config.BARS:
 		bars.append(Color(h))
 	# Pre-power defaults (GDD §3.3); machines/signon restore 1.0 / 0.0 at Sign-On (or power=1).
 	var Z := Projection(Vector4.ZERO, Vector4.ZERO, Vector4.ZERO, Vector4.ZERO)

@@ -234,7 +234,7 @@ static func _cull(side) -> String:
 		return ["cull_back", "cull_front", "cull_disabled"][clampi(int(side), 0, 2)]
 	return "cull_back"
 
-# attachMaterial(o): o = { color, rough, metal, map (Texture2D), mapRepeat, transparent, opacity, depthWrite, side,
+# attachMaterial(o): o = { color, rough, metal, map (Texture2D), mapWrap, mapFilter, flipY, transparent, opacity, depthWrite, side,
 #   envMap, envIntensity, emissive, emissiveIntensity, vertexColors, polygonOffset, physical, clearcoat,
 #   clearcoatRough, rimColor, rim, globals, wrap, sss, iblDiffuse, renderOrder }
 static func attachMaterial(o: Dictionary = {}) -> DAMaterial:
@@ -294,18 +294,20 @@ static func attachMaterial(o: Dictionary = {}) -> DAMaterial:
 static func _sideInt(side) -> int:
 	return {"cull_back": 0, "cull_front": 1, "cull_disabled": 2}.get(_cull(side), 0)
 
-# GLB textures: plain glTF UVs (no flipY), wrap from the glTF sampler.
+# The canvas texture of a GLB material: o.map (Texture2D), o.mapWrap ("repeat"|"clamp"), o.mapFilter
+# ("linear"|"nearest"), o.flipY (three's flipY: the PNG is stored top-down as drawn -> sample at (u, 1 - v)).
 static func _setMapTex(m: DAMaterial, o: Dictionary) -> void:
 	var tex = o.get("map")
 	if tex is Texture2D:
-		var rep := Rig.truthy(o.get("mapRepeat"))
-		m.mapWrap = "repeat" if rep else "clamp"
+		m.mapWrap = str(o.get("mapWrap")) if o.get("mapWrap") != null else "clamp"
+		m.mapFilter = str(o.get("mapFilter")) if o.get("mapFilter") != null else "linear"
 		var t: Texture2D = tex
-		t.set_meta("flipY", false)
+		t.set_meta("flipY", Rig.truthy(o.get("flipY")))
 		m.map = t
 
-# THREE.MeshBasicMaterial: o = { color ('#hex' | [r,g,b] linear), map (Texture2D), mapRepeat, transparent, opacity,
-#   depthWrite, side, vertexColors, name, renderOrder }. (toneMapped:false cannot be honoured per material.)
+# THREE.MeshBasicMaterial: o = { color ('#hex' | [r,g,b] linear), map (Texture2D), transparent, opacity,
+#   depthWrite, side, vertexColors, name, renderOrder, mapWrap, mapFilter, flipY }. (toneMapped:false cannot be honoured
+#   per material.)
 static func basicMaterial(o: Dictionary = {}) -> DAMaterial:
 	ensureGlobals()
 	var ko := {}
@@ -345,16 +347,22 @@ static func basicMaterial(o: Dictionary = {}) -> DAMaterial:
 # albedo texture is the JS canvas texture). ctx: { rimColor (builder default), envMap, renderOrder }.
 static func fromSpec(spec: Dictionary, imported: Material, ctx: Dictionary = {}) -> Material:
 	var o: Dictionary = (spec.get("opts", {}) as Dictionary).duplicate() if spec.get("opts") is Dictionary else {}
-	var tex: Texture2D = null
-	var rep := false
-	if imported is BaseMaterial3D:
-		tex = (imported as BaseMaterial3D).albedo_texture
-		rep = (imported as BaseMaterial3D).texture_repeat
-	if o.get("map") != null or spec.get("map") != null:
-		o.map = tex
-		o.mapRepeat = rep
-	else:
-		o.erase("map")
+	# the factory colour argument sits at the spec top level (FORMAT.md §5); opts.color wins (basic: linear floats)
+	if o.get("color") == null and spec.get("color") != null:
+		o.color = spec.color
+	o.erase("map")
+	if spec.get("map") != null or spec.get("mapFile") != null:
+		var tex: Texture2D = null
+		var f = spec.get("mapFile")
+		if f is String and f != "" and ResourceLoader.exists(f):
+			tex = load(f)
+		if tex == null and imported is BaseMaterial3D:
+			tex = (imported as BaseMaterial3D).albedo_texture
+		if tex != null:
+			o.map = tex
+			o.mapWrap = spec.get("mapWrap", "clamp")
+			o.mapFilter = spec.get("mapFilter", "linear")
+			o.flipY = spec.get("flipY", false)
 	if ctx.has("renderOrder"):
 		o.renderOrder = ctx.renderOrder
 	if spec.get("kind") == "basic":

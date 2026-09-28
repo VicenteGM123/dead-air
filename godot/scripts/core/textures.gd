@@ -129,7 +129,7 @@ static func stripes(colors: Array, vertical := true, count := -1) -> Texture2D:
 static func colorBars() -> Texture2D:
 	return _cached("colorBars", 256, 192, func(ctx, _c, _r):
 		var P := Config.PAL
-		var bars: Array = P.BARS
+		var bars: Array = Config.BARS
 		var w := 256.0 / 7.0
 		for i in bars.size():
 			ctx.fillStyle = bars[i]

@@ -1168,16 +1168,8 @@ func _dropWhistle() -> void:
 	var neck = _f(_f(hero, "slots"), "neck")
 	if not (neck is Node3D):
 		return
-	var grp: Node3D = null
-	var path := "res://assets/runtime/sponsors/whistle.glb"
-	if ResourceLoader.exists(path):
-		var ps = load(path)
-		if ps is PackedScene:
-			grp = ps.instantiate()
-			var S = load("res://scripts/game/sponsors.gd")
-			S._convertRuntime(g, grp)
+	var grp: Node3D = load("res://scripts/game/sponsors.gd").loadRuntimeAsset(g, "res://assets/runtime/sponsors/whistle.glb")
 	if grp == null:
-		push_warning("[perks] missing runtime asset " + path)
 		return
 	grp.rotation_order = EULER_ORDER_XYZ
 	grp.position = _wpos(neck) + Vector3(0, -0.15, 0)

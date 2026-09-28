@@ -328,9 +328,15 @@ static func fitSet(anchor: Dictionary) -> Dictionary:
 	return best
 
 # ------------------------------------------------------------------------------------------ gag props
-# The gag props are Blender assets (blender/runtime/sponsors.py). Loads one and converts its material specs.
+# The gag props are Blender assets (blender/runtime/sponsors.py). Loads one through the prop library's runtime loader
+# (props.loadRuntime: material specs, userData, node flags), or converts it here when that loader is missing.
 func _loadRuntime(name: String) -> Node3D:
-	var path := RUNTIME_DIR + name + ".glb"
+	return loadRuntimeAsset(game, RUNTIME_DIR + name + ".glb")
+
+static func loadRuntimeAsset(g, path: String) -> Node3D:
+	if g != null and g.props != null and g.props.has_method("loadRuntime"):
+		var r = g.props.loadRuntime(path)
+		return r if r is Node3D else null
 	if not ResourceLoader.exists(path):
 		push_warning("[sponsors] missing runtime asset " + path)
 		return null
@@ -338,7 +344,7 @@ func _loadRuntime(name: String) -> Node3D:
 	if ps == null or not (ps is PackedScene):
 		return null
 	var root: Node3D = ps.instantiate()
-	_convertRuntime(game, root)
+	_convertRuntime(g, root)
 	return root
 
 # Node "da" extras -> userData, material "da" specs -> game.mats.fromSpec (what props.gd does for props).
