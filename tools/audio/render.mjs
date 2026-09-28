@@ -689,11 +689,17 @@ if (!ARGS['no-music'] && (!ONLY || ONLY.has('music'))) {
 }
 
 // ------------------------------------------------------------------------------------------------ index
-index.stats = { files: written.length, bytes: totalBytes, seconds: r3((performance.now() - t0) / 1000) };
-fs.writeFileSync(prevIndexFile, JSON.stringify(index, (k, v) => (v === undefined ? undefined : v), 1));
-let dirBytes = 0;
-const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (!e.name.endsWith('.import')) dirBytes += fs.statSync(p).size; } };
+let dirBytes = 0, dirFiles = 0;
+const walk = (d) => {
+  for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+    const p = path.join(d, e.name);
+    if (e.isDirectory()) walk(p);
+    else if (e.name.endsWith('.' + EXT)) { dirBytes += fs.statSync(p).size; dirFiles++; }
+  }
+};
 walk(OUT);
+index.stats = { files: dirFiles, bytes: dirBytes, lastRun: { files: written.length, bytes: totalBytes, seconds: r3((performance.now() - t0) / 1000) } };
+fs.writeFileSync(prevIndexFile, JSON.stringify(index, (k, v) => (v === undefined ? undefined : v), 1));
 console.log(`[audio] ${written.length} files, ${(totalBytes / 1048576).toFixed(1)} MB written this run, `
   + `${(dirBytes / 1048576).toFixed(1)} MB in godot/assets/audio, ${index.stats.seconds} s`);
 if (failures.length) { console.warn('[audio] failures:\n  ' + failures.join('\n  ')); process.exitCode = 1; }

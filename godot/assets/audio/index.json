@@ -15506,8 +15506,12 @@
   "clavZombies": 16
  },
  "stats": {
-  "files": 108,
-  "bytes": 1866192,
-  "seconds": 59.649
+  "files": 944,
+  "bytes": 16407563,
+  "lastRun": {
+   "files": 2,
+   "bytes": 8016,
+   "seconds": 0.313
+  }
  }
 }
