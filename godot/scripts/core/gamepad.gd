@@ -49,42 +49,56 @@ const TRIGGER_AXIS := {6: JOY_AXIS_TRIGGER_LEFT, 7: JOY_AXIS_TRIGGER_RIGHT}
 # Radial deadzone with rescaling: direction kept, magnitude remapped from [dz, 1 - outer] to [0, 1]. `out` is a
 # Dictionary {x, y, m} (reference type: filled in place, like the JS out object) and returned.
 static func radial(x: float, y: float, dz: float, out: Dictionary) -> Dictionary:
-	var m := sqrt(x * x + y * y)
-	if not (m > dz):
-		out.x = 0.0
-		out.y = 0.0
-		out.m = 0.0
+	return U.radial(x, y, dz, out)
+
+# Small shared helpers (inner classes cannot call the outer script's static functions unqualified).
+class U:
+	static func radial(x: float, y: float, dz: float, out: Dictionary) -> Dictionary:
+		var m := sqrt(x * x + y * y)
+		if not (m > dz):
+			out.x = 0.0
+			out.y = 0.0
+			out.m = 0.0
+			return out
+		var r := minf(1.0, (m - dz) / (1.0 - dz - DZ_OUTER))
+		out.x = (x / m) * r
+		out.y = (y / m) * r
+		out.m = r
 		return out
-	var r := minf(1.0, (m - dz) / (1.0 - dz - DZ_OUTER))
-	out.x = (x / m) * r
-	out.y = (y / m) * r
-	out.m = r
-	return out
 
-# Number.isFinite(v) ? v : 0
-static func num(v) -> float:
-	if v is float or v is int:
+	# Number.isFinite(v) ? v : 0
+	static func num(v) -> float:
+		if v is float or v is int:
+			var f := float(v)
+			return f if is_finite(f) else 0.0
+		return 0.0
+
+	# JS truthiness (!!v)
+	static func truthy(v) -> bool:
+		if v == null:
+			return false
+		if v is bool:
+			return v
+		if v is int or v is float:
+			return v != 0 and not is_nan(float(v))
+		if v is String or v is StringName:
+			return v != ""
+		return true
+
+	# JS `v || d` for numbers (0 / NaN / null / missing -> d).
+	static func orf(v, d: float) -> float:
+		if v == null or not (v is float or v is int):
+			return d
 		var f := float(v)
-		return f if is_finite(f) else 0.0
-	return 0.0
+		return d if f == 0.0 or is_nan(f) else f
 
-static func _truthy(v) -> bool:
-	if v == null:
-		return false
-	if v is bool:
-		return v
-	if v is int or v is float:
-		return v != 0 and not is_nan(float(v))
-	if v is String or v is StringName:
-		return v != ""
-	return true
-
-# JS `a || b` for numbers (0 / null / missing -> b).
-static func _or(v, d: float) -> float:
-	if v == null:
-		return d
-	var f := float(v)
-	return d if f == 0.0 or is_nan(f) else f
+	# o.k for a Dictionary or an Object (null when missing).
+	static func g(o, k: String):
+		if o is Dictionary:
+			return o.get(k)
+		if o is Object:
+			return o.get(k)
+		return null
 
 
 # The vibration actuator of one Godot joypad (the web GamepadHapticActuator 'dual-rumble' effect).
@@ -164,7 +178,7 @@ class Gamepad extends RefCounted:
 		return out
 
 	static func _ok(p) -> bool:
-		return p is Dictionary and _truthy(p.get("connected")) and p.get("mapping") == "standard"
+		return p is Dictionary and U.truthy(p.get("connected")) and p.get("mapping") == "standard"
 
 	# The pad in use while it stays connected, else the first connected 'standard' pad.
 	func _pick(list: Array):
@@ -198,11 +212,11 @@ class Gamepad extends RefCounted:
 			return
 		index = int(gp.get("index", 0))
 		var gid = gp.get("id")
-		id = str(gid) if _truthy(gid) else "gamepad"
+		id = str(gid) if U.truthy(gid) else "gamepad"
 		var ax: Array = gp.get("axes", []) if gp.get("axes") is Array else []
 		# standard mapping: axes 0/1 left stick, 2/3 right stick, +y = down -> flip to up-positive
-		Gamepad.radial_(num(ax[0] if ax.size() > 0 else 0.0), -num(ax[1] if ax.size() > 1 else 0.0), DZ_MOVE, ls)
-		Gamepad.radial_(num(ax[2] if ax.size() > 2 else 0.0), -num(ax[3] if ax.size() > 3 else 0.0), DZ_LOOK, rs)
+		U.radial(U.num(ax[0] if ax.size() > 0 else 0.0), -U.num(ax[1] if ax.size() > 1 else 0.0), DZ_MOVE, ls)
+		U.radial(U.num(ax[2] if ax.size() > 2 else 0.0), -U.num(ax[3] if ax.size() > 3 else 0.0), DZ_LOOK, rs)
 		var bs: Array = gp.get("buttons", []) if gp.get("buttons") is Array else []
 		var act: bool = ls.m > ACTIVE_STICK or rs.m > ACTIVE_STICK
 		for i in NBTN:
@@ -212,10 +226,10 @@ class Gamepad extends RefCounted:
 			var down := false
 			if raw != null:
 				if raw is Dictionary:
-					value = num(raw.get("value"))
-					down = _truthy(raw.get("pressed"))
+					value = U.num(raw.get("value"))
+					down = U.truthy(raw.get("pressed"))
 				else:
-					value = num(raw)
+					value = U.num(raw)
 					down = value > 0.5
 			if i == BTN.LT or i == BTN.RT:
 				down = value > TRIG_ON or (b.down and value > TRIG_OFF) or (down and value == 0.0)
@@ -226,37 +240,6 @@ class Gamepad extends RefCounted:
 			if b.pressed and i != BTN.HOME:
 				act = true
 		active = act
-
-	# radial() of the file (inner classes cannot call the outer script's static functions unqualified).
-	static func radial_(x: float, y: float, dz: float, out: Dictionary) -> Dictionary:
-		var m := sqrt(x * x + y * y)
-		if not (m > dz):
-			out.x = 0.0
-			out.y = 0.0
-			out.m = 0.0
-			return out
-		var r := minf(1.0, (m - dz) / (1.0 - dz - DZ_OUTER))
-		out.x = (x / m) * r
-		out.y = (y / m) * r
-		out.m = r
-		return out
-
-	static func num(v) -> float:
-		if v is float or v is int:
-			var f := float(v)
-			return f if is_finite(f) else 0.0
-		return 0.0
-
-	static func _truthy(v) -> bool:
-		if v == null:
-			return false
-		if v is bool:
-			return v
-		if v is int or v is float:
-			return v != 0 and not is_nan(float(v))
-		if v is String or v is StringName:
-			return v != ""
-		return true
 
 	func down(i: int) -> bool:
 		return btn[i].down
@@ -346,65 +329,39 @@ class AimAssist extends RefCounted:
 	func _init(g) -> void:
 		game = g
 
-	static func _truthy(v) -> bool:
-		if v == null:
-			return false
-		if v is bool:
-			return v
-		if v is int or v is float:
-			return v != 0 and not is_nan(float(v))
-		if v is String or v is StringName:
-			return v != ""
-		return true
-
-	static func _or(v, d: float) -> float:
-		if v == null:
-			return d
-		var f := float(v)
-		return d if f == 0.0 or is_nan(f) else f
-
-	static func _g(o, k: String):
-		if o == null:
-			return null
-		if o is Dictionary:
-			return o.get(k)
-		if o is Object:
-			return o.get(k)
-		return null
-
 	func _onTarget(hit) -> bool:
 		if hit == null:
 			return false
-		var kind = _g(hit, "kind")
+		var kind = U.g(hit, "kind")
 		if kind == "zombie":
-			var z = _g(hit, "z")
-			return z != null and not _truthy(_g(z, "dead"))
-		var entry = _g(hit, "entry")
-		return kind == "shootable" and entry != null and _g(entry, "id") == "boss_baron"
+			var z = U.g(hit, "z")
+			return z != null and not U.truthy(U.g(z, "dead"))
+		var entry = U.g(hit, "entry")
+		return kind == "shootable" and entry != null and U.g(entry, "id") == "boss_baron"
 
 	func friction() -> float:
 		var g = game
 		var W = g.weapons
 		var p = g.player
 		var Z = g.zombies
-		if W == null or p == null or _g(W, "aimDir") == null:
+		if W == null or p == null or U.g(W, "aimDir") == null:
 			return 1.0
-		if _onTarget(_g(W, "aimHit")) and float(_or(_g(W, "aimDist"), 0.0)) < BUBBLE_RANGE + 8.0:
-			return FRICTION_ON_ADS if _truthy(p.ads) else FRICTION_ON
-		var list = _g(Z, "alive")
-		if list == null or list.is_empty() or _g(W, "aimOrigin") == null:
+		if _onTarget(U.g(W, "aimHit")) and float(U.orf(U.g(W, "aimDist"), 0.0)) < BUBBLE_RANGE + 8.0:
+			return FRICTION_ON_ADS if U.truthy(p.ads) else FRICTION_ON
+		var list = U.g(Z, "alive")
+		if list == null or list.is_empty() or U.g(W, "aimOrigin") == null:
 			return 1.0
 		var o: Vector3 = W.aimOrigin
 		var d: Vector3 = W.aimDir
 		var best := 1.0
 		for i in list.size():
 			var z = list[i]
-			if z == null or _truthy(_g(z, "dead")) or _g(z, "pos") == null:
+			if z == null or U.truthy(U.g(z, "dead")) or U.g(z, "pos") == null:
 				continue
 			var zp: Vector3 = z.pos
-			var sc := _or(_g(z, "scale"), 1.0)
+			var sc := U.orf(U.g(z, "scale"), 1.0)
 			var lo := zp.y + 0.2
-			var hi := zp.y + _or(_g(z, "height"), 1.6) * sc
+			var hi := zp.y + U.orf(U.g(z, "height"), 1.6) * sc
 			var cy := (lo + hi) * 0.5
 			var t := (zp.x - o.x) * d.x + (cy - o.y) * d.y + (zp.z - o.z) * d.z
 			if t < 1.0 or t > BUBBLE_RANGE:
@@ -412,7 +369,7 @@ class AimAssist extends RefCounted:
 			var px := o.x + d.x * t
 			var py := o.y + d.y * t
 			var pz := o.z + d.z * t
-			var hd := maxf(0.0, Vector2(px - zp.x, pz - zp.z).length() - _or(_g(z, "radius"), 0.36) * sc)
+			var hd := maxf(0.0, Vector2(px - zp.x, pz - zp.z).length() - U.orf(U.g(z, "radius"), 0.36) * sc)
 			var vd := lo - py if py < lo else (py - hi if py > hi else 0.0)
 			var dist := Vector2(hd, vd).length()
 			var bubble := 0.4 + t * 0.012
@@ -425,7 +382,7 @@ class AimAssist extends RefCounted:
 		var W = g.weapons
 		var p = g.player
 		var Z = g.zombies
-		var list = _g(Z, "alive")
+		var list = U.g(Z, "alive")
 		if W == null or p == null or list == null or list.is_empty() or g.camera == null:
 			return null
 		var cam: Camera3D = g.camera
@@ -438,11 +395,11 @@ class AimAssist extends RefCounted:
 		var bestDist := 0.0
 		for i in list.size():
 			var z = list[i]
-			if z == null or _truthy(_g(z, "dead")) or _g(z, "pos") == null:
+			if z == null or U.truthy(U.g(z, "dead")) or U.g(z, "pos") == null:
 				continue
 			var zp: Vector3 = z.pos
-			var sc := _or(_g(z, "scale"), 1.0)
-			var _v := Vector3(zp.x, zp.y + _or(_g(z, "height"), 1.6) * sc * 0.66, zp.z) - _o
+			var sc := U.orf(U.g(z, "scale"), 1.0)
+			var _v := Vector3(zp.x, zp.y + U.orf(U.g(z, "height"), 1.6) * sc * 0.66, zp.z) - _o
 			var dist := _v.length()
 			if dist < 1.5 or dist > SNAP_RANGE:
 				continue
@@ -455,19 +412,19 @@ class AimAssist extends RefCounted:
 			return null
 		# line of sight to the chest, else the upper chest (a zombie behind a counter): the first thing along the ray
 		# must be that zombie
-		var bsc := _or(_g(best, "scale"), 1.0)
+		var bsc := U.orf(U.g(best, "scale"), 1.0)
 		var bp: Vector3 = best.pos
 		var ok := false
 		var dist2 := bestDist
 		var v := Vector3.ZERO
 		for k in SNAP_HEIGHTS:
-			v = Vector3(bp.x, bp.y + _or(_g(best, "height"), 1.6) * bsc * float(k), bp.z) - _o
+			v = Vector3(bp.x, bp.y + U.orf(U.g(best, "height"), 1.6) * bsc * float(k), bp.z) - _o
 			dist2 = v.length()
 			if not (W is Object and W.has_method("traceRay")):
 				ok = true
 				break
 			var hit = W.traceRay(_o, v / dist2, dist2 + 0.6, {"zombies": true, "shootables": false, "level": true, "blockingOnly": true})
-			if hit != null and _g(hit, "kind") == "zombie" and is_same(_g(hit, "z"), best):
+			if hit != null and U.g(hit, "kind") == "zombie" and is_same(U.g(hit, "z"), best):
 				ok = true
 				break
 		if not ok:

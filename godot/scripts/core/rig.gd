@@ -198,6 +198,11 @@ static func _makePoses() -> Dictionary:
 static func registerPose(name: String, joints: Dictionary) -> void:
 	POSES[name] = joints
 
+# rig.js shares ONE module-level THREE.Euler (_e) between _applyPoses (`_e.set(x, y, z)`, which keeps the Euler's
+# current order) and _alignHand (`_e.set(pitch, yaw, roll, 'YXZ')`). So once any animator has aligned a hand, every
+# later named pose (all animators) is read as 'YXZ'. Reproduced as is (same poses as the web build).
+static var _eOrder := "XYZ"
+
 
 # ------------------------------------------------------------------------------------------------ three.js math
 # Quaternion.setFromEuler for order 'XYZ' (three's default) and 'YXZ'.
@@ -647,7 +652,7 @@ class Animator extends RefCounted:
 				if obj == null:
 					continue
 				var r: Array = pose[jn]
-				var q := Rig.quatXYZ(r[0], r[1], r[2])
+				var q := Rig.quatXYZ(r[0], r[1], r[2]) if Rig._eOrder == "XYZ" else Rig.quatYXZ(r[0], r[1], r[2])
 				obj.quaternion = Rig.slerp(Rig.quatOf(obj), q, minf(1.0, weight))
 
 	# Orient handR so the held weapon points exactly along the aim (whatever the arm pose).
@@ -658,6 +663,7 @@ class Animator extends RefCounted:
 		# World quaternion of handR's parent (elbowR) through the joint chain.
 		var q2 := rq * Rig.quatOf(J.hips) * Rig.quatOf(J.spine) * Rig.quatOf(J.chest) * Rig.quatOf(J.shoulderR) * Rig.quatOf(J.elbowR)
 		# Target: body yaw (root) + aim yaw, view pitch, with a reload roll.
+		Rig._eOrder = "YXZ"
 		var q := rq * Rig.quatYXZ(pitch, yaw, -reloadArc * 0.7)
 		var target := Rig._conj(q2) * q
 		J.handR.quaternion = Rig.slerp(Rig.quatOf(J.handR), target, aimW)
