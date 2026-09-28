@@ -60,7 +60,8 @@ var _px := PackedFloat32Array()   # CPU pixels, premultiplied RGBA float
 var _cpuTex: ImageTexture = null
 var _cpuDirty := false
 
-var _ver = null              # DACanvasGPU.RT: latest content version
+var _ver = null              # DACanvasGPU.RT: latest content version (premultiplied colour)
+var _disp = null             # DACanvasGPU.RT: straight-alpha copy of _ver (transparent canvases)
 var _baked: ImageTexture = null
 var _hasContent := false
 var _proxy := RID()
@@ -100,6 +101,9 @@ func _resize(w: int, h: int) -> void:
 	if _ver != null:
 		DACanvasGPU.retire(_ver)
 		_ver = null
+	if _disp != null:
+		DACanvasGPU.retire(_disp)
+		_disp = null
 	_baked = null
 	_hasContent = false
 	if _cpu:
@@ -151,10 +155,31 @@ func _currentTexRid() -> RID:
 	if _cpu:
 		return _cpuTexture().get_rid()
 	if _ver != null:
+		if not opaque and _disp != null and _disp.state != 0:
+			return _disp.tex
 		return _ver.tex
 	if _baked != null:
 		return _baked.get_rid()
 	return DACanvasGPU.blank(_w, _h).get_rid()
+
+# Called at frame_pre_draw for dirty canvases: (re)records the straight-alpha display copy of a transparent canvas.
+func _prepareDisplay() -> void:
+	if _cpu or opaque or _ver == null or _ver.state != 1 or not _ver.hasContent:
+		return
+	var old = _disp
+	_disp = DACanvasGPU.display(_ver, _disp)
+	_disp.owner = weakref(self)
+	DACanvasGPU.trackVersion(_disp)
+	if old != null and old != _disp:
+		DACanvasGPU.retire(old)
+
+# RT holding the displayed (straight alpha) pixels of the current version.
+func _shownRT():
+	if _ver == null:
+		return null
+	if not opaque and _disp != null and _disp.state != 0:
+		return _disp
+	return _ver
 
 func _updateProxy() -> void:
 	if not _proxy.is_valid():
@@ -179,7 +204,8 @@ func _bakeStep(frame: int) -> bool:
 		return true
 	if _ver == null:
 		return true
-	if _ver.state != 3:
+	var shown = _shownRT()
+	if _ver.state != 3 or shown.state != 3:
 		return false
 	if bakeMode == "never":
 		return true
@@ -189,7 +215,7 @@ func _bakeStep(frame: int) -> bool:
 	return true
 
 func _bake() -> void:
-	var img := RenderingServer.texture_2d_get(_ver.tex)
+	var img := RenderingServer.texture_2d_get(_shownRT().tex)
 	if img == null:
 		return
 	if mipmaps:
@@ -200,13 +226,14 @@ func _bake() -> void:
 		_baked = ImageTexture.create_from_image(img)
 		_baked.set_meta("mips", mipmaps)
 	var old = _ver
+	var oldD = _disp
 	_ver = null
+	_disp = null
 	_updateProxy()
 	DACanvasGPU.release(old)
+	if oldD != null:
+		DACanvasGPU.release(oldD)
 	DACanvasGPU.stats.baked += 1
-
-func _needsFixup(rt) -> bool:
-	return not opaque and rt.hasContent
 
 # Recording RT for new drawing. fullClear = the op replaces the whole canvas content.
 func _target(fullClear: bool):
@@ -228,7 +255,7 @@ func _target(fullClear: bool):
 		if needBlit:
 			if v != null:
 				DACanvasGPU.addDep(rt, v)
-				DACanvasGPU.addCopy(rt, Rect2(0, 0, _w, _h), v.tex, Rect2(0, 0, _w, _h), RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_NEAREST)
+				DACanvasGPU.addCopy(rt, Rect2(0, 0, _w, _h), v.tex, Rect2(0, 0, _w, _h), RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_NEAREST, true)
 			elif _baked != null:
 				rt.keep.append(_baked)
 				DACanvasGPU.addCopy(rt, Rect2(0, 0, _w, _h), _baked.get_rid(), Rect2(0, 0, _w, _h), RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_NEAREST)
@@ -252,7 +279,7 @@ func _source(reader) -> Array:
 			_ver.readFrame = DACanvasGPU.frame
 			if _ver.state == 1:
 				_ver.sealed = true
-		return [_ver.tex, false, _ver, self, _w, _h]
+		return [_ver.tex, true, _ver, self, _w, _h]
 	if _baked != null:
 		return [_baked.get_rid(), false, null, _baked, _w, _h]
 	return [DACanvasGPU.blank(_w, _h).get_rid(), false, null, null, _w, _h]
@@ -264,10 +291,10 @@ func toImage() -> Image:
 	if _cpu:
 		return _cpuImage()
 	if _ver != null:
-		if _ver.state != 3:
+		if _ver.state != 3 or _shownRT().state != 3:
 			DACanvasGPU.drawNow()
-		if _ver != null and _ver.state == 3:
-			var img := RenderingServer.texture_2d_get(_ver.tex)
+		if _ver != null and _ver.state == 3 and _shownRT().state == 3:
+			var img := RenderingServer.texture_2d_get(_shownRT().tex)
 			if img != null:
 				if img.get_format() != Image.FORMAT_RGBA8:
 					img.convert(Image.FORMAT_RGBA8)
@@ -1400,41 +1427,94 @@ func _coversCanvas(P: PackedVector2Array, I: PackedInt32Array, box: Rect2) -> bo
 	return true
 
 # Writes triangles into rt with the right blend path.
-func _emit(rt, P: PackedVector2Array, I: PackedInt32Array, paint: Paint, alpha: float, op: int, clip: Clip, overlap: bool, box: Rect2) -> void:
-	if paint.dep != null:
-		DACanvasGPU.addDep(rt, paint.dep)
-	if paint.keep != null:
-		rt.keep.append(paint.keep)
+# Writes triangles with the right blend path. layer = rt is an aux layer: union semantics (blend disabled), no
+# clip / composite op. Otherwise rt is ignored and the canvas' current version is used (an op may fork it).
+func _emit(rt, P: PackedVector2Array, I: PackedInt32Array, paint: Paint, alpha: float, op: int, clip: Clip, overlap: bool, box: Rect2, layer: bool = false) -> void:
+	if not layer:
+		rt = _target(false)
+	var filt := RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_LINEAR if paint.smooth else RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_NEAREST
+	if paint.kind == 5 or paint.kind == 6:
+		filt = RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_LINEAR
+	var uv := PackedVector2Array()
+	if paint.kind != 0:
+		uv = paint.xf * P
+	var col := paint.color
+	if paint.kind == 0 or paint.kind == 6:
+		col.a *= alpha
+	else:
+		col = Color(1, 1, 1, alpha)
+	if layer:
+		_submit(rt, P, I, paint, col, uv, "layer", null, 0, filt, null)
+		return
 	var opaqueSafe := paint.opaque and alpha >= 1.0 and (op == 0 or op == 6)
-	var variant := "iso"
+	var variant := ""
 	if op == 0 and (opaqueSafe or not overlap):
 		variant = "direct"
 	elif op == 8 and not overlap:
 		variant = "add"
 	elif op == 6 and (opaqueSafe or not overlap):
 		variant = "mul"
-	var filt := RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_LINEAR if paint.smooth else RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_NEAREST
-	var uv := PackedVector2Array()
-	if paint.kind != 0:
-		uv = paint.xf * P
-	var col := paint.color
-	if paint.kind == 0:
-		col.a *= alpha
-	elif paint.kind == 6:
-		col = paint.color
-		col.a *= alpha
-	else:
-		col = Color(1, 1, 1, alpha)
-	var mask = clip.maskRT(_w, _h) if clip != null else null
-	var simpleTex := paint.kind == 1 and not paint.premul and paint.cm == null
-	var simplePat := paint.kind == 4 and paint.rep == 3 and not paint.premul and paint.cm == null
-	if variant == "direct" and clip == null and (paint.kind == 0 or simpleTex or simplePat):
-		var rep := RenderingServer.CANVAS_ITEM_TEXTURE_REPEAT_ENABLED if simplePat else 0
-		DACanvasGPU.addDefault(rt, P, I, col, paint.tex if paint.kind != 0 else RID(), uv, filt if paint.kind != 0 else 0, rep)
+	if variant != "":
+		var simpleTex := paint.kind == 1 and not paint.premul and paint.cm == null
+		var simplePat := paint.kind == 4 and paint.rep == 3 and not paint.premul and paint.cm == null
+		if variant == "direct" and clip == null and (paint.kind == 0 or simpleTex or simplePat):
+			if paint.dep != null:
+				DACanvasGPU.addDep(rt, paint.dep)
+			if paint.keep != null:
+				rt.keep.append(paint.keep)
+			var rep := RenderingServer.CANVAS_ITEM_TEXTURE_REPEAT_ENABLED if simplePat else 0
+			DACanvasGPU.addDefault(rt, P, I, col, paint.tex if paint.kind != 0 else RID(), uv, filt if paint.kind != 0 else 0, rep)
+			return
+		_submit(rt, P, I, paint, col, uv, variant, clip, op, filt, null)
 		return
+	# overlapping transparent geometry and dst-reading ops: draw the op into a layer first (union), then one quad
+	var src := paint
+	var Q := P
+	var QI := I
+	var qbox := box
+	var qcol := col
+	if paint.kind != 5 or overlap:
+		var lr := box.grow(1.0).intersection(Rect2(0, 0, _w, _h))
+		if lr.size.x <= 0.0 or lr.size.y <= 0.0:
+			return
+		var Li := Rect2i(Vector2i(int(floor(lr.position.x)), int(floor(lr.position.y))), Vector2i.ZERO)
+		Li.size = (Vector2i(int(ceil(lr.end.x)), int(ceil(lr.end.y))) - Li.position).clamp(Vector2i.ONE, Vector2i(4096, 4096))
+		var lay = DACanvasGPU.newRT(Li.size.x, Li.size.y, DACanvasGPU.MSAA, true, Vector2(Li.position))
+		DACanvasGPU.retire(lay)
+		_emit(lay, P, I, paint, alpha, 0, null, true, box, true)
+		DACanvasGPU.flush(lay)
+		var r := Rect2(Li.position, Li.size)
+		src = Paint.new()
+		src.kind = 5
+		src.tex = lay.tex
+		src.dep = lay
+		src.xf = Transform2D(Vector2(1.0 / r.size.x, 0), Vector2(0, 1.0 / r.size.y), -r.position / r.size)
+		Q = PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)])
+		QI = PackedInt32Array([0, 1, 2, 0, 2, 3])
+		qbox = r
+		qcol = Color(1, 1, 1, 1)
+	var quv: PackedVector2Array = src.xf * Q
+	if op == 0 or op == 6 or op == 8:
+		_submit(rt, Q, QI, src, qcol, quv, "direct" if op == 0 else ("mul" if op == 6 else "add"), clip, op, RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_LINEAR, null)
+		return
+	# composite op reading the destination: fork the canvas version (blit), sample the previous one as dst
+	var dstRT = rt
+	DACanvasGPU.flush(dstRT)
+	dstRT.sealed = true
+	dstRT.readFrame = DACanvasGPU.frame
+	var rt2 = _target(false)
+	_submit(rt2, Q, QI, src, qcol, quv, "comp", clip, op, RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_LINEAR, dstRT)
+
+func _submit(rt, P: PackedVector2Array, I: PackedInt32Array, paint: Paint, col: Color, uv: PackedVector2Array, variant: String, clip: Clip, op: int, filt: int, dst) -> void:
+	if paint.dep != null:
+		DACanvasGPU.addDep(rt, paint.dep)
+	if paint.keep != null:
+		rt.keep.append(paint.keep)
+	if dst != null:
+		DACanvasGPU.addDep(rt, dst)
+	var mask = clip.maskRT(_w, _h) if clip != null else null
 	if mask != null:
 		DACanvasGPU.addDep(rt, mask)
-	var mat := DACanvasGPU.paintMaterial(variant, mask)
 	var params := {
 		"pk": Vector4(paint.kind, 1.0 if paint.premul else 0.0, op, paint.rep),
 		"pa": paint.a, "pb": paint.b,
@@ -1445,14 +1525,8 @@ func _emit(rt, P: PackedVector2Array, I: PackedInt32Array, paint: Paint, alpha: 
 		params["m0"] = cm[0]; params["m1"] = cm[1]; params["m2"] = cm[2]; params["m3"] = cm[3]; params["mo"] = cm[4]
 	else:
 		params["m0"] = Vector4(1, 0, 0, 0); params["m1"] = Vector4(0, 1, 0, 0); params["m2"] = Vector4(0, 0, 1, 0); params["m3"] = Vector4(0, 0, 0, 1); params["mo"] = Vector4.ZERO
-	var copyRect = null
-	if variant == "iso":
-		var cb := box.grow(2.0).intersection(Rect2(rt.origin, Vector2(rt.w, rt.h)))
-		if cb.size.x <= 0.0 or cb.size.y <= 0.0:
-			return
-		copyRect = cb
 	var rep2 := RenderingServer.CANVAS_ITEM_TEXTURE_REPEAT_ENABLED if paint.kind == 4 else 0
-	DACanvasGPU.addMaterial(rt, P, I, col, paint.tex if paint.kind != 0 else RID(), uv, mat, params, filt if paint.kind != 0 else 0, rep2, copyRect)
+	DACanvasGPU.addMaterial(rt, P, I, col, paint.tex if paint.kind != 0 else RID(), uv, variant, mask, params, filt if paint.kind != 0 else 0, rep2, dst)
 
 # Shadow / filter blur / non-local composite through an offscreen layer.
 func _gpuLayered(rt, st: St, P: PackedVector2Array, I: PackedInt32Array, paint: Paint, overlap: bool, box: Rect2) -> void:
@@ -1470,7 +1544,7 @@ func _gpuLayered(rt, st: St, P: PackedVector2Array, I: PackedInt32Array, paint: 
 	Li.size = Li.size.clamp(Vector2i.ONE, Vector2i(4096, 4096))
 	var layer = DACanvasGPU.newRT(Li.size.x, Li.size.y, DACanvasGPU.MSAA, true, Vector2(Li.position))
 	DACanvasGPU.retire(layer)
-	_emit(layer, P, I, paint, st.globalAlpha, 0, null, overlap, box)
+	_emit(layer, P, I, paint, st.globalAlpha, 0, null, overlap, box, true)
 	DACanvasGPU.flush(layer)
 	var lr := Rect2(Li.position, Li.size)
 	var quadOf := func(r: Rect2) -> PackedVector2Array:
@@ -1489,11 +1563,8 @@ func _gpuLayered(rt, st: St, P: PackedVector2Array, I: PackedInt32Array, paint: 
 		sr.position += off
 		sp.xf = Transform2D(Vector2(1.0 / sr.size.x, 0), Vector2(0, 1.0 / sr.size.y), -sr.position / sr.size)
 		var sq: PackedVector2Array = quadOf.call(sr)
-		_emit(rt, sq, QI, sp, 1.0, st.op, st.clip, false, sr)
+		_emit(null, sq, QI, sp, 1.0, st.op, st.clip, false, sr)
 	var nonlocal := DACanvasGPU.NONLOCAL.has(st.op)
-	if sigF <= 0.0 and not nonlocal:
-		_emit(rt, P, I, paint, st.globalAlpha, st.op, st.clip, overlap, box)
-		return
 	var src = DACanvasGPU.blur(layer, sigF) if sigF > 0.0 else layer
 	var lp := Paint.new()
 	lp.kind = 5
@@ -1506,7 +1577,7 @@ func _gpuLayered(rt, st: St, P: PackedVector2Array, I: PackedInt32Array, paint: 
 		if st.clip != null:
 			qr = qr.intersection(st.clip.rect.grow(1.0))
 	var q: PackedVector2Array = quadOf.call(qr)
-	_emit(rt, q, QI, lp, 1.0, st.op, st.clip, nonlocal, qr)
+	_emit(null, q, QI, lp, 1.0, st.op, st.clip, false, qr)
 
 # clearRect: device quad -> transparent black (ignores alpha/composite/shadow; honours clip & transform).
 func _clear(st: St, P: PackedVector2Array) -> void:

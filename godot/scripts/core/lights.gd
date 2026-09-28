@@ -107,7 +107,7 @@ func _init(g) -> void:
 	key.directional_shadow_fade_start = 0.9
 	key.shadow_bias = 0.03
 	key.shadow_normal_bias = 1.0
-	key.shadow_blur = 1.5
+	key.shadow_blur = 1.0
 	key.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_ONLY
 	scene.add_child(key)
 

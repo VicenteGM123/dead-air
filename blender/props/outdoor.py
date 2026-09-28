@@ -1670,4 +1670,2499 @@ registerScene('out_tower_base', {
     'cam': {'pos': [-5.5, 3.2, -7.5], 'target': [0, 4.6, 3.2], 'fov': 60},
 })
 
-# @@PART3@@
+# =================================================================================================== HUT
+# Nests another registered prop inside `g` AFTER K.finish (keeps its own AO/merge): forwards its screens, light
+# anchors (transformed into g's space) and parts (prefixed). Returns the child.
+def attachProp(game, g, id, opts, pos, rotY=0, prefix=''):
+    c = K.buildProp(id, game, opts)
+    c.position.set(pos[0], pos[1], pos[2])
+    c.rotation.y = rotY
+    c.userData.noMerge = True
+    g.add(c)
+    c.updateMatrix()
+    u, cu = g.userData, c.userData
+    for s in (cu.screens or []):
+        u.screens.append(s)
+    for a in (cu.lightAnchors or []):
+        u.lightAnchors.append({**a, 'pos': [js_round(v * 1000) / 1000 for v in
+                                            THREE.Vector3().fromArray(a['pos']).applyMatrix4(c.matrix).toArray()]})
+    for k, v in (cu.parts or {}).items():
+        u.parts[prefix + k] = v
+    return c
+
+
+# painted concrete-block wall (running bond, 0.5 x 0.25 m blocks at uv = 1 repeat / m)
+def blockTex(base='#EFE2C4'):
+    def draw(ctx, w, h, rand):
+        mortar = hexMul(base, 0.78)
+        ctx.fillStyle = mortar
+        ctx.fillRect(0, 0, w, h)
+        bw, bh = w / 2, h / 4
+        for r in range(4):
+            for c in range(-1, 3):
+                x, y = c * bw + (bw / 2 if r % 2 else 0), r * bh
+                ctx.fillStyle = hexMix(base, '#ffffff' if rand() < 0.5 else '#C8B89A', rand() * 0.18)
+                ctx.beginPath()
+                ctx.roundRect(x + 3, y + 3, bw - 6, bh - 6, 5)
+                ctx.fill()
+                ctx.fillStyle = 'rgba(255,255,255,0.18)'
+                ctx.fillRect(x + 6, y + 4, bw - 12, 3)
+                ctx.fillStyle = 'rgba(60,40,30,0.08)'
+                ctx.fillRect(x + 4, y + bh - 8, bw - 8, 4)
+        for i in range(500):
+            ctx.globalAlpha = 0.08 + rand() * 0.1
+            ctx.fillStyle = '#8A7A60' if rand() < 0.5 else '#fff'
+            ctx.fillRect(rand() * w, rand() * h, 1.5, 1.5)
+        ctx.globalAlpha = 1
+    return K.tex.canvas('out_block|%s' % base, 256, 256, draw)
+
+
+# hut / van / street shared printed bits: transmitter cabinet front, meter face, AC grille, van logo...
+def hutAtlas():
+    def draw(ctx, *_):
+        rand = mulberry32(37)
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        # transmitter cabinet front (0,0)-(256,512): meters, lamps, louvers, label
+        ctx.fillStyle = '#6C8474'
+        ctx.fillRect(0, 0, 256, 512)
+        ctx.fillStyle = '#2E2A36'
+        ctx.beginPath()
+        ctx.roundRect(20, 24, 216, 96, 10)
+        ctx.fill()
+        for i in range(2):
+            cx, cy = 76 + i * 104, 76
+            ctx.fillStyle = '#F4ECD6'
+            ctx.beginPath()
+            ctx.arc(cx, cy, 38, math.pi, 0)
+            ctx.lineTo(cx + 38, cy + 12)
+            ctx.lineTo(cx - 38, cy + 12)
+            ctx.fill()
+            ctx.strokeStyle = '#2E2A36'
+            ctx.lineWidth = 3
+            for k in range(9):
+                a = math.pi + (k / 8) * math.pi
+                ctx.beginPath()
+                ctx.moveTo(cx + math.cos(a) * 34, cy + math.sin(a) * 34)
+                ctx.lineTo(cx + math.cos(a) * 26, cy + math.sin(a) * 26)
+                ctx.stroke()
+            ctx.strokeStyle = '#E23B3B'
+            ctx.lineWidth = 4
+            ctx.beginPath()
+            ctx.moveTo(cx, cy + 6)
+            ctx.lineTo(cx + math.cos(-0.9 - i * 0.7) * 32, cy + 6 + math.sin(-0.9 - i * 0.7) * 32)
+            ctx.stroke()
+        lamps = ['#FF3B30', '#52E04A', '#FFC23A', '#52E04A', '#7FE7FF']
+        for i, c in enumerate(lamps):
+            ctx.fillStyle = c
+            ctx.beginPath()
+            ctx.arc(46 + i * 41, 150, 11, 0, TAU)
+            ctx.fill()
+            ctx.fillStyle = 'rgba(255,255,255,0.5)'
+            ctx.beginPath()
+            ctx.arc(43 + i * 41, 146, 4, 0, TAU)
+            ctx.fill()
+        ctx.fillStyle = '#F4ECD6'
+        ctx.fillRect(48, 186, 160, 34)
+        ctx.fillStyle = '#2E2A36'
+        fitText(ctx, 'WZTV TX-13', 150, 22)
+        ctx.fillText('WZTV TX-13', 128, 204)
+        ctx.fillStyle = '#4E6356'
+        for i in range(9):
+            ctx.beginPath()
+            ctx.roundRect(30, 250 + i * 26, 196, 12, 6)
+            ctx.fill()
+        ctx.fillStyle = '#3A4A40'
+        ctx.fillRect(0, 490, 256, 22)
+        ctx.strokeStyle = 'rgba(0,0,0,0.25)'
+        ctx.lineWidth = 3
+        ctx.strokeRect(8, 8, 240, 496)
+        # AC unit side grille (256,0)-(512,256)
+        ctx.fillStyle = '#D8D2C2'
+        ctx.fillRect(256, 0, 256, 256)
+        ctx.fillStyle = '#3A3444'
+        ctx.beginPath()
+        ctx.arc(384, 128, 104, 0, TAU)
+        ctx.fill()
+        ctx.strokeStyle = '#B8B2A4'
+        ctx.lineWidth = 5
+        for r in range(20, 104, 14):
+            ctx.beginPath()
+            ctx.arc(384, 128, r, 0, TAU)
+            ctx.stroke()
+        for k in range(6):
+            a = (k / 6) * TAU
+            ctx.beginPath()
+            ctx.moveTo(384, 128)
+            ctx.lineTo(384 + math.cos(a) * 104, 128 + math.sin(a) * 104)
+            ctx.stroke()
+        ctx.fillStyle = '#B8B2A4'
+        ctx.beginPath()
+        ctx.arc(384, 128, 18, 0, TAU)
+        ctx.fill()
+        # electric meter face (512,0)-(640,128)
+        ctx.fillStyle = '#F2EEE4'
+        ctx.beginPath()
+        ctx.arc(576, 64, 62, 0, TAU)
+        ctx.fill()
+        for i in range(4):
+            ctx.strokeStyle = '#2A1D2A'
+            ctx.lineWidth = 2
+            ctx.beginPath()
+            ctx.arc(540 + i * 24, 48, 9, 0, TAU)
+            ctx.stroke()
+            ctx.beginPath()
+            ctx.moveTo(540 + i * 24, 48)
+            ctx.lineTo(540 + i * 24 + 6, 42 + i * 2)
+            ctx.stroke()
+        ctx.fillStyle = '#2A1D2A'
+        font(ctx, 12, 'Titan One')
+        ctx.fillText('KWH', 576, 78)
+        ctx.fillStyle = '#C8201E'
+        ctx.fillRect(546, 90, 60, 6)
+        # door face (640,0)-(768,256): teal steel door with a louver + kick plate
+        ctx.fillStyle = '#2E8C8C'
+        ctx.fillRect(640, 0, 128, 256)
+        ctx.strokeStyle = 'rgba(0,0,0,0.2)'
+        ctx.lineWidth = 3
+        ctx.strokeRect(650, 10, 108, 236)
+        ctx.fillStyle = '#1F6464'
+        for i in range(6):
+            ctx.fillRect(664, 170 + i * 9, 80, 5)
+        ctx.fillStyle = '#B8BEC6'
+        ctx.fillRect(646, 236, 116, 16)
+        grime(ctx, 128, 256, rand, 0)
+        # cable boot plate (768,0)-(896,128)
+        ctx.fillStyle = '#9CA3AD'
+        ctx.beginPath()
+        ctx.roundRect(770, 2, 124, 124, 16)
+        ctx.fill()
+        for x, y in [[800, 40], [864, 40], [832, 92]]:
+            ctx.fillStyle = '#3A3446'
+            ctx.beginPath()
+            ctx.arc(x, y, 16, 0, TAU)
+            ctx.fill()
+        for x, y in [[782, 14], [882, 14], [782, 114], [882, 114]]:
+            ctx.fillStyle = '#6A6E78'
+            ctx.beginPath()
+            ctx.arc(x, y, 5, 0, TAU)
+            ctx.fill()
+        # hut sign (256,256)-(768,384): TRANSMITTER · WZTV 13
+        x0, y0 = 256, 256
+        ctx.fillStyle = '#5A3A22'
+        ctx.beginPath()
+        ctx.roundRect(x0, y0, 512, 128, 24)
+        ctx.fill()
+        ctx.fillStyle = '#F6E7C8'
+        ctx.beginPath()
+        ctx.roundRect(x0 + 8, y0 + 8, 496, 112, 18)
+        ctx.fill()
+        ctx.fillStyle = '#E3662B'
+        ctx.fillRect(x0 + 8, y0 + 86, 496, 10)
+        ctx.fillStyle = '#E8A92E'
+        ctx.fillRect(x0 + 8, y0 + 98, 496, 8)
+        ctx.fillStyle = '#2F5BD3'
+        ctx.beginPath()
+        ctx.arc(x0 + 62, y0 + 60, 40, 0, TAU)
+        ctx.fill()
+        ctx.strokeStyle = '#E23B3B'
+        ctx.lineWidth = 6
+        ctx.stroke()
+        ctx.fillStyle = '#F4F1E8'
+        font(ctx, 40, 'Titan One')
+        ctx.fillText('13', x0 + 62, y0 + 64)
+        ctx.fillStyle = '#5A3A22'
+        fitText(ctx, 'TRANSMITTER', 360, 50)
+        ctx.fillText('TRANSMITTER', x0 + 300, y0 + 46)
+        fitText(ctx, 'WZTV CHANNEL 13 · 50,000 WATTS', 360, 18, 'Titan One')
+        ctx.fillText('WZTV CHANNEL 13 · 50,000 WATTS', x0 + 300, y0 + 76)
+        # SKYCAM 13 decal (768,128)-(1024,192)
+        ctx.fillStyle = '#2F5BD3'
+        ctx.beginPath()
+        ctx.roundRect(770, 130, 252, 60, 14)
+        ctx.fill()
+        ctx.fillStyle = '#FFD23A'
+        fitText(ctx, 'SKYCAM 13', 220, 36)
+        ctx.fillText('SKYCAM 13', 896, 162)
+        # NO SMOKING / AUTHORIZED (768,192)-(1024,256)
+        ctx.fillStyle = '#F4F1E8'
+        ctx.fillRect(768, 192, 256, 64)
+        ctx.fillStyle = '#C8201E'
+        ctx.fillRect(768, 192, 256, 20)
+        ctx.fillStyle = '#F4F1E8'
+        fitText(ctx, 'AUTHORIZED', 200, 16)
+        ctx.fillText('AUTHORIZED', 896, 203)
+        ctx.fillStyle = '#2A1D2A'
+        fitText(ctx, 'PERSONNEL ONLY', 230, 26)
+        ctx.fillText('PERSONNEL ONLY', 896, 236)
+        # interior back wall (0,384)-(256,512): pegboard with a clipboard + calendar
+        ctx.fillStyle = '#B89A6A'
+        ctx.fillRect(768, 256, 256, 128)
+        ctx.fillStyle = '#8A6E48'
+        for y in range(264, 384, 12):
+            for x in range(776, 1024, 12):
+                ctx.beginPath()
+                ctx.arc(x, y, 1.6, 0, TAU)
+                ctx.fill()
+        ctx.fillStyle = '#F4F1E8'
+        ctx.fillRect(800, 276, 60, 84)
+        ctx.fillStyle = '#E23B3B'
+        ctx.fillRect(800, 276, 60, 18)
+        ctx.fillStyle = '#2A1D2A'
+        font(ctx, 12, 'Bungee')
+        ctx.fillText('OCT 77', 830, 286)
+        ctx.fillStyle = '#C89A5A'
+        ctx.fillRect(890, 280, 50, 70)
+        ctx.fillStyle = '#F4F1E8'
+        ctx.fillRect(895, 292, 40, 54)
+        # van logo "ACTION 13 NEWS" (0,512-...) lives in vanAtlas
+        # grating strip (256,384)-(1024,512): roof gravel
+        ctx.fillStyle = '#7E7686'
+        ctx.fillRect(256, 384, 768, 128)
+        for i in range(2600):
+            ctx.fillStyle = STONE_COLS[_floor(rand() * len(STONE_COLS))]
+            ctx.globalAlpha = 0.8
+            ctx.beginPath()
+            ctx.arc(256 + rand() * 768, 384 + rand() * 128, 1 + rand() * 2.4, 0, TAU)
+            ctx.fill()
+        ctx.globalAlpha = 1
+    return atlasTex('hut_atlas', 1024, 512, draw)
+
+
+HUT = JSObj(W=3.4, D=2.6, H=2.75, T=0.2, win=[-1.05, 0.95, 0.85, 1.85])
+
+
+def _dflt(o, k, d):
+    """JS destructuring default: `const { k = d } = o` (the default applies when the key is missing/undefined)."""
+    v = o.get(k)
+    return d if v is None and k not in o else v
+
+
+# small chunky CRT monitor (front -z) used in the hut window and the van
+def miniMonitor(game, M, o):
+    grp = THREE.Group()
+    w, h, d = _dflt(o, 'w', 0.46), _dflt(o, 'h', 0.36), _dflt(o, 'd', 0.4)
+    card, group, id_ = _dflt(o, 'card', 'station_id'), _dflt(o, 'group', 'scr_decor'), _dflt(o, 'id', None)
+    shell = _dflt(o, 'shell', '#3A3444')
+    grp.add(tm(K.box(w, h, d * 0.62, 0.045), M['plastic'], shell, {'pos': [0, h / 2, 0.02]}))
+    grp.add(tm(K.taper(cbox(w * 0.82, h * 0.8, d * 0.5, 0.03), {'axis': 'z', 'k': 0.62}), M['plastic'],
+               hexMul(shell, 0.85), {'pos': [0, h / 2, d * 0.38]}))
+    grp.add(tm(K.box(w * 0.94, h * 0.9, 0.03, 0.012), M['plastic'], '#CFC6B4', {'pos': [0, h / 2 + 0.005, -d * 0.31 + 0.012]}))
+    scr = K.screen(game, w * 0.7, h * 0.66, {'card': card, 'group': group, 'dome': 0.012})
+    scr.position.set(-w * 0.07, h / 2 + 0.01, -d * 0.31 - 0.008)
+    if id_:
+        scr.userData.screenId = id_
+    grp.add(scr)
+    for i in range(2):
+        grp.add(tm(K.cyl(0.018, 0.02, 0.022, {'seg': 8, 'bevel': 0.005}), M['plastic'], '#2A2430',
+                   {'pos': [w * 0.36, h * 0.62 - i * 0.1, -d * 0.31], 'rot': [-math.pi / 2, 0, 0]}))
+    grp.add(lightMesh(THREE.SphereGeometry(0.009, 6, 4), K.glow(game, PAL.onAirRed, 2),
+                      {'pos': [w * 0.36, h * 0.25, -d * 0.31 - 0.004]}))
+    return {'grp': grp, 'scr': scr}
+
+
+def _hut(game, opts=None):
+    opts = opts or {}
+    g = K.prop('yd_hut')
+    W, D, H, T = HUT.W, HUT.D, HUT.H, HUT.T
+    wx0, wx1, wy0, wy1 = HUT.win
+    wall = K.mat(game, 'paint', '#ffffff', {'map': blockTex(), 'rough': 0.72})
+    paint = K.mat(game, 'lacquer', '#ffffff', {'rough': 0.45})
+    galv = K.mat(game, 'metal', C.galv, {'rough': 0.45})
+    atlas = K.mat(game, 'paint', '#ffffff', {'map': hutAtlas(), 'rough': 0.55})
+    glass = game.mats.glass('#BFD4FF', {'opacity': 0.16})
+    M = {'plastic': K.mat(game, 'plastic', '#ffffff', {'rough': 0.4})}
+    lit = opts.get('lit') is not False
+    BROWN, ORANGE, GOLD, CREAM = '#5A3A22', PAL.burntOrange, PAL.harvestGold, '#EFE2C4'
+
+    def uvb(geo):
+        return K.uvBox(geo, 1)
+    # --- plinth + walls (front wall is 4 pieces around the window)
+    g.add(tm(cbox(W + 0.12, 0.14, D + 0.12, 0.03), paint, '#8E877D', {'pos': [0, 0.07, 0]}))
+
+    def wallBox(w, h, d, pos):
+        return g.add(K.m(uvb(cbox(w, h, d, 0.02)), wall, {'pos': pos}))
+    wallBox(W - 0.3, H, T, [0, H / 2 + 0.1, D / 2 - T / 2])
+    wallBox(T, H, D - 0.3, [-W / 2 + T / 2, H / 2 + 0.1, 0])
+    wallBox(T, H, D - 0.3, [W / 2 - T / 2, H / 2 + 0.1, 0])
+    fz = -D / 2 + T / 2
+    wallBox(W - 0.3, wy0 - 0.1, T, [0, (wy0 - 0.1) / 2 + 0.1, fz])
+    wallBox(W - 0.3, H + 0.1 - wy1, T, [0, (H + 0.1 + wy1) / 2, fz])
+    wallBox(wx0 + W / 2 - 0.15, wy1 - wy0, T, [(-W / 2 + 0.15 + wx0) / 2, (wy0 + wy1) / 2, fz])
+    wallBox(W / 2 - 0.15 - wx1, wy1 - wy0, T, [(W / 2 - 0.15 + wx1) / 2, (wy0 + wy1) / 2, fz])
+    # chunky corner pilasters + 70s stripe band
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            g.add(tm(cbox(0.32, H + 0.02, 0.32, 0.045), paint, BROWN, {'pos': [sx * (W / 2 - 0.14), H / 2 + 0.11, sz * (D / 2 - 0.14)]}))
+    for col, y in [[ORANGE, 2.34], [GOLD, 2.24], [BROWN, 2.14]]:
+        for s in (-1, 1):
+            g.add(tm(cbox(W - 0.34, 0.075, 0.02, 0.006), paint, col, {'pos': [0, y, s * (D / 2 + 0.006)]}))
+            g.add(tm(cbox(0.02, 0.075, D - 0.34, 0.006), paint, col, {'pos': [s * (W / 2 + 0.006), y, 0]}))
+    # --- roof slab, flashing, gravel top
+    RY = H + 0.1
+    g.add(tm(K.box(W + 0.26, 0.2, D + 0.26, 0.04), paint, '#D9CDB2', {'pos': [0, RY + 0.1, 0]}))
+    g.add(tm(K.tube(K.roundRectPath(W + 0.2, D + 0.2, 0.08, RY + 0.21, 2), 0.035, {'seg': 36, 'radial': 5, 'closed': True}),
+             galv, None))
+    g.add(K.m(pxUV(groundDecal(W + 0.1, D + 0.1), 256, 384, 1024, 512, 1024, 512), atlas, {'pos': [0, RY + 0.202, 0]}))
+    # interior: dark floor, back pegboard, cabinets, ceiling fixture
+    g.add(tm(cbox(W - 0.4, 0.04, D - 0.4, 0.006), paint, '#4A3E4E', {'pos': [0, 0.16, 0]}))
+    g.add(K.m(pxUV(decal(0.8, 0.4), 768, 256, 1024, 384, 1024, 512), atlas, {'pos': [1.1, 1.6, D / 2 - T - 0.005]}))
+    for i in range(3):
+        x = -1.1 + i * 0.74
+        g.add(tm(cbox(0.7, 2.05, 0.55, 0.02), paint, '#6C8474', {'pos': [x, 1.2, D / 2 - T - 0.3]}))
+        g.add(K.m(pxUV(decal(0.62, 1.9), 0, 0, 256, 512, 1024, 512), atlas, {'pos': [x, 1.2, D / 2 - T - 0.58]}))
+    g.add(tm(K.box(1.3, 0.06, 0.16, 0.02), paint, '#D8D2C2', {'pos': [-0.1, RY - 0.05, -0.2]}))
+    tubeLight = lightMesh(K.cyl(0.03, 0.03, 1.1, {'seg': 8, 'bevel': 0.01}).clone().rotateZ(math.pi / 2).translate(0.55, 0, 0),
+                          K.glow(game, '#E8F5E1', 1.6) if lit else K.mat(game, 'ceramic', '#DDE6DA'),
+                          {'pos': [-0.1, RY - 0.1, -0.2], 'name': 'ceilingLight'})
+    g.add(tubeLight)
+    # --- window: aluminum frame + mullion + sill + glass + sign above
+    ww, wh, wcx, wcy = wx1 - wx0, wy1 - wy0, (wx0 + wx1) / 2, (wy0 + wy1) / 2
+    frame = K.roundRect(ww + 0.06, wh + 0.06, 0.05)
+    frame.holes.append(THREE.Path(K.roundRect(ww - 0.06, wh - 0.06, 0.03).getPoints(6)))
+    g.add(tm(K.extrude(frame, 0.08, {'bevel': 0.015, 'bevelSeg': 1, 'curveSeg': 4}), galv, None, {'pos': [wcx, wcy, -D / 2 + 0.03]}))
+    g.add(tm(cbox(0.05, wh - 0.05, 0.06, 0.01), galv, None, {'pos': [wcx + 0.2, wcy, -D / 2 + 0.03]}))
+    g.add(tm(K.box(ww + 0.24, 0.08, 0.22, 0.025), paint, '#D9CDB2', {'pos': [wcx, wy0 - 0.02, -D / 2 - 0.02]}))
+    gl = K.m(THREE.PlaneGeometry(ww - 0.04, wh - 0.04).rotateY(math.pi), glass, {'pos': [wcx, wcy, -D / 2 + 0.04], 'name': 'windowGlass'})
+    gl.userData.noOcclude = True
+    gl.userData.noMerge = True
+    g.add(gl)
+    g.add(K.m(pxUV(decal(1.7, 0.425), 256, 256, 768, 384, 1024, 512), atlas, {'pos': [wcx, 2.62, -D / 2 - 0.012]}))
+    # --- door (+x face), step, caged light, meter, cable port
+    dz, dx = 0.35, W / 2 + 0.005
+    g.add(tm(cbox(0.06, 2.18, 1.1, 0.015), galv, None, {'pos': [dx, 1.19, dz]}))
+    g.add(K.m(pxUV(decal(0.94, 2.02).rotateY(-math.pi / 2), 640, 0, 768, 256, 1024, 512), atlas, {'pos': [dx + 0.042, 1.16, dz]}))
+    g.add(tm(cbox(0.03, 2.04, 0.96, 0.01), paint, '#2E8C8C', {'pos': [dx + 0.02, 1.16, dz]}))
+    g.add(tm(K.lathe([[0, 0], [0.03, 0], [0.035, 0.03], [0.02, 0.05], [0, 0.055]], {'seg': 10, 'round': 0.01, 'steps': 1})
+             .clone().rotateZ(-math.pi / 2), galv, None, {'pos': [dx + 0.035, 1.05, dz - 0.36]}))
+    g.add(K.m(pxUV(decal(0.4, 0.1).rotateY(-math.pi / 2), 768, 192, 1024, 256, 1024, 512), atlas, {'pos': [dx + 0.046, 1.7, dz]}))
+    g.add(K.m(pxUV(decal(0.38, 0.26).rotateY(-math.pi / 2), 0, 0, 512, 352, 1024, 512),
+              K.mat(game, 'paint', '#ffffff', {'map': towerSigns(), 'rough': 0.55}), {'pos': [dx + 0.046, 1.45, dz]}))
+    g.add(tm(cbox(0.5, 0.16, 1.3, 0.03), paint, '#A8A196', {'pos': [W / 2 + 0.25, 0.08, dz]}))
+    # caged bulb over the door
+    g.add(tm(K.cyl(0.07, 0.08, 0.05, {'seg': 10, 'bevel': 0.01}).clone().rotateZ(-math.pi / 2), galv, None, {'pos': [dx + 0.02, 2.42, dz]}))
+    bulb = lightMesh(THREE.SphereGeometry(0.07, 10, 8),
+                     K.glow(game, PAL.tungsten, 2.6) if lit else K.mat(game, 'ceramic', '#F0E6D0'),
+                     {'pos': [dx + 0.13, 2.42, dz], 'name': 'doorLight'})
+    g.add(bulb)
+    for k in range(3):
+        pts = []
+        for s in range(7):
+            a = (s / 6) * math.pi
+            pts.append([math.sin(a) * 0.16, math.cos(a) * 0.09, 0])
+        g.add(tm(K.tube(pts, 0.006, {'seg': 8, 'radial': 3}), galv, None, {'pos': [dx + 0.03, 2.42, dz], 'rot': [(k - 1) * 0.9, 0, 0]}))
+    # meter + conduit
+    g.add(tm(K.box(0.05, 0.32, 0.26, 0.015), galv, None, {'pos': [dx + 0.02, 1.5, dz + 0.85]}))
+    g.add(K.m(pxUV(THREE.CircleGeometry(0.09, 16).rotateY(math.pi / 2), 512, 0, 640, 128, 1024, 512), atlas,
+              {'pos': [dx + 0.1, 1.52, dz + 0.85]}))
+    dome = K.m(K.lathe([[0.1, 0], [0.1, 0.04], [0.08, 0.08], [0, 0.1]], {'seg': 14}).clone().rotateZ(-math.pi / 2), glass,
+               {'pos': [dx + 0.05, 1.52, dz + 0.85]})
+    dome.userData.noOcclude = True
+    dome.userData.noMerge = True
+    g.add(dome)
+    g.add(tm(K.cyl(0.02, 0.02, 1.3, {'seg': 8, 'bevel': 0.004}), galv, None, {'pos': [dx + 0.03, 0.05, dz + 0.85]}))
+    # cable entry plate near the -z corner with three coax lines diving into the gravel (toward the tower)
+    g.add(K.m(pxUV(decal(0.34, 0.34).rotateY(-math.pi / 2), 768, 0, 896, 128, 1024, 512), atlas, {'pos': [dx + 0.012, 1.25, -0.7]}))
+    rub = K.mat(game, 'rubber', '#3A3446')
+    for oy, oz, k in [[0.08, -0.08, 0], [0.08, 0.08, 1], [-0.1, 0, 2]]:
+        y0, z0 = 1.25 + oy, -0.7 + oz
+        g.add(K.m(K.tube([[dx, y0, z0], [dx + 0.18, y0 - 0.05, z0], [dx + 0.32 + k * 0.05, y0 - 0.5, z0 - 0.05 * k],
+                          [dx + 0.42 + k * 0.08, 0.1, z0 - 0.1 - 0.08 * k], [dx + 0.7 + k * 0.1, -0.05, z0 - 0.3 - 0.1 * k]],
+                         0.028, {'seg': 12, 'radial': 6}), rub))
+    # downpipe on the back-left corner + gutter box
+    g.add(tm(K.box(0.14, 0.12, 0.14, 0.02), galv, None, {'pos': [-W / 2 - 0.02, RY + 0.08, D / 2 + 0.06]}))
+    g.add(tm(K.cyl(0.04, 0.04, RY - 0.1, {'seg': 8, 'bevel': 0.006}), galv, None, {'pos': [-W / 2 - 0.02, 0.12, D / 2 + 0.06]}))
+    # --- roof: AC unit, vent stack, whip antenna, SkyCam 13 (pan/tilt parts)
+    RT = RY + 0.2
+    g.add(tm(K.box(0.9, 0.5, 0.6, 0.045), paint, '#D8D2C2', {'pos': [0.9, RT + 0.27, 0.55]}))
+    g.add(K.m(pxUV(decal(0.46, 0.46), 256, 0, 512, 256, 1024, 512), atlas, {'pos': [0.9, RT + 0.28, 0.55 - 0.305]}))
+    g.add(tm(K.box(0.94, 0.05, 0.64, 0.02), paint, '#8E877D', {'pos': [0.9, RT + 0.02, 0.55]}))
+    g.add(tm(K.cyl(0.06, 0.06, 0.45, {'seg': 10, 'bevel': 0.01}), galv, None, {'pos': [-1.1, RT, 0.7]}))
+    g.add(tm(K.lathe([[0, 0], [0.1, 0], [0.1, 0.03], [0.06, 0.08], [0, 0.09]], {'seg': 10, 'round': 0.01, 'steps': 1}), galv, None,
+             {'pos': [-1.1, RT + 0.45, 0.7]}))
+    g.add(tm(K.cyl(0.006, 0.01, 1.4, {'seg': 5, 'bevel': 0.002}), galv, None, {'pos': [-1.4, RT, -0.9]}))
+    g.add(tm(THREE.SphereGeometry(0.03, 8, 6), galv, None, {'pos': [-1.4, RT + 1.42, -0.9]}))
+    # SkyCam 13 on a short mast at the roof center; looks toward the tower (+x, -z)
+    camX, camZ = -0.1, -0.1
+    g.add(tm(K.cyl(0.13, 0.15, 0.06, {'seg': 12, 'bevel': 0.015}), galv, None, {'pos': [camX, RT, camZ]}))
+    g.add(tm(K.cyl(0.045, 0.05, 0.42, {'seg': 10, 'bevel': 0.008}), galv, None, {'pos': [camX, RT + 0.05, camZ]}))
+    pan = THREE.Group()
+    pan.name = 'skycam'
+    pan.userData.noMerge = True
+    pan.position.set(camX, RT + 0.47, camZ)
+    pan.rotation.y = opts['camYaw'] if opts.get('camYaw') is not None else -math.pi / 4
+    tilt = THREE.Group()
+    tilt.name = 'skycamTilt'
+    tilt.userData.noMerge = True
+    tilt.position.set(0, 0.14, 0)
+    tilt.rotation.x = opts['camTilt'] if opts.get('camTilt') is not None else 0.12
+    pan.add(tm(K.cyl(0.08, 0.09, 0.06, {'seg': 12, 'bevel': 0.012}), galv, None))
+    for s in (-1, 1):
+        pan.add(tm(K.box(0.03, 0.2, 0.08, 0.01), galv, None, {'pos': [s * 0.15, 0.1, 0]}))
+    tilt.add(tm(K.box(0.24, 0.22, 0.5, 0.045), paint, '#F2EEE4', {'pos': [0, 0, 0.02]}))
+    tilt.add(tm(K.box(0.3, 0.03, 0.58, 0.012), paint, '#F2EEE4', {'pos': [0, 0.13, -0.02]}))
+    tilt.add(tm(K.cyl(0.085, 0.09, 0.08, {'seg': 14, 'bevel': 0.015}).clone().rotateX(-math.pi / 2), paint, '#3A3444',
+                {'pos': [0, -0.005, -0.23]}))
+    lensM = K.mat(game, 'crt', '#1E2A4A', {'rim': 0.8, 'rimColor': '#9FB6FF'})
+    tilt.add(K.m(THREE.CircleGeometry(0.066, 16).rotateY(math.pi), lensM, {'pos': [0, -0.005, -0.312]}))
+    tilt.add(K.m(pxUV(decal(0.34, 0.08).rotateY(-math.pi / 2), 768, 128, 1024, 192, 1024, 512), atlas, {'pos': [0.122, 0.01, 0.04]}))
+    tilt.add(K.m(pxUV(decal(0.34, 0.08).rotateY(math.pi / 2), 768, 128, 1024, 192, 1024, 512), atlas, {'pos': [-0.122, 0.01, 0.04]}))
+    tally = lightMesh(THREE.SphereGeometry(0.026, 8, 6),
+                      K.glow(game, PAL.onAirRed, 2.6) if lit else K.mat(game, 'crt', '#5A1A1A'),
+                      {'pos': [0, 0.16, -0.18], 'name': 'skycamTally'})
+    tilt.add(tally)
+    pan.add(tilt)
+    g.add(pan)
+    # --- window stack: two feed monitors (scr_feed_yard) on a steel shelf right behind the glass
+    shelfX, shelfZ = 0.5, -D / 2 + T + 0.3
+    g.add(tm(K.box(0.6, 0.04, 0.46, 0.012), galv, None, {'pos': [shelfX, 0.8, shelfZ]}))
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            g.add(tm(K.cyl(0.015, 0.015, 0.66, {'seg': 6, 'bevel': 0.003}), galv, None,
+                     {'pos': [shelfX + sx * 0.27, 0.14, shelfZ + sz * 0.2]}))
+    mons = []
+    for i, (y, card, shell) in enumerate([[0.82, 'station_id', '#3A3444'], [1.2, 'color_bars', '#5A4A3A']]):
+        mm = miniMonitor(game, M, {'w': 0.5, 'h': 0.37, 'd': 0.4, 'card': card, 'group': 'scr_feed_yard',
+                                   'id': 'hut_feed_%d' % (i + 1), 'shell': shell})
+        mm['grp'].position.set(shelfX, y, shelfZ)
+        mm['grp'].rotation.set(0, 0.06 if i else -0.04, 0.015 if i else 0)
+        g.add(mm['grp'])
+        mons.append(mm['scr'])
+    g.userData.parts = {'skycam': pan, 'skycamTilt': tilt, 'skycamTally': tally, 'doorLight': bulb,
+                        'ceilingLight': tubeLight, 'windowGlass': gl}
+    g.userData.screens = [{'mesh': s, 'group': 'scr_feed_yard', 'id': 'hut_feed_%d' % (i + 1)} for i, s in enumerate(mons)]
+    g.userData.lightAnchors = [
+        {'pos': [dx + 0.45, 2.3, dz], 'color': PAL.tungsten, 'intensity': 1.6, 'distance': 5, 'flicker': 0.05},
+    ] if lit else []
+    g.userData.colliders = [{'min': [-W / 2 - 0.08, 0, -D / 2 - 0.1], 'max': [W / 2 + 0.08, RY + 0.25, D / 2 + 0.1]},
+                            {'min': [W / 2, 0, dz - 0.65], 'max': [W / 2 + 0.5, 0.16, dz + 0.65]}]
+    g.userData.feedCam = {'pos': [camX, RT + 0.61, camZ], 'note': 'GDD feed_cam_yard sits here (SkyCam 13)'}
+    K.finish(game, g, {'ao': {'res': 44, 'rays': 10, 'strength': 0.8}})
+    # the tube rack lives behind the window (its own bake / glow parts / anchors)
+    if opts.get('tubes') is not False:
+        attachProp(game, g, 'hut_tubes', {}, [-0.5, 0.16, -D / 2 + T + 0.42], 0, 'tubes_')
+    g.userData.stats = K.stats(g)
+    return g
+
+
+registerProp('yd_hut', _hut,
+             {'category': CAT, 'tags': ['yard', 'hut', 'building', 'screens'], 'size': [3.7, 3.7, 2.9], 'hero': True,
+              'cache': False,
+              'desc': 'transmitter hut: painted block walls, window with the tube rack + 2 feed monitors (scr_feed_yard), '
+                      'teal door on +x with caged light, SkyCam 13 on the roof (parts.skycam / skycamTilt); front (-z) '
+                      'faces the yard (opts.lit, opts.tubes, opts.camYaw)'})
+
+
+# =================================================================================================== NEWS VAN
+# "Action 13 News" van (GDD §5.7): 70s wood-paneled van, 5.0 x 2.0 m. LOCAL AXES: length along x, FRONT (cab) at -x,
+# REAR (open doors) at +x, sliding/passenger side at -z. Placed with rotY = 0 it matches the layout (x 40.5–45.5,
+# rear TV facing +x). Rear doors open (parts.doorL / doorR pivots), shag-lined cargo with an equipment rack, the rear
+# feed TV (screen 'scr_feed_yard', id 'van_rear_tv'), a portable radio (parts.radio), dome light; telescoping mast
+# with a microwave dish on the roof (parts.mast). opts: { lit=true, doors=1.75 (open angle, rad), mast=1 (0..1) }.
+def vanAtlas():
+    def draw(ctx, *_):
+        rand = mulberry32(1977)
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        # logo (0,0)-(640,160) on transparent
+        ctx.save()
+        ctx.translate(0, 0)
+        ctx.fillStyle = '#2F5BD3'
+        ctx.beginPath()
+        ctx.arc(86, 80, 70, 0, TAU)
+        ctx.fill()
+        ctx.strokeStyle = '#E23B3B'
+        ctx.lineWidth = 10
+        ctx.stroke()
+        ctx.strokeStyle = '#F4F1E8'
+        ctx.lineWidth = 4
+        ctx.beginPath()
+        ctx.arc(86, 80, 58, 0, TAU)
+        ctx.stroke()
+        ctx.fillStyle = '#F4F1E8'
+        font(ctx, 70, 'Titan One')
+        ctx.fillText('13', 86, 86)
+        # ACTION (groovy, outlined, slanted)
+        ctx.save()
+        ctx.translate(360, 62)
+        ctx.transform(1, 0, -0.18, 1, 0, 0)
+        font(ctx, 84, 'Shrikhand')
+        ctx.lineJoin = 'round'
+        ctx.lineWidth = 16
+        ctx.strokeStyle = '#5A3A22'
+        ctx.strokeText('Action', 0, 0)
+        ctx.lineWidth = 8
+        ctx.strokeStyle = '#F4F1E8'
+        ctx.strokeText('Action', 0, 0)
+        gr = ctx.createLinearGradient(0, -40, 0, 40)
+        gr.addColorStop(0, '#FFC23A')
+        gr.addColorStop(0.55, '#E3662B')
+        gr.addColorStop(1, '#C8402A')
+        ctx.fillStyle = gr
+        ctx.fillText('Action', 0, 0)
+        ctx.restore()
+        ctx.fillStyle = '#2F5BD3'
+        ctx.beginPath()
+        ctx.roundRect(196, 112, 350, 40, 20)
+        ctx.fill()
+        ctx.fillStyle = '#F4F1E8'
+        fitText(ctx, 'NEWS · WZTV CHANNEL 13', 320, 26)
+        ctx.fillText('NEWS · WZTV CHANNEL 13', 371, 133)
+        # lightning bolt
+        ctx.fillStyle = '#FFD23A'
+        ctx.strokeStyle = '#5A3A22'
+        ctx.lineWidth = 4
+        ctx.beginPath()
+        ctx.moveTo(596, 14)
+        ctx.lineTo(566, 80)
+        ctx.lineTo(590, 78)
+        ctx.lineTo(572, 146)
+        ctx.lineTo(626, 62)
+        ctx.lineTo(600, 64)
+        ctx.lineTo(618, 14)
+        ctx.closePath()
+        ctx.fill()
+        ctx.stroke()
+        ctx.restore()
+
+        # plates (640,0)-(896,128) front, (640,128)-(896,256) rear
+        def plate(y, t):
+            ctx.fillStyle = '#F4F1E8'
+            ctx.beginPath()
+            ctx.roundRect(646, y + 8, 244, 112, 14)
+            ctx.fill()
+            ctx.strokeStyle = '#2F5BD3'
+            ctx.lineWidth = 6
+            ctx.stroke()
+            ctx.fillStyle = '#2F5BD3'
+            fitText(ctx, 'TRI-COUNTY 1977', 200, 16, 'Titan One')
+            ctx.fillText('TRI-COUNTY 1977', 768, y + 28)
+            ctx.fillStyle = '#C8201E'
+            fitText(ctx, t, 220, 56)
+            ctx.fillText(t, 768, y + 78)
+        plate(0, 'WZTV 13')
+        plate(128, 'NEWS 13')
+        # grille (896,0)-(1024,128): dark slots between chrome bars
+        ctx.fillStyle = '#C9CED6'
+        ctx.fillRect(896, 0, 128, 128)
+        ctx.fillStyle = '#2A2430'
+        for i in range(6):
+            ctx.fillRect(902, 8 + i * 20, 116, 12)
+        ctx.fillStyle = 'rgba(255,255,255,0.4)'
+        for i in range(6):
+            ctx.fillRect(902, 20 + i * 20, 116, 2)
+        # tail light (896,128)-(960,256), amber (960,128)-(1024,256)
+        for x, c1, c2 in [[896, '#FF4A3A', '#A8201A'], [960, '#FFB347', '#B86A10']]:
+            gr = ctx.createLinearGradient(x, 0, x + 64, 0)
+            gr.addColorStop(0, c2)
+            gr.addColorStop(0.5, c1)
+            gr.addColorStop(1, c2)
+            ctx.fillStyle = gr
+            ctx.fillRect(x, 128, 64, 128)
+            ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+            ctx.lineWidth = 2
+            for i in range(7):
+                ctx.beginPath()
+                ctx.moveTo(x + 4, 136 + i * 18)
+                ctx.lineTo(x + 60, 136 + i * 18)
+                ctx.stroke()
+        # equipment rack faces (0,256)-(512,512): 4 rows of gear
+        rows = [['#3A3444', 'vu'], ['#C9CED6', 'knobs'], ['#3A3444', 'lamps'], ['#5A4A3A', 'reel']]
+        for r, (bg, kind) in enumerate(rows):
+            y = 256 + r * 64
+            ctx.fillStyle = bg
+            ctx.fillRect(0, y, 512, 64)
+            ctx.fillStyle = 'rgba(0,0,0,0.3)'
+            ctx.fillRect(0, y + 60, 512, 4)
+            ctx.fillStyle = '#9CA3AD'
+            for x in (10, 502):
+                ctx.beginPath()
+                ctx.arc(x, y + 32, 5, 0, TAU)
+                ctx.fill()
+            if kind == 'vu':
+                for i in range(4):
+                    cx = 80 + i * 118
+                    ctx.fillStyle = '#F4E6B8'
+                    ctx.fillRect(cx - 44, y + 10, 88, 44)
+                    ctx.strokeStyle = '#2A1D2A'
+                    ctx.lineWidth = 2
+                    ctx.beginPath()
+                    ctx.arc(cx, y + 60, 40, math.pi * 1.2, math.pi * 1.8)
+                    ctx.stroke()
+                    ctx.strokeStyle = '#E23B3B'
+                    ctx.beginPath()
+                    ctx.arc(cx, y + 60, 40, math.pi * 1.65, math.pi * 1.8)
+                    ctx.stroke()
+                    ctx.strokeStyle = '#2A1D2A'
+                    ctx.beginPath()
+                    ctx.moveTo(cx, y + 56)
+                    ctx.lineTo(cx + math.cos(-1.9 + i * 0.3) * 38, y + 56 + math.sin(-1.9 + i * 0.3) * 38)
+                    ctx.stroke()
+            if kind == 'knobs':
+                for i in range(9):
+                    ctx.fillStyle = '#2A2430'
+                    ctx.beginPath()
+                    ctx.arc(40 + i * 54, y + 30, 14, 0, TAU)
+                    ctx.fill()
+                    ctx.fillStyle = '#F4F1E8'
+                    ctx.fillRect(38 + i * 54, y + 16, 4, 10)
+            if kind == 'lamps':
+                for i in range(16):
+                    ctx.fillStyle = ['#FF3B30', '#52E04A', '#FFC23A', '#7FE7FF'][i % 4]
+                    ctx.beginPath()
+                    ctx.arc(32 + i * 30, y + 32, 8, 0, TAU)
+                    ctx.fill()
+            if kind == 'reel':
+                for i in range(2):
+                    cx = 140 + i * 230
+                    ctx.fillStyle = '#9CA3AD'
+                    ctx.beginPath()
+                    ctx.arc(cx, y + 32, 28, 0, TAU)
+                    ctx.fill()
+                    ctx.fillStyle = '#5A3424'
+                    ctx.beginPath()
+                    ctx.arc(cx, y + 32, 20, 0, TAU)
+                    ctx.fill()
+                    ctx.fillStyle = '#C9CED6'
+                    ctx.beginPath()
+                    ctx.arc(cx, y + 32, 6, 0, TAU)
+                    ctx.fill()
+        # ribbed rubber floor mat (512,256)-(1024,512)
+        ctx.fillStyle = '#3A3446'
+        ctx.fillRect(512, 256, 512, 256)
+        for x in range(520, 1024, 16):
+            ctx.fillStyle = '#4E4A5C'
+            ctx.fillRect(x, 256, 7, 256)
+        grime(ctx, 512, 256, rand, 0)
+        # wheel-well shadow disc (640,256)... drawn procedurally in vanWellTex
+    return atlasTex('van_atlas', 1024, 512, draw)
+
+
+def vanWood():
+    return K.tex.wood('#8A5634', {'planks': 5, 'dark': 0.4, 'wear': 0.15})
+
+
+# Returns the side-panel shape (x along the van, y up) with wheel-arch notches of radius ar around wheel centers.
+def vanPanelShape(x0, x1, y0, y1, wheels, ar, wy, r=0.06):
+    s = THREE.Shape()
+    s.moveTo(x0 + r, y0)
+    for xw in wheels:
+        dx = math.sqrt(max(0, ar * ar - (y0 - wy) ** 2))
+        a0, a1 = math.atan2(y0 - wy, -dx), math.atan2(y0 - wy, dx)
+        s.lineTo(xw - dx, y0)
+        s.absarc(xw, wy, ar, a0, a1, True)
+    s.lineTo(x1 - r, y0)
+    s.quadraticCurveTo(x1, y0, x1, y0 + r)
+    s.lineTo(x1, y1 - r)
+    s.quadraticCurveTo(x1, y1, x1 - r, y1)
+    s.lineTo(x0 + r, y1)
+    s.quadraticCurveTo(x0, y1, x0, y1 - r)
+    s.lineTo(x0, y0 + r)
+    s.quadraticCurveTo(x0, y0, x0 + r, y0)
+    return s
+
+
+# rounded-rect Shape in the (u, v) plane centered at (cu, cv) with per-corner radii [bl, br, tr, tl]
+def rrShape4(w, h, rads, cu=0, cv=0):
+    bl, br, tr, tl = rads
+    x0, x1, y0, y1 = cu - w / 2, cu + w / 2, cv - h / 2, cv + h / 2
+    s = THREE.Shape()
+    s.moveTo(x0 + bl, y0)
+    s.lineTo(x1 - br, y0)
+    s.absarc(x1 - br, y0 + br, br, -math.pi / 2, 0, False)
+    s.lineTo(x1, y1 - tr)
+    s.absarc(x1 - tr, y1 - tr, tr, 0, math.pi / 2, False)
+    s.lineTo(x0 + tl, y1)
+    s.absarc(x0 + tl, y1 - tl, tl, math.pi / 2, math.pi, False)
+    s.lineTo(x0, y0 + bl)
+    s.absarc(x0 + bl, y0 + bl, bl, math.pi, math.pi * 1.5, False)
+    return s
+
+
+VAN = JSObj(L=5.0, W=1.96, yb=0.5, yt=2.08, xc=-0.72, xr=2.44, wheels=[-1.62, 1.5], wr=0.37, wz=0.87)
+
+
+def _swapUV(geo):
+    uv = geo.attributes.uv
+    a = np.asarray(uv, dtype=np.float64).copy()
+    uv[:, 0] = a[:, 1] * 1.2
+    uv[:, 1] = a[:, 0] * 0.6
+    return geo
+
+
+def _news_van(game, opts=None):
+    opts = opts or {}
+    g = K.prop('yd_news_van')
+    W, yb, yt, xc, xr, wr, wz = VAN.W, VAN.yb, VAN.yt, VAN.xc, VAN.xr, VAN.wr, VAN.wz
+    hw = W / 2
+    kc = {}
+    body = K.mat(game, 'lacquer', '#ffffff', {'rough': 0.42, 'env': 0.05, **kc})
+    chrome = K.mat(game, 'chrome', '#B4BCC6')
+    wood = K.mat(game, 'lacquer', '#ffffff', {'map': vanWood(), 'rough': 0.4})
+    atlas = K.mat(game, 'plastic', '#ffffff', {'map': vanAtlas(), 'rough': 0.45})
+    decalM = K.mat(game, 'plastic', '#ffffff', {'map': vanAtlas(), 'rough': 0.4, 'transparent': True, 'depthWrite': False})
+    rubber = K.mat(game, 'rubber', '#ffffff')
+    glassDark = K.mat(game, 'crt', '#27305A', {'rough': 0.06, 'rim': 0.7, 'rimColor': '#9FB6FF', 'env': 0.6})
+    shag = K.mat(game, 'fabric', '#ffffff', {'map': K.tex.shag('#B8481E', '#E8A92E', {'size': 256}), 'rough': 1, 'rim': 0.3})
+    lit = opts.get('lit') is not False
+    CREAM, BROWN = '#F3E7CC', '#5A3A22'
+    M = {'plastic': K.mat(game, 'plastic', '#ffffff', {'rough': 0.4})}
+
+    def addG(geo, mat, col=None, o=None):
+        return g.add(tm(geo, mat, col, o))
+
+    # ---- cargo shell: rounded cross-section tube along x (open at the rear) + shag lining
+    sec = rrShape4(W, yt - yb, [0.12, 0.12, 0.26, 0.26], 0, (yb + yt) / 2)
+    holeW, holeB, holeT = W - 0.1, yb + 0.16, yt - 0.05
+    sec.holes.append(THREE.Path(rrShape4(holeW, holeT - holeB, [0.05, 0.05, 0.2, 0.2], 0, (holeB + holeT) / 2).getPoints(5)))
+    cargoLen = xr - xc
+
+    def toX(geo, x0):
+        geo.rotateY(math.pi / 2)
+        geo.translate(x0, 0, 0)
+        return geo
+    # bevel < half the wall gap (else the cap loses its hole)
+    shell = K.extrude(sec, cargoLen, {'bevel': 0.015, 'bevelSeg': 2, 'curveSeg': 6}).clone()
+    addG(toX(shell, (xc + xr) / 2), body, CREAM)
+    lin = rrShape4(holeW - 0.008, holeT - holeB - 0.008, [0.05, 0.05, 0.2, 0.2], 0, (holeB + holeT) / 2)
+    lin.holes.append(THREE.Path(rrShape4(holeW - 0.06, holeT - holeB - 0.05, [0.04, 0.04, 0.18, 0.18], 0,
+                                         (holeB + holeT) / 2 + 0.005).getPoints(5)))
+    lining = K.extrude(lin, cargoLen - 0.08, {'bevel': 0, 'curveSeg': 5}).clone()
+    K.uvScale(lining, 2.2, 2.2)
+    g.add(K.m(toX(lining, (xc + xr) / 2 - 0.02), shag))
+    # rubber mat floor + wheel-well humps + front bulkhead (behind the seats)
+    g.add(K.m(pxUV(xf(cbox(cargoLen - 0.2, 0.03, holeW - 0.1, 0.008), {'pos': [(xc + xr) / 2 + 0.05, holeB + 0.035, 0]}),
+                   512, 256, 1024, 512, 1024, 512), atlas))
+    for s in (-1, 1):
+        addG(cbox(0.9, 0.3, 0.3, 0.06), shag, None, {'pos': [VAN.wheels[1], holeB + 0.14, s * (holeW / 2 - 0.16)]})
+    addG(cbox(0.05, holeT - holeB - 0.05, holeW - 0.06, 0.01), body, '#6A4A3A', {'pos': [xc + 0.08, (holeB + holeT) / 2, 0]})
+    # rear door frame ring (cream trim) + chrome rear bumper + tail lights + plate
+    ring_ = rrShape4(W + 0.03, yt - yb + 0.03, [0.13, 0.13, 0.27, 0.27], 0, (yb + yt) / 2)
+    ring_.holes.append(THREE.Path(rrShape4(holeW - 0.02, holeT - holeB, [0.05, 0.05, 0.2, 0.2], 0, (holeB + holeT) / 2).getPoints(5)))
+    addG(toX(K.extrude(ring_, 0.05, {'bevel': 0.015, 'bevelSeg': 1, 'curveSeg': 6}).clone(), xr - 0.01), body, '#E8DCC0')
+    addG(K.box(0.2, 0.14, W + 0.06, 0.045), chrome, None, {'pos': [xr + 0.06, yb + 0.02, 0]})
+    addG(cbox(0.24, 0.05, 0.7, 0.02), rubber, '#2A2430', {'pos': [xr + 0.06, yb + 0.1, 0]})
+    for s in (-1, 1):
+        g.add(K.m(pxUV(xf(cbox(0.05, 0.36, 0.13, 0.015), {'pos': [xr + 0.02, yb + 0.5, s * (hw - 0.02)]}),
+                       896, 128, 960, 256, 1024, 512), atlas))
+    g.add(K.m(pxUV(decal(0.4, 0.2).rotateY(-math.pi / 2), 640, 128, 896, 256, 1024, 512), atlas, {'pos': [xr + 0.165, yb + 0.02, 0]}))
+
+    # ---- cab: side profile extruded across the width (pillowy bevel), joint band at xc
+    cabPts = [[xc + 0.03, yb], [-2.28, yb], [-2.47, yb + 0.12], [-2.5, 0.98], [-2.42, 1.14], [-1.98, 1.22], [-1.5, yt - 0.02],
+              [xc + 0.03, yt]]
+    cab = K.extrude(cabPts, W, {'bevel': 0.16, 'bevelSeg': 2, 'round': 0.1, 'curveSeg': 4}).clone()
+    addG(cab, body, CREAM)
+    band = rrShape4(W + 0.04, yt - yb + 0.04, [0.14, 0.14, 0.28, 0.28], 0, (yb + yt) / 2)
+    addG(toX(K.extrude(band, 0.12, {'bevel': 0.03, 'bevelSeg': 1, 'curveSeg': 6}).clone(), xc + 0.02), body, PAL.burntOrange)
+    # windshield + side windows + porthole windows
+    wsA, wsB = [-1.98, 1.22], [-1.5, yt - 0.02]
+    wsLen = math.hypot(wsB[0] - wsA[0], wsB[1] - wsA[1]) - 0.14
+    ws = K.extrude(K.roundRect(1.5, wsLen, 0.12), 0.03, {'bevel': 0.01, 'bevelSeg': 1, 'curveSeg': 4}).clone()
+    ws.rotateY(math.pi / 2)                              # shape plane -> YZ, thickness along x
+    ang = math.atan2(wsB[1] - wsA[1], wsB[0] - wsA[0])
+    ws.rotateZ(ang - math.pi / 2)
+    addG(ws, glassDark, None, {'pos': [(wsA[0] + wsB[0]) / 2 - math.sin(ang) * 0.016, (wsA[1] + wsB[1]) / 2 + math.cos(ang) * 0.016, 0]})
+    sideWin = [[-1.62, 1.4], [-1.02, 1.4], [-1.02, 1.84], [-1.4, 1.84], [-1.66, 1.54]]
+    for s in (-1, 1):
+        addG(K.extrude(sideWin, 0.02, {'bevel': 0.006, 'bevelSeg': 1, 'round': 0.06}), glassDark, None, {'pos': [0, 0, s * (hw + 0.002)]})
+        addG(K.tube([[1.85 + a, 1.58 + b, 0] for a, b in ring2(0.2, 16)], 0.025, {'seg': 16, 'radial': 4, 'closed': True}), chrome,
+             None, {'pos': [0, 0, s * (hw + 0.012)]})
+        addG(THREE.CircleGeometry(0.2, 18).rotateY(math.pi if s < 0 else 0), glassDark, None, {'pos': [1.85, 1.58, s * (hw + 0.006)]})
+    # ---- wheel wells (dark decals), wood panels with arch notches + trim, 70s tri-stripe, logo
+    wellM = K.mat(game, 'paint', '#2A2232', {'rough': 0.9})
+    for s in (-1, 1):
+        for xw in VAN.wheels:
+            R = wr + 0.12
+            yl = yb - wr + 0.01
+            dx = math.sqrt(R * R - yl * yl)
+            a0 = math.atan2(yl, dx)
+            arch = THREE.Shape()
+            arch.moveTo(dx, yl)
+            arch.absarc(0, 0, R, a0, math.pi - a0, False)
+            arch.lineTo(dx, yl)
+            ag = THREE.ShapeGeometry(arch, 12)
+            if s < 0:
+                ag.rotateY(math.pi)
+            addG(ag, wellM, None, {'pos': [xw, wr, s * (hw + 0.004)]})
+    panelShape = vanPanelShape(-2.3, xr - 0.06, 0.58, 1.18, VAN.wheels, wr + 0.14, wr)
+    panel = K.extrude(panelShape, 0.022, {'bevel': 0.008, 'bevelSeg': 1, 'curveSeg': 6}).clone()
+    _swapUV(panel)
+    for s in (-1, 1):
+        g.add(K.m(panel, wood, {'pos': [0, 0, s * (hw + 0.012)]}))
+    trimPts = [[p.x, p.y, 0] for p in panelShape.getPoints(6)]
+    for s in (-1, 1):
+        addG(K.tube(trimPts, 0.016, {'seg': 36, 'radial': 3, 'closed': True}), body, None, {'pos': [0, 0, s * (hw + 0.024)]})
+    for col, y in [[PAL.burntOrange, 1.23], [PAL.harvestGold, 1.29], [BROWN, 1.35]]:
+        for s in (-1, 1):
+            addG(cbox(xr + 2.28 - 0.1, 0.048, 0.012, 0.004), body, col, {'pos': [(xr - 2.28) / 2 - 0.02, y, s * (hw + 0.007)]})
+    for s in (-1, 1):
+        lg = pxUV(decal(1.6, 0.4), 0, 0, 640, 160, 1024, 512)
+        if s > 0:
+            lg.rotateY(math.pi)
+        lm = K.m(lg, decalM, {'pos': [0.4, 1.6, s * (hw + 0.009)]})
+        lm.userData.noAO = True
+        g.add(lm)
+    # ---- front: grille, headlights, turn signals, bumper, plate, badge
+    g.add(K.m(pxUV(xf(cbox(0.05, 0.3, 0.9, 0.015), {'pos': [-2.49, 0.86, 0]}), 896, 0, 1024, 128, 1024, 512), atlas))
+    addG(K.tube([[0, y, z] for z, y in rrXYloop(0.3, 0.92, 0.06)], 0.02, {'seg': 30, 'radial': 4, 'closed': True}), chrome, None,
+         {'pos': [-2.515, 0.86, 0]})
+    lens = lensMats(game, '#FFF2C8', 1.6)
+    headlights = []
+    for s in (-1, 1):
+        addG(THREE.LatheGeometry([THREE.Vector2(r, y) for r, y in [[0, 0.05], [0.1, 0.05], [0.125, 0.035], [0.13, 0.0]]], 16)
+             .rotateZ(math.pi / 2), chrome, None, {'pos': [-2.49, 0.9, s * 0.66]})
+        hl = lightMesh(THREE.SphereGeometry(0.1, 12, 5, 0, TAU, 0, math.pi / 2).rotateZ(math.pi / 2),
+                       lens['on'] if opts.get('headlights') else K.mat(game, 'ceramic', '#CFCBBE', {'rough': 0.35, 'rim': 0.35, 'env': 0.08}),
+                       {'pos': [-2.535, 0.9, s * 0.66], 'name': 'headlight'})
+        hl.scale.set(0.35, 1, 1)
+        g.add(hl)
+        headlights.append(hl)
+        g.add(K.m(pxUV(xf(cbox(0.04, 0.1, 0.16, 0.012), {'pos': [-2.47, 0.66, s * 0.72]}), 960, 128, 1024, 256, 1024, 512), atlas))
+    addG(K.box(0.22, 0.15, W + 0.08, 0.045), chrome, None, {'pos': [-2.5, 0.56, 0]})
+    g.add(K.m(pxUV(decal(0.4, 0.2).rotateY(math.pi / 2), 640, 0, 896, 128, 1024, 512), atlas, {'pos': [-2.615, 0.56, 0]}))
+    addG(THREE.CylinderGeometry(0.07, 0.075, 0.025, 16).rotateZ(math.pi / 2), body, '#2F5BD3', {'pos': [-2.5, 1.06, 0]})
+    # mirrors (west-coast), door handles, fuel door, side markers
+    for s in (-1, 1):
+        addG(K.tube([[-1.9, 1.42, s * hw], [-1.98, 1.44, s * (hw + 0.14)], [-1.98, 1.62, s * (hw + 0.18)]], 0.012,
+                    {'seg': 8, 'radial': 4}), chrome, None)
+        addG(cbox(0.05, 0.3, 0.16, 0.02), chrome, None, {'pos': [-1.99, 1.62, s * (hw + 0.2)]})
+        addG(THREE.PlaneGeometry(0.13, 0.26).rotateY(-math.pi / 2), glassDark, None, {'pos': [-1.962, 1.62, s * (hw + 0.2)]})
+        addG(cbox(0.14, 0.03, 0.03, 0.01), chrome, None, {'pos': [-1.2, 1.3, s * (hw + 0.02)]})
+        addG(cbox(0.14, 0.03, 0.03, 0.01), chrome, None, {'pos': [0.1, 1.3, s * (hw + 0.02)]})
+        addG(cbox(0.05, 0.03, 0.02, 0.006), K.glow(game, '#FFB347', 1.4), None, {'pos': [-2.2, 1.0, s * (hw + 0.008)]})
+    addG(THREE.CylinderGeometry(0.07, 0.07, 0.02, 12).rotateX(math.pi / 2), chrome, None, {'pos': [-0.3, 1.1, hw + 0.01]})
+    # running-board side step under the sliding door (-z)
+    addG(cbox(1.1, 0.05, 0.16, 0.012), rubber, '#3A3446', {'pos': [-0.1, 0.46, -hw - 0.04]})
+    # chassis skirt + exhaust
+    addG(cbox(4.6, 0.22, W - 0.62, 0.02), rubber, '#2A2430', {'pos': [-0.05, 0.42, 0]})
+    addG(K.cyl(0.035, 0.035, 0.3, {'seg': 8, 'bevel': 0.005}).clone().rotateZ(math.pi / 2), chrome, None, {'pos': [xr - 0.1, 0.3, 0.55]})
+
+    # ---- wheels: fat whitewall tires + chrome dog-dish caps
+    tireProf = [[0.2, -0.125], [0.238, -0.132], [0.242, -0.133], [0.3, -0.135], [0.304, -0.134], [wr - 0.025, -0.12], [wr, -0.06],
+                [wr, 0.06], [wr - 0.025, 0.12], [0.304, 0.134], [0.3, 0.135], [0.242, 0.133], [0.238, 0.132], [0.2, 0.125]]
+    tire = THREE.LatheGeometry([THREE.Vector2(r, y) for r, y in tireProf], 14)
+
+    def _ww(x, y, z):
+        r = math.hypot(x, z)
+        return THREE.Color('#F2EEE4') if abs(y) > 0.1 and r > 0.24 and r < 0.302 else THREE.Color('#2E2836')
+    K.tint(tire, _ww)
+    tire.rotateX(math.pi / 2)
+    cap = THREE.LatheGeometry([THREE.Vector2(r, y) for r, y in list(reversed(
+        [[0, 0.02], [0.2, 0.02], [0.215, 0.0], [0.2, -0.02], [0.15, -0.04], [0.06, -0.055], [0, -0.058]]))], 12)
+    cap.rotateX(math.pi / 2)
+    for xw in VAN.wheels:
+        for s in (-1, 1):
+            q = 0 if s < 0 else math.pi
+            g.add(K.m(tire, rubber, {'pos': [xw, wr, s * wz], 'rot': [0, q, 0]}))
+            g.add(K.m(cap, chrome, {'pos': [xw, wr, s * (wz + 0.11)], 'rot': [0, q, 0]}))
+
+    # ---- roof: rack rails, mast housing + telescoping mast + dish (parts.mast)
+    for s in (-1, 1):
+        addG(K.tube([[-1.2, yt + 0.02, s * 0.78], [-1.15, yt + 0.12, s * 0.78], [1.9, yt + 0.12, s * 0.78], [1.95, yt + 0.02, s * 0.78]],
+                    0.022, {'seg': 16, 'radial': 5}), chrome, None)
+    for i in range(4):
+        addG(THREE.CylinderGeometry(0.018, 0.018, 1.56, 6).rotateX(math.pi / 2), chrome, None, {'pos': [-0.8 + i * 0.8, yt + 0.12, 0]})
+    addG(THREE.CylinderGeometry(0.16, 0.18, 0.2, 14).translate(0, 0.1, 0), body, '#E8DCC0', {'pos': [1.2, yt - 0.02, 0.2]})
+    mast = THREE.Group()
+    mast.name = 'mast'
+    mast.userData.noMerge = True
+    mast.position.set(1.2, yt + 0.16, 0.2)
+    mt = clamp(opts['mast'] if opts.get('mast') is not None else 1, 0, 1)
+    segs = [[0.075, 1.3], [0.06, 1.2], [0.047, 1.1]]
+    my = 0
+    for i, (r, l) in enumerate(segs):
+        ext = l if i == 0 else l * mt
+        mast.add(tm(THREE.CylinderGeometry(r, r, l, 10).translate(0, l / 2, 0), chrome, None, {'pos': [0, my + (ext - l if i else 0), 0]}))
+        mast.add(tm(THREE.CylinderGeometry(r + 0.015, r + 0.015, 0.05, 10).translate(0, 0.025, 0), body, '#2A2430',
+                    {'pos': [0, my + (ext - l if i else 0) + l - 0.05, 0]}))
+        my += ext - 0.05
+    head = THREE.Group()
+    head.name = 'mastHead'
+    head.userData.noMerge = True
+    head.position.set(0, my, 0)
+    head.rotation.y = -0.6
+    head.add(tm(cbox(0.2, 0.14, 0.2, 0.025), body, '#E8DCC0', {'pos': [0, 0.07, 0]}))
+    dish = K.lathe([[0, 0.0], [0.12, 0.012], [0.24, 0.05], [0.33, 0.1], [0.34, 0.12], [0.3, 0.115], [0.2, 0.07], [0, 0.04]],
+                   {'seg': 16}).clone()
+    dish.rotateX(-math.pi / 2)
+    head.add(tm(dish, body, '#F2EEE4', {'pos': [0, 0.3, -0.08], 'rot': [0.25, 0, 0]}))
+    head.add(tm(K.cyl(0.015, 0.015, 0.3, {'seg': 6, 'bevel': 0.004}).clone().rotateX(-math.pi / 2), chrome, None,
+                {'pos': [0, 0.3, -0.1], 'rot': [0.25, 0, 0]}))
+    head.add(tm(K.cyl(0.035, 0.03, 0.06, {'seg': 8, 'bevel': 0.008}).clone().rotateX(-math.pi / 2), body, '#E23B3B',
+                {'pos': [0, 0.37, -0.38], 'rot': [0.25, 0, 0]}))
+    head.add(tm(K.box(0.05, 0.3, 0.05, 0.015), chrome, None, {'pos': [0, 0.2, 0]}))
+    mast.add(head)
+    g.add(mast)
+    # coiled cable hanging off the mast base
+    addG(K.tube([[1.32 + a * 0.3, yt + 0.3 + b, 0.45 + i * 0.004] for i, (a, b) in enumerate(ring2(0.12, 14))], 0.012,
+                {'seg': 28, 'radial': 4, 'closed': False}), rubber, '#2A2430')
+
+    # ---- rear doors (open), pivot at the rear corners
+    doorAng = opts['doors'] if opts.get('doors') is not None else 1.75
+    doors = {}
+    for s in (-1, 1):
+        piv = THREE.Group()
+        piv.name = 'doorL' if s < 0 else 'doorR'
+        piv.userData.noMerge = True
+        piv.position.set(xr + 0.02, 0, s * (hw - 0.02))
+        piv.rotation.y = doorAng if s < 0 else -doorAng
+        dw, dh = hw - 0.04, holeT - holeB + 0.02
+        dshape = rrShape4(dw, dh, [0.04, 0.1, 0.2, 0.04] if s < 0 else [0.1, 0.04, 0.04, 0.2], 0, 0)
+        dgeo = K.extrude(dshape, 0.06, {'bevel': 0.02, 'bevelSeg': 1, 'curveSeg': 5}).clone()
+        dgeo.rotateY(math.pi / 2)                     # plane -> YZ (width along z)
+        zc = -s * (dw / 2 + 0.01)
+        piv.add(tm(dgeo, body, CREAM, {'pos': [0.03, (holeB + holeT) / 2, zc]}))
+        # window, wood lower panel + trim, handle, tail-side reflector
+        dwin = K.extrude(K.roundRect(0.34, 0.44, 0.06), 0.09, {'bevel': 0.005, 'bevelSeg': 1, 'curveSeg': 4}).clone().rotateY(math.pi / 2)
+        piv.add(tm(dwin, glassDark, None, {'pos': [0.03, 1.66, zc]}))
+        dp = K.extrude(K.roundRect(dw - 0.12, 0.5, 0.05), 0.02, {'bevel': 0.006, 'bevelSeg': 1, 'curveSeg': 4}).clone()
+        _swapUV(dp)
+        dp.rotateY(math.pi / 2)
+        piv.add(K.m(dp, wood, {'pos': [0.068, 0.9, zc]}))
+        piv.add(tm(cbox(0.03, 0.03, 0.14, 0.008), chrome, None, {'pos': [0.08, 1.28, zc - s * 0.28]}))
+        # inside face: shag-carpet card
+        piv.add(tm(cbox(0.02, dh - 0.16, dw - 0.14, 0.006), shag, None, {'pos': [-0.012, (holeB + holeT) / 2, zc]}))
+        for y in (0.9, 1.9):
+            piv.add(tm(THREE.CylinderGeometry(0.02, 0.02, 0.12, 8), chrome, None, {'pos': [0.0, y, 0]}))
+        g.add(piv)
+        doors[piv.name] = piv
+
+    # ---- cargo interior: equipment rack (+z wall), monitor facing the rear, stool, flight case, radio, dome light
+    rx0, rack = -0.5, [[0, 0.3], [1, 0.3], [2, 0.3], [3, 0.3]]
+    addG(cbox(1.5, 1.28, 0.5, 0.02), body, '#3A3444', {'pos': [rx0 + 0.7, holeB + 0.05 + 0.64, hw - 0.36]})
+    for r, _ in rack:
+        y = holeB + 0.24 + r * 0.3
+        g.add(K.m(pxUV(decal(1.4, 0.26), 0, 256 + r * 64, 512, 320 + r * 64, 1024, 512), atlas, {'pos': [rx0 + 0.7, y, hw - 0.618]}))
+    # counter + monitor at the rear center (faces +x)
+    addG(cbox(0.5, 0.05, 0.9, 0.012), body, '#B07A45', {'pos': [xr - 0.55, holeB + 0.52, 0]})
+    for s in (-1, 1):
+        addG(K.cyl(0.02, 0.02, 0.5, {'seg': 6, 'bevel': 0.004}), chrome, None, {'pos': [xr - 0.55, holeB + 0.02, s * 0.35]})
+    mon = miniMonitor(game, M, {'w': 0.5, 'h': 0.38, 'd': 0.42, 'card': 'station_id', 'group': 'scr_feed_yard', 'id': 'van_rear_tv',
+                                'shell': '#E3662B'})
+    mon['grp'].position.set(xr - 0.6, holeB + 0.545, 0.05)
+    mon['grp'].rotation.y = -math.pi / 2 + 0.05
+    g.add(mon['grp'])
+    # stool, flight case, cable reel
+    addG(THREE.CylinderGeometry(0.17, 0.17, 0.06, 14), shag, None, {'pos': [0.9, holeB + 0.48, -0.3]})
+    addG(K.cyl(0.03, 0.03, 0.43, {'seg': 8, 'bevel': 0.006}), chrome, None, {'pos': [0.9, holeB + 0.03, -0.3]})
+    addG(cbox(0.6, 0.4, 0.4, 0.03), body, '#3A3444', {'pos': [0.1, holeB + 0.25, -0.55]})
+    addG(cbox(0.62, 0.05, 0.42, 0.015), chrome, None, {'pos': [0.1, holeB + 0.25, -0.55]})
+    addG(THREE.CylinderGeometry(0.2, 0.2, 0.18, 16).rotateX(math.pi / 2), body, '#E23B3B', {'pos': [1.45, holeB + 0.5, -0.72]})
+    # portable radio (EE toy spot): chunky 70s transistor radio on the counter
+    radio = THREE.Group()
+    radio.name = 'radio'
+    radio.userData.noMerge = True
+    radio.position.set(xr - 0.5, holeB + 0.545, -0.36)
+    radio.rotation.y = -math.pi / 2 - 0.3
+    radio.add(tm(cbox(0.3, 0.18, 0.1, 0.025), M['plastic'], '#8C9A3A', {'pos': [0, 0.09, 0]}))
+    radio.add(tm(THREE.CircleGeometry(0.055, 14).rotateY(math.pi), M['plastic'], '#3A3444', {'pos': [-0.07, 0.09, -0.052]}))
+    radio.add(tm(K.box(0.1, 0.05, 0.01, 0.004), M['plastic'], '#F4E6B8', {'pos': [0.07, 0.12, -0.052]}))
+    radio.add(tm(K.tube([[-0.1, 0.18, 0], [-0.08, 0.24, 0], [0.08, 0.24, 0], [0.1, 0.18, 0]], 0.01, {'seg': 10, 'radial': 4}), chrome, None))
+    radio.add(tm(K.cyl(0.004, 0.006, 0.4, {'seg': 4, 'bevel': 0.001}), chrome, None, {'pos': [0.11, 0.17, 0.02], 'rot': [0, 0, -0.4]}))
+    g.add(radio)
+    domeL = lightMesh(THREE.SphereGeometry(0.1, 12, 6, 0, TAU, 0, math.pi / 2).rotateX(math.pi),
+                      K.glow(game, PAL.tungsten, 1.8) if lit else K.mat(game, 'ceramic', '#F0E6D0'),
+                      {'pos': [1.2, holeT - 0.035, 0], 'name': 'domeLight'})
+    domeL.scale.set(1.4, 0.5, 1)
+    g.add(domeL)
+
+    g.userData.parts = {'doorL': doors['doorL'], 'doorR': doors['doorR'], 'mast': mast, 'mastHead': head, 'radio': radio,
+                        'domeLight': domeL, 'headlights': headlights}
+    g.userData.screens = [{'mesh': mon['scr'], 'group': 'scr_feed_yard', 'id': 'van_rear_tv'}]
+    g.userData.lightAnchors = [{'pos': [xr - 0.9, 1.75, 0], 'color': PAL.tungsten, 'intensity': 0.9, 'distance': 3.2,
+                                'flicker': 0}] if lit else []
+    g.userData.colliders = [{'min': [-2.62, 0, -hw - 0.05], 'max': [xr + 0.18, yt + 0.2, hw + 0.05]},
+                            {'min': [xr, 0, -hw - 0.22], 'max': [xr + 0.95, 2.05, -hw + 0.02]},
+                            {'min': [xr, 0, hw - 0.02], 'max': [xr + 0.95, 2.05, hw + 0.22]}]
+    g.userData.interact = None
+    g.remove(mast)
+    K.finish(game, g, {'ao': {'res': 40, 'rays': 10, 'strength': 0.85}})
+    g.add(mast)
+    K.merge(head)
+    K.merge(mast)
+    ensureCol(mast)
+    g.userData.stats = K.stats(g)
+    return g
+
+
+registerProp('yd_news_van', _news_van,
+             {'category': CAT, 'tags': ['yard', 'van', 'vehicle', 'screens'], 'size': [5.3, 5.3, 2.4], 'hero': True,
+              'cache': False,
+              'desc': '"Action 13 News" wood-paneled 70s van: FRONT at -x, open rear doors at +x (parts.doorL/R), shag '
+                      'cargo with rack + rear feed TV (scr_feed_yard), radio (parts.radio), telescoping mast + dish '
+                      '(parts.mast); opts {lit, doors, mast, headlights}'})
+
+
+# closed loop of a rounded rectangle in the (u, v) plane
+def rrXYloop(h, w, r, steps=3):
+    pts = []
+    hx, hy = w / 2 - r, h / 2 - r
+    for cx, cy, a0 in [[hx, hy, 0], [-hx, hy, math.pi / 2], [-hx, -hy, math.pi], [hx, -hy, math.pi * 1.5]]:
+        for s in range(steps + 1):
+            a = a0 + (s / steps) * (math.pi / 2)
+            pts.append([cx + math.cos(a) * r, cy + math.sin(a) * r])
+    return pts
+
+
+def ring2(r, n):
+    pts = []
+    for i in range(n):
+        a = (i / n) * TAU
+        pts.append([math.cos(a) * r, math.sin(a) * r])
+    return pts
+
+
+registerScene('out_van_rear', {
+    'floor': '#4A4652', 'wall': '#1E2344', 'room': [30, 30], 'wallH': 0.01, 'hemi': 0.75,
+    'items': [{'id': 'yd_news_van', 'pos': [0, 2], 'rotY': 0}],
+    'cam': {'pos': [6.2, 2.1, -1.2], 'target': [1.4, 1.1, 2.1], 'fov': 50},
+})
+
+
+# =================================================================================================== SODIUM LAMP POST
+# 6.6 m galvanized pole on a concrete pier, curved davit arm reaching toward -z, 70s cobra-head luminaire with a glowing
+# sodium refractor (parts.lamp, noMerge) + photocell, a soft additive light cone (parts.beam, opts.beam=false to skip).
+# Light anchor at the lens (sodium #FFB347). opts.lit=false builds it dark.
+def beamTex():
+    def draw(ctx, w, h, rand):
+        gr = ctx.createLinearGradient(0, 0, 0, h)
+        gr.addColorStop(0, 'rgba(255,255,255,0.9)')
+        gr.addColorStop(0.35, 'rgba(255,255,255,0.35)')
+        gr.addColorStop(1, 'rgba(255,255,255,0)')
+        ctx.fillStyle = gr
+        ctx.fillRect(0, 0, w, h)
+        gx = ctx.createLinearGradient(0, 0, w, 0)
+        gx.addColorStop(0, 'rgba(0,0,0,1)')
+        gx.addColorStop(0.25, 'rgba(0,0,0,0)')
+        gx.addColorStop(0.75, 'rgba(0,0,0,0)')
+        gx.addColorStop(1, 'rgba(0,0,0,1)')
+        ctx.globalCompositeOperation = 'destination-out'
+        ctx.fillStyle = gx
+        ctx.fillRect(0, 0, w, h)
+    return K.tex.canvas('out_beam', 64, 256, draw, {'repeat': False})
+
+
+def beamCone(game, color, topR, botR, h, intensity=0.5):
+    geo = THREE.CylinderGeometry(topR, botR, h, 20, 1, True)
+    geo.translate(0, -h / 2, 0)
+    mat = K.glow(game, color, intensity, {'map': beamTex(), 'additive': True, 'side': THREE.DoubleSide, 'fog': True})
+    m = K.m(geo, mat, {'name': 'beam'})
+    m.userData.noMerge = True
+    m.userData.noAO = True
+    m.userData.noOcclude = True
+    m.userData.noShadow = True
+    m.renderOrder = 5
+    return m
+
+
+def cobraHead(game, M, lit, color=None):
+    color = PAL.sodium if color is None else color
+    grp = THREE.Group()
+    # housing: long rounded teardrop (lathe along x), flattened
+    prof = [[0, -0.34], [0.07, -0.33], [0.13, -0.26], [0.16, -0.1], [0.16, 0.12], [0.13, 0.26], [0.08, 0.34], [0, 0.36]]
+    hous = K.lathe(prof, {'seg': 16, 'round': 0.03, 'steps': 1}).clone()
+    hous.rotateZ(-math.pi / 2)
+    hous.scale(1, 0.62, 1)
+    grp.add(tm(hous, M['body'], '#C9CED6', {'pos': [0, 0, 0]}))
+    # refractor bowl underneath
+    bowl = THREE.SphereGeometry(1, 16, 8, 0, TAU, math.pi / 2, math.pi / 2)
+    bowl.scale(0.26, 0.09, 0.14)
+    lamp = lightMesh(bowl, K.glow(game, color, 2.8) if lit else K.mat(game, 'crt', '#8A6A4A', {'rough': 0.2}),
+                     {'pos': [0.04, -0.07, 0], 'name': 'lamp'})
+    grp.add(lamp)
+    grp.add(tm(K.tube([[0.04 + a * 0.265, -0.068, b * 0.145] for a, b in ring2(1, 20)], 0.012,
+                      {'seg': 20, 'radial': 4, 'closed': True}), M['body'], '#8E959E'))
+    # photocell + seam ridge
+    grp.add(tm(K.cyl(0.035, 0.04, 0.05, {'seg': 10, 'bevel': 0.01}), M['body'], '#3A3444', {'pos': [-0.08, 0.09, 0]}))
+    grp.add(tm(K.cyl(0.03, 0.03, 0.02, {'seg': 10, 'bevel': 0.006}), M['body'], '#F2C230', {'pos': [-0.08, 0.135, 0]}))
+    grp.add(tm(K.tube([[-0.32, 0.04, 0], [0, 0.1, 0], [0.3, 0.05, 0]], 0.012, {'seg': 10, 'radial': 4}), M['body'], '#B4BCC6'))
+    return {'grp': grp, 'lamp': lamp}
+
+
+def _sodium_post(game, opts=None):
+    opts = opts or {}
+    g = K.prop('yd_sodium_post')
+    lit = opts.get('lit') is not False
+    M = {'body': K.mat(game, 'metal', '#ffffff', {'rough': 0.42})}
+    conc = K.mat(game, 'paint', '#ffffff', {'map': concreteTex(), 'rough': 0.92})
+    H = opts['height'] if opts.get('height') is not None else 6.6
+    reach = 1.7
+    # pier + base plate + bolts + skirt cover
+    g.add(K.m(K.taper(K.cyl(0.3, 0.3, 0.42, {'seg': 16, 'bevel': 0.05}), {'axis': 'y', 'k': 0.86}), conc))
+    g.add(tm(K.cyl(0.2, 0.2, 0.03, {'seg': 12, 'bevel': 0.008}), M['body'], '#9CA3AD', {'pos': [0, 0.42, 0]}))
+    for i in range(4):
+        a = i * math.pi / 2 + math.pi / 4
+        g.add(tm(THREE.CylinderGeometry(0.022, 0.024, 0.06, 6), M['body'], '#7E8792', {'pos': [math.cos(a) * 0.15, 0.47, math.sin(a) * 0.15]}))
+    g.add(tm(K.lathe([[0.14, 0], [0.12, 0.16], [0.085, 0.22]], {'seg': 14}), M['body'], '#B8BEC6', {'pos': [0, 0.44, 0]}))
+    # tapered pole with a hand-hole plate + number tag
+    g.add(tm(K.cyl(0.055, 0.09, H - 0.5, {'seg': 14, 'bevel': 0.01}), M['body'], '#B8BEC6', {'pos': [0, 0.44, 0]}))
+    g.add(tm(cbox(0.09, 0.16, 0.04, 0.012), M['body'], '#9CA3AD', {'pos': [0, 1.0, -0.085]}))
+    g.add(K.m(pxUV(decal(0.1, 0.14), 0, 384, 384, 512, 1024, 512), K.mat(game, 'paint', '#ffffff', {'map': towerSigns(), 'rough': 0.6}),
+              {'pos': [0, 2.2, -0.083]}))
+    # davit arm: a quarter bend toward -z, then level out
+    top = H - 0.06
+    arm = [[0, top - 0.6, 0], [0, top - 0.1, -0.02], [0, top + 0.12, -0.3], [0, top + 0.18, -0.8], [0, top + 0.12, -reach + 0.2],
+           [0, top + 0.06, -reach]]
+    g.add(tm(K.tube(arm, 0.045, {'seg': 24, 'radial': 8}), M['body'], '#B8BEC6'))
+    g.add(tm(K.lathe([[0, 0], [0.07, 0], [0.07, 0.03], [0.04, 0.08], [0, 0.09]], {'seg': 12, 'round': 0.02, 'steps': 1}), M['body'],
+             '#9CA3AD', {'pos': [0, top - 0.62, 0]}))
+    ch = cobraHead(game, M, lit)
+    ch['grp'].position.set(0, top + 0.02, -reach - 0.2)
+    ch['grp'].rotation.set(0, math.pi / 2, 0.06)
+    g.add(ch['grp'])
+    lensPos = [0, top - 0.06, -reach - 0.24]
+    beam = None
+    if lit and opts.get('beam') is not False:
+        beam = beamCone(game, PAL.sodium, 0.18, 2.3, top - 0.1, 0.32)
+        beam.position.set(lensPos[0], lensPos[1], lensPos[2])
+        g.add(beam)
+    g.userData.parts = {'lamp': ch['lamp'], 'beam': beam}
+    g.userData.lightAnchors = [{'pos': [lensPos[0], lensPos[1] - 0.15, lensPos[2]], 'color': PAL.sodium, 'intensity': 3.2,
+                                'distance': 13, 'flicker': 0.02}] if lit else []
+    g.userData.colliders = [{'min': [-0.3, 0, -0.3], 'max': [0.3, 2.6, 0.3]}]
+    if beam:
+        g.remove(beam)
+    K.finish(game, g, {'ao': {'res': 60, 'dist': 0.3}})
+    if beam:
+        g.add(beam)
+    return g
+
+
+registerProp('yd_sodium_post', _sodium_post,
+             {'category': CAT, 'tags': ['yard', 'light', 'lamp', 'street'], 'size': [0.6, 6.8, 2.3],
+              'desc': '6.6 m sodium lamp post: concrete pier, davit arm toward -z, cobra head with glowing refractor '
+                      '(parts.lamp), soft light cone (parts.beam); anchor sodium 3.2/13 m (opts.lit, opts.beam, opts.height)'})
+
+
+# =================================================================================================== CHAIN-LINK FENCE
+# 3 m chain-link (GDD §5.7). yd_fence: one section along x (opts.len, default 3 m), posts at both ends (opts.posts
+# 'both'|'left'|'none'), top rail, bottom wire, alpha-tested diamond mesh, 3-strand barbed wire on arms leaning to
+# -z (the OUTSIDE by default; opts.flip leans them to +z), optional sign (opts.sign 'danger'|'private'|'wztv').
+# yd_fence_post: terminal/corner post with a diagonal brace. yd_fence_gate: ajar double vehicle gate.
+def chainTex():
+    def draw(ctx, w, h, rand):
+        ctx.clearRect(0, 0, w, h)
+        n = 4
+        s = w / n
+
+        def drw(col, lw, off):
+            ctx.strokeStyle = col
+            ctx.lineWidth = lw
+            ctx.lineCap = 'round'
+            for i in range(-n, n * 2 + 1):
+                ctx.beginPath()
+                ctx.moveTo(i * s + off, 0 + off)
+                ctx.lineTo(i * s + h + off, h + off)
+                ctx.stroke()
+                ctx.beginPath()
+                ctx.moveTo(i * s + off, h + off)
+                ctx.lineTo(i * s + h + off, 0 + off)
+                ctx.stroke()
+        drw('rgba(40,36,56,0.55)', 9, 2)
+        drw('#B9C0CA', 7, 0)
+        drw('rgba(255,255,255,0.55)', 2, -1.5)
+    return K.tex.canvas('out_chainlink', 256, 256, draw, {'repeat': True})
+
+
+def fenceSignTex():
+    def draw(ctx, *_):
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        # private property (0,0)-(256,128)
+        ctx.fillStyle = '#F4F1E8'
+        ctx.beginPath()
+        ctx.roundRect(2, 2, 252, 124, 12)
+        ctx.fill()
+        ctx.fillStyle = '#C8201E'
+        ctx.beginPath()
+        ctx.roundRect(8, 8, 240, 44, 8)
+        ctx.fill()
+        ctx.fillStyle = '#F4F1E8'
+        fitText(ctx, 'NO TRESPASSING', 220, 28)
+        ctx.fillText('NO TRESPASSING', 128, 31)
+        ctx.fillStyle = '#2A1D2A'
+        fitText(ctx, 'WZTV PROPERTY', 220, 26, 'Titan One')
+        ctx.fillText('WZTV PROPERTY', 128, 78)
+        fitText(ctx, 'VIOLATORS WILL BE PROSECUTED', 220, 12, 'Titan One')
+        ctx.fillText('VIOLATORS WILL BE PROSECUTED', 128, 106)
+        # wztv (256,0)-(512,128)
+        ctx.fillStyle = '#2F5BD3'
+        ctx.beginPath()
+        ctx.roundRect(258, 2, 252, 124, 12)
+        ctx.fill()
+        ctx.fillStyle = '#F4F1E8'
+        ctx.beginPath()
+        ctx.arc(318, 64, 44, 0, TAU)
+        ctx.fill()
+        ctx.fillStyle = '#E23B3B'
+        ctx.beginPath()
+        ctx.arc(318, 64, 38, 0, TAU)
+        ctx.fill()
+        ctx.fillStyle = '#F4F1E8'
+        font(ctx, 44, 'Titan One')
+        ctx.fillText('13', 318, 68)
+        ctx.fillStyle = '#FFD23A'
+        fitText(ctx, 'WZTV', 140, 40)
+        ctx.fillText('WZTV', 434, 50)
+        ctx.fillStyle = '#F4F1E8'
+        fitText(ctx, 'TRANSMITTER SITE', 140, 16, 'Titan One')
+        ctx.fillText('TRANSMITTER SITE', 434, 88)
+        # keep gate closed (0,128)-(256,256)
+        ctx.fillStyle = '#F2C230'
+        ctx.beginPath()
+        ctx.roundRect(2, 130, 252, 124, 12)
+        ctx.fill()
+        ctx.strokeStyle = '#2A1D2A'
+        ctx.lineWidth = 6
+        ctx.beginPath()
+        ctx.roundRect(10, 138, 236, 108, 8)
+        ctx.stroke()
+        ctx.fillStyle = '#2A1D2A'
+        fitText(ctx, 'KEEP GATE', 200, 34)
+        ctx.fillText('KEEP GATE', 128, 172)
+        fitText(ctx, 'CLOSED', 200, 40)
+        ctx.fillText('CLOSED', 128, 214)
+    return atlasTex('fence_signs', 512, 256, draw)
+
+
+def fenceMats(game):
+    mesh = K.mat(game, 'metal', '#ffffff', {'map': chainTex(), 'alphaTest': 0.45, 'side': THREE.DoubleSide, 'rough': 0.45, 'rim': 0.3})
+    mesh.alphaToCoverage = True
+    mesh.extra['alphaToCoverage'] = True   # (JS sets it on the material after creation: recorded in the spec)
+    return {
+        'galv': K.mat(game, 'metal', C.galv, {'rough': 0.42}),
+        'mesh': mesh,
+        'sign': K.mat(game, 'paint', '#ffffff', {'map': fenceSignTex(), 'rough': 0.5}),
+        'tower': None,
+    }
+
+
+FH = 3.0
+
+
+def fencePost(G, x, z, r, h, cap=True):
+    G['galv'].append(pipeGeo(r, [x, 0, z], [x, h, z], 10, False))
+    if cap:
+        G['galv'].append(xf(K.lathe([[0, 0], [r + 0.012, 0], [r + 0.012, 0.03], [r * 0.7, 0.07], [0, 0.08]], {'seg': 10}), {'pos': [x, h, z]}))
+    G['galv'].append(xf(THREE.CylinderGeometry(r + 0.03, r + 0.05, 0.08, 10), {'pos': [x, 0.04, z]}))
+
+
+# barbed wire: arm leaning to side sz (-1/+1) at post x + 3 strands with tetra barbs between x0..x1
+def barbArm(G, x, sz, h):
+    a, b = [x, h - 0.05, 0], [x, h + 0.36, sz * 0.36]
+    G['galv'].append(bar8(0.05, 0.03, a, b, [1, 0, 0], 0.008))
+
+
+def barbWire(G, x0, x1, sz, h, rnd):
+    for k in range(3):
+        t = (k + 1) / 3
+        y, z = h - 0.05 + 0.41 * t, sz * 0.36 * t
+        G['galv'].append(pipeGeo(0.006, [x0, y, z], [x1, y, z], 4, False))
+        x = x0 + 0.12
+        while x < x1 - 0.05:
+            tet = THREE.TetrahedronGeometry(0.03)
+            tet.scale(1, 0.5, 0.5)
+            G['galv'].append(xf(tet, {'pos': [x + (rnd() - 0.5) * 0.04, y, z], 'rot': [rnd() * 3, rnd() * 3, rnd() * 3]}))
+            x += 0.22
+
+
+def meshPanel(w, h, x0=0, y0=0):
+    pg = THREE.PlaneGeometry(w, h)
+    uv = pg.attributes.uv
+    a = np.asarray(uv, dtype=np.float64).copy()
+    uv[:, 0] = (a[:, 0] * w + x0) * 2.2
+    uv[:, 1] = (a[:, 1] * h + y0) * 2.2
+    return pg
+
+
+def _fence(game, opts=None):
+    opts = opts or {}
+    g = K.prop('yd_fence')
+    L = opts['len'] if opts.get('len') is not None else 3
+    hl = L / 2
+    M = fenceMats(game)
+    G = {'galv': [], 'sign': []}
+    rnd = mulberry32((opts['seed'] if opts.get('seed') is not None else 1) * 17 + 3)
+    posts = opts['posts'] if opts.get('posts') is not None else 'both'
+    sz = 1 if opts.get('flip') else -1
+    if posts != 'none':
+        fencePost(G, -hl, 0, 0.045, FH)
+        barbArm(G, -hl, sz, FH)
+    if posts == 'both':
+        fencePost(G, hl, 0, 0.045, FH)
+        barbArm(G, hl, sz, FH)
+    G['galv'].append(pipeGeo(0.03, [-hl, FH - 0.08, 0.05], [hl, FH - 0.08, 0.05], 8, False))
+    G['galv'].append(pipeGeo(0.008, [-hl, 0.06, 0.05], [hl, 0.06, 0.05], 4, False))
+    # wire ties
+    y = 0.4
+    while y < FH - 0.2:
+        for x in (-hl, hl):
+            if posts == 'both' or x < 0:
+                G['galv'].append(xf(THREE.TorusGeometry(0.052, 0.006, 3, 8), {'pos': [x, y, 0], 'rot': [math.pi / 2, 0, 0]}))
+        y += 0.6
+    barbWire(G, -hl, hl, sz, FH, rnd)
+    mesh = K.m(meshPanel(L, FH - 0.12, (opts['seed'] if opts.get('seed') is not None else 0) * 0.37, 0), M['mesh'],
+               {'pos': [0, (FH - 0.12) / 2 + 0.04, 0.05]})
+    mesh.userData.noOcclude = True
+    mesh.userData.noAO = True
+    g.add(mesh)
+    if opts.get('sign'):
+        cell = {'private': [0, 0, 256, 128], 'wztv': [256, 0, 512, 128], 'closed': [0, 128, 256, 256]}.get(opts['sign']) or [0, 0, 256, 128]
+        sx = (rnd() - 0.5) * 0.6
+        G['sign'].append(xf(pxUV(decal(0.62, 0.31), *cell, 512, 256), {'pos': [sx, 1.55, 0.02], 'rot': [0, 0, (rnd() - 0.5) * 0.06]}))
+        G['sign'].append(xf(pxUV(decal(0.62, 0.31).rotateY(math.pi), *cell, 512, 256),
+                            {'pos': [sx, 1.55, 0.03], 'rot': [0, 0, (rnd() - 0.5) * 0.06]}))
+    g.add(K.m(mergeList(G['galv']), M['galv']))
+    if len(G['sign']):
+        g.add(K.m(mergeList(G['sign']), M['sign']))
+    g.userData.colliders = [{'min': [-hl, 0, -0.08], 'max': [hl, FH, 0.12]}]
+    return K.finish(game, g, {'ao': {'res': 48, 'dist': 0.2, 'height': 0.3}})
+
+
+registerProp('yd_fence', _fence,
+             {'category': CAT, 'tags': ['yard', 'fence', 'wall'], 'size': [3.0, 3.45, 0.5],
+              'desc': '3 m chain-link section along x: posts, top rail, diamond mesh (alpha), barbed wire leaning to -z '
+                      '(opts.len, posts both|left|none, flip, sign private|wztv|closed, seed)'})
+
+
+def _fence_post(game, opts=None):
+    opts = opts or {}
+    g = K.prop('yd_fence_post')
+    M = fenceMats(game)
+    G = {'galv': []}
+    fencePost(G, 0, 0, 0.065, FH + 0.05)
+    G['galv'].append(xf(THREE.CylinderGeometry(0.085, 0.085, 0.05, 12), {'pos': [0, FH - 0.1, 0]}))
+    G['galv'].append(xf(THREE.CylinderGeometry(0.085, 0.085, 0.05, 12), {'pos': [0, 0.6, 0]}))
+    # diagonal brace + tension rod toward +x (the run it terminates)
+    G['galv'].append(pipeGeo(0.03, [0, 1.5, 0], [1.6, 1.5, 0], 8, False))
+    G['galv'].append(pipeGeo(0.009, [1.6, 1.5, 0], [0, 0.15, 0], 4, False))
+    G['galv'].append(pipeGeo(0.009, [0, 1.5, 0], [1.6, 0.15, 0], 4, False))
+    G['galv'].append(bar8(0.06, 0.035, [0, FH - 0.05, 0], [0, FH + 0.36, 0.36 if opts.get('flip') else -0.36], [1, 0, 0], 0.008))
+    g.add(K.m(mergeList(G['galv']), M['galv']))
+    g.userData.colliders = [{'min': [-0.1, 0, -0.1], 'max': [0.1, FH, 0.1]}]
+    return K.finish(game, g, {'ao': {'res': 40, 'dist': 0.2}})
+
+
+registerProp('yd_fence_post', _fence_post,
+             {'category': CAT, 'tags': ['yard', 'fence'], 'size': [1.7, 3.5, 0.5],
+              'desc': 'chain-link terminal/corner post with brace + tension rods toward +x, barb arm (opts.flip)'})
+
+
+def _fence_gate(game, opts=None):
+    opts = opts or {}
+    g = K.prop('yd_fence_gate')
+    M = fenceMats(game)
+    G = {'galv': [], 'sign': []}
+    rnd = mulberry32(99)
+    span_ = 4.6
+    hs = span_ / 2
+    LW, LH = hs - 0.12, 2.7
+    for s in (-1, 1):
+        fencePost(G, s * hs, 0, 0.075, FH + 0.1)
+        G['galv'].append(bar8(0.06, 0.035, [s * hs, FH, 0], [s * hs, FH + 0.4, 0.38 if opts.get('flip') else -0.38], [1, 0, 0], 0.008))
+    leaves = {}
+    ajar = opts['ajar'] if opts.get('ajar') is not None else 0.5
+    for s in (-1, 1):
+        piv = THREE.Group()
+        piv.name = 'leafL' if s < 0 else 'leafR'
+        piv.userData.noMerge = True
+        piv.position.set(s * (hs - 0.1), 0, 0)
+        piv.rotation.y = 0 if s < 0 else -ajar
+        L = {'galv': []}
+        x0, x1, y0, y1 = 0, -s * LW, 0.14, LH
+        frame = [[x0, y0, 0], [x1, y0, 0], [x1, y1, 0], [x0, y1, 0]]
+        for i in range(4):
+            L['galv'].append(pipeGeo(0.035, frame[i], frame[(i + 1) % 4], 8, False))
+        for p in frame:
+            L['galv'].append(xf(THREE.SphereGeometry(0.036, 8, 6), {'pos': p}))
+        L['galv'].append(pipeGeo(0.025, [x0, (y0 + y1) / 2, 0], [x1, (y0 + y1) / 2, 0], 8, False))
+        L['galv'].append(pipeGeo(0.02, [x0, y0, 0], [x1, y1, 0], 6, False))
+        for y in (0.5, 2.3):
+            L['galv'].append(xf(THREE.CylinderGeometry(0.05, 0.05, 0.12, 10), {'pos': [0.02 * s, y, 0]}))
+        # latch on the free end
+        L['galv'].append(xf(cbox(0.08, 0.14, 0.06, 0.012), {'pos': [x1 + s * 0.04, 1.3, 0]}))
+        piv.add(K.m(mergeList(L['galv']), M['galv']))
+        mesh = K.m(meshPanel(LW - 0.04, LH - 0.2, s * 0.3, 0), M['mesh'], {'pos': [x1 / 2, (y0 + y1) / 2, 0]})
+        mesh.userData.noOcclude = True
+        mesh.userData.noAO = True
+        piv.add(mesh)
+        g.add(piv)
+        leaves[piv.name] = piv
+    # loose chain + padlock hanging off the closed leaf's latch
+    chain = []
+    cx = -hs + 0.1 + LW + 0.06
+    for i in range(9):
+        t = i / 8
+        x, y = cx + 0.02 + math.sin(t * math.pi) * 0.05, 1.28 - t * 0.5
+        chain.append(xf(THREE.TorusGeometry(0.022, 0.006, 4, 8), {'pos': [x, y, -0.05], 'rot': [0, math.pi / 2 if i % 2 else 0, 0]}))
+    chain.append(xf(cbox(0.07, 0.08, 0.035, 0.012), {'pos': [cx + 0.03, 0.73, -0.05]}))
+    chain.append(xf(THREE.TorusGeometry(0.026, 0.008, 4, 10, math.pi), {'pos': [cx + 0.03, 0.77, -0.05]}))
+    g.add(K.m(mergeList(chain), K.mat(game, 'brass', '#C8963C')))
+    G['sign'].append(xf(pxUV(decal(0.6, 0.3), 0, 128, 256, 256, 512, 256), {'pos': [-1.2, 1.6, -0.02]}))
+    G['sign'].append(xf(pxUV(decal(0.6, 0.3).rotateY(math.pi), 0, 128, 256, 256, 512, 256), {'pos': [-1.2, 1.6, 0.02]}))
+    barbWire(G, -hs, hs, 1 if opts.get('flip') else -1, FH + 0.05, rnd)
+    g.add(K.m(mergeList(G['galv']), M['galv']))
+    g.add(K.m(mergeList(G['sign']), M['sign']))
+    g.userData.parts = leaves
+    g.userData.colliders = [
+        {'min': [-hs - 0.1, 0, -0.1], 'max': [-hs + 0.1, FH, 0.1]}, {'min': [hs - 0.1, 0, -0.1], 'max': [hs + 0.1, FH, 0.1]},
+        {'min': [-hs, 0, -0.08], 'max': [-hs + LW, LH, 0.08]},
+    ]
+    K.finish(game, g, {'ao': {'res': 56, 'dist': 0.2, 'height': 0.3}})
+    return g
+
+
+registerProp('yd_fence_gate', _fence_gate,
+             {'category': CAT, 'tags': ['yard', 'fence', 'gate'], 'size': [4.8, 3.5, 0.9],
+              'desc': 'chain-link double vehicle gate (4.6 m): left leaf closed with chain + padlock, right leaf ajar '
+                      '(parts.leafL/R, opts.ajar rad, opts.flip); colliders: posts + closed leaf only (the squeeze gap stays '
+                      'open)'})
+
+
+# =================================================================================================== NEON "WZTV 13"
+# Pink "WZTV" + blue "13" in a blue ring, glass neon tubes on standoffs over a navy backboard with a cream trim, halo
+# cards, transformer can. WALL PROP: origin on the wall at the sign's bottom center, back at z = 0, faces -z.
+# parts.neonPink / neonBlue (+ haloPink / haloBlue); setNeon(game, g, on) swaps lit/unlit. opts.lit.
+NEON_GLYPH = {
+    'W': [[[0, 1], [0.22, 0], [0.5, 0.64], [0.78, 0], [1, 1]]],
+    'Z': [[[0.02, 1], [0.98, 1], [0.02, 0], [0.98, 0]]],
+    'T': [[[0, 1], [1, 1]], [[0.5, 1], [0.5, 0]]],
+    'V': [[[0, 1], [0.5, 0], [1, 1]]],
+    '1': [[[0.12, 0.78], [0.5, 1], [0.5, 0]], [[0.12, 0], [0.88, 0]]],
+    '3': [[[0.05, 0.82], [0.25, 1], [0.72, 1], [0.92, 0.8], [0.8, 0.58], [0.45, 0.52], [0.82, 0.44], [0.95, 0.22], [0.72, 0],
+           [0.25, 0], [0.05, 0.16]]],
+}
+
+
+def neonStroke(pts, ox, oy, sw, sh, round_=0.35):
+    p2 = [[ox + x * sw, oy + y * sh] for x, y in pts]
+    r = K.roundProfile(p2, min(sw, sh) * 0.14 * round_ * 3, 3)
+    return r
+
+
+# setNeon(game, g, on): runtime (Godot) — swaps parts.neonPink / neonBlue between K.glow(PAL.neonPink | '#3F76FF', 2.6)
+# and plastic '#E8B8C8' | '#B8C8E8' {transparent, opacity 0.7}; toggles parts.haloPink / haloBlue visibility.
+
+
+def _neon_wztv(game, opts=None):
+    opts = opts or {}
+    g = K.prop('yd_neon_wztv')
+    lit = opts.get('lit') is not False
+    paint = K.mat(game, 'lacquer', '#ffffff', {'rough': 0.45})
+    galv = K.mat(game, 'metal', C.galv, {'rough': 0.45})
+
+    # layout in "reading" coordinates u (left -> right as seen from the front); world x = -u (the viewer's right is -x)
+    def X(u):
+        return -u
+    H, D, bz = 1.1, 0.1, -0.12
+    board = K.extrude(K.roundRect(2.5, 0.9, 0.3), D, {'bevel': 0.025, 'bevelSeg': 2, 'curveSeg': 5})
+    g.add(tm(board, paint, '#1E2344', {'pos': [X(-0.35), H / 2, bz + D / 2]}))
+    g.add(tm(THREE.CylinderGeometry(0.58, 0.58, D + 0.06, 28).rotateX(math.pi / 2), paint, '#1E2344',
+             {'pos': [X(1.02), H / 2 + 0.02, bz + D / 2 - 0.02]}))
+    g.add(tm(K.tube([[x, z, 0] for x, _, z in K.roundRectPath(2.46, 0.86, 0.28, 0, 3)], 0.018, {'seg': 48, 'radial': 4, 'closed': True}),
+             paint, '#F6E7C8', {'pos': [X(-0.35), H / 2, bz - 0.005]}))
+    g.add(tm(K.tube([[a, b, 0] for a, b in ring2(0.56, 24)], 0.02, {'seg': 24, 'radial': 4, 'closed': True}), paint, '#F6E7C8',
+             {'pos': [X(1.02), H / 2 + 0.02, bz - 0.055]}))
+    for u in (-1.3, -0.1, 1.02):
+        g.add(tm(cbox(0.06, 0.5, 0.04, 0.01), galv, None, {'pos': [X(u), H / 2, -0.02]}))
+    g.add(tm(cbox(0.3, 0.22, 0.14, 0.03), paint, '#8E959E', {'pos': [X(-1.2), -0.1, -0.08]}))
+    g.add(tm(K.tube([[X(-1.2), 0.0, -0.08], [X(-1.2), 0.15, -0.1], [X(-1.1), 0.24, -0.12]], 0.015, {'seg': 8, 'radial': 4}), paint,
+             '#3A3444'))
+    pink, blue, studs = [], [], []
+    tz = bz - 0.07
+
+    def tubeOf(pts, r):
+        return K.tube([[X(u_), v, tz] for u_, v in pts], r, {'seg': max(10, js_round(len(pts) * 1.6)), 'radial': 5})
+    letters = ['W', 'Z', 'T', 'V']
+    lw, gap = [0.5, 0.4, 0.42, 0.44], 0.08
+    u = -1.53
+    haloP, haloB = [], []
+    for i, ch in enumerate(letters):
+        for st in NEON_GLYPH[ch]:
+            pts = neonStroke(st, u, 0.28, lw[i], 0.56)
+            pink.append(tubeOf(pts, 0.024))
+            haloP.append(pts)
+            studs.extend([pts[0], pts[-1]])
+        u += lw[i] + gap
+    for i, (ch, w) in enumerate([['1', 0.34], ['3', 0.4]]):
+        for st in NEON_GLYPH[ch]:
+            pts = neonStroke(st, 0.98 if i else 0.74, 0.33, 0.25 if i else 0.19, 0.42, 0.25 if ch == '3' else 0.35)
+            blue.append(tubeOf(pts, 0.022))
+            haloB.append(pts)
+            studs.append(pts[0])
+    blue.append(K.tube([[X(1.02) + a, H / 2 + 0.02 + b, tz] for a, b in ring2(0.47, 26)], 0.022, {'seg': 30, 'radial': 5, 'closed': True}))
+    glowP = K.glow(game, PAL.neonPink, 2.6) if lit else K.mat(game, 'plastic', '#E8B8C8', {'transparent': True, 'opacity': 0.7})
+    glowB = K.glow(game, '#3F76FF', 2.6) if lit else K.mat(game, 'plastic', '#B8C8E8', {'transparent': True, 'opacity': 0.7})
+    neonPink = lightMesh(mergeList(pink), glowP, {'name': 'neonPink'})
+    neonBlue = lightMesh(mergeList(blue), glowB, {'name': 'neonBlue'})
+    g.add(neonPink, neonBlue)
+    st = []
+    for su, sv in studs:
+        st.append(xf(THREE.CylinderGeometry(0.018, 0.022, 0.07, 6).rotateX(math.pi / 2), {'pos': [X(su), sv, bz - 0.035]}))
+    g.add(K.m(mergeList(st), K.mat(game, 'ceramic', '#E8E2D4')))
+
+    # halo cards: card x runs with u (a plane facing -z maps texture u = 0 to world +x, the viewer's left)
+    def toCard(pts, cu, cv, hw, hh):
+        return [[(pu - cu) / hw, (pv - cv) / hh] for pu, pv in pts]
+    hp = haloTex('wztv_pink3', [toCard(p, -0.55, 0.56, 1.3, 0.55) for p in haloP], {'w': 512, 'h': 256, 'blur': 14, 'width': 26})
+    hb = haloTex('wztv_blue3', [toCard(p, 1.02, 0.57, 0.62, 0.62) for p in haloB],
+                 {'w': 256, 'h': 256, 'blur': 12, 'width': 22, 'circles': [[0, 0, 0.76]]})
+    haloPink = lightMesh(THREE.PlaneGeometry(2.6, 1.1).rotateY(math.pi), K.glow(game, PAL.neonPink, 0.9, {'map': hp, 'additive': True}),
+                         {'pos': [X(-0.55), 0.56, bz - 0.01], 'name': 'haloPink'})
+    haloBlue = lightMesh(THREE.PlaneGeometry(1.24, 1.24).rotateY(math.pi), K.glow(game, '#3F76FF', 0.9, {'map': hb, 'additive': True}),
+                         {'pos': [X(1.02), 0.57, bz - 0.062], 'name': 'haloBlue'})
+    haloPink.visible = haloBlue.visible = lit
+    g.add(haloPink, haloBlue)
+    g.userData.parts = {'neonPink': neonPink, 'neonBlue': neonBlue, 'haloPink': haloPink, 'haloBlue': haloBlue}
+    g.userData.lightAnchors = [
+        {'pos': [X(-0.55), 0.5, -0.9], 'color': PAL.neonPink, 'intensity': 1.6, 'distance': 5, 'flicker': 0.08},
+        {'pos': [X(1.0), 0.5, -0.9], 'color': '#3F76FF', 'intensity': 1.2, 'distance': 4, 'flicker': 0.05},
+    ] if lit else []
+    g.userData.colliders = []
+    K.finish(game, g, {'ao': {'res': 48, 'dist': 0.15, 'height': 0}})
+    return g
+
+
+registerProp('yd_neon_wztv', _neon_wztv,
+             {'category': CAT, 'tags': ['yard', 'neon', 'sign', 'wall'], 'size': [3.3, 1.2, 0.25],
+              'desc': 'WALL: pink "WZTV" + blue "13" neon on a navy backboard (origin on the wall at bottom center, faces '
+                      '-z); parts.neonPink/neonBlue/haloPink/haloBlue, setNeon(); opts.lit'})
+
+
+# =================================================================================================== CITY BACKDROP (sky_*)
+# Night skyline kit for the views beyond the fence / out of windows (30..150 m away): no colliders, low tris, rich
+# canvas facades (4 styles) + an additive lit-window overlay, rooftop water tanks, blinking red aircraft lights
+# (parts.redLights), billboards with sponsor art, a big cartoon moon. Materials ignore fog by default (opts.fog = true
+# to let the yard fog eat them). All face -z (toward the station). Category 'outdoor_city'.
+CITY = 'outdoor_city'
+# style: wall color, window color, tile = cols x rows windows over (cols*bay) x (rows*floor) meters
+FACADE = {
+    'brick': JSObj(wall='#6E4448', band='#8A5A54', glass='#1E1E36', frame='#C8B49C', bay=2.6, floor=3.2, cols=4, rows=4, lit=0.38,
+                   kind='punch'),
+    'office': JSObj(wall='#5E6482', band='#7A809C', glass='#1A2240', frame='#A8B0C4', bay=3.0, floor=3.6, cols=4, rows=4, lit=0.3,
+                    kind='ribbon'),
+    'deco': JSObj(wall='#8A7462', band='#A89078', glass='#221E34', frame='#E0CCA8', bay=2.4, floor=3.4, cols=4, rows=4, lit=0.34,
+                  kind='pier'),
+    'glass': JSObj(wall='#2C3A5E', band='#44557E', glass='#16203E', frame='#6A7CA8', bay=1.6, floor=3.6, cols=6, rows=4, lit=0.24,
+                   kind='curtain'),
+}
+
+
+def facadeTex(style, glow):
+    F = FACADE[style]
+
+    def draw(ctx, w, h, _rand):
+        rand = mulberry32(len(style) * 977 + 13)   # same layout for base + glow
+        cw, ch = w / F.cols, h / F.rows
+        if glow:
+            ctx.fillStyle = '#000'
+            ctx.fillRect(0, 0, w, h)
+        else:
+            ctx.fillStyle = F.wall
+            ctx.fillRect(0, 0, w, h)
+            for i in range(900):
+                ctx.globalAlpha = 0.06 + rand() * 0.06
+                ctx.fillStyle = '#000' if rand() < 0.5 else '#fff'
+                ctx.fillRect(rand() * w, rand() * h, 2, 2)
+            ctx.globalAlpha = 1
+            if style == 'brick':
+                ctx.strokeStyle = 'rgba(0,0,0,0.12)'
+                ctx.lineWidth = 1
+                for y in range(0, h, 8):
+                    ctx.beginPath()
+                    ctx.moveTo(0, y)
+                    ctx.lineTo(w, y)
+                    ctx.stroke()
+        for r in range(F.rows):
+            # floor band
+            if not glow and F.kind != 'curtain':
+                ctx.fillStyle = F.band
+                ctx.fillRect(0, r * ch + ch - 10, w, 10)
+            for c in range(F.cols):
+                lit = rand() < F.lit
+                tv = rand() < 0.22
+                half = rand() < 0.3
+                if F.kind == 'ribbon':
+                    x, ww, y, hh = c * cw + 2, cw - 4, r * ch + ch * 0.28, ch * 0.5
+                elif F.kind == 'curtain':
+                    x, ww, y, hh = c * cw + 3, cw - 6, r * ch + 4, ch - 8
+                elif F.kind == 'pier':
+                    x, ww, y, hh = c * cw + cw * 0.22, cw * 0.56, r * ch + ch * 0.18, ch * 0.62
+                else:
+                    x, ww, y, hh = c * cw + cw * 0.18, cw * 0.64, r * ch + ch * 0.2, ch * 0.56
+                warm = '#8FD8FF' if tv else ['#FFD58A', '#FFC870', '#FFE3A8'][_floor(rand() * 3)]
+                if glow:
+                    if not lit:
+                        continue
+                    ctx.fillStyle = warm
+                    ctx.fillRect(x, y, ww, hh)
+                    if half:
+                        ctx.fillStyle = '#000'
+                        ctx.fillRect(x, y, ww, hh * 0.45)
+                    ctx.fillStyle = 'rgba(0,0,0,0.35)'
+                    ctx.fillRect(x + ww * 0.48, y, ww * 0.04, hh)
+                else:
+                    ctx.fillStyle = F.frame
+                    ctx.fillRect(x - 3, y - 3, ww + 6, hh + 6)
+                    gr = ctx.createLinearGradient(x, y, x + ww, y + hh)
+                    gr.addColorStop(0, hexMix(F.glass, '#6A78B8', 0.35))
+                    gr.addColorStop(1, F.glass)
+                    ctx.fillStyle = hexMix(warm, F.glass, 0.35) if lit else gr
+                    ctx.fillRect(x, y, ww, hh)
+                    if lit and half:
+                        ctx.fillStyle = hexMix('#C87A5A', F.glass, 0.3)
+                        ctx.fillRect(x, y, ww, hh * 0.45)
+                    ctx.fillStyle = F.frame
+                    ctx.fillRect(x + ww * 0.48, y, ww * 0.04, hh)
+                    if F.kind == 'pier':
+                        ctx.fillStyle = hexMix(F.wall, '#000', 0.15)
+                        ctx.fillRect(c * cw, r * ch, cw * 0.1, ch)
+    return K.tex.canvas('out_facade|%s|%d' % (style, 1 if glow else 0), 512, 512, draw)
+
+
+# UV'd box for a facade: u along the face in meters / tile width, v = y / tile height; top/bottom faces tiny
+def facadeBox(w, h, d, style, du=0, dv=0):
+    F = FACADE[style]
+    tw, th = F.bay * F.cols, F.floor * F.rows
+    g = THREE.BoxGeometry(w, h, d)
+    g.translate(0, h / 2, 0)
+    p, n, uv = g.attributes.position, g.attributes.normal, g.attributes.uv
+    for i in range(p.count):
+        ax, ay = abs(n.getX(i)), abs(n.getY(i))
+        if ay > 0.5:
+            u, v = 0.02, 0.02
+        elif ax > 0.5:
+            u, v = -p.getZ(i) * js_sign(n.getX(i)), p.getY(i)
+        else:
+            u, v = p.getX(i) * -js_sign(n.getZ(i)), p.getY(i)
+        uv.setXY(i, (u + du) / tw, (v + dv) / th)
+    return g
+
+
+def cityMats(game, opts=None):
+    opts = opts or {}
+    fog = bool(opts.get('fog'))
+    M = {'fog': fog, 'facade': {}, 'glow': {}}
+    for s in FACADE:
+        M['facade'][s] = K.mat(game, 'paint', '#ffffff', {'map': facadeTex(s, False), 'rough': 0.8, 'rim': 0.15, 'rimColor': '#9FB6FF',
+                                                          'fog': fog})
+        M['glow'][s] = K.glow(game, '#ffffff', 1.35, {'map': facadeTex(s, True), 'additive': True, 'fog': fog})
+    M['roof'] = K.mat(game, 'paint', '#ffffff', {'rough': 0.8, 'rim': 0.2, 'rimColor': '#9FB6FF', 'fog': fog})
+    M['red'] = K.glow(game, PAL.onAirRed, 2.4, {'fog': fog})
+    M['wood'] = K.mat(game, 'teak', '#ffffff', {'map': K.tex.wood('#8A6040', {'planks': 8, 'dark': 0.35}), 'fog': fog, 'rim': 0.2,
+                                                'rimColor': '#9FB6FF'})
+    return M
+
+
+# adds one building (geometry lists by style) at x, z with its roof details; returns its height
+def addBuilding(L, spec, rnd):
+    x = spec['x'] if spec.get('x') is not None else 0
+    z = spec['z'] if spec.get('z') is not None else 0
+    w, h, d, style = spec['w'], spec['h'], spec['d'], spec['style']
+    F = FACADE[style]
+    du, dv = _floor(rnd() * F.cols) * F.bay, -F.floor * 0.15
+    tiers = [[1, 1], [0.72, 0.18], [0.46, 0.1]] if style == 'deco' else [[1, 1]]
+    y, top = 0, 0
+    for i, (s, hf) in enumerate(tiers):
+        tw, td = w * s, d * s
+        th = h * 0.72 if i == 0 and len(tiers) > 1 else h * hf
+        L['face'][style].append(xf(facadeBox(tw, th, td, style, du, dv - y), {'pos': [x, y, z]}))
+        L['glow'][style].append(xf(facadeBox(tw + 0.04, th, td + 0.04, style, du, dv - y), {'pos': [x, y, z]}))
+        # parapet cap
+        L['roof'].append(K.tint(xf(THREE.BoxGeometry(tw + 0.3, 0.45, td + 0.3), {'pos': [x, y + th + 0.2, z]}), F.band))
+        y += th
+        top = y
+    # ground-floor storefront band (dark, with a lit shop window)
+    L['roof'].append(K.tint(xf(THREE.BoxGeometry(w + 0.1, 0.6, d + 0.1), {'pos': [x, 3.6, z]}), hexMix(F.band, '#1B1E4A', 0.3)))
+    # roof clutter
+    if style == 'deco':
+        L['roof'].append(K.tint(xf(THREE.ConeGeometry(w * 0.14, h * 0.18, 8), {'pos': [x, top + h * 0.09, z]}), '#C8B08A'))
+        L['red'].append(xf(THREE.SphereGeometry(0.45, 8, 6), {'pos': [x, top + h * 0.18 + 0.3, z]}))
+    else:
+        n = 1 + _floor(rnd() * 3)
+        for i in range(n):
+            L['roof'].append(K.tint(xf(THREE.BoxGeometry(1.6 + rnd() * 2, 1 + rnd() * 1.2, 1.4 + rnd() * 1.5),
+                                       {'pos': [x + (rnd() - 0.5) * w * 0.6, top + 0.9, z + (rnd() - 0.5) * d * 0.5]}), '#7A7890'))
+        if rnd() < 0.55:
+            ax = x + (rnd() - 0.5) * w * 0.5
+            az = z + (rnd() - 0.2) * d * 0.4
+            ah = 4 + rnd() * 6
+            L['roof'].append(K.tint(pipeGeo(0.12, [ax, top, az], [ax, top + ah, az], 5, True), '#9CA3AD'))
+            L['red'].append(xf(THREE.SphereGeometry(0.35, 8, 6), {'pos': [ax, top + ah + 0.2, az]}))
+    return top
+
+
+def waterTankGeo(L, x, y, z, s=1):
+    # wooden tank on steel legs + conical roof
+    R, TH, LH = 2.2 * s, 3.4 * s, 3.2 * s
+    tank = latheY([[0, 0], [R, 0], [R, TH], [0, TH]], 16, TH)
+    L['wood'].append(xf(tank, {'pos': [x, y + LH, z]}))
+    for t in (0.2, 0.5, 0.8):
+        L['roof'].append(K.tint(xf(THREE.TorusGeometry(R + 0.04 * s, 0.06 * s, 4, 16).rotateX(math.pi / 2), {'pos': [x, y + LH + TH * t, z]}),
+                                '#4A4A5A'))
+    L['roof'].append(K.tint(xf(THREE.ConeGeometry(R * 1.12, 1.6 * s, 16, 1), {'pos': [x, y + LH + TH + 0.8 * s, z]}), '#5A4A56'))
+    L['roof'].append(K.tint(xf(THREE.SphereGeometry(0.2 * s, 6, 4), {'pos': [x, y + LH + TH + 1.65 * s, z]}), '#C8963C'))
+    for i in range(4):
+        a = i * math.pi / 2 + math.pi / 4
+        lx, lz = x + math.cos(a) * R * 0.75, z + math.sin(a) * R * 0.75
+        L['roof'].append(K.tint(pipeGeo(0.12 * s, [lx, y, lz], [lx, y + LH, lz], 5, False), '#3A3A4A'))
+    L['roof'].append(K.tint(xf(THREE.BoxGeometry(R * 1.8, 0.2 * s, R * 1.8), {'pos': [x, y + LH, z]}), '#3A3A4A'))
+
+
+def buildingLists():
+    L = {'face': {}, 'glow': {}, 'roof': [], 'red': [], 'wood': []}
+    for s in FACADE:
+        L['face'][s] = []
+        L['glow'][s] = []
+    return L
+
+
+def addLists(g, L, M):
+    for s in FACADE:
+        if len(L['face'][s]):
+            m = K.m(mergeList(L['face'][s]), M['facade'][s])
+            m.userData.noAO = True
+            g.add(m)
+        if len(L['glow'][s]):
+            m = K.m(mergeList(L['glow'][s]), M['glow'][s])
+            m.userData.noAO = True
+            m.userData.noOcclude = True
+            m.name = 'windows'
+            g.add(m)
+    if len(L['roof']):
+        m = K.m(mergeList(L['roof']), M['roof'])
+        m.userData.noAO = True
+        g.add(m)
+    if len(L['wood']):
+        m = K.m(mergeList(L['wood']), M['wood'])
+        m.userData.noAO = True
+        g.add(m)
+    red = None
+    if len(L['red']):
+        red = lightMesh(mergeList(L['red']), M['red'], {'name': 'redLights'})
+        g.add(red)
+    return red
+
+
+def _sky_building(game, opts=None):
+    opts = opts or {}
+    g = K.prop('sky_building')
+    M = cityMats(game, opts)
+    style = opts['style'] if FACADE.get(opts.get('style')) else 'brick'
+    rnd = mulberry32((opts['seed'] if opts.get('seed') is not None else 1) * 131 + 7)
+    L = buildingLists()
+    w = opts['w'] if opts.get('w') is not None else 14
+    h = opts['h'] if opts.get('h') is not None else 32
+    d = opts['d'] if opts.get('d') is not None else 12
+    top = addBuilding(L, {'w': w, 'h': h, 'd': d, 'style': style}, rnd)
+    if opts.get('tank'):
+        waterTankGeo(L, w * 0.2, top, d * 0.1, 0.8)
+    red = addLists(g, L, M)
+    g.userData.parts = {'redLights': red}
+    g.userData.colliders = []
+    return K.finish(game, g, {'ao': False})
+
+
+registerProp('sky_building', _sky_building,
+             {'category': CITY, 'tags': ['backdrop', 'skyline', 'building'], 'size': [14, 36, 12],
+              'desc': 'backdrop building with a canvas facade + additive lit windows; opts {style brick|office|deco|glass, w, '
+                      'h, d, seed, tank, fog}'})
+
+
+def _sky_water_tower(game, opts=None):
+    opts = opts or {}
+    g = K.prop('sky_water_tower')
+    M = cityMats(game, opts)
+    L = buildingLists()
+    waterTankGeo(L, 0, 0, 0, opts['scale'] if opts.get('scale') is not None else 1)
+    # ladder up one leg
+    s = opts['scale'] if opts.get('scale') is not None else 1
+    L['roof'].append(K.tint(pipeGeo(0.05 * s, [0.3 * s, 0, -1.9 * s], [0.3 * s, 6.6 * s, -2.3 * s], 4, False), '#3A3A4A'))
+    L['roof'].append(K.tint(pipeGeo(0.05 * s, [-0.3 * s, 0, -1.9 * s], [-0.3 * s, 6.6 * s, -2.3 * s], 4, False), '#3A3A4A'))
+    addLists(g, L, M)
+    g.userData.colliders = []
+    return K.finish(game, g, {'ao': False})
+
+
+registerProp('sky_water_tower', _sky_water_tower,
+             {'category': CITY, 'tags': ['backdrop', 'skyline', 'rooftop'], 'size': [5, 8.5, 5],
+              'desc': 'rooftop wooden water tank on steel legs with a cone roof (opts.scale, opts.fog)'})
+
+
+def billboardTex(ad):
+    def draw(ctx, w, h, rand):
+        ADS = {
+            'wztv': {'bg': '#2F5BD3', 'fg': '#FFD23A', 'line1': 'ACTION 13 NEWS', 'line2': 'TONIGHT AT 11', 'card': None},
+            'replay_ade': {'bg': '#F4C430', 'fg': '#2F5BD3', 'line1': 'THIRSTY? REWIND!', 'line2': 'REPLAY-ADE',
+                           'card': 'sponsor_logo_replay_ade'},
+            'jump_cut': {'bg': '#E3662B', 'fg': '#F6E7C8', 'line1': 'WAKE UP FASTER', 'line2': 'JUMP CUT COFFEE',
+                         'card': 'sponsor_logo_jump_cut'},
+            'roller_boogie': {'bg': '#FF5FA2', 'fg': '#F4F1E8', 'line1': 'SHINE ON, SKATER', 'line2': 'ROLLER BOOGIE WAX',
+                              'card': 'sponsor_logo_roller_boogie'},
+            'double_vision': {'bg': '#F4F1E8', 'fg': '#E23B3B', 'line1': 'SMILE TWICE AS BRIGHT', 'line2': 'DOUBLE VISION',
+                              'card': 'sponsor_logo_double_vision'},
+            'wobble_up': {'bg': '#39A85F', 'fg': '#F6E7C8', 'line1': 'THE DESSERT THAT DANCES', 'line2': 'WOBBLE-UP',
+                          'card': 'sponsor_logo_wobble_up'},
+        }
+        A = ADS.get(ad) or ADS['wztv']
+        ctx.fillStyle = A['bg']
+        ctx.fillRect(0, 0, w, h)
+        # 70s sunburst rays
+        ctx.save()
+        ctx.translate(220, h / 2)
+        ctx.globalAlpha = 0.14
+        ctx.fillStyle = '#fff'
+        for i in range(16):
+            ctx.rotate(TAU / 16)
+            ctx.beginPath()
+            ctx.moveTo(0, 0)
+            ctx.lineTo(900, -70)
+            ctx.lineTo(900, 70)
+            ctx.fill()
+        ctx.restore()
+        if A['card']:
+            ctx.save()
+            ctx.fillStyle = 'rgba(0,0,0,0.25)'
+            ctx.fillRect(34, 50, 380, 285 + 20)
+            ctx.restore()
+            ctx.save()
+            ctx.translate(24, 40)
+            K.drawTo(ctx, A['card'], 380, 285)
+            ctx.restore()
+        else:
+            ctx.fillStyle = '#F4F1E8'
+            ctx.beginPath()
+            ctx.arc(220, h / 2, 150, 0, TAU)
+            ctx.fill()
+            ctx.fillStyle = '#E23B3B'
+            ctx.beginPath()
+            ctx.arc(220, h / 2, 132, 0, TAU)
+            ctx.fill()
+            ctx.fillStyle = '#F4F1E8'
+            font(ctx, 170, 'Titan One')
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            ctx.fillText('13', 220, h / 2 + 14)
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.lineJoin = 'round'
+        ctx.strokeStyle = 'rgba(40,20,40,0.55)'
+        fitText(ctx, A['line1'], 520, 58, 'Titan One')
+        ctx.lineWidth = 10
+        ctx.strokeText(A['line1'], 700, 150)
+        ctx.fillStyle = A['fg']
+        ctx.fillText(A['line1'], 700, 150)
+        fitText(ctx, A['line2'], 540, 96, 'Shrikhand')
+        ctx.lineWidth = 12
+        ctx.strokeText(A['line2'], 700, 290)
+        ctx.fillStyle = '#F4F1E8'
+        ctx.fillText(A['line2'], 700, 290)
+        ctx.strokeStyle = 'rgba(0,0,0,0.2)'
+        ctx.lineWidth = 2
+        for x in range(128, w, 128):
+            ctx.beginPath()
+            ctx.moveTo(x, 0)
+            ctx.lineTo(x, h)
+            ctx.stroke()
+    return K.tex.canvas('out_billboard|%s' % ad, 1024, 448, draw, {'repeat': False, 'fonts': True})
+
+
+def _sky_billboard(game, opts=None):
+    opts = opts or {}
+    g = K.prop('sky_billboard')
+    fog = bool(opts.get('fog'))
+    ad = opts['ad'] if opts.get('ad') is not None else 'wztv'
+    face = K.mat(game, 'paint', '#ffffff', {'map': billboardTex(ad), 'rough': 0.7, 'fog': fog, 'emissive': '#ffffff',
+                                            'emissiveIntensity': 0.12})
+    face.emissiveMap = face.map
+    face.extra['emissiveMap'] = 'map'   # (JS: face.emissiveMap = face.map after creation: recorded in the spec)
+    steel = K.mat(game, 'metal', '#8A8FA0', {'rough': 0.5, 'fog': fog})
+    lit = opts.get('lit') is not False
+    W, H, Y = 9, 3.9, 6
+    S = []
+    # face panel + frame, catwalk, legs + bracing, 3 gooseneck lamps
+    g.add(K.m(pxUV(decal(W, H), 0, 0, 1024, 448, 1024, 448), face, {'pos': [0, Y + H / 2, -0.06]}))
+    S.append(xf(cbox(W + 0.3, H + 0.3, 0.1, 0.03), {'pos': [0, Y + H / 2, 0]}))
+    S.append(xf(cbox(W + 0.4, 0.08, 0.9, 0.02), {'pos': [0, Y - 0.15, -0.45]}))
+    S.append(pipeGeo(0.025, [-W / 2 - 0.2, Y + 0.75, -0.88], [W / 2 + 0.2, Y + 0.75, -0.88], 5, False))
+    x = -W / 2 - 0.2
+    while x <= W / 2 + 0.25:
+        S.append(pipeGeo(0.02, [x, Y - 0.1, -0.88], [x, Y + 0.75, -0.88], 4, False))
+        x += (W + 0.4) / 6
+    for x in (-W * 0.3, W * 0.3):
+        S.append(pipeGeo(0.22, [x, 0, 0.3], [x, Y + 0.2, 0.3], 8, False))
+        S.append(bar8(0.12, 0.08, [x, Y - 1.8, 0.3], [x, Y - 0.2, -0.4], [1, 0, 0], 0.015))
+    S.append(bar8(0.1, 0.08, [-W * 0.3, 1.5, 0.3], [W * 0.3, Y - 0.6, 0.3], [0, 0, 1], 0.015))
+    S.append(bar8(0.1, 0.08, [W * 0.3, 1.5, 0.3], [-W * 0.3, Y - 0.6, 0.3], [0, 0, 1], 0.015))
+    lamps = []
+    for x in (-W * 0.33, 0, W * 0.33):
+        S.append(K.tube([[x, Y - 0.1, -0.2], [x, Y - 0.2, -0.9], [x, Y - 0.05, -1.35]], 0.03, {'seg': 8, 'radial': 4}))
+        S.append(xf(K.lathe([[0, 0], [0.22, 0.02], [0.3, 0.14], [0.05, 0.2], [0, 0.2]], {'seg': 10}).clone().rotateX(math.pi * 0.8),
+                    {'pos': [x, Y + 0.02, -1.38]}))
+        lamps.append(xf(THREE.CircleGeometry(0.2, 10).rotateX(math.pi * 0.3), {'pos': [x, Y + 0.06, -1.3]}))
+    g.add(K.m(mergeList(S), steel))
+    lampM = lightMesh(mergeList(lamps), K.glow(game, '#FFF0C8', 2.2, {'fog': fog}) if lit else K.mat(game, 'ceramic', '#E8E0C8', {'fog': fog}),
+                      {'name': 'lamps'})
+    g.add(lampM)
+    g.userData.parts = {'lamps': lampM}
+    g.userData.colliders = []
+    return K.finish(game, g, {'ao': {'res': 40, 'dist': 0.3, 'height': 0}})
+
+
+registerProp('sky_billboard', _sky_billboard,
+             {'category': CITY, 'tags': ['backdrop', 'billboard'], 'size': [9.4, 10, 1.8],
+              'desc': '9 m roadside billboard on a steel frame with catwalk + 3 gooseneck lamps; opts.ad wztv|replay_ade|'
+                      'jump_cut|roller_boogie|double_vision|wobble_up (sponsor_logo art), opts.lit, opts.fog'})
+
+
+def moonTex():
+    def draw(ctx, w, h, _rand):
+        rand = mulberry32(4242)
+        ctx.fillStyle = '#FFF4D6'
+        ctx.fillRect(0, 0, w, h)
+        for i in range(70):
+            x, y, r = rand() * w, h * 0.15 + rand() * h * 0.7, 4 + rand() * rand() * 38
+            ctx.fillStyle = 'rgba(200,180,150,%s)' % js_str(0.25 + rand() * 0.3)
+            ctx.beginPath()
+            ctx.ellipse(x, y, r, r * 0.8, 0, 0, TAU)
+            ctx.fill()
+            ctx.fillStyle = 'rgba(255,255,240,0.5)'
+            ctx.beginPath()
+            ctx.ellipse(x - r * 0.15, y - r * 0.2, r * 0.7, r * 0.5, 0, 0, TAU)
+            ctx.fill()
+        for i in range(6):
+            ctx.fillStyle = 'rgba(190,170,150,0.25)'
+            ctx.beginPath()
+            ctx.ellipse(rand() * w, h * 0.3 + rand() * h * 0.4, 30 + rand() * 60, 20 + rand() * 30, rand(), 0, TAU)
+            ctx.fill()
+    return K.tex.canvas('out_moon', 512, 256, draw, {'repeat': True})
+
+
+def haloDiscTex():
+    def draw(ctx, w, h, rand):
+        gr = ctx.createRadialGradient(w / 2, h / 2, w * 0.18, w / 2, h / 2, w / 2)
+        gr.addColorStop(0, 'rgba(255,255,255,0.9)')
+        gr.addColorStop(0.3, 'rgba(255,255,255,0.35)')
+        gr.addColorStop(1, 'rgba(0,0,0,0)')
+        ctx.fillStyle = '#000'
+        ctx.fillRect(0, 0, w, h)
+        ctx.fillStyle = gr
+        ctx.fillRect(0, 0, w, h)
+    return K.tex.canvas('out_moon_halo', 256, 256, draw, {'repeat': False})
+
+
+def _sky_moon(game, opts=None):
+    opts = opts or {}
+    g = K.prop('sky_moon')
+    r = opts['r'] if opts.get('r') is not None else 8
+    moon = K.m(THREE.SphereGeometry(r, 28, 18), K.glow(game, '#FFF4D6', 1.05, {'map': moonTex(), 'fog': False}),
+               {'name': 'moon', 'pos': [0, r, 0]})
+    moon.rotation.set(0.3, 2.2, 0.1)
+    moon.userData.noAO = True
+    moon.userData.noShadow = True
+    g.add(moon)
+    halo = lightMesh(THREE.PlaneGeometry(r * 4.2, r * 4.2).rotateY(math.pi),
+                     K.glow(game, PAL.moonlight, 0.55, {'map': haloDiscTex(), 'additive': True, 'fog': False}),
+                     {'pos': [0, r, r * 0.6], 'name': 'halo'})
+    g.add(halo)
+    g.userData.parts = {'moon': moon, 'halo': halo}
+    g.userData.colliders = []
+    g.userData.size = [r * 2, r * 2, r * 2]
+    return K.finish(game, g, {'ao': False, 'merge': False})
+
+
+registerProp('sky_moon', _sky_moon,
+             {'category': CITY, 'tags': ['backdrop', 'sky'], 'size': [16, 16, 16],
+              'desc': 'big cartoon moon: cratered glow sphere + soft blue halo card behind it; origin = bottom of the sphere '
+                      '(center at y = r; opts.r, default 8 m; place ~120 m away, high)'})
+
+
+def _sky_skyline(game, opts=None):
+    opts = opts or {}
+    g = K.prop('sky_skyline')
+    M = cityMats(game, opts)
+    rnd = mulberry32((opts['seed'] if opts.get('seed') is not None else 1) * 7717 + 3)
+    L = buildingLists()
+    span_ = opts['w'] if opts.get('w') is not None else 90
+    styles = ['brick', 'office', 'deco', 'glass', 'brick', 'office']
+    x = -span_ / 2
+    tops = []
+    while x < span_ / 2:
+        w = 8 + rnd() * 9
+        d = 8 + rnd() * 7
+        style = styles[_floor(rnd() * len(styles))]
+        tall = rnd() < 0.25
+        h = 40 + rnd() * 26 if tall else 14 + rnd() * 20
+        z = (rnd() - 0.5) * 10 + (8 if tall else 0)
+        top = addBuilding(L, {'x': x + w / 2, 'z': z, 'w': w, 'h': h, 'd': d, 'style': style}, rnd)
+        tops.append([x + w / 2, top, z, w, style])
+        x += w + 0.5 + rnd() * 3
+    # two water tanks on low roofs, one radio mast
+    low = [t for t in tops if t[1] < 30 and t[4] != 'deco'][:2]
+    for t in low:
+        waterTankGeo(L, t[0] + t[3] * 0.15, t[1], t[2], 0.9)
+    mi = _floor(len(tops) * 0.7)
+    mastAt = tops[mi] if mi < len(tops) else None
+    if mastAt:
+        mx, my, mz = mastAt[0], mastAt[1], mastAt[2]
+        for k in range(3):
+            L['roof'].append(K.tint(pipeGeo(0.35 - k * 0.1, [mx, my + k * 6, mz], [mx, my + (k + 1) * 6, mz], 6, False),
+                                    '#F2EEE4' if k % 2 else '#D8402F'))
+        for k in range(1, 4):
+            L['red'].append(xf(THREE.SphereGeometry(0.5, 8, 6), {'pos': [mx, my + k * 6 + 0.2, mz]}))
+    red = addLists(g, L, M)
+    # a billboard on the first low roof
+    if opts.get('billboard') is not False and len(low) and low[0]:
+        bb = K.buildProp('sky_billboard', game, {'ad': opts['ad'] if opts.get('ad') is not None else 'jump_cut',
+                                                 'fog': bool(opts.get('fog'))})
+        bb.position.set(low[0][0] - low[0][3] * 0.2, low[0][1], low[0][2] - 3)
+        bb.scale.setScalar(0.9)
+        g.add(bb)
+    g.userData.parts = {'redLights': red}
+    g.userData.colliders = []
+    return K.finish(game, g, {'ao': False, 'merge': False})
+
+
+registerProp('sky_skyline', _sky_skyline,
+             {'category': CITY, 'tags': ['backdrop', 'skyline'], 'hero': True, 'size': [90, 70, 20],
+              'desc': 'composed night skyline strip (opts.w m wide, seed): mixed facades with lit windows, setback deco '
+                      'tower, water tanks, red-light mast (parts.redLights), a sponsor billboard (opts.ad, billboard:false); '
+                      'place 60..140 m out, facing the station'})
+
+
+# =================================================================================================== STREET (st_*)
+# What the lobby / newsroom windows look out on: sidewalk slabs + curb, an ornamental street lamp, a parked 70s
+# sedan, fire hydrant, mailbox and a motel neon sign across the street. Category 'outdoor_city'.
+def sidewalkTex():
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = '#B4ADA4'
+        ctx.fillRect(0, 0, w, h)
+        for i in range(1500):
+            ctx.globalAlpha = 0.1 + rand() * 0.15
+            ctx.fillStyle = '#8A847C' if rand() < 0.5 else '#D8D2C8'
+            ctx.fillRect(rand() * w, rand() * h, 1.5, 1.5)
+        ctx.globalAlpha = 1
+        ctx.fillStyle = '#6E6860'
+        ctx.fillRect(0, 0, w, 4)
+        ctx.fillRect(0, 0, 4, h)
+        ctx.fillStyle = 'rgba(255,255,255,0.25)'
+        ctx.fillRect(0, 4, w, 2)
+        ctx.fillRect(4, 0, 2, h)
+        ctx.strokeStyle = 'rgba(60,50,50,0.35)'
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        ctx.moveTo(40, 90)
+        ctx.lineTo(70, 120)
+        ctx.lineTo(66, 160)
+        ctx.stroke()
+        grime(ctx, w, h, rand, 10, '#4A4050', 0.06)
+        ctx.fillStyle = 'rgba(60,40,60,0.5)'
+        ctx.beginPath()
+        ctx.ellipse(180, 190, 8, 6, 0, 0, TAU)
+        ctx.fill()
+    return K.tex.canvas('out_sidewalk', 256, 256, draw)
+
+
+def _st_sidewalk(game, opts=None):
+    opts = opts or {}
+    g = K.prop('st_sidewalk')
+    L = opts['len'] if opts.get('len') is not None else 6
+    Wd = opts['width'] if opts.get('width') is not None else 2.5
+    slab = K.mat(game, 'paint', '#ffffff', {'map': sidewalkTex(), 'rough': 0.9})
+    conc = K.mat(game, 'paint', '#ffffff', {'map': concreteTex('#A8A298'), 'rough': 0.9})
+    # floor (y = 0) = street level: slab top at 0.15, rounded granite-look curb on the -z (street) side, gutter strip
+    sg = THREE.BoxGeometry(L, 0.15, Wd)
+    uv, p = sg.attributes.uv, sg.attributes.position
+    for i in range(uv.count):
+        uv.setXY(i, p.getX(i) / 1.5, p.getZ(i) / 1.5)
+    g.add(K.m(sg, slab, {'pos': [0, 0.075, 0]}))
+    g.add(K.m(K.uvBox(K.box(L, 0.17, 0.24, 0.05), 1.2), conc, {'pos': [0, 0.085, -Wd / 2 - 0.12]}))
+    g.add(tm(cbox(L, 0.02, 0.45, 0.006), conc, '#8A857C', {'pos': [0, 0.01, -Wd / 2 - 0.46]}))
+    g.userData.colliders = [{'min': [-L / 2, 0, -Wd / 2 - 0.24], 'max': [L / 2, 0.16, Wd / 2]}]
+    return K.finish(game, g, {'ao': {'res': 40, 'height': 0.05}})
+
+
+registerProp('st_sidewalk', _st_sidewalk,
+             {'category': CITY, 'tags': ['street', 'ground'], 'size': [6, 0.17, 3.2],
+              'desc': 'sidewalk slab run (1.5 m scored squares, top at 0.15 m = curb height; floor = street level) with a '
+                      'rounded curb + gutter on the -z (street) side; opts.len, opts.width'})
+
+
+def _st_street_lamp(game, opts=None):
+    opts = opts or {}
+    g = K.prop('st_street_lamp')
+    lit = opts.get('lit') is not False
+    iron = K.mat(game, 'paint', '#2E4A3E', {'rough': 0.45, 'rim': 0.3})
+    # fluted cast base, slim post, collar rings, acorn globe + finial
+    g.add(K.m(K.lathe([[0, 0], [0.26, 0], [0.26, 0.06], [0.2, 0.1], [0.19, 0.5], [0.13, 0.62], [0.1, 0.9], [0, 0.9]],
+                      {'seg': 16, 'round': 0.02, 'steps': 1}), iron))
+    g.add(K.m(K.cyl(0.07, 0.085, 3.2, {'seg': 12, 'bevel': 0.01}), iron, {'pos': [0, 0.88, 0]}))
+    for y in (1.4, 3.6, 4.05):
+        g.add(K.m(K.cyl(0.11, 0.11, 0.06, {'seg': 12, 'bevel': 0.02}), iron, {'pos': [0, y, 0]}))
+    g.add(K.m(K.lathe([[0.08, 0], [0.2, 0.05], [0.22, 0.12], [0, 0.14]], {'seg': 14}), iron, {'pos': [0, 4.08, 0]}))
+    globe = lightMesh(K.lathe([[0, 0], [0.16, 0.02], [0.24, 0.16], [0.25, 0.32], [0.2, 0.5], [0.1, 0.6], [0, 0.62]],
+                              {'seg': 16, 'round': 0.03, 'steps': 1}),
+                      K.glow(game, '#FFE0A0', 2.2) if lit else K.mat(game, 'ceramic', '#F2EAD8'), {'pos': [0, 4.2, 0], 'name': 'globe'})
+    g.add(globe)
+    g.add(K.m(K.lathe([[0.12, 0], [0.14, 0.04], [0.06, 0.12], [0.02, 0.3], [0, 0.32]], {'seg': 12, 'round': 0.01, 'steps': 1}), iron,
+              {'pos': [0, 4.78, 0]}))
+    g.userData.parts = {'globe': globe}
+    g.userData.lightAnchors = [{'pos': [0, 4.5, 0], 'color': '#FFD9A0', 'intensity': 2.2, 'distance': 9, 'flicker': 0.02}] if lit else []
+    g.userData.colliders = [{'min': [-0.26, 0, -0.26], 'max': [0.26, 2.5, 0.26]}]
+    return K.finish(game, g, {'ao': {'res': 40, 'dist': 0.2}})
+
+
+registerProp('st_street_lamp', _st_street_lamp,
+             {'category': CITY, 'tags': ['street', 'light', 'lamp'], 'size': [0.52, 5.1, 0.52],
+              'desc': 'ornamental downtown street lamp: green cast-iron post with an acorn glow globe (parts.globe); anchor '
+                      'warm 2.2/9 m (opts.lit)'})
+
+
+def _st_hydrant(game, opts=None):
+    opts = opts or {}
+    g = K.prop('st_hydrant')
+    red = K.mat(game, 'lacquer', opts['color'] if opts.get('color') is not None else '#D8402F', {'rough': 0.38})
+    yel = K.mat(game, 'lacquer', '#F2C230', {'rough': 0.38})
+    chrome = K.mat(game, 'chrome', '#A8B0BA')
+    g.add(K.m(K.lathe([[0, 0], [0.19, 0], [0.19, 0.05], [0.15, 0.08], [0.14, 0.12], [0.13, 0.46], [0.16, 0.5], [0.16, 0.55], [0, 0.55]],
+                      {'seg': 18, 'round': 0.015, 'steps': 1}), red))
+    g.add(K.m(K.lathe([[0, 0], [0.17, 0], [0.17, 0.04], [0.15, 0.1], [0.08, 0.2], [0.05, 0.22], [0, 0.23]],
+                      {'seg': 18, 'round': 0.02, 'steps': 1}), yel, {'pos': [0, 0.55, 0]}))
+    g.add(K.m(THREE.CylinderGeometry(0.035, 0.04, 0.05, 5), yel, {'pos': [0, 0.8, 0]}))
+
+    # side nozzles (L/R) + front pumper nozzle with caps and chains
+    def noz(ln, r):
+        return K.cyl(r, r, ln, {'seg': 10, 'bevel': 0.01}).clone()
+    for s in (-1, 1):
+        g.add(K.m(noz(0.1, 0.05).rotateZ(-s * math.pi / 2), red, {'pos': [s * 0.12, 0.34, 0]}))
+        g.add(K.m(K.cyl(0.062, 0.062, 0.035, {'seg': 6, 'bevel': 0.006}).clone().rotateZ(-s * math.pi / 2), yel, {'pos': [s * 0.215, 0.34, 0]}))
+        g.add(K.m(K.tube([[s * 0.23, 0.32, 0.03], [s * 0.2, 0.2, 0.08], [s * 0.14, 0.22, 0.12]], 0.006, {'seg': 8, 'radial': 3}), chrome))
+    g.add(K.m(noz(0.1, 0.07).rotateX(-math.pi / 2), red, {'pos': [0, 0.3, -0.12]}))
+    g.add(K.m(K.cyl(0.085, 0.085, 0.04, {'seg': 6, 'bevel': 0.008}).clone().rotateX(-math.pi / 2), yel, {'pos': [0, 0.3, -0.22]}))
+    # bolts ring
+    bolts = []
+    for i in range(8):
+        a = (i / 8) * TAU
+        bolts.append(xf(THREE.CylinderGeometry(0.012, 0.012, 0.02, 6), {'pos': [math.cos(a) * 0.165, 0.06, math.sin(a) * 0.165]}))
+    g.add(K.m(mergeList(bolts), chrome))
+    g.userData.colliders = [{'min': [-0.24, 0, -0.26], 'max': [0.24, 0.8, 0.2]}]
+    return K.finish(game, g, {'ao': {'res': 40, 'dist': 0.12}})
+
+
+registerProp('st_hydrant', _st_hydrant,
+             {'category': CITY, 'tags': ['street', 'clutter'], 'size': [0.5, 0.83, 0.46],
+              'desc': 'chunky red fire hydrant with a yellow bonnet, side + pumper nozzles, chains (opts.color)'})
+
+
+def mailTex():
+    def draw(ctx, *_):
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = '#F4F1E8'
+        font(ctx, 36, 'Bungee')
+        ctx.fillText('U.S. MAIL', 128, 40)
+        ctx.fillStyle = '#E23B3B'
+        ctx.beginPath()
+        ctx.arc(128, 132, 56, 0, TAU)
+        ctx.fill()
+        ctx.fillStyle = '#F4F1E8'
+        ctx.beginPath()
+        ctx.arc(128, 132, 46, 0, TAU)
+        ctx.fill()
+        ctx.fillStyle = '#2F4A8A'
+        ctx.beginPath()
+        ctx.moveTo(128, 96)
+        ctx.lineTo(160, 120)
+        ctx.lineTo(148, 124)
+        ctx.lineTo(164, 150)
+        ctx.lineTo(128, 136)
+        ctx.lineTo(92, 150)
+        ctx.lineTo(108, 124)
+        ctx.lineTo(96, 120)
+        ctx.closePath()
+        ctx.fill()
+        ctx.fillStyle = '#F4F1E8'
+        font(ctx, 16, 'Titan One')
+        ctx.fillText('PICKUP 5 PM', 128, 214)
+    return atlasTex('mailbox', 256, 256, draw)
+
+
+def _st_mailbox(game, opts=None):
+    g = K.prop('st_mailbox')
+    blue = K.mat(game, 'lacquer', '#2F4A8A', {'rough': 0.4})
+    dec = K.mat(game, 'paint', '#ffffff', {'map': mailTex(), 'transparent': True, 'depthWrite': False, 'rough': 0.5})
+    W, D, H = 0.5, 0.52, 0.95
+    # body: box + half-cylinder top, 4 legs, pull-down chute handle
+    g.add(K.m(K.box(W, H - 0.25, D, 0.03), blue, {'pos': [0, 0.32 + (H - 0.25) / 2, 0]}))
+    g.add(K.m(THREE.CylinderGeometry(W / 2, W / 2, D, 18, 1, False, 0, math.pi).rotateX(math.pi / 2).rotateZ(math.pi / 2), blue,
+              {'pos': [0, 0.32 + H - 0.25, 0], 'rot': [0, 0, 0]}))
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            g.add(K.m(K.box(0.05, 0.34, 0.05, 0.012), blue, {'pos': [sx * (W / 2 - 0.04), 0.17, sz * (D / 2 - 0.04)]}))
+    g.add(K.m(K.box(W - 0.1, 0.14, 0.04, 0.02), blue, {'pos': [0, 0.32 + H - 0.4, -D / 2 - 0.02]}))
+    g.add(K.m(K.box(0.18, 0.03, 0.03, 0.01), K.mat(game, 'chrome', '#A8B0BA'), {'pos': [0, 0.32 + H - 0.36, -D / 2 - 0.05]}))
+    for z, ry in [[-D / 2 - 0.004, 0], [D / 2 + 0.004, math.pi]]:
+        dm = K.m(decal(0.44, 0.44).rotateY(ry), dec, {'pos': [0, 0.56, z]})
+        dm.userData.noAO = True
+        g.add(dm)
+    g.userData.colliders = [{'min': [-W / 2, 0, -D / 2], 'max': [W / 2, 0.32 + H, D / 2]}]
+    return K.finish(game, g, {'ao': {'res': 40, 'dist': 0.15}})
+
+
+registerProp('st_mailbox', _st_mailbox,
+             {'category': CITY, 'tags': ['street', 'clutter'], 'size': [0.5, 1.27, 0.56],
+              'desc': '70s blue curbside mailbox with a rounded top, legs, chute handle and "U.S. MAIL" decals'})
+
+
+# parked 70s sedan: FRONT at -x, length along x (like the van); opts.color
+def _st_car_70s(game, opts=None):
+    opts = opts or {}
+    g = K.prop('st_car_70s')
+    col = opts['color'] if opts.get('color') is not None else '#8C9A3A'
+    paint = K.mat(game, 'lacquer', '#ffffff', {'rough': 0.38, 'env': 0.06})
+    chrome = K.mat(game, 'chrome', '#8E96A0', {'env': 0.4})
+    glass = K.mat(game, 'crt', '#27305A', {'rough': 0.06, 'rim': 0.7, 'rimColor': '#9FB6FF', 'env': 0.5})
+    rubber = K.mat(game, 'rubber', '#ffffff')
+    W = 1.9
+    hw, wr = W / 2, 0.34
+    # lower body (long boat), greenhouse (cabin) + vinyl roof
+    low = [[-2.45, 0.28], [2.45, 0.28], [2.5, 0.45], [2.48, 0.78], [2.3, 0.84], [-2.3, 0.86], [-2.48, 0.8], [-2.5, 0.45]]
+    addTo(g, K.extrude(low, W, {'bevel': 0.12, 'bevelSeg': 1, 'round': 0.08}), paint, col)
+    cab = [[-1.0, 0.8], [1.25, 0.8], [0.95, 1.32], [-0.45, 1.34]]
+    addTo(g, K.extrude(cab, W - 0.26, {'bevel': 0.1, 'bevelSeg': 1, 'round': 0.1}), paint, hexMix(col, '#F4F1E8', 0.75))
+    addTo(g, xf(cbox(1.26, 0.05, W - 0.34, 0.02), {'pos': [0.28, 1.34, 0]}), paint, '#3A2A24')
+    # windows: side (2 per side), windshield, rear window
+    for s in (-1, 1):
+        addTo(g, xf(K.extrude([[-0.84, 0.88], [0.16, 0.88], [0.16, 1.24], [-0.4, 1.26]], 0.02, {'bevel': 0.005, 'bevelSeg': 1, 'round': 0.05}),
+                    {'pos': [0, 0, s * (hw - 0.12)]}), glass, None)
+        addTo(g, xf(K.extrude([[0.24, 0.88], [1.08, 0.88], [0.86, 1.24], [0.24, 1.24]], 0.02, {'bevel': 0.005, 'bevelSeg': 1, 'round': 0.05}),
+                    {'pos': [0, 0, s * (hw - 0.12)]}), glass, None)
+
+    def wsh(a, b, w):
+        ln = math.hypot(b[0] - a[0], b[1] - a[1]) - 0.1
+        ang = math.atan2(b[1] - a[1], b[0] - a[0])
+        gg = K.extrude(K.roundRect(w, ln, 0.08), 0.03, {'bevel': 0.008, 'bevelSeg': 1}).clone().rotateY(math.pi / 2).rotateZ(ang - math.pi / 2)
+        gg.translate((a[0] + b[0]) / 2 - math.sin(ang) * 0.012, (a[1] + b[1]) / 2 + math.cos(ang) * 0.012, 0)
+        return gg
+    addTo(g, wsh([-1.0, 0.82], [-0.45, 1.32], 1.36), glass, None)
+    addTo(g, wsh([0.95, 1.32], [1.25, 0.82], 1.36), glass, None)
+    # chrome: bumpers, grille, quad headlights, belt molding, hubcaps; tail lights
+    addTo(g, xf(K.box(0.16, 0.14, W + 0.06, 0.03), {'pos': [-2.52, 0.4, 0]}), chrome, None)
+    addTo(g, xf(K.box(0.16, 0.14, W + 0.06, 0.03), {'pos': [2.52, 0.4, 0]}), chrome, None)
+    addTo(g, xf(cbox(0.04, 0.22, 1.2, 0.012), {'pos': [-2.5, 0.62, 0]}), chrome, None)
+    for i in range(5):
+        addTo(g, xf(THREE.BoxGeometry(0.02, 0.02, 1.1), {'pos': [-2.525, 0.54 + i * 0.04, 0]}), paint, '#2A2430')
+    hl = []
+    for s in (-1, 1):
+        for k in (0, 1):
+            z = s * (0.66 + k * 0.17)
+            addTo(g, xf(THREE.CylinderGeometry(0.075, 0.075, 0.04, 12).rotateZ(math.pi / 2), {'pos': [-2.5, 0.64, z]}), chrome, None)
+            hl.append(xf(THREE.CircleGeometry(0.06, 12).rotateY(-math.pi / 2), {'pos': [-2.523, 0.64, z]}))
+    g.add(K.m(mergeList(hl), K.mat(game, 'ceramic', '#E6E2D2', {'rough': 0.3, 'env': 0.08})))
+    for s in (-1, 1):
+        addTo(g, xf(cbox(0.04, 0.12, 0.42, 0.012), {'pos': [2.5, 0.64, s * 0.62]}), K.glow(game, '#C8201E', 1.3), None)
+        addTo(g, xf(THREE.BoxGeometry(4.6, 0.025, 0.012), {'pos': [0, 0.74, s * (hw + 0.002)]}), chrome, None)
+    tire = THREE.LatheGeometry([THREE.Vector2(r, y) for r, y in [
+        [0.19, -0.11], [0.23, -0.12], [0.235, -0.121], [0.28, -0.122], [0.285, -0.121], [wr - 0.02, -0.11], [wr, -0.05], [wr, 0.05],
+        [wr - 0.02, 0.11], [0.285, 0.121], [0.28, 0.122], [0.235, 0.121], [0.23, 0.12], [0.19, 0.11]]], 12)
+
+    def _ww(x, y, z):
+        r = math.hypot(x, z)
+        return THREE.Color('#F2EEE4') if abs(y) > 0.1 and r > 0.232 and r < 0.283 else THREE.Color('#2E2836')
+    K.tint(tire, _ww)
+    tire.rotateX(math.pi / 2)
+    cap = THREE.LatheGeometry([THREE.Vector2(r, y) for r, y in list(reversed(
+        [[0, 0.02], [0.19, 0.02], [0.2, 0], [0.14, -0.035], [0, -0.05]]))], 12).rotateX(math.pi / 2)
+    T, Cp = [], []
+    for x in (-1.55, 1.5):
+        for s in (-1, 1):
+            q = 0 if s < 0 else math.pi
+            T.append(xf(tire, {'pos': [x, wr, s * 0.82], 'rot': [0, q, 0]}))
+            Cp.append(xf(cap, {'pos': [x, wr, s * 0.93], 'rot': [0, q, 0]}))
+            # wheel-well shadow
+            R = wr + 0.1
+            yl = 0.28 - wr + 0.01
+            dx = math.sqrt(R * R - yl * yl)
+            a0 = math.atan2(yl, dx)
+            arch = THREE.Shape()
+            arch.moveTo(dx, yl)
+            arch.absarc(0, 0, R, a0, math.pi - a0, False)
+            arch.lineTo(dx, yl)
+            ag = THREE.ShapeGeometry(arch, 10)
+            if s < 0:
+                ag.rotateY(math.pi)
+            addTo(g, xf(ag, {'pos': [x, wr, s * (hw + 0.003)]}), K.mat(game, 'paint', '#2A2232', {'rough': 0.9}), None)
+    g.add(K.m(mergeList(T), rubber))
+    g.add(K.m(mergeList(Cp), chrome))
+    g.userData.colliders = [{'min': [-2.62, 0, -hw - 0.05], 'max': [2.62, 1.38, hw + 0.05]}]
+    return K.finish(game, g, {'ao': {'res': 56, 'strength': 0.85}})
+
+
+registerProp('st_car_70s', _st_car_70s,
+             {'category': CITY, 'tags': ['street', 'vehicle'], 'size': [5.3, 1.4, 2.0],
+              'desc': 'parked 70s boat sedan: two-tone body, vinyl roof, quad headlights, whitewalls; FRONT at -x (opts.color: '
+                      'avocado default, try #E8A92E #E3662B #7A4A2A #2E8C8C)'})
+
+
+def addTo(g, geo, mat, col=None, o=None):
+    g.add(K.m(K.tint(geo.clone() if hasattr(geo, 'clone') else geo, col) if col else geo, mat, o))
+
+
+def motelFaceTex(glow):
+    def draw(ctx, w, h, rand):
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        if glow:
+            ctx.fillStyle = '#000'
+            ctx.fillRect(0, 0, w, h)
+        else:
+            gr = ctx.createLinearGradient(0, 0, 0, h)
+            gr.addColorStop(0, '#2F5BD3')
+            gr.addColorStop(1, '#1E2A6A')
+            ctx.fillStyle = gr
+            ctx.fillRect(0, 0, w, h)
+            ctx.fillStyle = 'rgba(255,255,255,0.12)'
+            for i in range(40):
+                ctx.beginPath()
+                ctx.arc(math.fmod(i * 97, w), math.fmod(i * 211, h * 0.6), 3, 0, TAU)
+                ctx.fill()
+
+        def neon(txt, x, y, px, col, face='Shrikhand', rot=0):
+            ctx.save()
+            ctx.translate(x, y)
+            ctx.rotate(rot)
+            font(ctx, px, face)
+            if glow:
+                ctx.shadowColor = col
+                ctx.shadowBlur = 24
+                ctx.fillStyle = col
+                ctx.fillText(txt, 0, 0)
+                ctx.shadowBlur = 0
+                ctx.fillStyle = '#fff'
+                ctx.globalAlpha = 0.6
+                ctx.fillText(txt, 0, 0)
+            else:
+                ctx.lineWidth = 6
+                ctx.strokeStyle = '#1A1A3A'
+                ctx.strokeText(txt, 0, 0)
+                ctx.fillStyle = hexMix(col, '#ffffff', 0.4)
+                ctx.fillText(txt, 0, 0)
+            ctx.restore()
+        # star on top of the cabinet
+        ctx.save()
+        ctx.translate(w / 2, 130)
+        ctx.beginPath()
+        for i in range(10):
+            r = 44 if i % 2 else 104
+            a = -math.pi / 2 + i * math.pi / 5
+            ctx.lineTo(math.cos(a) * r, math.sin(a) * r)
+        ctx.closePath()
+        if glow:
+            ctx.shadowColor = '#FFD23A'
+            ctx.shadowBlur = 30
+            ctx.fillStyle = '#FFD23A'
+            ctx.fill()
+        else:
+            ctx.fillStyle = '#E8A92E'
+            ctx.fill()
+            ctx.lineWidth = 6
+            ctx.strokeStyle = '#1A1A3A'
+            ctx.stroke()
+        ctx.restore()
+        neon('Starlite', w / 2, 330, 118, '#FF5FA2', 'Shrikhand', -0.08)
+        neon('MOTEL', w / 2, 500, 110, '#7FE7FF', 'Bungee')
+        neon('COLOR TV', w / 2, 660, 62, '#FFD23A', 'Bungee')
+        neon('POOL · AIR COND.', w / 2, 750, 34, '#F4F1E8', 'Titan One')
+        neon('VACANCY', w / 2, 900, 76, '#FF3B30', 'Bungee')
+    return K.tex.canvas('out_motel|%d' % (1 if glow else 0), 512, 1024, draw, {'repeat': False, 'fonts': True})
+
+
+def _st_motel_sign(game, opts=None):
+    opts = opts or {}
+    g = K.prop('st_motel_sign')
+    lit = opts.get('lit') is not False
+    paint = K.mat(game, 'lacquer', '#ffffff', {'rough': 0.45})
+    face = K.mat(game, 'paint', '#ffffff', {'map': motelFaceTex(False), 'rough': 0.6})
+    W, H, Y = 2.2, 4.4, 3.2
+    # twin poles, cabinet with rounded top, face (both sides), glow overlay, arrow with bulbs
+    for x in (-0.5, 0.5):
+        g.add(tm(K.cyl(0.1, 0.12, Y + 0.3, {'seg': 10, 'bevel': 0.02}), paint, '#E3662B', {'pos': [x, 0, 0]}))
+    g.add(tm(K.box(0.7, 0.3, 0.4, 0.05), paint, '#B8B2A4', {'pos': [0, 0.15, 0]}))
+    cabShape = K.roundRect(W, H, 0.5)
+    g.add(tm(K.extrude(cabShape, 0.36, {'bevel': 0.05, 'bevelSeg': 2, 'curveSeg': 6}), paint, '#F2EEE4', {'pos': [0, Y + H / 2, 0]}))
+    for z, ry in [[-0.185, 0], [0.185, math.pi]]:
+        g.add(K.m(decal(W - 0.16, H - 0.16).rotateY(ry), face, {'pos': [0, Y + H / 2, z]}))
+    glowM = K.glow(game, '#ffffff', 1.5, {'map': motelFaceTex(True), 'additive': True})
+    signGlow = lightMesh(THREE.PlaneGeometry(W - 0.16, H - 0.16).rotateY(math.pi), glowM, {'pos': [0, Y + H / 2, -0.19], 'name': 'signGlow'})
+    signGlow.visible = lit
+    g.add(signGlow)
+    # arrow: points down-left toward the motel, bulbs along its rim
+    arrow = [[1.1, 0.25], [-0.6, 0.25], [-0.6, 0.55], [-1.25, 0], [-0.6, -0.55], [-0.6, -0.25], [1.1, -0.25]]
+    ag = K.extrude(arrow, 0.18, {'bevel': 0.03, 'bevelSeg': 1, 'round': 0.06})
+    g.add(tm(ag, paint, '#E23B3B', {'pos': [-1.0, Y + 0.7, -0.05], 'rot': [0, 0, 0.35]}))
+    bulbs = []
+    P, q = [], THREE.Quaternion().setFromEuler(THREE.Euler(0, 0, 0.35))
+    for i in range(len(arrow)):
+        a, b = arrow[i], arrow[(i + 1) % len(arrow)]
+        n = max(1, js_round(math.hypot(b[0] - a[0], b[1] - a[1]) / 0.2))
+        for k in range(n):
+            t = k / n
+            P.append([lerp(a[0], b[0], t) * 0.86, lerp(a[1], b[1], t) * 0.72])
+    for px, py in P:
+        v = THREE.Vector3(px, py, 0).applyQuaternion(q)
+        bulbs.append(xf(THREE.SphereGeometry(0.045, 6, 4), {'pos': [-1.0 + v.x, Y + 0.7 + v.y, -0.16]}))
+    bulbMesh = lightMesh(mergeList(bulbs), K.glow(game, PAL.marqueeGold, 2.4) if lit else K.mat(game, 'ceramic', '#F0E6D0'),
+                         {'name': 'arrowBulbs'})
+    g.add(bulbMesh)
+    g.userData.parts = {'signGlow': signGlow, 'arrowBulbs': bulbMesh}
+    g.userData.lightAnchors = [{'pos': [0, Y + 2, -1.2], 'color': PAL.neonPink, 'intensity': 2, 'distance': 8, 'flicker': 0.06}] if lit else []
+    g.userData.colliders = [{'min': [-0.7, 0, -0.25], 'max': [0.7, 2.5, 0.25]}]
+    return K.finish(game, g, {'ao': {'res': 48, 'dist': 0.2}})
+
+
+registerProp('st_motel_sign', _st_motel_sign,
+             {'category': CITY, 'tags': ['street', 'sign', 'neon'], 'size': [3.5, 7.7, 0.5],
+              'desc': '"Starlite MOTEL · COLOR TV · VACANCY" pole sign: star-topped cabinet (painted face both sides, lit '
+                      'overlay on -z), red arrow with marquee bulbs (parts.signGlow / arrowBulbs), opts.lit'})
+
+# ------------------------------------------------------------------------------------------- scenes (propview)
+registerScene('out_yard', {
+    'floor': '#4A4652', 'wall': '#1B1E4A', 'room': [150, 150], 'wallH': 0.01, 'hemi': 0.55, 'key': 0.9,
+    'items': [
+        {'id': 'yd_tower', 'pos': [9, 12]},
+        {'id': 'yd_hut', 'pos': [-7.5, 4.5], 'rotY': 0},
+        {'id': 'yd_news_van', 'pos': [-1.5, 7], 'rotY': 0},
+        {'id': 'yd_sodium_post', 'pos': [3.5, 1.5], 'rotY': math.pi},
+        {'id': 'yd_sodium_post', 'pos': [15, 4], 'rotY': math.pi / 2},
+        {'id': 'yd_fence', 'pos': [-3, 20], 'opts': {'sign': 'private'}},
+        {'id': 'yd_fence', 'pos': [0, 20], 'opts': {'seed': 2}},
+        {'id': 'yd_fence_gate', 'pos': [3.9, 20]},
+        {'id': 'yd_fence', 'pos': [8.7, 20], 'opts': {'seed': 3, 'sign': 'wztv'}},
+        {'id': 'yd_fence', 'pos': [11.7, 20], 'opts': {'seed': 4}},
+        {'id': 'yd_drum_group', 'pos': [-10.5, 9], 'rotY': 0.4},
+        {'id': 'yd_crate_stack', 'pos': [14, 9], 'rotY': -0.5},
+        {'id': 'yd_puddle', 'pos': [2, 3]},
+        {'id': 'yd_gravel_patch', 'pos': [5, 7]},
+        {'id': 'yd_weeds', 'pos': [-4, 1.5]},
+        {'id': 'yd_stones', 'pos': [7, 4]},
+        {'id': 'sky_skyline', 'pos': [0, 88], 'opts': {'seed': 3, 'ad': 'jump_cut'}},
+        {'id': 'sky_moon', 'pos': [-34, 34, 92], 'opts': {'r': 6}},
+    ],
+    'cam': {'pos': [1.5, 2.6, -13], 'target': [3, 5.5, 12], 'fov': 62},
+})
+registerScene('out_street', {
+    'floor': '#3A3848', 'wall': '#1B1E4A', 'room': [60, 60], 'wallH': 0.01, 'hemi': 0.6, 'key': 0.9,
+    'items': [
+        {'id': 'st_sidewalk', 'pos': [-3, 4], 'rotY': math.pi, 'opts': {'len': 6}},
+        {'id': 'st_sidewalk', 'pos': [3, 4], 'rotY': math.pi, 'opts': {'len': 6}},
+        {'id': 'st_street_lamp', 'pos': [-1.5, 3.4]},
+        {'id': 'st_hydrant', 'pos': [1.6, 3.2], 'rotY': math.pi},
+        {'id': 'st_mailbox', 'pos': [3.4, 3.8], 'rotY': math.pi},
+        {'id': 'st_car_70s', 'pos': [-1.2, 1.4], 'rotY': math.pi, 'opts': {'color': '#E8A92E'}},
+        {'id': 'st_motel_sign', 'pos': [6.5, 6.2], 'rotY': 0},
+        {'id': 'sky_building', 'pos': [-6, 14], 'opts': {'style': 'brick', 'w': 10, 'h': 16, 'd': 8}},
+        {'id': 'sky_building', 'pos': [5, 16], 'opts': {'style': 'office', 'w': 12, 'h': 24, 'd': 8, 'seed': 2}},
+        {'id': 'sky_billboard', 'pos': [-14, 12], 'rotY': 0.3, 'opts': {'ad': 'replay_ade'}},
+    ],
+    'cam': {'pos': [0.5, 1.7, -7.5], 'target': [1, 2.6, 6], 'fov': 58},
+})

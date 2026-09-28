@@ -350,18 +350,18 @@ static func fromSpec(spec: Dictionary, imported: Material, ctx: Dictionary = {})
 	if o.get("color") == null and spec.get("color") != null:
 		o.color = spec.color
 	o.erase("map")
-	if spec.get("map") != null or spec.get("mapFile") != null:
-		var tex: Texture2D = null
-		var f = spec.get("mapFile")
-		if f is String and f != "" and ResourceLoader.exists(f):
-			tex = load(f)
-		if tex == null and imported is BaseMaterial3D:
-			tex = (imported as BaseMaterial3D).albedo_texture
-		if tex != null:
-			o.map = tex
-			o.mapWrap = spec.get("mapWrap", "clamp")
-			o.mapFilter = spec.get("mapFilter", "linear")
-			o.flipY = spec.get("flipY", true)   # kit convention: canvas PNGs top-down, three flipY
+	# the canvas texture: extras mapFile, else the glTF baseColorTexture (embedded)
+	var tex: Texture2D = null
+	var f = spec.get("mapFile")
+	if f is String and f != "" and ResourceLoader.exists(f):
+		tex = load(f)
+	if tex == null and imported is BaseMaterial3D:
+		tex = (imported as BaseMaterial3D).albedo_texture
+	if tex != null:
+		o.map = tex
+		o.mapWrap = spec.get("mapWrap") if spec.get("mapWrap") != null else "clamp"   # three CanvasTexture default
+		o.mapFilter = spec.get("mapFilter") if spec.get("mapFilter") != null else "linear"
+		o.flipY = spec.get("flipY") if spec.get("flipY") != null else true   # kit convention: canvas PNGs top-down, three flipY
 	if ctx.has("renderOrder"):
 		o.renderOrder = ctx.renderOrder
 	if spec.get("kind") == "basic":

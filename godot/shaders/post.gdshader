@@ -24,7 +24,7 @@ uniform float uScanlines = 0.0;
 uniform float uCrt = 0.0;
 uniform float uCollapse = 0.0;
 uniform vec4 uView = vec4(0.0, 0.0, 1.0, 1.0);
-uniform vec3 uLift : source_color = vec3(0.0423114, 0.0231534, 0.1022417);
+uniform vec3 uLift = vec3(0.0423114, 0.0231534, 0.1022417);   // linear (canvas shaders do not linearize source_color in an sRGB viewport)
 uniform float uExposure = 1.05;
 
 #define PI 3.141592653589793

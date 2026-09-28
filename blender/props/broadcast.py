@@ -1022,12 +1022,12 @@ def done(game, g, o=None):
             gg = m.geometry
             t = (gg.index.count if gg.index is not None else gg.attributes.position.count) / 3
             p = THREE.Vector3().setFromMatrixPosition(m.matrixWorld)
-            rows.append([t, type(gg).__name__, ','.join(js_to_fixed(v, 2) for v in p.toArray())])
+            rows.append([t, gg.type, ','.join(js_to_fixed(v, 2) for v in p.toArray())])
         g.traverse(prof)
         rows.sort(key=lambda r: -r[0])
         tot = sum(r[0] for r in rows)
-        print('[bcprof] %s total %s in %d meshes :: ' % (g.userData.id, tot, len(rows)) +
-              ' | '.join('%s %s @%s' % (r[0], r[1], r[2]) for r in rows[:30]))
+        print('[bcprof] %s total %s in %d meshes :: ' % (g.userData.id, js_str(tot), len(rows)) +
+              ' | '.join('%s %s @%s' % (js_str(r[0]), r[1], r[2]) for r in rows[:30]))
     K.finish(game, g, o.get('finish') or {})
     for p in o.get('mergeParts') or []:
         if p:

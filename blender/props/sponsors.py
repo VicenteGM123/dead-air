@@ -2021,4 +2021,1482 @@ def buildWristbands(game, gold):
 registerProp('costume_wristbands', lambda game, opts=None: buildWristbands(game, False), costumeMeta('replay_ade', 'wrists+neck', False, 'yellow/blue terry wristbands (L+R) + chrome referee whistle on a yellow lanyard'))
 registerProp('costume_wristbands_gold', lambda game, opts=None: buildWristbands(game, True), costumeMeta('replay_ade', 'wrists+neck', True, 'gold-leaf wristbands + whistle'))
 
-# @@PART3@@
+# =============================================================================================== SET PIECES
+# Placeable alone (room dressers) and used by the sponsor set prefab. Environment materials (they desaturate
+# before Sign-On like the rest of the station). Each registers the materials the game swaps for power:
+# userData.power = { on:{...}, off:{...} } + the meshes in userData.parts (see setTally / setSponsorSetPower).
+def tallyMats(game):
+    return JSObj(on=K.glow(game, '#FF2A20', 1.9), off=K.mat(game, 'lacquer', '#5A1A1E'))
+
+
+def badgeTex():
+    def draw(ctx, w, h, rand):
+        ctx.beginPath()
+        ctx.arc(64, 64, 60, 0, TAU)
+        ctx.fillStyle = '#E23B3B'
+        ctx.fill()
+        ctx.beginPath()
+        ctx.arc(64, 64, 48, 0, TAU)
+        ctx.fillStyle = '#2F5BD3'
+        ctx.fill()
+        text(ctx, '13', 64, 68, {'fam': FONT['sign'], 'px': 52, 'fill': '#F4F1E8'})
+    return texC('badge13', 128, 128, draw)
+
+
+def camDecalTex():
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = '#2F5BD3'
+        rrp(ctx, 0, 0, w, h, 14)
+        ctx.fill()
+        ctx.fillStyle = '#E23B3B'
+        ctx.fillRect(0, h - 12, w, 6)
+        text(ctx, 'WZTV', 80, 30, {'fam': FONT['sign'], 'px': 34, 'fill': '#F4F1E8'})
+        text(ctx, 'CAMERA 3', 188, 30, {'fam': FONT['round'], 'px': 22, 'fill': '#FFD23A'})
+    return texC('camdecal', 256, 64, draw)
+
+
+# ------------------------------------------------------------------ shared set-piece materials (one instance each)
+def setMats(game):
+    return JSObj(
+        dark=K.mat(game, 'plastic', '#2E2A34', {'rough': 0.45}),
+        metal=K.mat(game, 'metal', '#8A919C', {'rough': 0.4}),
+        chrome=K.mat(game, 'metal', '#A8B0BA', {'rough': 0.3}),
+        cream=K.mat(game, 'plastic', '#D9D2C2', {'rough': 0.4}),
+        blue=K.mat(game, 'plastic', '#2F5BD3', {'rough': 0.4}),
+        glass=K.mat(game, 'crt', '#1A2A3A'),
+    )
+
+
+# plain (unbevelled, cheap) cylinder with its base at y=0, for thin rods/legs where a bevel is invisible
+def pcyl(rt, rb, h, seg=8):
+    return THREE.CylinderGeometry(rt, rb, h, seg).translate(0, h / 2, 0)
+
+
+def prod(r, a, b, mat, seg=6):
+    return span(K.m(pcyl(r, r, V3(a).distanceTo(V3(b)), seg), mat), a, b)
+
+
+# ------------------------------------------------------------------ 1970s studio pedestal camera (lens toward -z)
+def buildPedestalCamera(game):
+    g = THREE.Group()
+    T = tallyMats(game)
+    M = setMats(game)
+    decal = K.mat(game, 'plastic', '#ffffff', {'map': camDecalTex()})
+    badge = K.mat(game, 'plastic', '#ffffff', {'map': badgeTex()})
+    # skirted pedestal base on three casters
+    g.add(K.m(K.lathe([[0, 0], [0.4, 0], [0.42, 0.03], [0.4, 0.15], [0.33, 0.19], [0.12, 0.22], [0, 0.22]], {'seg': 20, 'round': 0.02, 'steps': 1}), M.dark, {'pos': [0, 0.05, 0]}))
+    for i in range(3):
+        a = (i / 3) * TAU + math.pi / 6
+        cx, cz = math.sin(a) * 0.3, math.cos(a) * 0.3
+        g.add(K.m(THREE.CylinderGeometry(0.045, 0.045, 0.035, 10).rotateZ(math.pi / 2), M.dark, {'pos': [cx, 0.045, cz], 'rot': [0, a, 0]}))
+        g.add(K.m(K.box(0.06, 0.05, 0.05, 0.012), M.metal, {'pos': [cx, 0.07, cz], 'rot': [0, a, 0]}))
+    g.add(K.m(flatTorus(0.405, 0.02, 5, 28), M.metal, {'pos': [0, 0.2, 0]}))
+    # telescoping column + steering ring
+    g.add(K.m(pcyl(0.09, 0.1, 0.46, 16), M.blue, {'pos': [0, 0.26, 0]}))
+    g.add(K.m(flatTorus(0.092, 0.014, 5, 16), M.metal, {'pos': [0, 0.72, 0]}))
+    g.add(K.m(pcyl(0.068, 0.068, 0.42, 14), M.metal, {'pos': [0, 0.72, 0]}))
+    g.add(K.m(flatTorus(0.28, 0.024, 6, 28), M.metal, {'pos': [0, 0.8, 0]}))
+    for i in range(3):
+        a = (i / 3) * TAU
+        g.add(prod(0.012, [0, 0.8, 0], [math.sin(a) * 0.27, 0.8, math.cos(a) * 0.27], M.metal))
+    # pan head: parts.head pans (the "shakes its head" gag), pivot on the column axis
+    head = THREE.Group()
+    head.position.y = 1.14
+    head.userData.noMerge = True
+    head.add(K.m(pcyl(0.11, 0.12, 0.09, 16), M.dark, {'pos': [0, -0.02, 0]}))
+    head.add(K.m(K.box(0.34, 0.04, 0.44, 0.012), M.metal, {'pos': [0, 0.09, 0]}))
+    by = 0.32
+    head.add(K.m(K.box(0.42, 0.4, 0.64, 0.07), M.cream, {'pos': [0, by, 0.02]}))
+    for s in (-1, 1):
+        head.add(K.m(K.box(0.02, 0.29, 0.5, 0.008), M.blue, {'pos': [s * 0.212, by - 0.01, 0.04]}))
+        d = THREE.PlaneGeometry(0.4, 0.1).rotateY(-math.pi / 2 if s < 0 else math.pi / 2)
+        head.add(K.m(d, decal, {'pos': [s * 0.224, by + 0.05, 0.04]}))
+        b = THREE.CircleGeometry(0.055, 20).rotateY(-math.pi / 2 if s < 0 else math.pi / 2)
+        head.add(K.m(b, badge, {'pos': [s * 0.224, by - 0.08, -0.12 if s < 0 else 0.2]}))
+    head.add(K.m(K.box(0.24, 0.012, 0.16, 0.005), M.dark, {'pos': [0, by + 0.203, 0.14]}))
+    # big zoom lens: barrel, zoom + focus rings, flared hood, dark glass
+    lz, ly = -0.3, by - 0.02
+    head.add(K.m(THREE.CylinderGeometry(0.125, 0.125, 0.14, 20).rotateX(math.pi / 2), M.dark, {'pos': [0, ly, lz]}))
+    head.add(K.m(THREE.CylinderGeometry(0.105, 0.112, 0.26, 20).rotateX(math.pi / 2), M.dark, {'pos': [0, ly, lz - 0.18]}))
+    for z in (-0.1, -0.22):
+        head.add(K.m(THREE.TorusGeometry(0.114, 0.014, 5, 20), M.metal, {'pos': [0, ly, lz + z]}))
+    head.add(K.m(K.taper(K.box(0.3, 0.25, 0.14, 0.035), {'axis': 'z', 'k': 0.64}), M.dark, {'pos': [0, ly, lz - 0.37]}))
+    head.add(K.m(THREE.CircleGeometry(0.09, 20).rotateY(math.pi), M.glass, {'pos': [0, ly, lz - 0.312]}))
+    # viewfinder on the rear top, rubber hood toward the operator (+z)
+    head.add(K.m(K.box(0.3, 0.22, 0.3, 0.045), M.cream, {'pos': [0, by + 0.3, 0.1]}))
+    head.add(K.m(K.taper(K.box(0.26, 0.19, 0.16, 0.035), {'axis': 'z', 'k': 1.25}), M.dark, {'pos': [0, by + 0.3, 0.32]}))
+    # tally lights (parts.tally): big dome on the front top + a lamp on the viewfinder
+    head.add(K.m(pcyl(0.05, 0.055, 0.025, 14), M.dark, {'pos': [0, by + 0.2, -0.2]}))
+    tallyA = K.m(THREE.SphereGeometry(0.046, 14, 8, 0, TAU, 0, math.pi / 2), T.on, {'pos': [0, by + 0.224, -0.2], 'name': 'tally', 'cast': False})
+    tallyB = K.m(THREE.SphereGeometry(0.026, 10, 8), T.on, {'pos': [0.12, by + 0.42, 0.18], 'name': 'tally', 'cast': False})
+    for t in (tallyA, tallyB):
+        t.userData.noMerge = True
+        t.userData.noAO = True
+        head.add(t)
+    # pan bars back to the operator
+    for s in (-1, 1):
+        head.add(K.m(K.tube([[s * 0.13, 0.09, 0.16], [s * 0.21, 0.04, 0.46], [s * 0.27, -0.06, 0.7]], 0.015, {'seg': 8, 'radial': 5}), M.metal))
+        head.add(span(K.m(pcyl(0.026, 0.026, 0.15, 10), M.dark), [s * 0.25, -0.04, 0.64], [s * 0.28, -0.08, 0.78]))
+    g.add(head)
+    g.add(K.m(K.tube([[0, 1.36, 0.34], [0.06, 1.1, 0.42], [0.14, 0.6, 0.38], [0.3, 0.1, 0.36], [0.55, 0.025, 0.55], [0.95, 0.02, 0.95]], 0.019, {'seg': 14, 'radial': 5}), M.dark))
+    return JSObj(g=g, head=head, tallies=[tallyA, tallyB], T=T)
+
+
+def _sponsor_camera_pedestal(game, opts=None):
+    opts = opts if opts is not None else {}
+    g = K.prop('sponsor_camera_pedestal')
+    r = buildPedestalCamera(game)
+    cam, head, tallies, T = r.g, r.head, r.tallies, r.T
+    g.add(cam)
+    if opts.get('lit') is False:
+        for t in tallies:
+            t.material = T.off
+    K.bakeAO(g, {})
+    K.merge(head)
+    g.userData.parts = JSObj(head=head, tally=tallies)
+    g.userData.power = JSObj(on=JSObj(tally=T.on), off=JSObj(tally=T.off))
+    g.userData.colliders = [{'min': [-0.44, 0, -0.44], 'max': [0.44, 1.85, 0.8]}]
+    g.userData.anchors = {'lens': [0, 1.44, -0.7]}
+    return K.finish(game, g, {'ao': False})
+
+
+registerProp('sponsor_camera_pedestal', _sponsor_camera_pedestal,
+             {'category': 'sponsors', 'tags': ['camera', 'set_piece', 'tally'], 'size': [0.9, 1.85, 1.5], 'hero': True, 'desc': '70s studio pedestal camera: skirted base, cream/WZTV-blue body, big zoom lens, tally lights (parts.head pans, parts.tally)'})
+
+
+# ------------------------------------------------------------------ portable ENG camera on a wooden tripod + battery belt
+def buildEngCamera(game):
+    g = THREE.Group()
+    T = tallyMats(game)
+    M = setMats(game)
+    wood = K.mat(game, 'teak', '#ffffff', {'map': K.tex.wood(PAL.teak, {'dark': 0.35})})
+    grey = K.mat(game, 'plastic', '#A7ADB6', {'rough': 0.4})
+    leather = K.mat(game, 'vinyl', '#ffffff', {'map': K.tex.pebble('#5A3A22')})
+    decal = K.mat(game, 'plastic', '#ffffff', {'map': K.tex.label('EYEWITNESS 13', {'bg': '#F4F1E8', 'fg': '#E23B3B', 'accent': '#2F5BD3', 'w': 512, 'h': 96, 'border': 0.1, 'wear': 0.15})})
+    topY = 1.16
+
+    def legAt(a, y):
+        t = (y - 0.02) / (topY - 0.06)
+        r = lerp(0.5, 0.06, t)
+        return [math.sin(a) * r, y, math.cos(a) * r]
+    for i in range(3):
+        a = (i / 3) * TAU + math.pi / 3
+        g.add(prod(0.024, legAt(a, 0.02), legAt(a, topY - 0.04), wood, 8))
+        g.add(K.m(K.box(0.055, 0.05, 0.055, 0.012), M.metal, {'pos': legAt(a, 0.62)}))
+        g.add(K.m(pcyl(0.022, 0.028, 0.04, 8), M.dark, {'pos': legAt(a, 0.0)}))
+        g.add(prod(0.008, legAt(a, 0.3), [0, 0.34, 0], M.metal))
+    g.add(K.m(pcyl(0.03, 0.03, 0.03, 10), M.metal, {'pos': [0, 0.33, 0]}))
+    g.add(K.m(pcyl(0.075, 0.085, 0.06, 16), M.metal, {'pos': [0, topY - 0.06, 0]}))
+    head = THREE.Group()
+    head.position.y = topY
+    head.userData.noMerge = True
+    head.add(K.m(pcyl(0.065, 0.075, 0.08, 14), M.dark))
+    head.add(K.m(K.tube([[0.05, 0.05, 0.08], [0.1, 0.02, 0.3], [0.13, -0.06, 0.5]], 0.013, {'seg': 8, 'radial': 5}), M.metal))
+    by = 0.22
+    head.add(K.m(K.box(0.19, 0.26, 0.44, 0.04), grey, {'pos': [0, by, 0.02]}))
+    head.add(K.m(K.cushion(0.13, 0.05, 0.24, {'puff': 0.01}), M.dark, {'pos': [0, by - 0.15, 0.08]}))
+    head.add(K.m(K.box(0.004, 0.06, 0.3, 0.002), decal, {'pos': [0.097, by + 0.03, 0.02]}))
+    head.add(K.m(THREE.CylinderGeometry(0.07, 0.072, 0.3, 18).rotateX(math.pi / 2), M.dark, {'pos': [0, by - 0.02, -0.33]}))
+    head.add(K.m(THREE.TorusGeometry(0.074, 0.011, 5, 18), M.metal, {'pos': [0, by - 0.02, -0.38]}))
+    head.add(K.m(K.taper(K.box(0.18, 0.16, 0.09, 0.025), {'axis': 'z', 'k': 0.7}), M.dark, {'pos': [0, by - 0.02, -0.51]}))
+    head.add(K.m(THREE.CircleGeometry(0.06, 18).rotateY(math.pi), M.glass, {'pos': [0, by - 0.02, -0.49]}))
+    head.add(K.m(K.box(0.055, 0.11, 0.13, 0.015), M.dark, {'pos': [0.095, by - 0.06, -0.28]}))
+    head.add(K.m(K.tube([[0, by + 0.13, 0.18], [0, by + 0.21, 0.1], [0, by + 0.21, -0.1], [0, by + 0.14, -0.16]], 0.017, {'seg': 10, 'radial': 5}), M.dark))
+    head.add(K.m(THREE.CylinderGeometry(0.038, 0.044, 0.22, 14).rotateX(math.pi / 2), M.dark, {'pos': [-0.135, by + 0.08, -0.02]}))
+    head.add(K.m(pcyl(0.046, 0.04, 0.04, 12).rotateX(math.pi / 2), M.dark, {'pos': [-0.135, by + 0.08, 0.09]}))
+    head.add(K.m(pcyl(0.03, 0.034, 0.02, 12), M.dark, {'pos': [0, by + 0.13, -0.13]}))
+    tally = K.m(THREE.SphereGeometry(0.028, 12, 8, 0, TAU, 0, math.pi / 2), T.on, {'pos': [0, by + 0.148, -0.13], 'name': 'tally', 'cast': False})
+    tally.userData.noMerge = True
+    tally.userData.noAO = True
+    head.add(tally)
+    g.add(head)
+    # battery belt slung over the front-right leg (U shape hanging both sides), coiled cable to the camera
+    a0 = math.pi / 3
+    hang = legAt(a0, 0.8)
+    belt = THREE.Group()
+    belt.position.set(hang[0], hang[1], hang[2])
+    belt.rotation.y = a0 + math.pi / 2
+    belt.add(K.m(K.tube([[-0.16, -0.36, 0.0], [-0.1, -0.08, 0.0], [0, 0.03, 0.0], [0.1, -0.08, 0.0], [0.16, -0.36, 0.0]], 0.022, {'seg': 16, 'radial': 5}), leather))
+    for i in range(4):
+        s, k = -1 if i < 2 else 1, i % 2
+        belt.add(K.m(K.box(0.08, 0.1, 0.055, 0.012), leather, {'pos': [s * (0.115 + k * 0.035), -0.14 - k * 0.14, 0.035], 'rot': [0, 0, s * (0.35 - k * 0.15)]}))
+    g.add(belt)
+    g.add(K.m(K.tube([[hang[0] + 0.05, 0.46, hang[2]], [0.16, 0.8, 0.22], [0.04, 1.2, 0.24], [0.0, 1.36, 0.22]], 0.011, {'seg': 14, 'radial': 5}), M.dark))
+    return JSObj(g=g, head=head, tallies=[tally], T=T)
+
+
+def _sponsor_camera_eng(game, opts=None):
+    opts = opts if opts is not None else {}
+    g = K.prop('sponsor_camera_eng')
+    r = buildEngCamera(game)
+    cam, head, tallies, T = r.g, r.head, r.tallies, r.T
+    g.add(cam)
+    if opts.get('lit') is False:
+        for t in tallies:
+            t.material = T.off
+    K.bakeAO(g, {})
+    K.merge(head)
+    g.userData.parts = JSObj(head=head, tally=tallies)
+    g.userData.power = JSObj(on=JSObj(tally=T.on), off=JSObj(tally=T.off))
+    g.userData.colliders = [{'min': [-0.45, 0, -0.45], 'max': [0.45, 1.6, 0.45]}]
+    g.userData.anchors = {'lens': [0, 1.36, -0.56]}
+    return K.finish(game, g, {'ao': False})
+
+
+registerProp('sponsor_camera_eng', _sponsor_camera_eng,
+             {'category': 'sponsors', 'tags': ['camera', 'set_piece', 'tally', 'eng'], 'size': [1, 1.6, 1.1], 'desc': 'portable ENG news camera on a wooden tripod with a battery belt (Replay-Ade set, parts.head, parts.tally)', 'hero': True})
+
+
+# ------------------------------------------------------------------ softbox light on a stand (diffuser faces -z)
+def softTex():
+    def draw(ctx, w, h, rand):
+        gr = ctx.createRadialGradient(w / 2, h / 2, 4, w / 2, h / 2, w * 0.72)
+        gr.addColorStop(0, '#FFFFFF')
+        gr.addColorStop(0.55, '#F2E8D8')
+        gr.addColorStop(1, '#A89C8C')
+        ctx.fillStyle = gr
+        ctx.fillRect(0, 0, w, h)
+    return K.tex.canvas('sp.softbox', 128, 128, draw, {'repeat': False})
+
+
+def softboxMats(game):
+    return JSObj(on=K.glow(game, '#FFF1D8', 0.95, {'map': softTex()}), off=K.mat(game, 'fabric', '#D8D2C8', {'rim': 0.1}))
+
+
+def buildSoftbox(game, o=None):
+    o = o if o is not None else {}
+    g = THREE.Group()
+    M = setMats(game)
+    cloth = K.mat(game, 'fabric', '#1E1A24', {'rim': 0.3})
+    mats = softboxMats(game)
+    h = o['height'] if o.get('height') is not None else 1.75
+    for i in range(3):
+        a = (i / 3) * TAU + 0.4
+        g.add(prod(0.012, [math.sin(a) * 0.36, 0.01, math.cos(a) * 0.36], [math.sin(a) * 0.03, 0.62, math.cos(a) * 0.03], M.metal))
+        g.add(K.m(pcyl(0.018, 0.022, 0.025, 8), M.dark, {'pos': [math.sin(a) * 0.36, 0, math.cos(a) * 0.36]}))
+    g.add(K.m(pcyl(0.035, 0.04, 0.08, 12), M.dark, {'pos': [0, 0.58, 0]}))
+    g.add(K.m(pcyl(0.018, 0.018, h - 0.6, 10), M.metal, {'pos': [0, 0.6, 0]}))
+    g.add(K.m(pcyl(0.026, 0.026, 0.05, 10), M.dark, {'pos': [0, 1.05, 0]}))
+    box = THREE.Group()
+    box.position.y = h
+    box.rotation.x = o['tilt'] if o.get('tilt') is not None else 0.3
+    for s in (-1, 1):
+        g.add(K.m(K.box(0.03, 0.26, 0.03, 0.01), M.dark, {'pos': [s * 0.35, h - 0.1, 0]}))
+    g.add(K.m(K.box(0.73, 0.03, 0.03, 0.01), M.dark, {'pos': [0, h - 0.22, 0]}))
+    box.add(K.m(K.taper(K.box(0.66, 0.5, 0.36, 0.04), {'axis': 'z', 'k': 0.38}), cloth, {'pos': [0, 0, 0.12]}))
+    diff = K.m(THREE.PlaneGeometry(0.58, 0.42).rotateY(math.pi), mats.off if o.get('lit') is False else mats.on, {'pos': [0, 0, -0.066], 'name': 'diffuser', 'cast': False})
+    diff.userData.noMerge = True
+    diff.userData.noAO = True
+    diff.userData.noOcclude = True
+    box.add(diff)
+    g.add(box)
+    return JSObj(g=g, box=box, diff=diff, mats=mats)
+
+
+def _sponsor_softbox(game, opts=None):
+    opts = opts if opts is not None else {}
+    g = K.prop('sponsor_softbox')
+    r = buildSoftbox(game, opts)
+    sb, box, diff, mats = r.g, r.box, r.diff, r.mats
+    g.add(sb)
+    g.userData.parts = JSObj(head=box, diffuser=[diff])
+    g.userData.power = JSObj(on=JSObj(soft=mats.on), off=JSObj(soft=mats.off))
+    g.userData.lightAnchors = [] if opts.get('lit') is False else [{'pos': [0, 1.6, -0.5], 'color': '#FFE8C8', 'intensity': 2.4, 'distance': 5.5}]
+    g.userData.colliders = [{'min': [-0.3, 0, -0.3], 'max': [0.3, 2.1, 0.3]}]
+    return K.finish(game, g)
+
+
+registerProp('sponsor_softbox', _sponsor_softbox,
+             {'category': 'sponsors', 'tags': ['light', 'set_piece', 'softbox'], 'size': [0.75, 2.1, 0.75], 'desc': 'studio softbox on a tripod stand, glowing diffuser (power swap via userData.power)'})
+
+
+# ------------------------------------------------------------------ small walnut studio speaker (grille faces -z)
+def grilleTex():
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = '#C86A2E'
+        ctx.fillRect(0, 0, w, h)
+        for y in range(0, h, 3):
+            ctx.fillStyle = 'rgba(90,40,10,0.28)' if y % 6 else 'rgba(255,200,150,0.18)'
+            ctx.fillRect(0, y, w, 1.5)
+        for x in range(0, w, 3):
+            ctx.fillStyle = 'rgba(90,40,10,0.18)'
+            ctx.fillRect(x, 0, 1, h)
+        ctx.fillStyle = '#C8963C'
+        rrp(ctx, w / 2 - 36, h - 38, 72, 18, 4)
+        ctx.fill()
+        text(ctx, 'WZTV', w / 2, h - 29, {'fam': FONT['sign'], 'px': 13, 'fill': '#4A2A10'})
+    return K.tex.canvas('sp.grille', 256, 256, draw)
+
+
+def buildSpeaker(game):
+    g = THREE.Group()
+    M = setMats(game)
+    walnut = K.mat(game, 'walnut', '#ffffff', {'map': K.tex.wood(PAL.walnut, {'dark': 0.4})})
+    grille = K.mat(game, 'fabric', '#ffffff', {'map': grilleTex(), 'rim': 0.12})
+    g.add(K.m(K.box(0.4, 0.56, 0.3, 0.035, {'uv': 2.5}), walnut, {'pos': [0, 0.34, 0]}))
+    g.add(K.m(K.cushion(0.33, 0.47, 0.03, {'puff': 0.006, 'seg': [4, 5, 1]}), grille, {'pos': [0, 0.34, -0.15]}))
+    for x in (-0.14, 0.14):
+        for z in (-0.1, 0.1):
+            g.add(K.m(pcyl(0.02, 0.026, 0.06, 8), M.dark, {'pos': [x, 0, z]}))
+    g.add(K.m(K.tube([[0, 0.3, 0.15], [0.05, 0.1, 0.25], [0.3, 0.02, 0.4]], 0.008, {'seg': 8, 'radial': 4}), M.dark))
+    return g
+
+
+def _sponsor_speaker(game, opts=None):
+    g = K.prop('sponsor_speaker')
+    g.add(buildSpeaker(game))
+    g.userData.anchors = {'sound': [0, 0.34, -0.2]}
+    return K.finish(game, g)
+
+
+registerProp('sponsor_speaker', _sponsor_speaker,
+             {'category': 'sponsors', 'tags': ['speaker', 'set_piece', 'audio'], 'size': [0.4, 0.62, 0.3], 'desc': 'small walnut studio speaker with orange grille cloth (sound anchor)'})
+
+
+# =============================================================================================== SET ART
+# Painted backdrop flats (the product's world), riser floor tops and wing flats, one canvas each per brand.
+def cloud(ctx, x, y, s, col='#FFFFFF'):
+    ctx.fillStyle = col
+    for dx, dy, r in [[-38, 6, 22], [-14, -8, 28], [14, -12, 30], [40, 2, 22], [0, 10, 26]]:
+        ctx.beginPath()
+        ctx.arc(x + dx * s, y + dy * s, r * s, 0, TAU)
+        ctx.fill()
+
+
+def halftone(ctx, x0, y0, w, h, col, step, fn):
+    ctx.fillStyle = col
+    y = y0
+    while y < y0 + h:
+        x = x0
+        while x < x0 + w:
+            r = fn((x - x0) / w, (y - y0) / h) * step * 0.5
+            if r > 0.3:
+                ctx.beginPath()
+                ctx.arc(x + step / 2, y + step / 2, r, 0, TAU)
+                ctx.fill()
+            x += step
+        y += step
+
+
+def frameBorder(ctx, w, h, col, lw=10):
+    ctx.strokeStyle = col
+    ctx.lineWidth = lw
+    ctx.strokeRect(lw / 2, lw / 2, w - lw, h - lw)
+
+
+def _bd_replay_ade(ctx, w, h, rand):
+    # "Sports Final": stadium under a big sky, scoreboard, bunting, striped field
+    ctx.fillStyle = lin(ctx, 0, 0, 0, h * 0.5, ['#2F5BD3', '#6E9CF0', '#CFE2FF'])
+    ctx.fillRect(0, 0, w, h)
+    ctx.save()
+    ctx.globalAlpha = 0.16
+    rays(ctx, w / 2, h * 0.34, w, 28, '#FFFFFF')
+    ctx.restore()
+    cloud(ctx, 110, 150, 1.1)
+    cloud(ctx, 660, 120, 1.3)
+    cloud(ctx, 560, 200, 0.7)
+    # light towers
+    for x in (64, w - 64):
+        ctx.fillStyle = '#5A6A8A'
+        ctx.fillRect(x - 5, 110, 10, 200)
+        rrp(ctx, x - 44, 70, 88, 56, 8)
+        ctx.fillStyle = '#3A4460'
+        ctx.fill()
+        for i in range(4):
+            for j in range(2):
+                ctx.beginPath()
+                ctx.arc(x - 30 + i * 20, 86 + j * 22, 8, 0, TAU)
+                ctx.fillStyle = '#FFF4C8'
+                ctx.fill()
+    # stands with a crowd of dots
+    sy0, sy1 = h * 0.4, h * 0.61
+    ctx.fillStyle = '#23306A'
+    ctx.beginPath()
+    ctx.moveTo(0, sy1)
+    ctx.lineTo(0, sy0 + 20)
+    ctx.quadraticCurveTo(w / 2, sy0 - 40, w, sy0 + 20)
+    ctx.lineTo(w, sy1)
+    ctx.closePath()
+    ctx.fill()
+    crowd = ['#E23B3B', '#FFD23A', '#F4F1E8', '#E3662B', '#52D24A', '#FF5FA2', '#7FE7FF']
+    y = sy0
+    while y < sy1 - 12:
+        x = 6
+        while x < w:
+            top = sy0 + 20 - 60 * math.sin((x / w) * math.pi) * 0.5
+            if y < top:
+                x += 11
+                continue
+            ctx.fillStyle = crowd[int(math.floor(rand() * len(crowd)))]
+            ctx.beginPath()
+            ctx.arc(x + rand() * 3, y + rand() * 3, 3.6, 0, TAU)
+            ctx.fill()
+            x += 11
+        y += 11
+    ctx.fillStyle = '#F4F1E8'
+    ctx.fillRect(0, sy1 - 10, w, 8)
+    ctx.fillStyle = '#1B2F7A'
+    ctx.fillRect(0, sy1 - 2, w, 6)
+    # scoreboard
+    bx, by = w / 2 - 150, 34
+    rrp(ctx, bx, by, 300, 150, 14)
+    ctx.fillStyle = '#1E1A2E'
+    ctx.fill()
+    ctx.lineWidth = 8
+    ctx.strokeStyle = '#FFD23A'
+    ctx.stroke()
+    for i in range(24):
+        x = bx + 14 + i * 11.6
+        for yy in (by + 8, by + 142):
+            ctx.beginPath()
+            ctx.arc(x, yy, 3, 0, TAU)
+            ctx.fillStyle = '#FFF4C8' if i % 2 else '#FFB347'
+            ctx.fill()
+    text(ctx, 'REPLAY', w / 2, by + 44, {'fam': FONT['sign'], 'px': 44, 'fill': '#FFD23A'})
+    rewindP(ctx, w / 2 - 118, by + 44, 26)
+    ctx.fillStyle = '#FFD23A'
+    ctx.fill()
+    rewindP(ctx, w / 2 + 128, by + 44, 26)
+    ctx.fill()
+    text(ctx, 'HOME', w / 2 - 80, by + 88, {'fam': FONT['round'], 'px': 18, 'fill': '#F4F1E8'})
+    text(ctx, 'VISITORS', w / 2 + 80, by + 88, {'fam': FONT['round'], 'px': 18, 'fill': '#F4F1E8'})
+    text(ctx, '13', w / 2 - 80, by + 118, {'fam': FONT['mono'], 'px': 46, 'fill': '#FF5A3C'})
+    text(ctx, '12', w / 2 + 80, by + 118, {'fam': FONT['mono'], 'px': 46, 'fill': '#FF5A3C'})
+    # striped field with perspective yard lines
+    fy = sy1 + 4
+    for i in range(9):
+        y0, y1 = fy + (h - fy) * ((i / 9) ** 1.35), fy + (h - fy) * (((i + 1) / 9) ** 1.35)
+        ctx.fillStyle = '#3FA34A' if i % 2 else '#52B85A'
+        ctx.fillRect(0, y0, w, y1 - y0 + 1)
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)'
+    ctx.lineWidth = 4
+    for k in range(-6, 7):
+        ctx.beginPath()
+        ctx.moveTo(w / 2 + k * 40, fy)
+        ctx.lineTo(w / 2 + k * 190, h)
+        ctx.stroke()
+    ctx.lineWidth = 6
+    ctx.beginPath()
+    ctx.moveTo(0, fy + 4)
+    ctx.lineTo(w, fy + 4)
+    ctx.stroke()
+    # pennant bunting
+    for y0, sag in [[18, 40], [8, 26]]:
+        ctx.strokeStyle = '#F4F1E8'
+        ctx.lineWidth = 3
+        ctx.beginPath()
+        ctx.moveTo(0, y0)
+        ctx.quadraticCurveTo(w / 2, y0 + sag * 2, w, y0)
+        ctx.stroke()
+        cols = ['#FFD23A', '#2F5BD3', '#E23B3B', '#F4F1E8']
+        for i in range(16):
+            t = (i + 0.5) / 16
+            x, yy = t * w, y0 + 4 * sag * t * (1 - t)
+            ctx.beginPath()
+            ctx.moveTo(x - 18, yy)
+            ctx.lineTo(x + 18, yy)
+            ctx.lineTo(x, yy + 36)
+            ctx.closePath()
+            ctx.fillStyle = cols[i % 4]
+            ctx.fill()
+        if y0 == 18:
+            break
+    frameBorder(ctx, w, h, '#1B2F7A', 12)
+
+
+def _bd_wobble_up(ctx, w, h, rand):
+    # avocado kitchen: 70s circle wallpaper, sunburst clock, window with gingham curtains, cabinets, counter
+    ctx.fillStyle = '#F6E7C8'
+    ctx.fillRect(0, 0, w, h)
+    y = 0
+    while y < h * 0.66:
+        x = 0
+        while x < w + 64:
+            ox = (int(math.floor(y / 64)) % 2) * 32
+            for r, c in [[28, '#E3662B'], [20, '#F6E7C8'], [13, '#8A5230'], [6, '#E8A92E']]:
+                ctx.beginPath()
+                ctx.arc(x + ox, y + 32, r, 0, TAU)
+                ctx.fillStyle = c
+                ctx.fill()
+            x += 64
+        y += 64
+    # window with sky + gingham curtains
+    wx, wy, ww, wh = 250, 70, 268, 230
+    ctx.fillStyle = lin(ctx, 0, wy, 0, wy + wh, ['#7FC0FF', '#CDE8FF'])
+    ctx.fillRect(wx, wy, ww, wh)
+    ctx.beginPath()
+    ctx.arc(wx + 190, wy + 80, 34, 0, TAU)
+    ctx.fillStyle = '#FFE36A'
+    ctx.fill()
+    cloud(ctx, wx + 80, wy + 60, 0.7)
+    ctx.fillStyle = '#5E8A3A'
+    ctx.beginPath()
+    ctx.ellipse(wx + 60, wy + wh, 90, 50, 0, math.pi, TAU)
+    ctx.fill()
+    ctx.beginPath()
+    ctx.ellipse(wx + 220, wy + wh, 100, 42, 0, math.pi, TAU)
+    ctx.fill()
+    ctx.strokeStyle = '#F4F1E8'
+    ctx.lineWidth = 14
+    ctx.strokeRect(wx, wy, ww, wh)
+    ctx.lineWidth = 8
+    ctx.beginPath()
+    ctx.moveTo(wx + ww / 2, wy)
+    ctx.lineTo(wx + ww / 2, wy + wh)
+    ctx.moveTo(wx, wy + wh / 2)
+    ctx.lineTo(wx + ww, wy + wh / 2)
+    ctx.stroke()
+    for s in (0, 1):
+        cx = wx + ww - 10 if s else wx + 10
+        ctx.save()
+        ctx.beginPath()
+        if not s:
+            ctx.moveTo(wx - 40, wy - 20)
+            ctx.lineTo(wx + 60, wy - 20)
+            ctx.quadraticCurveTo(wx + 20, wy + 120, wx + 50, wy + 250)
+            ctx.lineTo(wx - 40, wy + 250)
+        else:
+            ctx.moveTo(wx + ww + 40, wy - 20)
+            ctx.lineTo(wx + ww - 60, wy - 20)
+            ctx.quadraticCurveTo(wx + ww - 20, wy + 120, wx + ww - 50, wy + 250)
+            ctx.lineTo(wx + ww + 40, wy + 250)
+        ctx.closePath()
+        ctx.clip()
+        ctx.fillStyle = '#FFFFFF'
+        ctx.fillRect(cx - 120, wy - 30, 240, 300)
+        ctx.fillStyle = 'rgba(226,59,59,0.55)'
+        for i in range(30):
+            ctx.fillRect(cx - 120 + i * 12, wy - 30, 6, 300)
+            ctx.fillRect(cx - 120, wy - 30 + i * 12, 240, 6)
+        ctx.restore()
+    ctx.fillStyle = '#E23B3B'
+    ctx.fillRect(wx - 50, wy - 30, ww + 100, 22)
+    # sunburst clock
+    kx, ky = 110, 130
+    for i in range(24):
+        a = (i / 24) * TAU
+        ctx.strokeStyle = '#C8963C' if i % 2 else '#8A5230'
+        ctx.lineWidth = 6
+        ctx.beginPath()
+        ctx.moveTo(kx + math.cos(a) * 36, ky + math.sin(a) * 36)
+        ctx.lineTo(kx + math.cos(a) * (62 if i % 2 else 74), ky + math.sin(a) * (62 if i % 2 else 74))
+        ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(kx, ky, 36, 0, TAU)
+    ctx.fillStyle = '#F4F1E8'
+    ctx.fill()
+    ctx.lineWidth = 5
+    ctx.strokeStyle = '#8A5230'
+    ctx.stroke()
+    ctx.strokeStyle = '#2A1D3A'
+    ctx.lineWidth = 5
+    ctx.beginPath()
+    ctx.moveTo(kx, ky)
+    ctx.lineTo(kx, ky - 24)
+    ctx.moveTo(kx, ky)
+    ctx.lineTo(kx + 16, ky + 6)
+    ctx.stroke()
+    # recipe card frame
+    rrp(ctx, 590, 110, 130, 150, 8)
+    ctx.fillStyle = '#8A5230'
+    ctx.fill()
+    rrp(ctx, 600, 120, 110, 130, 4)
+    ctx.fillStyle = '#FFFDF2'
+    ctx.fill()
+    PRODUCT_ICON['wobble_up'](ctx, 655, 175, 70)
+    text(ctx, 'Wobble-Up', 655, 232, {'fam': FONT['groovy'], 'px': 20, 'fill': '#1FB45A'})
+    # counter + avocado cabinets
+    cy = h * 0.66
+    ctx.fillStyle = '#EFE3C2'
+    ctx.fillRect(0, cy - 10, w, 30)
+    ctx.fillStyle = '#C8B890'
+    ctx.fillRect(0, cy + 20, w, 6)
+    ctx.fillStyle = '#7F8C32'
+    ctx.fillRect(0, cy + 26, w, h - cy - 26)
+    for i in range(6):
+        x = 14 + i * 124
+        rrp(ctx, x, cy + 44, 112, h - cy - 64, 8)
+        ctx.fillStyle = '#8C9A3A'
+        ctx.fill()
+        ctx.lineWidth = 4
+        ctx.strokeStyle = '#5E6A22'
+        ctx.stroke()
+        rrp(ctx, x + 14, cy + 60, 84, h - cy - 96, 6)
+        ctx.strokeStyle = '#A8B650'
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.arc(x + (18 if i % 2 else 94), cy + 120, 6, 0, TAU)
+        ctx.fillStyle = '#D8DCE6'
+        ctx.fill()
+    # things on the counter: canisters, toaster
+    for i, (c, hh) in enumerate([['#E3662B', 70], ['#E8A92E', 56], ['#8A5230', 44]]):
+        rrp(ctx, 40 + i * 58, cy - 10 - hh, 48, hh, 8)
+        ctx.fillStyle = c
+        ctx.fill()
+        rrp(ctx, 36 + i * 58, cy - 18 - hh, 56, 12, 5)
+        ctx.fillStyle = '#F4F1E8'
+        ctx.fill()
+    rrp(ctx, 560, cy - 70, 120, 62, 18)
+    ctx.fillStyle = '#C9CED8'
+    ctx.fill()
+    ctx.fillStyle = '#2A1D3A'
+    ctx.fillRect(588, cy - 72, 26, 6)
+    ctx.fillRect(628, cy - 72, 26, 6)
+    frameBorder(ctx, w, h, '#0E4A26', 12)
+
+
+def _bd_jump_cut(ctx, w, h, rand):
+    # Jump Cut morning: sunrise skyline through a big window, orange tiles, mug shelf, film-strip border
+    ctx.fillStyle = '#6B3A1E'
+    ctx.fillRect(0, 0, w, h)
+    wx, wy, ww, wh = 60, 70, w - 120, 300
+    ctx.fillStyle = lin(ctx, 0, wy, 0, wy + wh, ['#FF7E5F', '#FFB36B', '#FFE3A3'])
+    ctx.fillRect(wx, wy, ww, wh)
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(wx, wy, ww, wh)
+    ctx.clip()
+    rays(ctx, w / 2, wy + wh - 40, 700, 22, 'rgba(255,255,255,0.18)')
+    ctx.beginPath()
+    ctx.arc(w / 2, wy + wh - 30, 90, 0, TAU)
+    ctx.fillStyle = '#FFF1B0'
+    ctx.fill()
+    ctx.fillStyle = '#7A3A2A'
+    x = wx
+    while x < wx + ww:
+        bw, bh = 30 + rand() * 50, 60 + rand() * 150
+        ctx.fillRect(x, wy + wh - bh, bw - 4, bh)
+        yy = wy + wh - bh + 10
+        while yy < wy + wh - 10:
+            xx = x + 6
+            while xx < x + bw - 12:
+                if rand() < 0.4:
+                    ctx.fillStyle = '#FFD27A'
+                    ctx.fillRect(xx, yy, 5, 8)
+                    ctx.fillStyle = '#7A3A2A'
+                xx += 12
+            yy += 18
+        x += bw
+    ctx.restore()
+    ctx.strokeStyle = '#F6E7C8'
+    ctx.lineWidth = 16
+    ctx.strokeRect(wx, wy, ww, wh)
+    ctx.lineWidth = 8
+    for k in (1, 2):
+        ctx.beginPath()
+        ctx.moveTo(wx + (ww * k) / 3, wy)
+        ctx.lineTo(wx + (ww * k) / 3, wy + wh)
+        ctx.stroke()
+    # script sign over the window
+    rrp(ctx, w / 2 - 170, 18, 340, 56, 26)
+    ctx.fillStyle = '#F6E7C8'
+    ctx.fill()
+    ctx.lineWidth = 6
+    ctx.strokeStyle = '#4A1E0E'
+    ctx.stroke()
+    text(ctx, 'Rise & Shine!', w / 2, 47, {'fam': FONT['groovy'], 'px': 38, 'fill': '#E3662B', 'stroke': '#4A1E0E', 'lw': 5})
+    # shelf with 70s mugs
+    sy = wy + wh + 60
+    ctx.fillStyle = '#8A5230'
+    ctx.fillRect(40, sy, w - 80, 14)
+    for i, c in enumerate(['#E3662B', '#E8A92E', '#8C9A3A', '#F6E7C8', '#B5472A', '#E3662B', '#2E8C8C', '#E8A92E']):
+        mx = 80 + i * 82
+        rrp(ctx, mx - 22, sy - 50, 44, 50, 8)
+        ctx.fillStyle = c
+        ctx.fill()
+        ctx.beginPath()
+        ctx.arc(mx + 26, sy - 26, 12, -1.3, 1.3)
+        ctx.lineWidth = 6
+        ctx.strokeStyle = c
+        ctx.stroke()
+    # orange tiles below
+    ty = sy + 24
+    yy = ty
+    while yy < h:
+        xx = 0
+        while xx < w:
+            ctx.fillStyle = '#E3662B' if math.fmod((xx + yy) / 40, 2) else '#F08A3A'
+            ctx.fillRect(xx + 2, yy + 2, 36, 36)
+            xx += 40
+        yy += 40
+    # film-strip border (the brand motif)
+    ctx.fillStyle = '#2A160C'
+    ctx.fillRect(0, 0, 22, h)
+    ctx.fillRect(w - 22, 0, 22, h)
+    ctx.fillStyle = '#F6E7C8'
+    yy = 8
+    while yy < h:
+        rrp(ctx, 5, yy, 12, 16, 3)
+        ctx.fill()
+        rrp(ctx, w - 17, yy, 12, 16, 3)
+        ctx.fill()
+        yy += 30
+
+
+def _bd_roller_boogie(ctx, w, h, rand):
+    # roller disco: purple night, rainbow banking arcs, mirror ball beams, checker rink, skater silhouettes
+    ctx.fillStyle = lin(ctx, 0, 0, 0, h, ['#2A0E3A', '#4A1A5E', '#6B3A6E'])
+    ctx.fillRect(0, 0, w, h)
+    ctx.save()
+    ctx.globalAlpha = 0.18
+    rays(ctx, w / 2, 70, w * 1.2, 18, '#FF5FA2')
+    ctx.restore()
+    for i in range(90):
+        sparkle(ctx, rand() * w, rand() * h * 0.6, 2 + rand() * 7, '#FFFFFF' if rand() < 0.5 else '#5FE3FF')
+    # mirror ball (painted, top center)
+    ctx.beginPath()
+    ctx.arc(w / 2, 80, 50, 0, TAU)
+    ctx.fillStyle = '#C9CED8'
+    ctx.fill()
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(w / 2, 80, 50, 0, TAU)
+    ctx.clip()
+    y = 30
+    while y < 130:
+        x = w / 2 - 50
+        while x < w / 2 + 50:
+            ctx.fillStyle = '#FFFFFF' if rand() < 0.3 else '#8A90A8' if rand() < 0.5 else '#AEB4C4'
+            ctx.fillRect(x, y, 10, 10)
+            x += 12
+        y += 12
+    ctx.restore()
+    ctx.fillStyle = '#8A90A8'
+    ctx.fillRect(w / 2 - 2, 0, 4, 32)
+    # rainbow banking arcs
+    cols = [BAR['red'], '#FF9A2A', BAR['yellow'], BAR['green'], BAR['blue'], '#8A4ADC']
+    for i, c in enumerate(cols):
+        ctx.beginPath()
+        ctx.arc(w * 0.5, h * 1.25, w * 0.92 - i * 26, math.pi * 1.08, math.pi * 1.92)
+        ctx.lineWidth = 26
+        ctx.strokeStyle = c
+        ctx.stroke()
+    # SKATE sign
+    text(ctx, 'SKATE!', w / 2, h * 0.42, {'fam': FONT['groovy'], 'px': 96, 'fill': '#FF5FA2', 'stroke': '#FFFFFF', 'lw': 6, 'depth': 6, 'depthFill': '#3A1440'})
+
+    # skater silhouettes
+    def skater(x, y, s, c, flip):
+        ctx.save()
+        ctx.translate(x, y)
+        ctx.scale(-s if flip else s, s)
+        ctx.fillStyle = c
+        ctx.beginPath()
+        ctx.arc(0, -70, 12, 0, TAU)
+        ctx.fill()
+        ctx.beginPath()
+        ctx.moveTo(-10, -58)
+        ctx.lineTo(12, -58)
+        ctx.lineTo(18, -20)
+        ctx.lineTo(34, 8)
+        ctx.lineTo(24, 12)
+        ctx.lineTo(6, -12)
+        ctx.lineTo(-8, 10)
+        ctx.lineTo(-20, 6)
+        ctx.lineTo(-8, -22)
+        ctx.closePath()
+        ctx.fill()
+        ctx.lineWidth = 6
+        ctx.strokeStyle = c
+        ctx.beginPath()
+        ctx.moveTo(-8, -50)
+        ctx.lineTo(-34, -64)
+        ctx.moveTo(12, -50)
+        ctx.lineTo(36, -40)
+        ctx.stroke()
+        for wx2, wy2 in [[-22, 14], [-10, 16], [22, 18], [34, 14]]:
+            ctx.beginPath()
+            ctx.arc(wx2, wy2, 4, 0, TAU)
+            ctx.fill()
+        ctx.restore()
+    skater(150, h * 0.66, 1.4, '#5FE3FF', False)
+    skater(610, h * 0.64, 1.3, '#FFD23A', True)
+    skater(380, h * 0.7, 1.0, '#FF5FA2', False)
+    # checker rink floor in perspective
+    fy = h * 0.74
+    ctx.fillStyle = '#3A1440'
+    ctx.fillRect(0, fy, w, h - fy)
+    for r in range(6):
+        y0, y1 = fy + (h - fy) * (r / 6) ** 1.3, fy + (h - fy) * ((r + 1) / 6) ** 1.3
+        for c in range(-8, 9):
+            k0, k1 = 40 + r * 20, 40 + (r + 1) * 20
+            if math.fmod(r + c, 2):
+                continue
+            ctx.beginPath()
+            ctx.moveTo(w / 2 + c * k0, y0)
+            ctx.lineTo(w / 2 + (c + 1) * k0, y0)
+            ctx.lineTo(w / 2 + (c + 1) * k1, y1)
+            ctx.lineTo(w / 2 + c * k1, y1)
+            ctx.closePath()
+            ctx.fillStyle = '#FF5FA2'
+            ctx.fill()
+    frameBorder(ctx, w, h, '#FF5FA2', 10)
+
+
+def _bd_double_vision(ctx, w, h, rand):
+    # bathroom: pale blue tiles, a stripe band, shelf with toothbrush cup, striped towel, bubbles and sparkles
+    ctx.fillStyle = '#EAF6FB'
+    ctx.fillRect(0, 0, w, h)
+    s = 48
+    for y in range(0, h, s):
+        for x in range(0, w, s):
+            ctx.fillStyle = (('#2F5BD3' if (x / s) % 2 else '#E23B3B') if (math.floor(y / s) == 7)
+                             else '#BFE6F4' if ((x + y) / s) % 2 else '#A8DCEF')
+            rrp(ctx, x + 2, y + 2, s - 4, s - 4, 5)
+            ctx.fill()
+            ctx.fillStyle = 'rgba(255,255,255,0.45)'
+            ctx.fillRect(x + 6, y + 6, s - 22, 5)
+    # shelf + toothbrush cup + soap + bottle
+    sy = 250
+    rrp(ctx, 470, sy, 250, 16, 6)
+    ctx.fillStyle = '#F4F1E8'
+    ctx.fill()
+    rrp(ctx, 500, sy - 64, 50, 64, 10)
+    ctx.fillStyle = 'rgba(160,220,240,0.9)'
+    ctx.fill()
+    for c, dx in [['#E23B3B', -12], ['#2F5BD3', 0], ['#FFD23A', 12]]:
+        ctx.save()
+        ctx.translate(525 + dx, sy - 60)
+        ctx.rotate(dx * 0.02)
+        ctx.fillStyle = c
+        rrp(ctx, -4, -70, 8, 76, 4)
+        ctx.fill()
+        ctx.fillStyle = '#FFFFFF'
+        rrp(ctx, -6, -86, 12, 20, 4)
+        ctx.fill()
+        ctx.restore()
+    rrp(ctx, 580, sy - 22, 56, 22, 10)
+    ctx.fillStyle = '#FF9EC4'
+    ctx.fill()
+    rrp(ctx, 660, sy - 70, 36, 70, 10)
+    ctx.fillStyle = '#52D24A'
+    ctx.fill()
+    rrp(ctx, 668, sy - 84, 20, 16, 4)
+    ctx.fillStyle = '#F4F1E8'
+    ctx.fill()
+    # towel ring with a striped towel
+    ctx.lineWidth = 8
+    ctx.strokeStyle = '#C9CED8'
+    ctx.beginPath()
+    ctx.arc(130, 170, 44, math.pi, TAU)
+    ctx.stroke()
+    rrp(ctx, 88, 170, 84, 150, 12)
+    ctx.fillStyle = '#F7F3EA'
+    ctx.fill()
+    for i, c in enumerate(['#E23B3B', '#2F5BD3', '#E23B3B']):
+        ctx.fillStyle = c
+        ctx.fillRect(88, 250 + i * 20, 84, 10)
+    # SMILE lettering + bubbles + sparkles
+    text(ctx, 'SMILE!', 250, 110, {'fam': FONT['groovy'], 'px': 78, 'fill': '#2F5BD3', 'stroke': '#FFFFFF', 'lw': 8, 'depth': 5, 'depthFill': '#123A7A', 'rot': -0.08})
+    for dx, col in [[-5, 'rgba(63,214,224,0.6)'], [5, 'rgba(255,79,160,0.6)']]:
+        text(ctx, 'SMILE!', 250 + dx, 110, {'fam': FONT['groovy'], 'px': 78, 'fill': col, 'rot': -0.08})
+    text(ctx, 'SMILE!', 250, 110, {'fam': FONT['groovy'], 'px': 78, 'fill': '#2F5BD3', 'rot': -0.08})
+    for i in range(26):
+        x, y, r = rand() * w, 300 + rand() * (h - 320), 8 + rand() * 26
+        ctx.beginPath()
+        ctx.arc(x, y, r, 0, TAU)
+        ctx.fillStyle = 'rgba(255,255,255,0.35)'
+        ctx.fill()
+        ctx.lineWidth = 2.5
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)'
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.arc(x - r * 0.35, y - r * 0.35, r * 0.2, 0, TAU)
+        ctx.fillStyle = '#FFFFFF'
+        ctx.fill()
+    for i in range(14):
+        sparkle(ctx, rand() * w, rand() * h, 6 + rand() * 12, '#FFFFFF')
+    frameBorder(ctx, w, h, '#123A7A', 12)
+
+
+BACKDROP = {
+    'replay_ade': _bd_replay_ade,
+    'wobble_up': _bd_wobble_up,
+    'jump_cut': _bd_jump_cut,
+    'roller_boogie': _bd_roller_boogie,
+    'double_vision': _bd_double_vision,
+}
+
+
+# tiny product icons for painted details
+def _icon_wobble_up(ctx, x, y, s):
+    ctx.beginPath()
+    ctx.ellipse(x, y + s * 0.34, s * 0.5, s * 0.1, 0, 0, TAU)
+    ctx.fillStyle = '#F4F1E8'
+    ctx.fill()
+    ctx.beginPath()
+    ctx.moveTo(x - s * 0.42, y + s * 0.32)
+    ctx.bezierCurveTo(x - s * 0.46, y - s * 0.3, x - s * 0.2, y - s * 0.4, x, y - s * 0.4)
+    ctx.bezierCurveTo(x + s * 0.2, y - s * 0.4, x + s * 0.46, y - s * 0.3, x + s * 0.42, y + s * 0.32)
+    ctx.closePath()
+    ctx.fillStyle = '#1FB45A'
+    ctx.fill()
+    ctx.lineWidth = 3
+    ctx.strokeStyle = '#0E4A26'
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(x, y - s * 0.46, s * 0.08, 0, TAU)
+    ctx.fillStyle = '#E23B3B'
+    ctx.fill()
+
+
+PRODUCT_ICON = {'wobble_up': _icon_wobble_up}
+
+
+def backdropTex(id):
+    return texC('bd.%s' % id, 768, 672, lambda ctx, w, h, rand: BACKDROP[id](ctx, w, h, rand))
+
+
+# Riser tops (one canvas for the whole 3x3 m top: floor pattern + border band)
+def _fl_replay_ade(ctx, w, h, rand):
+    ctx.fillStyle = '#3F9A48'
+    ctx.fillRect(0, 0, w, h)
+    for i in range(6):
+        ctx.fillStyle = 'rgba(255,255,255,0.06)' if i % 2 else 'rgba(0,40,0,0.08)'
+        ctx.fillRect(0, (i * h) / 6, w, h / 6)
+    for i in range(9000):
+        ctx.fillStyle = '#2E7A36' if rand() < 0.5 else '#6AC06E'
+        ctx.globalAlpha = 0.5
+        ctx.fillRect(rand() * w, rand() * h, 1.5, 3)
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = '#F4F1E8'
+    ctx.lineWidth = 8
+    ctx.strokeRect(22, 22, w - 44, h - 44)
+    ctx.lineWidth = 5
+    ctx.beginPath()
+    ctx.moveTo(22, h * 0.55)
+    ctx.lineTo(w - 22, h * 0.55)
+    ctx.stroke()
+    text(ctx, '13', w * 0.18, h * 0.64, {'fam': FONT['sign'], 'px': 44, 'fill': 'rgba(244,241,232,0.9)'})
+    text(ctx, '13', w * 0.82, h * 0.64, {'fam': FONT['sign'], 'px': 44, 'fill': 'rgba(244,241,232,0.9)'})
+
+
+def _fl_wobble_up(ctx, w, h, rand):
+    n = 12
+    s = w / n
+    for y in range(n):
+        for x in range(n):
+            ctx.fillStyle = '#8C9A3A' if (x + y) % 2 else '#F2E4C4'
+            ctx.fillRect(x * s, y * s, s, s)
+    for i in range(3000):
+        ctx.fillStyle = 'rgba(90,60,30,0.15)' if rand() < 0.5 else 'rgba(255,255,255,0.18)'
+        ctx.fillRect(rand() * w, rand() * h, 2, 2)
+    ctx.strokeStyle = '#5A3A22'
+    ctx.lineWidth = 16
+    ctx.strokeRect(8, 8, w - 16, h - 16)
+
+
+def _fl_jump_cut(ctx, w, h, rand=None):
+    n = 10
+    s = w / n
+    ctx.fillStyle = '#F6E7C8'
+    ctx.fillRect(0, 0, w, h)
+    for y in range(n):
+        for x in range(n):
+            ctx.fillStyle = '#E3662B' if (x + y) % 2 else '#F6E7C8'
+            ctx.beginPath()
+            ctx.moveTo(x * s + s / 2, y * s)
+            ctx.lineTo(x * s + s, y * s + s / 2)
+            ctx.lineTo(x * s + s / 2, y * s + s)
+            ctx.lineTo(x * s, y * s + s / 2)
+            ctx.closePath()
+            ctx.fill()
+    ctx.strokeStyle = '#5A3A22'
+    ctx.lineWidth = 18
+    ctx.strokeRect(9, 9, w - 18, h - 18)
+
+
+def _fl_roller_boogie(ctx, w, h, rand):
+    n = 9
+    pw = w / n
+    for i in range(n):
+        ctx.fillStyle = _hsl(30 + rand() * 6, 50 + rand() * 10, 62 + rand() * 8)
+        ctx.fillRect(i * pw, 0, pw, h)
+        ctx.fillStyle = 'rgba(90,50,20,0.5)'
+        ctx.fillRect(i * pw, 0, 2, h)
+    for i in range(60):
+        ctx.strokeStyle = 'rgba(120,70,30,0.2)'
+        ctx.lineWidth = 1
+        x = rand() * w
+        ctx.beginPath()
+        ctx.moveTo(x, 0)
+        ctx.bezierCurveTo(x + 4, h / 3, x - 4, (2 * h) / 3, x + 2, h)
+        ctx.stroke()
+    cols = [BAR['red'], '#FF9A2A', BAR['yellow'], BAR['green'], BAR['blue'], '#8A4ADC']
+    for i, c in enumerate(cols):
+        ctx.strokeStyle = c
+        ctx.lineWidth = 9
+        ctx.strokeRect(10 + i * 9, 10 + i * 9, w - 20 - i * 18, h - 20 - i * 18)
+    starP(ctx, w / 2, h * 0.3, 60, 26, 5)
+    ctx.fillStyle = 'rgba(255,95,162,0.8)'
+    ctx.fill()
+
+
+def _fl_double_vision(ctx, w, h, rand=None):
+    r = 14
+    ctx.fillStyle = '#9CCCDD'
+    ctx.fillRect(0, 0, w, h)
+    y, row = 0, 0
+    while y < h + r:
+        x = (row % 2) * r * 0.87
+        while x < w + r:
+            ctx.beginPath()
+            for k in range(6):
+                a = (k / 6) * TAU + math.pi / 6
+                ctx.lineTo(x + math.cos(a) * (r - 1.5), y + math.sin(a) * (r - 1.5))
+            ctx.closePath()
+            ctx.fillStyle = '#3FB8E8' if ((row * 7 + js_round(x)) % 11 == 0) else (
+                '#D6ECF4' if (row + js_round(x / 24)) % 3 else '#C2E2EE')
+            ctx.fill()
+            x += r * 1.74
+        y += r * 1.5
+        row += 1
+    ctx.strokeStyle = '#2F5BD3'
+    ctx.lineWidth = 14
+    ctx.strokeRect(7, 7, w - 14, h - 14)
+    ctx.strokeStyle = '#E23B3B'
+    ctx.lineWidth = 6
+    ctx.strokeRect(22, 22, w - 44, h - 44)
+
+
+FLOOR = {
+    'replay_ade': _fl_replay_ade,
+    'wobble_up': _fl_wobble_up,
+    'jump_cut': _fl_jump_cut,
+    'roller_boogie': _fl_roller_boogie,
+    'double_vision': _fl_double_vision,
+}
+
+
+def floorTex(id):
+    return texC('floor.%s' % id, 512, 512, lambda ctx, w, h, rand: FLOOR[id](ctx, w, h, rand))
+
+
+def wingTex(id):
+    S = SP[id]
+
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = lin(ctx, 0, 0, 0, h, [S['main'], S['deep']])
+        ctx.fillRect(0, 0, w, h)
+        for i in range(5):
+            ctx.fillStyle = 'rgba(255,255,255,0.14)' if i % 2 else 'rgba(0,0,0,0.12)'
+            ctx.fillRect(0, 60 + i * 34, w, 18)
+        ctx.fillStyle = S['second']
+        ctx.fillRect(0, h - 90, w, 24)
+        for i in range(10):
+            sparkle(ctx, 20 + rand() * (w - 40), 240 + rand() * 160, 6 + rand() * 10, '#FFFFFF')
+    return texC('wing.%s' % id, 256, 512, draw)
+
+
+def stencilTex():
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = '#C9A477'
+        ctx.fillRect(0, 0, w, h)
+        text(ctx, 'WZTV PROP SHOP · THIS SIDE UP ▲', w / 2, h / 2, {'fam': FONT['sign'], 'px': 30, 'fill': 'rgba(42,29,58,0.75)', 'maxW': w - 30})
+    return texC('stencil', 512, 128, draw)
+
+
+# =============================================================================================== SPONSOR SETS
+# sponsor_set_<perkId>: 3x3 m riser (0.2 m), backdrop flat (3 x 2.6 m) painted with the product's world + two short
+# wing flats, neon sponsor sign (cards.js sponsor_sign_<id>, lit/unlit), rotating pedestal (parts.turntable) with
+# the giant product, two softboxes aimed at it, gaffer-tape X (the mark), a small speaker, per-brand dressing and
+# the sponsor camera (pedestal camera with tally; Replay-Ade: ENG camera on a tripod) standing 2.6 m in front
+# of the mark, off the riser, aimed at it.
+# LOCAL LAYOUT (front = -z, riser centered): mark X [0,0.2,-0.75] · pedestal [0,0.2,0.45] (1.2 m behind the mark)
+# · camera [0.35,0,-3.35] looking at [0,1.2,-0.75] · backdrop face z=1.3. userData.anchors has them all.
+# opts { lit=true, camera=true, product=true }. Before Sign-On: opts.lit=false or setSponsorSetPower(set,false).
+SET = {'H': 0.2, 'mark': [0, 0.2, -0.75], 'pedestal': [0, 0.2, 0.45], 'camera': [0.35, 0, -3.35]}
+
+
+def _jsmod(a, b):
+    """JS `a % b` (sign of the dividend)."""
+    return math.fmod(a, b)
+
+
+def markX(game):
+    tape = K.mat(game, 'fabric', '#ffffff', {'map': K.tex.weave('#F2EEE4', {'pattern': 'plain', 'scale': 2}), 'emissive': '#FFF2D0', 'emissiveIntensity': 0.12, 'rim': 0.2})
+    g = THREE.Group()
+    for a in (math.pi / 4, -math.pi / 4):
+        strip = THREE.BoxGeometry(0.62, 0.004, 0.075, 6, 1, 1)
+
+        def f(v):
+            v.y += 0.0015 * math.sin(v.x * 40)
+            if abs(v.x) > 0.3:
+                v.z += (0.006 if _jsmod(js_round(v.z * 100), 2) else -0.004)
+        deform(strip, f)
+        g.add(K.m(strip, tape, {'rot': [0, a, 0], 'cast': False}))
+    return g
+
+
+# ------------------------------------------------------------------ brand dressing (static, sits on the riser)
+def _dress_replay_ade(game):  # sideline water cooler on a bench, paper cups, folded towel
+    g = THREE.Group()
+    cooler = K.mat(game, 'plastic', '#FFD23A', {'rough': 0.3})
+    white = K.mat(game, 'plastic', '#F4F1E8', {'rough': 0.35})
+    blue = K.mat(game, 'plastic', '#2F5BD3', {'rough': 0.35})
+    metal = setMats(game).metal
+    towel = K.mat(game, 'fabric', '#ffffff', {'map': K.tex.weave('#F4F1E8', {'pattern': 'plain', 'scale': 2})})
+    flag = K.mat(game, 'paint', '#ffffff', {'map': flagTex('replay_ade')})
+    g.add(K.m(K.box(0.62, 0.05, 0.4, 0.015, {'uv': 2}), K.mat(game, 'lacquer', '#ffffff', {'map': K.tex.wood(PAL.teak)}), {'pos': [0, 0.42, 0]}))
+    for x in (-0.26, 0.26):
+        for z in (-0.15, 0.15):
+            g.add(K.m(pcyl(0.016, 0.016, 0.4, 8), metal, {'pos': [x, 0, z]}))
+    g.add(K.m(K.lathe([[0, 0], [0.19, 0], [0.2, 0.02], [0.2, 0.36], [0.19, 0.38], [0, 0.38]], {'seg': 24, 'round': 0.02, 'steps': 1}), cooler, {'pos': [0.08, 0.445, 0]}))
+    g.add(K.m(K.lathe([[0, 0], [0.205, 0], [0.21, 0.03], [0.17, 0.08], [0, 0.1]], {'seg': 24, 'round': 0.02, 'steps': 1}), white, {'pos': [0.08, 0.82, 0]}))
+    g.add(K.m(flatTorus(0.2, 0.012, 5, 24), blue, {'pos': [0.08, 0.56, 0]}))
+    g.add(K.m(flatTorus(0.2, 0.012, 5, 24), blue, {'pos': [0.08, 0.74, 0]}))
+    g.add(K.m(THREE.PlaneGeometry(0.2, 0.1).rotateY(math.pi), flag, {'pos': [0.08, 0.65, -0.203]}))
+    g.add(K.m(K.box(0.05, 0.04, 0.06, 0.012), white, {'pos': [0.08, 0.5, -0.215]}))
+    g.add(K.m(K.tube([[-0.06, 0.82, 0], [0.08, 0.94, 0], [0.22, 0.82, 0]], 0.012, {'seg': 10, 'radial': 5}), white))
+    # cup stack + towel
+    g.add(K.m(K.lathe([[0.025, 0], [0.036, 0.26], [0.03, 0.26], [0.02, 0.0]], {'seg': 14}), white, {'pos': [-0.2, 0.445, -0.05]}))
+    g.add(K.m(K.cushion(0.2, 0.06, 0.16, {'puff': 0.015}), towel, {'pos': [-0.2, 0.475, 0.1], 'rot': [0, 0.2, 0]}))
+    return g
+
+
+def _dress_wobble_up(game):  # avocado kitchen counter with a mixing bowl + spoon + gelatin box
+    g = THREE.Group()
+    avo = K.mat(game, 'lacquer', '#8C9A3A', {'rough': 0.4})
+    top = K.mat(game, 'plastic', '#F2E4C4', {'rough': 0.4})
+    chrome = setMats(game).chrome
+    bowl = K.mat(game, 'ceramic', '#E3662B')
+    wood = K.mat(game, 'lacquer', '#ffffff', {'map': K.tex.wood('#C89058')})
+    box = K.mat(game, 'paint', '#ffffff', {'map': K.tex.label('WOBBLE-UP', {'sub': 'LIME · 6 SERVINGS', 'bg': '#1FB45A', 'fg': '#FFFFFF', 'accent': '#E23B3B', 'w': 256, 'h': 192})})
+    g.add(K.m(K.box(0.62, 0.8, 0.5, 0.03), avo, {'pos': [0, 0.4, 0]}))
+    g.add(K.m(K.box(0.68, 0.045, 0.56, 0.015), top, {'pos': [0, 0.82, 0]}))
+    for x in (-0.152, 0.152):
+        g.add(K.m(K.box(0.27, 0.64, 0.02, 0.012), avo, {'pos': [x, 0.42, -0.255]}))
+        g.add(K.m(K.box(0.03, 0.14, 0.03, 0.01), chrome, {'pos': [x + (0.1 if x < 0 else -0.1), 0.55, -0.275]}))
+    g.add(K.m(K.lathe([[0, 0], [0.07, 0], [0.13, 0.05], [0.165, 0.12], [0.16, 0.13], [0, 0.03]], {'seg': 24, 'round': 0.01, 'steps': 1}), bowl, {'pos': [-0.1, 0.84, 0.02]}))
+    g.add(span(K.m(K.cyl(0.012, 0.012, 0.3, {'bevel': 0.005, 'seg': 8}), wood), [-0.15, 0.9, 0.05], [0.02, 1.1, 0.02]))
+    g.add(K.m(K.box(0.14, 0.18, 0.055, 0.01), box, {'pos': [0.19, 0.935, 0], 'rot': [0, -0.3, 0]}))
+    return g
+
+
+def _dress_jump_cut(game):  # craft services: chrome coffee urn, cups, donut box on a little cart
+    g = THREE.Group()
+    teak = K.mat(game, 'lacquer', '#ffffff', {'map': K.tex.wood(PAL.teak)})
+    SMj = setMats(game)
+    chrome, dark = SMj.chrome, SMj.dark
+    cups = K.mat(game, 'plastic', '#F6E7C8', {'rough': 0.4})
+    pink = K.mat(game, 'paint', '#FF9EC4')
+    donut = K.mat(game, 'lacquer', '#ffffff', {'rough': 0.5})
+    g.add(K.m(K.box(0.62, 0.05, 0.44, 0.015, {'uv': 2}), teak, {'pos': [0, 0.74, 0]}))
+    g.add(K.m(K.box(0.56, 0.035, 0.38, 0.012, {'uv': 2}), teak, {'pos': [0, 0.2, 0]}))
+    for x in (-0.27, 0.27):
+        for z in (-0.18, 0.18):
+            g.add(K.m(pcyl(0.018, 0.018, 0.72, 8), chrome, {'pos': [x, 0, z]}))
+    g.add(K.m(K.lathe([[0, 0], [0.12, 0], [0.14, 0.03], [0.14, 0.38], [0.12, 0.42], [0.06, 0.44], [0.05, 0.48], [0, 0.48]], {'seg': 24, 'round': 0.015, 'steps': 1}), chrome, {'pos': [0.12, 0.765, 0.02]}))
+    for s in (-1, 1):
+        g.add(K.m(K.box(0.03, 0.12, 0.05, 0.01), dark, {'pos': [0.12 + s * 0.155, 1.02, 0.02]}))
+    g.add(K.m(K.box(0.05, 0.04, 0.06, 0.01), dark, {'pos': [0.12, 0.84, -0.16]}))
+    g.add(K.m(K.lathe([[0.03, 0], [0.042, 0.22], [0.036, 0.22], [0.024, 0]], {'seg': 12}), cups, {'pos': [-0.15, 0.765, 0.1]}))
+    g.add(K.m(K.lathe([[0.03, 0], [0.042, 0.16], [0.036, 0.16], [0.024, 0]], {'seg': 12}), cups, {'pos': [-0.24, 0.765, 0.12]}))
+    g.add(K.m(K.box(0.3, 0.07, 0.22, 0.01), pink, {'pos': [-0.14, 0.8, -0.08]}))
+    g.add(K.m(K.box(0.3, 0.012, 0.22, 0.005), pink, {'pos': [-0.14, 0.93, 0.05], 'rot': [-1.1, 0, 0]}))
+    for i, (dough, icing) in enumerate([['#C87A3A', '#FF7AB4'], ['#C87A3A', '#5A3A22'], ['#D89A5A', '#F6E7C8']]):
+        g.add(K.m(paint(THREE.TorusGeometry(0.035, 0.018, 5, 10).rotateX(math.pi / 2), dough), donut, {'pos': [-0.23 + i * 0.085, 0.845, -0.08]}))
+        g.add(K.m(paint(THREE.TorusGeometry(0.035, 0.012, 4, 10).rotateX(math.pi / 2), icing), donut, {'pos': [-0.23 + i * 0.085, 0.856, -0.08]}))
+    return g
+
+
+def _dress_roller_boogie(game):  # little mirror ball on a pole (parts.mirrorball spins)
+    g = THREE.Group()
+    SMr = setMats(game)
+    metal, dark = SMr.metal, SMr.dark
+    mirror = K.mat(game, 'chrome', '#ffffff', {'map': mirrorTex(), 'rough': 0.18})
+    g.add(K.m(K.lathe([[0, 0], [0.26, 0], [0.27, 0.02], [0.2, 0.05], [0.04, 0.06], [0, 0.06]], {'seg': 20, 'round': 0.01, 'steps': 1}), dark))
+    g.add(K.m(K.cyl(0.02, 0.02, 2.1, {'bevel': 0.005, 'seg': 10}), metal, {'pos': [0, 0.05, 0]}))
+    g.add(K.m(K.tube([[0, 2.12, 0], [0.12, 2.2, -0.05], [0.35, 2.22, -0.2]], 0.014, {'seg': 10, 'radial': 5}), metal))
+    g.add(K.m(K.cyl(0.03, 0.03, 0.06, {'bevel': 0.01, 'seg': 10}), dark, {'pos': [0.35, 2.17, -0.2]}))
+    ball = THREE.Group()
+    ball.position.set(0.35, 1.93, -0.2)
+    ball.userData.noMerge = True
+    ball.add(K.m(THREE.SphereGeometry(0.19, 18, 12), mirror, {'name': 'mirrorball'}))
+    ball.add(rod(0.004, [0, 0.19, 0], [0, 0.24, 0], metal, 4))
+    g.add(ball)
+    g.userData.parts = JSObj(mirrorball=ball)
+    return g
+
+
+def _dress_double_vision(game):  # pedestal sink + round vanity mirror ringed with bulbs
+    g = THREE.Group()
+    porcelain = K.mat(game, 'ceramic', '#F2F0EA', {'rim': 0.1})
+    chrome = setMats(game).chrome
+    frame = K.mat(game, 'lacquer', '#2F5BD3', {'rough': 0.35})
+    glassM = K.mat(game, 'crt', '#9FC8D8', {'rough': 0.08})
+    bulbs = THREE.Group()
+    bulbs.userData.noMerge = True
+    g.add(K.m(K.lathe([[0, 0], [0.16, 0], [0.17, 0.02], [0.1, 0.08], [0.08, 0.6], [0.12, 0.66], [0.26, 0.72], [0.27, 0.8], [0.23, 0.82], [0.18, 0.77], [0, 0.76]], {'seg': 16, 'round': 0.02, 'steps': 1}), porcelain))
+    g.add(K.m(K.cyl(0.018, 0.022, 0.12, {'bevel': 0.006, 'seg': 10}), chrome, {'pos': [0, 0.8, 0.2]}))
+    g.add(K.m(K.tube([[0, 0.9, 0.2], [0, 0.94, 0.12], [0, 0.9, 0.06]], 0.013, {'seg': 8, 'radial': 5}), chrome))
+    for s in (-1, 1):
+        g.add(K.m(K.cyl(0.025, 0.025, 0.03, {'bevel': 0.008, 'seg': 10}), chrome, {'pos': [s * 0.1, 0.82, 0.21]}))
+    # round mirror on a post behind the sink
+    g.add(K.m(K.cyl(0.03, 0.03, 0.5, {'bevel': 0.008, 'seg': 10}), chrome, {'pos': [0, 0.78, 0.32]}))
+    my = 1.55
+    g.add(K.m(THREE.TorusGeometry(0.3, 0.045, 8, 28), frame, {'pos': [0, my, 0.3]}))
+    g.add(K.m(THREE.CircleGeometry(0.3, 32).rotateY(math.pi), glassM, {'pos': [0, my, 0.305]}))
+    g.add(K.m(THREE.CircleGeometry(0.3, 24), frame, {'pos': [0, my, 0.33]}))
+    for i in range(9):
+        a = (i / 9) * TAU + math.pi / 2
+        bulbs.add(K.m(THREE.SphereGeometry(0.03, 7, 5), K.glow(game, '#FFE7B0', 1.6), {'pos': [math.cos(a) * 0.35, my + math.sin(a) * 0.35, 0.27], 'cast': False}))
+    g.add(bulbs)
+    g.userData.parts = JSObj(bulbs=bulbs)
+    return g
+
+
+DRESS = {
+    'replay_ade': _dress_replay_ade,
+    'wobble_up': _dress_wobble_up,
+    'jump_cut': _dress_jump_cut,
+    'roller_boogie': _dress_roller_boogie,
+    'double_vision': _dress_double_vision,
+}
+
+
+def mirrorTex():
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = '#8A90A0'
+        ctx.fillRect(0, 0, w, h)
+        s = 10
+        for y in range(0, h, s):
+            for x in range(0, w, s):
+                v = rand()
+                ctx.fillStyle = '#FFFFFF' if v < 0.12 else '#FFD6F0' if v < 0.2 else '#C8F4FF' if v < 0.28 else \
+                    'hsl(230, 8%%, %s%%)' % js_str(48 + v * 36)
+                ctx.fillRect(x + 1, y + 1, s - 2, s - 2)
+    return K.tex.canvas('sp.mirrorball', 256, 128, draw)
+
+
+# ------------------------------------------------------------------ the prefab
+def buildSponsorSet(game, id, opts=None):
+    opts = opts if opts is not None else {}
+    S = SP[id]
+    lit = opts.get('lit') is not False
+    withCam, withProduct = opts.get('camera') is not False, opts.get('product') is not False
+    g = K.prop('sponsor_set_%s' % id)
+    H = SET['H']
+    parts = JSObj(tally=[], diffuser=[], bulbs=[], sign=None)
+    power = JSObj(on=JSObj(), off=JSObj())
+    colliders = []
+    # ---- riser: themed top, corduroy skirt, accent bumper, chaser bulbs along the front
+    topG = K.box(3, 0.05, 3, 0.02).clone()
+    uvPlanar(topG, 'x', 1.5, -1.5, 'z', -1.5, 1.5)
+    g.add(K.m(topG, K.mat(game, 'ceramic' if id == 'double_vision' else 'lacquer' if id == 'roller_boogie' else 'paint', '#ffffff', {'map': floorTex(id), 'rim': 0.06, 'rough': 0.95 if id == 'replay_ade' else 0.55}), {'pos': [0, H - 0.025, 0]}))
+    g.add(K.m(K.box(2.96, H - 0.04, 2.96, 0.02, {'uv': 2}), K.mat(game, 'fabric', '#ffffff', {'map': K.tex.weave('#3A2A48', {'pattern': 'cord', 'scale': 3})}), {'pos': [0, (H - 0.04) / 2, 0]}))
+    accent = K.mat(game, 'lacquer', S['main'], {'rough': 0.35})
+    g.add(K.m(K.tube(K.roundRectPath(3.02, 3.02, 0.08, H - 0.03), 0.024, {'seg': 48, 'radial': 5, 'closed': True}), accent))
+    bulbOn, bulbOff = K.glow(game, PAL.marqueeGold, 1.7), K.mat(game, 'plastic', '#E8DCC0', {'rim': 0.1})
+    power.on.bulbs = bulbOn
+    power.off.bulbs = bulbOff
+    rbulbs = THREE.Group()
+    rbulbs.userData.noMerge = True
+    SM = setMats(game)
+    chrome = SM.chrome
+    for i in range(11):
+        x = -1.25 + i * 0.25
+        rbulbs.add(K.m(THREE.SphereGeometry(0.027, 6, 4), bulbOn if lit else bulbOff, {'pos': [x, 0.085, -1.505], 'cast': False}))
+        g.add(K.m(THREE.CylinderGeometry(0.032, 0.032, 0.02, 8).rotateX(math.pi / 2), chrome, {'pos': [x, 0.085, -1.485]}))
+    g.add(rbulbs)
+    colliders.append({'min': [-1.52, 0, -1.52], 'max': [1.52, H, 1.52]})
+    # ---- backdrop flat: painted face in an accent frame, plywood back with battens + stencil
+    FY, FZ = H + 1.3, 1.32
+    g.add(K.m(THREE.PlaneGeometry(2.9, 2.5).rotateY(math.pi), K.mat(game, 'paint', '#ffffff', {'map': backdropTex(id), 'rim': 0.04, 'rough': 0.7}), {'pos': [0, FY, FZ]}))
+    g.add(K.m(K.box(3.04, 0.1, 0.1, 0.014), accent, {'pos': [0, H + 2.6 - 0.05, FZ + 0.02]}))
+    g.add(K.m(K.box(3.04, 0.1, 0.1, 0.014), accent, {'pos': [0, H + 0.05, FZ + 0.02]}))
+    for s in (-1, 1):
+        g.add(K.m(K.box(0.1, 2.6, 0.1, 0.014), accent, {'pos': [s * 1.47, FY, FZ + 0.02]}))
+    ply = K.mat(game, 'teak', '#ffffff', {'map': K.tex.wood('#C9A477', {'dark': 0.2})})
+    g.add(K.m(K.box(2.98, 2.58, 0.04, 0.01, {'uv': 1.2}), ply, {'pos': [0, FY, FZ + 0.05]}))
+    for y in (H + 0.3, H + 2.3):
+        g.add(K.m(K.box(2.9, 0.08, 0.04, 0.01, {'uv': 2, 'swap': True}), ply, {'pos': [0, y, FZ + 0.09]}))
+    for x in (-0.9, 0.9):
+        g.add(K.m(K.box(0.08, 2.5, 0.04, 0.01, {'uv': 2}), ply, {'pos': [x, FY, FZ + 0.09]}))
+    g.add(K.m(THREE.PlaneGeometry(1.0, 0.25), K.mat(game, 'paint', '#ffffff', {'map': stencilTex()}), {'pos': [0, H + 1.8, FZ + 0.111]}))
+    colliders.append({'min': [-1.52, H, FZ - 0.06], 'max': [1.52, H + 2.6, FZ + 0.12]})
+    # ---- wing flats angled forward at both ends
+    wingM = K.mat(game, 'paint', '#ffffff', {'map': wingTex(id), 'rim': 0.06})
+    for s in (-1, 1):
+        x0, z0, dx, dz, L = s * 1.44, FZ - 0.02, -s * 0.42, -0.906, 0.72
+        cx, cz = x0 + (dx * L) / 2, z0 + (dz * L) / 2
+        wing = K.m(K.box(L, 2.2, 0.06, 0.012), wingM, {'pos': [cx, H + 1.1, cz], 'rot': [0, math.atan2(-dz, dx), 0]})
+        g.add(wing)
+        g.add(K.m(K.box(0.07, 0.07, 0.07, 0.012), accent, {'pos': [x0 + dx * L, H + 2.23, z0 + dz * L]}))
+        colliders.append({'min': [min(x0, x0 + dx * L) - 0.04, H, z0 + dz * L - 0.04], 'max': [max(x0, x0 + dx * L) + 0.04, H + 2.2, z0 + 0.04]})
+    # ---- neon sponsor sign on the top of the flat
+    signY, signZ = H + 2.6, FZ - 0.14
+    g.add(K.m(K.box(1.98, 0.76, 0.1, 0.04), SM.dark, {'pos': [0, signY, signZ + 0.05]}))
+    for x in (-0.7, 0.7):
+        g.add(K.m(K.box(0.06, 0.06, 0.2, 0.012), chrome, {'pos': [x, signY + 0.2, FZ - 0.02]}))
+    signOn = K.glow(game, '#ffffff', 1.15, {'map': getCard('sponsor_sign_%s' % id), 'transparent': True})
+    signOff = K.mat(game, 'paint', '#ffffff', {'map': getCard('sponsor_sign_%s' % id, {'lit': False}), 'transparent': True, 'alphaTest': 0.05, 'rim': 0.05})
+    power.on.sign = signOn
+    power.off.sign = signOff
+    sign = K.m(THREE.PlaneGeometry(1.92, 0.72).rotateY(math.pi), signOn if lit else signOff, {'pos': [0, signY, signZ - 0.003], 'name': 'sign', 'cast': False})
+    sign.userData.noMerge = True
+    sign.userData.noAO = True
+    sign.userData.noOcclude = True
+    g.add(sign)
+    parts.sign = sign
+    # ---- pedestal + turntable (+ product)
+    px, pz = SET['pedestal'][0], SET['pedestal'][2]
+    g.add(K.m(K.lathe([[0, 0], [0.5, 0], [0.52, 0.02], [0.5, 0.05], [0.46, 0.08], [0.45, 0.25], [0.5, 0.28], [0.5, 0.3], [0, 0.3]], {'seg': 24, 'round': 0.015, 'steps': 1}), accent, {'pos': [px, H, pz]}))
+    g.add(K.m(flatTorus(0.462, 0.016, 5, 32), chrome, {'pos': [px, H + 0.165, pz]}))
+    turntable = THREE.Group()
+    turntable.position.set(px, H + 0.3, pz)
+    turntable.userData.noMerge = True
+    deck = K.mat(game, 'lacquer', S['deep'], {'rough': 0.45, 'env': 0.04, 'rim': 0.12})
+    turntable.add(K.m(K.lathe([[0, 0], [0.47, 0], [0.48, 0.015], [0.47, 0.045], [0, 0.045]], {'seg': 32, 'round': 0.01, 'steps': 1}), deck))
+    tbulbs = THREE.Group()
+    tbulbs.userData.noMerge = True
+    for i in range(10):
+        a = (i / 10) * TAU
+        tbulbs.add(K.m(THREE.SphereGeometry(0.022, 6, 4), bulbOn if lit else bulbOff, {'pos': [math.sin(a) * 0.44, 0.05, math.cos(a) * 0.44], 'cast': False}))
+    turntable.add(tbulbs)
+    product = None
+    if withProduct:
+        product = nested(K.buildProp('product_%s' % id, game, {}))
+        product.position.y = 0.045
+        turntable.add(product)
+        parts.product = product
+        parts.productParts = JSObj(product.userData.parts)
+        product.userData = JSObj(id=product.userData.id, nested=True, noMerge=True)
+    g.add(turntable)
+    parts.turntable = turntable
+    soldOut = THREE.Group()
+    soldOut.position.set(px, H + 0.95, pz - 0.62)
+    soldOut.userData.noMerge = True
+    tapeM = K.mat(game, 'fabric', '#ffffff', {'map': K.tex.weave('#AEB5BE', {'pattern': 'plain', 'scale': 2}), 'side': THREE.DoubleSide})
+    for a in (0.72, -0.72):
+        st = THREE.PlaneGeometry(1.5, 0.16, 8, 1)
+
+        def f(v):
+            v.z = 0.03 * math.sin(v.x * 5)
+            if abs(v.x) > 0.7:
+                v.y *= 1.1 if _jsmod(js_round(v.x * 40), 2) else 0.85
+        deform(st, f)
+        mm = K.m(st, tapeM, {'rot': [0, 0, a], 'cast': False})
+        mm.userData.noAO = True
+        soldOut.add(mm)
+    soldOut.visible = False
+    g.add(soldOut)
+    parts.soldOut = soldOut
+    colliders.append({'min': [px - 0.53, H, pz - 0.53], 'max': [px + 0.53, H + 1.95, pz + 0.53]})
+    # ---- softboxes aimed at the product
+    sm = softboxMats(game)
+    softOn, softOff = sm.on, sm.off
+    power.on.soft = softOn
+    power.off.soft = softOff
+    for s in (-1, 1):
+        sp = [s * 1.15, H, -0.5]
+        r = buildSoftbox(game, {'height': 1.92, 'tilt': 0.36, 'lit': lit})
+        sb, diff = r.g, r.diff
+        sb.position.set(sp[0], sp[1], sp[2])
+        sb.rotation.y = math.atan2(-(px - sp[0]), -(pz - sp[2]))
+        sb.userData.noMerge = True
+        g.add(sb)
+        parts.diffuser.append(diff)
+        parts['soft' + ('L' if s < 0 else 'R')] = sb
+        colliders.append({'min': [sp[0] - 0.28, H, sp[2] - 0.28], 'max': [sp[0] + 0.28, H + 2.25, sp[2] + 0.28]})
+    # ---- the mark + speaker
+    mk = markX(game)
+    mk.position.set(SET['mark'][0], H + 0.003, SET['mark'][2])
+    g.add(mk)
+    spk = buildSpeaker(game)
+    spk.position.set(-1.2, H, -1.22)
+    spk.rotation.y = math.atan2(-(SET['mark'][0] + 1.2), -(SET['mark'][2] + 1.22))
+    spk.scale.setScalar(0.85)
+    g.add(spk)
+    colliders.append({'min': [-1.42, H, -1.44], 'max': [-0.98, H + 0.55, -1.0]})
+    # ---- brand dressing
+    dr = DRESS[id](game)
+    side = 1 if id == 'replay_ade' or id == 'jump_cut' else -1
+    drPos = [side * 0.92, 0.9]
+    dr.position.set(drPos[0], H, drPos[1])
+    dr.rotation.y = side * 0.52
+    g.add(dr)
+    drParts = dr.userData.parts or {}
+    if drParts.get('mirrorball'):
+        parts.mirrorball = drParts['mirrorball']
+    if drParts.get('bulbs'):
+        for b in drParts['bulbs'].children:
+            b.material = bulbOn if lit else bulbOff
+        parts.vanityBulbs = drParts['bulbs']
+    dr.userData = JSObj()
+    colliders.append({'min': [drPos[0] - 0.36, H, drPos[1] - 0.36], 'max': [drPos[0] + 0.36, H + (2.3 if id == 'roller_boogie' else 2.1 if id == 'double_vision' else 1.1), drPos[1] + 0.36]})
+    # ---- the sponsor camera, off the riser, aimed at the mark (target y 1.2)
+    if withCam:
+        cam = nested(K.buildProp('sponsor_camera_eng' if id == 'replay_ade' else 'sponsor_camera_pedestal', game, {}))
+        cx, cz = SET['camera'][0], SET['camera'][2]
+        cam.position.set(cx, 0, cz)
+        cam.rotation.y = math.atan2(-(SET['mark'][0] - cx), -(SET['mark'][2] - cz))
+        g.add(cam)
+        parts.camera = cam
+        cu = cam.userData
+        parts.cameraHead = cu['parts']['head']
+        parts.tally.extend(cu['parts']['tally'])
+        power.on.tally = cu['power']['on']['tally']
+        power.off.tally = cu['power']['off']['tally']
+        if not lit:
+            for t in parts.tally:
+                t.material = power.off.tally
+        cam.userData = JSObj(id=cu['id'], nested=True, noMerge=True)
+        colliders.append({'min': [cx - 0.5, 0, cz - 0.6], 'max': [cx + 0.5, 1.8, cz + 0.6]})
+    # ---- bake, merge the part groups, finish
+    # (the JS `?spprofile=1` console profiling block is browser tooling: not ported)
+    K.bakeAO(g, {'strength': 0.8, 'rays': 12, 'res': 56})
+    for grp in [rbulbs, tbulbs, turntable] + ([parts.softL, parts.softR] if parts.softL else []):
+        K.merge(grp)
+    parts.bulbs = [o for o in list(rbulbs.children) + list(tbulbs.children) if getattr(o, 'isMesh', False)]
+    if parts.vanityBulbs:
+        K.merge(parts.vanityBulbs)
+        parts.bulbs.extend([o for o in parts.vanityBulbs.children if getattr(o, 'isMesh', False)])
+    u = g.userData
+    u.parts = parts
+    u.power = power
+    u.powered = lit
+    u.sponsor = id
+    u.colliders = colliders
+    u.anchors = {'mark': list(SET['mark']), 'pedestal': list(SET['pedestal']), 'camera': list(SET['camera']), 'cameraTarget': [SET['mark'][0], 1.2, SET['mark'][2]],
+                 'lens': [SET['camera'][0], 1.38, SET['camera'][2]], 'speaker': [-1.2, H + 0.3, -1.22], 'sign': [0, signY, signZ]}
+    u.interact = {'point': list(SET['mark']), 'radius': 1.0}
+    u.lightAnchors = [
+        {'id': 'sponsor_%s_key' % id, 'pos': [0, 2.1, -1.0], 'color': '#FFE8C8', 'intensity': 1.5 if lit else 0, 'distance': 5.5},
+        {'id': 'sponsor_%s_neon' % id, 'pos': [0, H + 2.4, 0.6], 'color': S['neon'], 'intensity': 1.3 if lit else 0, 'distance': 4},
+    ]
+    return K.finish(game, g, {'ao': False})
+
+
+def _set_builder(id):
+    def build(game, opts=None):
+        return buildSponsorSet(game, id, opts if opts is not None else {})
+    return build
+
+
+for _id in SPONSOR_IDS:
+    registerProp('sponsor_set_%s' % _id, _set_builder(_id), {
+        'category': 'sponsors', 'tags': ['sponsor_set', _id, 'machine'], 'size': [3.04, 3.2, 4.9], 'hero': True,
+        'desc': '%s sponsor set prefab (riser, painted flat, neon sign, turntable + product, softboxes, mark, speaker, camera)' % SP[_id]['name'],
+    })
+
+# ------------------------------------------------------------------ runtime helpers for the game systems
+# setSponsorSetPower(set, on) / setTally(obj, on) / setSoldOut(set, on) / animateProduct(obj, t) swap materials and
+# animate placed props: they are runtime code (Godot sponsors.gd), see the module docstring.
+
+registerScene('sponsors_all', {
+    'floor': 'tile', 'wall': 'panel', 'room': [18, 7], 'wallH': 3.6,
+    'items': [{'id': 'sponsor_set_%s' % sid, 'pos': [(i - 2) * 3.5, 0, 1.6], 'opts': {'camera': False}} for i, sid in enumerate(SPONSOR_IDS)],
+    'cam': {'pos': [0, 3.2, -8.2], 'target': [0, 1.2, 1.2], 'fov': 62}, 'hemi': 1.0,
+})
+# the commercial's point of view: the sponsor camera lens looking at the mark (what the 4:3 shot frames)
+for _id in SPONSOR_IDS:
+    registerScene('sponsor_pov_%s' % _id, {
+        'floor': 'tile', 'wall': 'panel', 'room': [9, 11], 'wallH': 3.8,
+        'items': [{'id': 'sponsor_set_%s' % _id, 'pos': [0, 0, 0], 'opts': {'camera': False}}],
+        'cam': {'pos': [SET['camera'][0], 1.38, SET['camera'][2]], 'target': [0, 1.25, -0.2], 'fov': 44}, 'hemi': 0.9,
+    })
+registerScene('sponsors', {
+    'floor': 'tile', 'wall': 'panel', 'room': [7, 7.5], 'wallH': 3.6,
+    'items': [{'id': 'sponsor_set_jump_cut', 'pos': [0, 0, 1.6]}],
+    'cam': {'pos': [1.6, 2.0, -3.6], 'target': [0, 1.3, 1.2], 'fov': 58},
+})

@@ -30,7 +30,7 @@ const ALIASES := {
 # Blink em-height ascent ratio (typoAscender / (typoAscender + typoDescender)), measured in Chromium.
 const EM_ASC := {
 	"shrikhand": 0.70375, "titan one": 0.8471875, "vt323": 0.80, "bungee": 0.77265625,
-	"liberation mono": 0.76484375, "dejavu sans": 0.77578125, "dejavu serif": 0.76265625,
+	"liberation mono": 0.76484375, "liberation sans": 0.77578125, "liberation serif": 0.76265625,
 	"dejavu sans mono": 0.75984375,
 }
 
@@ -199,7 +199,16 @@ static func _font(fam: String, weight: int, italic: bool) -> Font:
 		var sf := SystemFont.new()
 		var names := PackedStringArray([fam])
 		if GENERIC.has(fam):
-			names = PackedStringArray([fam.trim_prefix("ui-")])
+			# Chrome's default generic families (Windows / Linux fontconfig)
+			var gen := fam.trim_prefix("ui-")
+			if gen == "serif":
+				names = PackedStringArray(["Times New Roman", "Liberation Serif", "Tinos", "serif"])
+			elif gen == "sans-serif" or gen == "system-ui":
+				names = PackedStringArray(["Arial", "Liberation Sans", "Arimo", "sans-serif"])
+			elif gen == "monospace":
+				names = PackedStringArray(["DejaVu Sans Mono", "Consolas", "Courier New", "monospace"])
+			else:
+				names = PackedStringArray([gen])
 		else:
 			for al in ALIASES.get(fam, []):
 				names.append(al)

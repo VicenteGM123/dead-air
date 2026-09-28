@@ -14,6 +14,11 @@ import sys
 import traceback
 
 CATEGORIES = ['broadcast', 'furniture', 'sets', 'weapons', 'machines', 'sponsors', 'outdoor', 'samples']
+# + the props the room modules register (src/world/rooms/*.js registerProp calls, e.g. yard.js 'yard_*'):
+#   blender/props/rooms_*.py, loaded after the categories (rooms may reuse category helpers)
+import os as _os
+CATEGORIES += sorted(f[:-3] for f in _os.listdir(_os.path.dirname(_os.path.abspath(__file__)))
+                     if f.startswith('rooms_') and f.endswith('.py'))
 
 _loaded = {}
 

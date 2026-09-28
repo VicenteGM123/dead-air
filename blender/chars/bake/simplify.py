@@ -19,6 +19,10 @@ _TRIU = np.triu_indices(10)
 _W = np.where(_TRIU[0] == _TRIU[1], 1.0, 2.0)
 
 
+_DEBUG = False
+_DBGSTATE = []
+
+
 def _pack(M):
     """(m,10,10) symmetric -> (m,55) with off-diagonals doubled (so x^T M x = sum(q * x_i * x_j))."""
     return M[:, _TRIU[0], _TRIU[1]] * _W
@@ -97,6 +101,11 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
     for c in range(3):
         for j in range(55):
             Q[:, j] += np.bincount(I[:, c], weights=Qf[:, j], minlength=n)
+    # quadric weights (meshopt normalizes the quadric error by the accumulated weight: errors are mean squared
+    # distances in the unit cube, independent of the local triangle size)
+    Wq = np.zeros(n)
+    for c in range(3):
+        Wq += np.bincount(I[:, c], weights=area, minlength=n)
     F = I.copy()                   # faces as wedge ids
     alive = np.ones(n, bool)
     result_error = 0.0
@@ -169,6 +178,7 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
                 for arr in (wa[sel], wb[sel]):
                     for j in range(55):
                         Q[:, j] += np.bincount(arr, weights=Qe[:, j], minlength=n)
+                    Wq += np.bincount(arr, weights=wgt, minlength=n)
             edges_added = True
         # ---------------- candidates: every half-edge a -> b gives the collapse a -> b
         ka, kb = kind[ha], kind[hb]
@@ -207,11 +217,46 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
                 out[s0:s1] = np.einsum('ij,ij->i', Q[src[s0:s1]], x[:, _TRIU[0]] * x[:, _TRIU[1]])
             return out
         err = qerr(su1, tv1, pv)
+        wsum = Wq[su1].copy()
         two = hasO & (su2 != su1)
         if two.any():
             err[two] += qerr(su2[two], tv2[two], pv[two])
-        err = np.maximum(err, 0)
-        # keep the cheaper direction per undirected edge
+            wsum[two] += Wq[su2[two]]
+        err = np.maximum(err, 0) / np.maximum(wsum, 1e-30)
+        # ---------------- validity on the pre-pass mesh: error limit, link condition, flips. The claims below keep
+        # every accepted collapse's one-ring untouched by the others of the pass, so these tests stay exact; testing
+        # them up front (instead of after the greedy selection) lets the selection skip invalid collapses without
+        # blocking their neighbours, like meshopt's sequential loop, and the other direction of an edge gets its
+        # chance when the cheaper one flips.
+        uk2 = np.unique(np.concatenate([ha * nwv + hb, hb * nwv + ha]))
+        und = np.stack([uk2 // nwv, uk2 % nwv], 1)
+        nstart = np.searchsorted(und[:, 0], np.arange(nwv + 1))
+        fv = FW.reshape(-1)
+        forder = np.argsort(fv, kind='stable')
+        fstart = np.searchsorted(fv[forder], np.arange(nwv + 1))
+        idx = np.nonzero(err <= error_limit)[0]
+        n_lim = len(idx)
+        deg = nstart[cu[idx] + 1] - nstart[cu[idx]]
+        rep = np.repeat(np.arange(len(idx)), deg)
+        off = np.arange(len(rep)) - np.repeat(np.cumsum(deg) - deg, deg)
+        nbr = und[np.repeat(nstart[cu[idx]], deg) + off, 1]
+        vk = np.repeat(cv[idx], deg) * nwv + nbr
+        pk = np.minimum(np.searchsorted(uk2, vk), len(uk2) - 1)
+        common = np.bincount(rep[uk2[pk] == vk], minlength=len(idx))
+        idx = idx[common == np.where(kind[cu[idx]] == 1, 1, 2)]
+        n_link = len(idx)
+        fl = np.ones(len(idx), bool)
+        CHF = 200000
+        for s0 in range(0, len(idx), CHF):
+            ii = idx[s0:s0 + CHF]
+            fl[s0:s0 + CHF] = _no_flip(cu[ii], cv[ii], FW, Ps, forder, fstart)
+        if _DEBUG:
+            _DBGSTATE.append(dict(cu=cu.copy(), cv=cv.copy(), err=err.copy(), n_lim=n_lim, link_idx=idx.copy(), fl=fl.copy(), kind=kind.copy(), Ps=Ps, Q=Q, X=X))
+        idx = idx[fl]
+        if not len(idx):
+            break
+        cu, cv, err, su1, tv1, su2, tv2, two = cu[idx], cv[idx], err[idx], su1[idx], tv1[idx], su2[idx], tv2[idx], two[idx]
+        # keep the cheapest valid direction per undirected edge
         ek = np.minimum(cu, cv) * nwv + np.maximum(cu, cv)
         o2 = np.lexsort((err, ek))
         ek_s = ek[o2]
@@ -219,49 +264,32 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
         firsts[1:] = ek_s[1:] != ek_s[:-1]
         sel = o2[firsts]
         cu, cv, err, su1, tv1, su2, tv2, two = cu[sel], cv[sel], err[sel], su1[sel], tv1[sel], su2[sel], tv2[sel], two[sel]
-        rank = np.argsort(err, kind='stable')
+        # rank by error; ties (flat regions all collapse at ~0 error) broken by a hash instead of the vertex order,
+        # so tied candidates are not chained one behind the other in the parallel greedy selection below
+        hk = ((np.minimum(cu, cv) * np.int64(2654435761) + np.maximum(cu, cv) * np.int64(40503)) & 0xFFFFFFF)
+        rank = np.lexsort((hk, err))
         cu, cv, err, su1, tv1, su2, tv2, two = cu[rank], cv[rank], err[rank], su1[rank], tv1[rank], su2[rank], tv2[rank], two[rank]
         tri_goal = len(F) - target_tris
         # error goal per pass (meshopt: 1.5x the error at the expected collapse count)
         eg = tri_goal // 2
         err_goal = 1.5 * err[eg] if eg < len(err) else math.inf
-        lim = err <= error_limit
-        consider = np.nonzero(lim)[0]
-        if not len(consider):
-            break
-        # ---------------- one-ring for the claims
-        uk2 = np.unique(np.concatenate([ha * nwv + hb, hb * nwv + ha]))
-        und = np.stack([uk2 // nwv, uk2 % nwv], 1)
-        nstart = np.searchsorted(und[:, 0], np.arange(nwv + 1))
-        # candidate claim list: u, v, N(u)
-        cidx = consider
-        deg = nstart[cu[cidx] + 1] - nstart[cu[cidx]]
-        rep = np.repeat(np.arange(len(cidx)), deg)
-        off = np.arange(len(rep)) - np.repeat(np.cumsum(deg) - deg, deg)
-        nbr = und[np.repeat(nstart[cu[cidx]], deg) + off, 1]
+        nc = len(cu)
+        cidx = np.arange(nc)
         # claims: u, v EXCLUSIVE (moved / receiving); N(u) SHARED (read by the flip + link tests). Two collapses
         # conflict when one's exclusive vertex is claimed (either way) by the other: then no face moves two vertices
         # and the neighbourhoods the link / flip tests read are untouched by the other collapses of the pass.
-        nc = len(cidx)
-        claim_c = np.concatenate([np.arange(nc), np.arange(nc), rep])
-        claim_v = np.concatenate([cu[cidx], cv[cidx], nbr])
+        deg = nstart[cu + 1] - nstart[cu]
+        rep = np.repeat(cidx, deg)
+        off = np.arange(len(rep)) - np.repeat(np.cumsum(deg) - deg, deg)
+        nbr = und[np.repeat(nstart[cu], deg) + off, 1]
+        claim_c = np.concatenate([cidx, cidx, rep])
+        claim_v = np.concatenate([cu, cv, nbr])
         claim_x = np.concatenate([np.ones(2 * nc, bool), np.zeros(len(rep), bool)])
-        # link condition: common neighbours of u and v == faces on the edge (2 interior, 1 border)
-        nbr_keys = und[:, 0] * nwv + und[:, 1]
-        vk = np.repeat(cv[cidx], deg) * nwv + nbr
-        pk = np.searchsorted(nbr_keys, vk)
-        pk = np.minimum(pk, len(nbr_keys) - 1)
-        common = np.bincount(rep[nbr_keys[pk] == vk], minlength=len(cidx))
-        faces_on_edge = np.where(kind[cu[cidx]] == 1, 1, 2)
-        link_ok = common == faces_on_edge
-        status = np.where(link_ok, 0, -1)          # 0 pending, 1 accepted, -1 rejected
+        status = np.zeros(nc, np.int8)          # 0 pending, 1 accepted, -1 rejected
         so_c = np.lexsort((claim_c, claim_v))
         so_v, so_cc, so_x = claim_v[so_c], claim_c[so_c], claim_x[so_c]
-        # flip test data: faces around u (by welded vertex)
-        fv = FW.reshape(-1)
-        forder = np.argsort(fv, kind='stable')
-        fstart = np.searchsorted(fv[forder], np.arange(nwv + 1))
         accepted_tris = 0
+        _dbg = [n_lim, n_link, nc, 0, 0, 0]
         for rnd in range(12):
             pend = status == 0
             if not pend.any():
@@ -296,10 +324,10 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
             e_ok = ~((err[cidx[wi]] > err_goal) & (err[cidx[wi]] > result_error) & (cum > tri_goal / 6))
             within = (cum - wtri < tri_goal) & e_ok
             stop = not within.all()
+            _dbg[3] += len(wi); _dbg[4] += int(within.sum())
             wi = wi[within]
-            # flip check (single moving vertex per face thanks to the claims)
-            wi = wi[_no_flip(cu[cidx[wi]], cv[cidx[wi]], FW, Ps, forder, fstart)]
             status[wi] = 1
+            _dbg[5] += len(wi)
             accepted_tris += int(np.where(kind[cu[cidx[wi]]] == 1, 1, 2).sum())
             # candidates conflicting with an accepted one are out for this pass
             acc = status == 1
@@ -311,10 +339,6 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
             hit = np.where(claim_x, tAll[claim_v], tEx[claim_v])
             conflict = np.bincount(claim_c, weights=hit.astype(float), minlength=nc) > 0
             status[(status == 0) & conflict] = -1
-            # losers of the flip test stay rejected
-            lost = won.copy()
-            lost[wi] = False
-            status[lost & (status == 0)] = -1
             if stop:
                 break
         acc = np.nonzero(status == 1)[0]
@@ -329,13 +353,15 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
         wmap[su2[t2]] = tv2[t2]
         srcs = np.concatenate([su1[ai], su2[t2]])
         tgts = np.concatenate([tv1[ai], tv2[t2]])
+        Wq[tgts] += Wq[srcs]
         Q[tgts] += Q[srcs]      # targets are unique within a pass (every target vertex is claimed once)
         F = wmap[F]
         FW = W2P[F]
         keep = (FW[:, 0] != FW[:, 1]) & (FW[:, 1] != FW[:, 2]) & (FW[:, 0] != FW[:, 2])
         F = F[keep]
         if log:
-            log('    simplify pass %d: %d collapses -> %d tris (err %.5f)' % (passes, len(ai), len(F), result_error))
+            log('    simplify pass %d: %d collapses -> %d tris (err %.5f)' % (passes, len(ai), len(F), result_error)
+                + ((' dbg lim %d link %d valid %d won %d within %d acc %d' % tuple(_dbg)) if _DEBUG else ''))
     return F, math.sqrt(result_error)
 
 

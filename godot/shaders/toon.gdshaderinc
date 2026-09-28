@@ -1,7 +1,7 @@
 // DEAD AIR toon material (port of materials.js toon(): MeshStandardMaterial + the onBeforeCompile patch).
 // materials.gd builds the variant shaders as
 //   shader_type spatial; render_mode <cull_back|cull_front|cull_disabled>, <depth_draw_*>, <blend_*>, fog_disabled;
-//   #define DA_TRANSPARENT (writes ALPHA) / DA_BACK (BackSide: flipped normals) / DA_CHROMA / DA_CC
+//   #define DA_TRANSPARENT (writes ALPHA) / DA_BACK (BackSide pass; normals: see fragment) / DA_CHROMA / DA_CC
 //   #include "res://shaders/toon.gdshaderinc"
 // (toon.gdshader is the default opaque FrontSide variant.) Every per-material option of the JS (wrap, steps, rim,
 // keepColor, heroFade, fog, env, flat, vertexColors, alphaTest, map) is a uniform, as in the JS program sharing.
@@ -153,17 +153,13 @@ void fragment() {
 		}
 	}
 
-	// normal (flatShading: screen-space derivative normal, always camera-facing like three's)
+	// normal (flatShading: screen-space derivative normal, always camera-facing like three's). Godot already flips
+	// NORMAL on back faces (FRONT_FACING false), which is three's FLIP_SIDED (BackSide) / DOUBLE_SIDED behaviour.
 	vec3 N = normalize(NORMAL);
 	if (uFlat > 0.5) {
 		N = normalize(cross(dFdx(VERTEX), dFdy(VERTEX)));
 		if (dot(N, VIEW) < 0.0) N = -N;
 	}
-#ifdef DA_BACK
-	else {
-		N = -N;
-	}
-#endif
 	NORMAL = N;
 
 	// PhysicalMaterial (lights_physical_fragment)

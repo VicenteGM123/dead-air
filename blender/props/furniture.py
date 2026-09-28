@@ -1883,3 +1883,1516 @@ registerScene('furn_ceiling', {
     ],
     'cam': {'pos': [0, 1.1, -1.9], 'target': [0, 2.35, 1.1], 'fov': 64}, 'hemi': 0.8,
 })
+
+
+# ------------------------------------------------------------------------------------ decor atlas
+# Second 1024 atlas (4x4 of 256): labels, notes, photos, plaques, book spines. dcell(geo, cx, cy) like cell().
+def decorAtlas():
+    def draw(ctx, W, H, rand):
+        S = 256
+
+        def at(cx, cy, fn):
+            ctx.save()
+            ctx.translate(cx * S, cy * S)
+            ctx.beginPath()
+            ctx.rect(0, 0, S, S)
+            ctx.clip()
+            fn()
+            ctx.restore()
+
+        def font(px, f='Titan One'):
+            return '%spx "%s", "Arial Black", sans-serif' % (js_str(px), f)
+
+        def center():
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+
+        def typed(lines, x, y, lh, px=14, col='#2A2230'):
+            ctx.fillStyle = col
+            ctx.font = '%spx "Courier New", monospace' % js_str(px)
+            ctx.textAlign = 'left'
+            ctx.textBaseline = 'alphabetic'
+            for i, l in enumerate(lines):
+                ctx.fillText(l, x, y + i * lh)
+
+        def scribble(x, y, w, n, col='#2F5BD3', lh=20):
+            ctx.strokeStyle = col
+            ctx.lineWidth = 2.5
+            ctx.lineCap = 'round'
+            for i in range(n):
+                ctx.beginPath()
+                xx = x
+                ctx.moveTo(xx, y + i * lh)
+                while xx < x + w * (0.5 + rand() * 0.5):
+                    xx += 5
+                    ctx.lineTo(xx, y + i * lh - rand() * 5)
+                ctx.stroke()
+
+        # (0,0) AQUA-PURE water label
+        def c00():
+            ctx.fillStyle = '#F4F1E8'
+            ctx.fillRect(0, 0, S, S)
+            ctx.fillStyle = '#2F5BD3'
+            ctx.fillRect(0, 0, S, 60)
+            ctx.fillRect(0, S - 40, S, 40)
+            ctx.fillStyle = '#3FB8E8'
+            ctx.beginPath()
+            ctx.moveTo(128, 78)
+            ctx.bezierCurveTo(170, 130, 168, 176, 128, 178)
+            ctx.bezierCurveTo(88, 176, 86, 130, 128, 78)
+            ctx.fill()
+            center()
+            ctx.fillStyle = '#F4F1E8'
+            ctx.font = font(36, 'Bungee')
+            ctx.fillText('AQUA-PURE', 128, 32)
+            ctx.fillStyle = '#2F5BD3'
+            ctx.font = font(22)
+            ctx.fillText('SPRING WATER', 128, 200)
+            ctx.fillStyle = '#F4F1E8'
+            ctx.font = font(18)
+            ctx.fillText('ICE COLD', 128, S - 20)
+        at(0, 0, c00)
+
+        # (1,0) payphone instruction card
+        def c10():
+            ctx.fillStyle = '#F6E7C8'
+            ctx.fillRect(0, 0, S, S)
+            ctx.fillStyle = '#2F5BD3'
+            ctx.fillRect(0, 0, S, 44)
+            center()
+            ctx.fillStyle = '#F4F1E8'
+            ctx.font = font(24, 'Bungee')
+            ctx.fillText('LOCAL CALLS 10¢', 128, 23)
+            typed(['1. LIFT RECEIVER', '2. DEPOSIT COIN', '3. LISTEN FOR TONE', '4. DIAL NUMBER', '', 'EMERGENCY: DIAL 0', 'WZTV  555-1313'], 16, 76, 24, 15)
+        at(1, 0, c10)
+
+        # (2,0) TELEPHONE sign (blue + white)
+        def c20():
+            ctx.fillStyle = '#2F5BD3'
+            ctx.fillRect(0, 0, S, S)
+            ctx.fillStyle = '#F4F1E8'
+            ctx.fillRect(10, 90, S - 20, 76)
+            center()
+            ctx.fillStyle = '#2F5BD3'
+            ctx.font = font(40, 'Bungee')
+            ctx.fillText('PHONE', 128, 130)
+            ctx.fillStyle = '#F4F1E8'
+            ctx.beginPath()
+            ctx.arc(128, 48, 28, 0, TAU)
+            ctx.fill()
+            ctx.fillStyle = '#2F5BD3'
+            ctx.font = font(30, 'Bungee')
+            ctx.fillText('☎', 128, 50)
+            ctx.fillStyle = '#F4F1E8'
+            ctx.font = font(20)
+            ctx.fillText('PUBLIC TELEPHONE', 128, 205)
+        at(2, 0, c20)
+
+        # (3,0) clock dial: cream, chunky numerals, minute ticks
+        def c30():
+            ctx.fillStyle = '#F6EEDB'
+            ctx.beginPath()
+            ctx.arc(128, 128, 128, 0, TAU)
+            ctx.fill()
+            ctx.strokeStyle = '#2A2230'
+            ctx.lineCap = 'round'
+            for i in range(60):
+                a, big = (i / 60) * TAU, i % 5 == 0
+                ctx.lineWidth = 6 if big else 2
+                ctx.beginPath()
+                ctx.moveTo(128 + math.sin(a) * (104 if big else 112), 128 - math.cos(a) * (104 if big else 112))
+                ctx.lineTo(128 + math.sin(a) * 120, 128 - math.cos(a) * 120)
+                ctx.stroke()
+            center()
+            ctx.fillStyle = '#2A2230'
+            ctx.font = font(30)
+            for i in range(1, 13):
+                a = (i / 12) * TAU
+                ctx.fillText(str(i), 128 + math.sin(a) * 82, 131 - math.cos(a) * 82)
+            ctx.fillStyle = '#E23B3B'
+            ctx.font = font(15, 'Bungee')
+            ctx.fillText('WZTV', 128, 170)
+        at(3, 0, c30)
+
+        # (0,1) pink WHILE YOU WERE OUT memo
+        def c01():
+            ctx.fillStyle = '#FFB6C8'
+            ctx.fillRect(0, 0, S, S)
+            center()
+            ctx.fillStyle = '#B5472A'
+            ctx.font = font(20, 'Bungee')
+            ctx.fillText('WHILE YOU', 128, 28)
+            ctx.fillText('WERE OUT', 128, 52)
+            ctx.strokeStyle = '#B5472A'
+            ctx.lineWidth = 2
+            for y in range(90, S, 30):
+                ctx.beginPath()
+                ctx.moveTo(14, y)
+                ctx.lineTo(S - 14, y)
+                ctx.stroke()
+            scribble(20, 84, 200, 5, '#2A2230', 30)
+        at(0, 1, c01)
+
+        # (1,1) polaroid: sunny WZTV tower snapshot
+        def c11():
+            ctx.fillStyle = '#FBF8F0'
+            ctx.fillRect(0, 0, S, S)
+            g = ctx.createLinearGradient(0, 16, 0, 196)
+            g.addColorStop(0, '#FF7E5F')
+            g.addColorStop(1, '#FFE3A3')
+            ctx.fillStyle = g
+            ctx.fillRect(16, 16, S - 32, 180)
+            ctx.fillStyle = '#FFF4D6'
+            ctx.beginPath()
+            ctx.arc(170, 80, 26, 0, TAU)
+            ctx.fill()
+            ctx.strokeStyle = '#6B3A6E'
+            ctx.lineWidth = 5
+            ctx.beginPath()
+            ctx.moveTo(90, 196)
+            ctx.lineTo(110, 50)
+            ctx.lineTo(130, 196)
+            ctx.moveTo(96, 150)
+            ctx.lineTo(124, 150)
+            ctx.moveTo(101, 110)
+            ctx.lineTo(119, 110)
+            ctx.stroke()
+            ctx.fillStyle = '#FF3B30'
+            ctx.beginPath()
+            ctx.arc(110, 48, 6, 0, TAU)
+            ctx.fill()
+            ctx.fillStyle = '#8C9A3A'
+            ctx.fillRect(16, 176, S - 32, 20)
+            ctx.fillStyle = '#2F5BD3'
+            ctx.font = '22px "Courier New", monospace'
+            ctx.textAlign = 'center'
+            ctx.fillText('SUMMER \'76', 128, 232)
+        at(1, 1, c11)
+
+        # (2,1) WZTV weekly schedule sheet
+        def c21():
+            ctx.fillStyle = '#FDFBF4'
+            ctx.fillRect(0, 0, S, S)
+            ctx.fillStyle = '#E3662B'
+            ctx.fillRect(0, 0, S, 36)
+            center()
+            ctx.fillStyle = '#F4F1E8'
+            ctx.font = font(20, 'Bungee')
+            ctx.fillText('ON-AIR SCHEDULE', 128, 19)
+            rows = ['6:00 ACTION 13 NEWS', '6:30 DUSTY TRAILS', '7:00 HOOTIE\'S HOUR', '8:00 PRECINCT 13', '9:00 GROOVE HOUR', '11:00 NEWS FINAL', '11:30 BARON\'S CRYPT']
+            for i, r in enumerate(rows):
+                ctx.fillStyle = '#F4EEDC' if i % 2 else '#FDFBF4'
+                ctx.fillRect(0, 44 + i * 30, S, 30)
+            typed(rows, 12, 64, 30, 14)
+        at(2, 1, c21)
+
+        # (3,1) yellow sticky
+        def c31():
+            ctx.fillStyle = '#FFE36A'
+            ctx.fillRect(0, 0, S, S)
+            ctx.fillStyle = '#F2D24A'
+            ctx.fillRect(0, 0, S, 30)
+            scribble(20, 70, 210, 5, '#E23B3B', 34)
+        at(3, 1, c31)
+
+        # (0,2) newspaper clipping
+        def c02():
+            ctx.fillStyle = '#EFE8D4'
+            ctx.fillRect(0, 0, S, S)
+            ctx.fillStyle = '#2A2230'
+            ctx.font = font(24, 'Bungee')
+            ctx.textAlign = 'left'
+            ctx.textBaseline = 'alphabetic'
+            ctx.fillText('CHANNEL 13', 12, 36)
+            ctx.fillText('WINS BIG!', 12, 64)
+            ctx.fillStyle = '#9A9080'
+            ctx.fillRect(12, 76, 110, 80)
+            ctx.fillStyle = '#6B6258'
+            for y in range(80, S - 10, 9):
+                ctx.fillRect(132, y, 110 - rand() * 20, 4)
+                if y > 164:
+                    ctx.fillRect(12, y, 110 - rand() * 20, 4)
+        at(0, 2, c02)
+
+        # (1,2) crew memo / union notice
+        def c12():
+            ctx.fillStyle = '#E8F0FF'
+            ctx.fillRect(0, 0, S, S)
+            center()
+            ctx.fillStyle = '#2F5BD3'
+            ctx.font = font(22, 'Bungee')
+            ctx.fillText('CREW NOTICE', 128, 26)
+            typed(['NO FOOD ON', 'STUDIO FLOOR!', '', 'TELETHON CALL', 'TIME: 5 PM SHARP', '', '- MGMT'], 20, 64, 24, 16)
+        at(1, 2, c12)
+
+        # (2,2) brass plaque plate
+        def c22():
+            g = ctx.createLinearGradient(0, 0, 0, S)
+            g.addColorStop(0, '#F2CF6A')
+            g.addColorStop(0.5, '#C8963C')
+            g.addColorStop(1, '#8A6224')
+            ctx.fillStyle = g
+            ctx.fillRect(0, 0, S, S)
+            ctx.strokeStyle = '#6A4A1A'
+            ctx.lineWidth = 4
+            ctx.strokeRect(10, 10, S - 20, S - 20)
+            center()
+            ctx.fillStyle = '#3A2410'
+            ctx.font = font(26, 'Bungee')
+            ctx.fillText('BEST LOCAL', 128, 96)
+            ctx.fillText('NEWS', 128, 128)
+            ctx.font = font(20)
+            ctx.fillText('TRI-COUNTY 1976', 128, 170)
+        at(2, 2, c22)
+
+        # (3,2) world-clock city tags
+        def c32():
+            for i, c in enumerate(['NEW YORK', 'LONDON', 'TOKYO', 'WZTV']):
+                ctx.fillStyle = '#E23B3B' if i == 3 else '#2A2230'
+                ctx.fillRect(0, i * 64, S, 64)
+                center()
+                ctx.fillStyle = '#F4F1E8'
+                ctx.font = font(30, 'Bungee')
+                ctx.fillText(c, 128, i * 64 + 34)
+        at(3, 2, c32)
+
+        # (0..3,3) book spines: 4 cells x 8 spines (each spine = 32 px wide column)
+        spineCols = ['#B5472A', '#2E8C8C', '#E8A92E', '#5A3A22', '#6B3A6E', '#8C9A3A', '#2F5BD3', '#E3662B', '#F6E7C8', '#7A4A2A', '#D9A520', '#3A2A5A']
+        for c in range(4):
+            def spines(c=c):
+                for i in range(8):
+                    x, col = i * 32, spineCols[(c * 5 + i * 3) % len(spineCols)]
+                    ctx.fillStyle = col
+                    ctx.fillRect(x, 0, 32, S)
+                    ctx.fillStyle = 'rgba(255,255,255,0.14)'
+                    ctx.fillRect(x + 3, 0, 4, S)
+                    ctx.fillStyle = 'rgba(0,0,0,0.25)'
+                    ctx.fillRect(x + 28, 0, 4, S)
+                    band = ['#F2CF6A', '#F4F1E8', '#2A2230'][(i + c) % 3]
+                    ctx.fillStyle = band
+                    ctx.fillRect(x + 4, 22, 24, 6)
+                    ctx.fillRect(x + 4, S - 34, 24, 6)
+                    ctx.fillRect(x + 9, 60 + ((i * 37) % 60), 14, 70 + ((i * 23) % 50))
+            at(c, 3, spines)
+    return K.tex.canvas('furn_decor_atlas', 1024, 1024, draw, {'repeat': False, 'fonts': True})
+
+
+def dcell(geo, cx, cy):
+    return K.uvRect(geo.clone(), cx / 4, 1 - (cy + 1) / 4, (cx + 1) / 4, 1 - cy / 4)
+
+
+def decorMat(game):
+    return K.mat(game, 'paint', '#ffffff', {'map': decorAtlas()})
+
+
+# ------------------------------------------------------------------------------------------------ plants
+def leafTex():
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = '#FFFFFF'
+        ctx.fillRect(0, 0, w, h)
+        g = ctx.createLinearGradient(0, 0, w, 0)
+        g.addColorStop(0, '#C8D4B8')
+        g.addColorStop(0.5, '#FFFFFF')
+        g.addColorStop(1, '#C8D4B8')
+        ctx.fillStyle = g
+        ctx.fillRect(0, 0, w, h)
+        ctx.strokeStyle = '#F2FFD8'
+        ctx.lineWidth = 5
+        ctx.beginPath()
+        ctx.moveTo(w / 2, 0)
+        ctx.lineTo(w / 2, h)
+        ctx.stroke()
+        ctx.strokeStyle = 'rgba(230,255,200,0.55)'
+        ctx.lineWidth = 2
+        for y in range(20, h, 22):
+            for s in (-1, 1):
+                ctx.beginPath()
+                ctx.moveTo(w / 2, y)
+                ctx.quadraticCurveTo(w / 2 + s * 30, y + 8, w / 2 + s * 58, y + 26)
+                ctx.stroke()
+    return K.tex.canvas('furn_leaf', 128, 256, draw, {'repeat': False})
+
+
+def frondTex():
+    def draw(ctx, w, h, rand):
+        ctx.clearRect(0, 0, w, h)
+        ctx.strokeStyle = '#DDEBC0'
+        ctx.lineWidth = 4
+        ctx.beginPath()
+        ctx.moveTo(w / 2, 0)
+        ctx.lineTo(w / 2, h)
+        ctx.stroke()
+        for y in range(8, h - 6, 13):
+            t = y / h
+            ln = 60 * math.sin(math.pi * min(1, t * 1.05 + 0.02)) + 6
+            for s in (-1, 1):
+                ctx.fillStyle = '#FFFFFF' if ((y // 13) + (1 if s > 0 else 0)) % 2 else '#E8F2D8'
+                ctx.beginPath()
+                ctx.moveTo(w / 2, y)
+                ctx.quadraticCurveTo(w / 2 + s * ln * 0.6, y - 9, w / 2 + s * ln, y + 8)
+                ctx.quadraticCurveTo(w / 2 + s * ln * 0.5, y + 10, w / 2, y + 7)
+                ctx.fill()
+    return K.tex.canvas('furn_frond', 128, 512, draw, {'repeat': False})
+
+
+def snakeTex():
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = '#2E5A2A'
+        ctx.fillRect(0, 0, w, h)
+        y = 6
+        while y < h:
+            ctx.strokeStyle = '#6E9A52' if rand() < 0.5 else '#4F7A3E'
+            ctx.lineWidth = 3 + rand() * 4
+            ctx.globalAlpha = 0.8
+            ctx.beginPath()
+            for x in range(0, w + 1, 8):
+                yy = y + math.sin(x * 0.12 + y) * 5
+                if x == 0:
+                    ctx.moveTo(x, yy)
+                else:
+                    ctx.lineTo(x, yy)
+            ctx.stroke()
+            y += 14 + rand() * 10
+        ctx.globalAlpha = 1
+        ctx.fillStyle = '#E8D24A'
+        ctx.fillRect(0, 0, 11, h)
+        ctx.fillRect(w - 11, 0, 11, h)
+        ctx.fillStyle = '#B8B040'
+        ctx.fillRect(11, 0, 3, h)
+        ctx.fillRect(w - 14, 0, 3, h)
+    return K.tex.canvas('furn_snake', 128, 256, draw, {'repeat': False})
+
+
+# glazed pot: style 'drip' (orange with a chocolate drip glaze), 'bands' (cream + brown bands), 'mustard', 'terracotta'
+def potGroup(game, style='drip', r=0.2, h=0.3):
+    mt = M(game)
+    g = THREE.Group()
+    cer = K.mat(game, 'ceramic', '#ffffff')
+    prof = [[0, 0], [r * 0.92, 0], [r, h * 0.1], [r, h * 0.92], [r * 1.04, h], [r * 0.9, h], [r * 0.88, h * 0.9], [0, h * 0.9]] \
+        if style == 'mustard' else \
+        [[0, 0], [r * 0.62, 0], [r * 0.72, h * 0.12], [r * 0.95, h * 0.6], [r, h * 0.88], [r * 1.06, h * 0.94], [r * 1.05, h], [r * 0.92, h], [r * 0.9, h * 0.9], [0, h * 0.9]]
+    geo = K.lathe(prof, {'seg': 18, 'round': 0.012, 'steps': 1}).clone()
+    base = {'drip': '#E3662B', 'bands': '#F6E7C8', 'mustard': '#D9A520', 'terracotta': '#C8643A'}[style]
+    c1, c2, tmp = THREE.Color(base), THREE.Color('#7A4A2A' if style == 'bands' else '#5A3A22'), THREE.Color()
+
+    def shade(x, y, z):
+        a = math.atan2(z, x)
+        if style == 'drip':
+            edge = h * (0.72 - 0.12 * abs(math.sin(a * 5)) - 0.08 * max(0, math.sin(a * 11)))
+            return c2 if y > edge else c1
+        if style == 'bands':
+            return c2 if (h * 0.3 < y < h * 0.38) or (h * 0.66 < y < h * 0.72) else c1
+        if style == 'mustard':
+            return tmp.copy(c1).multiplyScalar(0.55) if h * 0.78 < y < h * 0.86 else c1
+        return tmp.copy(c1).multiplyScalar(0.85) if y > h * 0.86 else c1
+    K.tint(geo, shade)
+    g.add(K.m(geo, cer))
+    g.add(K.m(tc(THREE.CircleGeometry(r * 0.9, 16), '#3A2418'), mt.paint, {'pos': [0, h * 0.86, 0], 'rot': [-math.pi / 2, 0, 0]}))
+    return g
+
+
+def leafMat(game, map_, extra=None):
+    return K.mat(game, 'leaf', '#ffffff', {'map': map_, **(extra or {})})
+
+
+# ------------------------------------------------------------------------------------------- rubber plant
+def _plant_rubber(game, opts=None):
+    opts = opts or {}
+    g = K.prop('plant_rubber')
+    mt = M(game)
+    seed = _nn(opts.get('seed'), 2)
+    rnd = mulberry32(seed * 313 + 1)
+    lm = leafMat(game, leafTex(), {'rough': 0.28, 'env': 0.12, 'rim': 0.22, 'rimColor': '#D8FFB0'})
+    g.add(potGroup(game, _nn(opts.get('pot'), 'drip'), 0.2, 0.32))
+    stems = [[0.0, 0.0, 1.45], [0.07, 0.05, 1.12], [-0.08, 0.03, 0.88]]
+    leafG = []
+    for si, (sx, sz, top) in enumerate(stems):
+        lean = [(rnd() - 0.5) * 0.16, (rnd() - 0.5) * 0.16]
+
+        def P(t, sx=sx, sz=sz, top=top, lean=lean):
+            return [sx + lean[0] * t * t, 0.26 + (top - 0.26) * t, sz + lean[1] * t * t]
+        pts = [P(t) for t in (0, 0.33, 0.66, 1)]
+        g.add(K.m(tc(K.tube(pts, 0.012 - si * 0.002, {'seg': 10, 'radial': 5}), '#4A4A2A'), mt.paint))
+        n = js_round((top - 0.35) / 0.085) + 2
+        for i in range(n):
+            t = 0.22 + (i / (n - 1)) * 0.78
+            p = P(t)
+            ang = i * 2.4 + si * 1.3 + rnd() * 0.3
+            young = t > 0.9
+            big = 0.62 if young else 1.08 - (t - 0.22) * 0.3
+            lf = K.leaf(0.34 * big, 0.2 * big, {'a0': 1.1 if young else 0.45 - rnd() * 0.2, 'a1': 0.3 if young else -0.55 - rnd() * 0.3,
+                                                'fold': 0.1, 'tip': 0.85, 'segL': 6, 'segW': 2, 'twist': (rnd() - 0.5) * 0.4})
+            lf.translate(0, 0, 0.025)
+            lf.rotateY(ang)
+            lf.translate(p[0], p[1], p[2])
+            k = 0.85 + rnd() * 0.3
+            K.tint(lf, THREE.Color('#4E8A30' if young else '#1E4A20').multiplyScalar(k))
+            leafG.append(lf)
+        g.add(K.m(tc(K.lathe([[0, 0], [0.014, 0.01], [0.01, 0.07], [0, 0.1]], {'seg': 8}), '#9A2A3A'), mt.plastic, {'pos': P(1)}))
+    merged = THREE.mergeGeometries(leafG, False)
+    g.add(K.m(merged, lm))
+    g.userData.colliders = [{'min': [-0.22, 0, -0.22], 'max': [0.22, 1.5, 0.22]}]
+    return K.finish(game, g)
+
+
+registerProp('plant_rubber', _plant_rubber, {'category': CAT, 'tags': ['plant', 'lobby', 'newsroom'], 'size': [0.8, 1.55, 0.8], 'desc': 'rubber plant: glossy dark leaves on three stems, burgundy tips, drip-glaze pot (opts.pot, opts.seed)'})
+
+
+# ----------------------------------------------------------------------------------------- fern on stand
+def _plant_fern(game, opts=None):
+    opts = opts or {}
+    g = K.prop('plant_fern')
+    mt = M(game)
+    fm = leafMat(game, frondTex(), {'alphaTest': 0.45, 'rough': 0.6, 'rim': 0.35})
+    standH = 0 if opts.get('stand') is False else 0.5
+    if standH:
+        for i in range(3):
+            a = (i / 3) * TAU + 0.3
+            g.add(rod(0.018, [math.sin(a) * 0.2, 0.01, math.cos(a) * 0.2], [math.sin(a) * 0.13, standH, math.cos(a) * 0.13], mt.teak, {'rb': 0.014, 'seg': 8}))
+        g.add(K.m(K.tube(ring(0.17, 16, 0.2), 0.012, {'seg': 18, 'radial': 5, 'closed': True}), mt.teak))
+        g.add(K.m(puck(0.17, 0.025, 0.008, 20), mt.teak, {'pos': [0, standH - 0.025, 0]}))
+    put(g, potGroup(game, _nn(opts.get('pot'), 'bands'), 0.15, 0.2), [0, standH, 0])
+    fronds = K.leafCluster({'count': 20, 'len': [0.45, 0.62], 'width': 0.2, 'a0': [0.7, 1.35], 'a1': [-1.5, -0.7], 'fold': 0.08, 'seed': _nn(opts.get('seed'), 4), 'spread': 0.05, 'vary': 0.25, 'segL': 7})
+    K.tint(fronds, '#4E8A34')
+    g.add(K.m(fronds, fm, {'pos': [0, standH + 0.18, 0]}))
+    inner = K.leafCluster({'count': 8, 'len': [0.3, 0.4], 'width': 0.16, 'a0': [1.2, 1.5], 'a1': [0.2, 0.7], 'fold': 0.08, 'seed': _nn(opts.get('seed'), 4) + 7, 'spread': 0.02, 'vary': 0.2, 'segL': 6})
+    K.tint(inner, '#6AAA44')
+    g.add(K.m(inner, fm, {'pos': [0, standH + 0.18, 0]}))
+    g.userData.colliders = [{'min': [-0.22, 0, -0.22], 'max': [0.22, standH + 0.7, 0.22]}]
+    return K.finish(game, g)
+
+
+registerProp('plant_fern', _plant_fern, {'category': CAT, 'tags': ['plant', 'lobby', 'green_room', 'newsroom'], 'size': [1.0, 1.15, 1.0], 'desc': 'Boston fern with arching fronds in a banded pot on a teak tripod stand (opts.stand=false, opts.pot, opts.seed)'})
+
+
+# ------------------------------------------------------------------------------------------- snake plant
+def _plant_snake(game, opts=None):
+    opts = opts or {}
+    g = K.prop('plant_snake')
+    sm = leafMat(game, snakeTex(), {'rough': 0.45, 'rim': 0.3})
+    g.add(potGroup(game, _nn(opts.get('pot'), 'mustard'), 0.14, 0.3))
+    rnd = mulberry32(_nn(opts.get('seed'), 5) * 71 + 9)
+    leaves = []
+    for i in range(11):
+        a = i * 2.39996 + rnd() * 0.3
+        ln = 0.45 + rnd() * 0.4
+        lf = K.leaf(ln, 0.075 + rnd() * 0.03, {'a0': 1.52, 'a1': 1.15 + rnd() * 0.3, 'fold': 0.28, 'tip': 1.3, 'segL': 6, 'segW': 2, 'twist': (rnd() - 0.5) * 1.2})
+        lf.rotateY(a)
+        d = 0.02 + rnd() * 0.06
+        lf.translate(math.sin(a) * d, 0.26, math.cos(a) * d)
+        leaves.append(lf)
+    g.add(K.m(THREE.mergeGeometries(leaves, False), sm))
+    g.userData.colliders = [{'min': [-0.16, 0, -0.16], 'max': [0.16, 1.0, 0.16]}]
+    return K.finish(game, g)
+
+
+registerProp('plant_snake', _plant_snake, {'category': CAT, 'tags': ['plant', 'lobby', 'green_room', 'master_control'], 'size': [0.4, 1.1, 0.4], 'desc': 'snake plant: banded sword leaves with yellow edges in a mustard cylinder pot (opts.pot, opts.seed)'})
+
+
+# -------------------------------------------------------------------------------------------- macrame owl
+def jute(game):
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = '#B89A6A'
+        ctx.fillRect(0, 0, w, h)
+        for y in range(0, h, 32):
+            x = 16 if math.fmod(y / 32, 2) else 0
+            while x < w + 16:
+                gr = ctx.createRadialGradient(x - 4, y - 4, 2, x, y, 18)
+                gr.addColorStop(0, '#FFF4DA')
+                gr.addColorStop(0.7, '#E2CCA0')
+                gr.addColorStop(1, '#9A7E52')
+                ctx.fillStyle = gr
+                ctx.beginPath()
+                ctx.ellipse(x, y, 15, 13, 0.3, 0, TAU)
+                ctx.fill()
+                ctx.strokeStyle = 'rgba(120,90,50,0.5)'
+                ctx.lineWidth = 1.5
+                ctx.beginPath()
+                ctx.moveTo(x - 10, y - 6)
+                ctx.quadraticCurveTo(x, y + 4, x + 10, y - 6)
+                ctx.stroke()
+                x += 32
+        for i in range(300):
+            ctx.fillStyle = 'rgba(255,240,210,0.4)' if rand() < 0.5 else 'rgba(90,60,30,0.3)'
+            ctx.fillRect(rand() * w, rand() * h, 3, 1)
+    t = K.tex.canvas('furn_knots', 256, 256, draw)
+    return K.mat(game, 'fabric', '#ffffff', {'map': t, 'rim': 0.2, 'rimPower': 3})
+
+
+def _macrame_owl(game, opts=None):
+    g = K.prop('macrame_owl')
+    mt, jm = M(game), jute(game)
+    cream, tan, brown = '#F2E2C0', '#D2B283', '#6A4428'
+    # driftwood branch (mount point at y = 0) + hanging V cords
+    g.add(K.m(tc(K.tube([[-0.3, 0.005, -0.03], [-0.1, -0.01, -0.035], [0.12, 0.004, -0.03], [0.3, -0.012, -0.03]], 0.018, {'seg': 12, 'radial': 6}), '#9A8470'), mt.paint))
+    g.add(K.m(tc(K.tube([[-0.2, 0, -0.04], [0, 0.14, -0.04], [0.2, 0, -0.04]], 0.005, {'seg': 8, 'radial': 4}), tan), jm))
+    # knotted body + wings
+    body = K.m(tc(K.uvScale(sph(1, 18, 14).clone(), 3, 2), cream), jm, {'pos': [0, -0.33, -0.05], 'scale': [0.2, 0.27, 0.05]})
+    g.add(body)
+    for s in (-1, 1):
+        g.add(K.m(tc(K.uvScale(sph(1, 12, 10).clone(), 2, 2), tan), jm, {'pos': [s * 0.17, -0.37, -0.06], 'scale': [0.07, 0.18, 0.04], 'rot': [0, 0, s * 0.25]}))
+    # eyes: wooden rings, knotted discs, bead pupils; beak; ear tassels; bead feet
+    for s in (-1, 1):
+        g.add(K.m(tc(THREE.TorusGeometry(0.062, 0.013, 6, 18), brown), mt.lacquer, {'pos': [s * 0.075, -0.22, -0.1]}))
+        g.add(K.m(tc(K.uvScale(THREE.CircleGeometry(0.056, 16).clone(), 0.6, 0.6), '#FFF4E0'), jm, {'pos': [s * 0.075, -0.22, -0.098], 'rot': [0, math.pi, 0]}))
+        g.add(K.m(tc(sph(0.022, 10, 8), '#2A1A14'), mt.lacquer, {'pos': [s * 0.075, -0.22, -0.108]}))
+        g.add(K.m(tc(K.tube([[s * 0.09, -0.1, -0.07], [s * 0.13, -0.03, -0.07], [s * 0.15, 0.0, -0.075]], 0.008, {'seg': 6, 'radial': 4}), tan), jm))
+        g.add(K.m(tc(sph(0.016, 8, 6), brown), mt.lacquer, {'pos': [s * 0.05, -0.6, -0.08]}))
+    g.add(K.m(tc(K.lathe([[0, 0], [0.02, 0.005], [0, 0.05]], {'seg': 8}), '#C86A2A'), mt.lacquer, {'pos': [0, -0.27, -0.11], 'rot': [math.pi, 0, 0]}))
+    # fringe
+    rnd = mulberry32(77)
+    for i in range(14):
+        x = -0.13 + (i / 13) * 0.26
+        ln = 0.16 + math.sin((i / 13) * math.pi) * 0.14 + rnd() * 0.04
+        g.add(K.m(tc(K.tube([[x, -0.56, -0.05], [x + (rnd() - 0.5) * 0.02, -0.56 - ln * 0.5, -0.045], [x + (rnd() - 0.5) * 0.03, -0.56 - ln, -0.04]], 0.006, {'seg': 5, 'radial': 4}), cream if i % 3 else tan), jm))
+    wallFit(g)
+    g.userData.colliders = []
+    return K.finish(game, g, {'ao': {'floor': False, 'height': 0}})
+
+
+registerProp('macrame_owl', _macrame_owl, {'category': CAT, 'tags': ['wall', 'decor', 'lobby', 'green_room'], 'size': [0.6, 1.02, 0.13], 'desc': 'macramé owl wall hanging on driftwood: wooden-ring eyes, knotted body, fringe (wall prop; bottom at ~1.1 m)'})
+
+
+# ------------------------------------------------------------------------------------ macrame plant hanger
+def _macrame_hanger(game, opts=None):
+    opts = opts or {}
+    g = K.prop('macrame_hanger')
+    mt, jm = M(game), jute(game)
+    drop = _nn(opts.get('drop'), 0.8)
+    tan = '#E2CCA0'
+    lm = leafMat(game, leafTex(), {'rough': 0.4, 'rim': 0.3})
+    g.add(K.m(THREE.TorusGeometry(0.035, 0.007, 6, 16), mt.brass, {'pos': [0, -0.04, 0]}))
+    knotY, potY = -0.12, -drop
+    g.add(K.m(tc(sph(0.03, 10, 8), tan), jm, {'pos': [0, knotY, 0], 'scale': [1, 1.5, 1]}))
+    # 4 cord pairs: gather -> spread -> diamond knots -> cradle under the pot -> gather + tassel
+    r0 = 0.2
+    for i in range(4):
+        a = (i / 4) * TAU + math.pi / 4
+        a2 = a + math.pi / 4
+        pts = [[0, knotY - 0.02, 0], [math.cos(a) * 0.08, potY + drop * 0.35, math.sin(a) * 0.08], [math.cos(a) * r0 * 0.9, potY + 0.2, math.sin(a) * r0 * 0.9],
+               [math.cos(a) * r0 * 1.05, potY + 0.02, math.sin(a) * r0 * 1.05], [math.cos(a) * r0 * 0.7, potY - 0.16, math.sin(a) * r0 * 0.7], [0, potY - 0.24, 0]]
+        g.add(K.m(tc(K.tube(pts, 0.007, {'seg': 20, 'radial': 4}), tan), jm))
+        g.add(K.m(tc(sph(0.018, 6, 4), '#F2E2C0'), jm, {'pos': [math.cos(a) * 0.12, potY + drop * 0.18, math.sin(a) * 0.12]}))
+        g.add(K.m(tc(sph(0.013, 6, 4), '#8A5A2A'), mt.lacquer, {'pos': [math.cos(a2) * r0 * 0.98, potY + 0.12, math.sin(a2) * r0 * 0.98]}))
+    put(g, potGroup(game, _nn(opts.get('pot'), 'terracotta'), 0.17, 0.2), [0, potY - 0.16, 0])
+    g.add(K.m(tc(sph(0.035, 10, 8), tan), jm, {'pos': [0, potY - 0.25, 0], 'scale': [1, 1.4, 1]}))
+    rnd = mulberry32(19)
+    for i in range(10):
+        a = (i / 10) * TAU
+        ln = 0.2 + rnd() * 0.12
+        g.add(K.m(tc(K.tube([[math.cos(a) * 0.012, potY - 0.28, math.sin(a) * 0.012], [math.cos(a) * 0.03, potY - 0.28 - ln, math.sin(a) * 0.03]], 0.005, {'seg': 2, 'radial': 4}), tan), jm))
+    # trailing pothos: vines over the rim with heart leaves
+    leaves = []
+    for v in range(6):
+        a = v * 1.05 + 0.3
+        L = 0.25 + rnd() * 0.35
+        vine = []
+        for k in range(6):
+            t = k / 5
+            rr = 0.15 + t * 0.06
+            vine.append([math.cos(a + t * 0.4) * rr, potY + 0.04 - t * L + math.sin(t * 3) * 0.02, math.sin(a + t * 0.4) * rr])
+        g.add(K.m(tc(K.tube(vine, 0.004, {'seg': 10, 'radial': 3}), '#4E7A30'), mt.paint))
+        for k in range(1, 6):
+            p = vine[k]
+            lf = K.leaf(0.07, 0.06, {'a0': -0.3, 'a1': -1.2, 'fold': 0.2, 'tip': 0.7, 'segL': 4, 'segW': 1})
+            lf.rotateY(a + math.pi / 2 + (0.7 if k % 2 else -0.7))
+            lf.translate(p[0], p[1], p[2])
+            K.tint(lf, THREE.Color('#5A9A3A' if k % 2 else '#8AB84A'))
+            leaves.append(lf)
+    crown = K.leafCluster({'count': 8, 'len': [0.1, 0.14], 'width': 0.09, 'a0': [0.5, 1.0], 'a1': [-0.6, 0.0], 'fold': 0.2, 'seed': 3, 'spread': 0.04, 'segL': 5})
+    crown.translate(0, potY + 0.02, 0)
+    K.tint(crown, '#5A9A3A')
+    leaves.append(crown)
+    g.add(K.m(THREE.mergeGeometries([l.toNonIndexed() if l.index is not None else l for l in leaves], False), lm))
+    g.userData.colliders = []
+    return K.finish(game, g, {'ao': {'floor': False, 'height': 0}})
+
+
+registerProp('macrame_hanger', _macrame_hanger, {'category': CAT, 'tags': ['ceiling', 'plant', 'decor', 'green_room', 'lobby'], 'size': [0.5, 1.4, 0.5], 'desc': 'macramé plant hanger with a terracotta pot and trailing pothos (ceiling origin; opts.drop, opts.pot)'})
+
+
+# -------------------------------------------------------------------------------------------- water cooler
+def _water_cooler(game, opts=None):
+    g = K.prop('water_cooler')
+    mt, dm = M(game), decorMat(game)
+    body = '#EDE6D6'
+    g.add(K.m(tc(K.box(0.32, 0.9, 0.32, 0.04), body), mt.lacquer, {'pos': [0, 0.47, 0]}))
+    g.add(K.m(tc(K.box(0.3, 0.03, 0.3, 0.01), '#3A2E36'), mt.plastic, {'pos': [0, 0.015, 0]}))
+    g.add(K.m(tc(K.box(0.325, 0.03, 0.325, 0.012), '#2F5BD3'), mt.lacquer, {'pos': [0, 0.8, 0]}))
+    g.add(K.m(dcell(cbox(0.2, 0.2, 0.006, 0.002), 0, 0), dm, {'pos': [0, 0.4, -0.162]}))
+    # tap well: dark recess, two tap levers (blue / red), drip grate
+    g.add(K.m(tc(K.box(0.22, 0.16, 0.05, 0.012), '#3A2E36'), mt.plastic, {'pos': [0, 0.66, -0.145]}))
+    for x, c in [[-0.05, '#2F5BD3'], [0.05, '#E23B3B']]:
+        g.add(K.m(K.cyl(0.012, 0.014, 0.03, {'seg': 10}), mt.chrome, {'pos': [x, 0.7, -0.17], 'rot': [math.pi / 2, 0, 0]}))
+        g.add(K.m(tc(K.box(0.03, 0.05, 0.018, 0.008), c), mt.plastic, {'pos': [x, 0.735, -0.19]}))
+    g.add(K.m(K.box(0.18, 0.012, 0.07, 0.004), mt.chrome, {'pos': [0, 0.59, -0.16]}))
+    for i in range(5):
+        g.add(K.m(tc(cbox(0.16, 0.004, 0.006, 0.001), '#2A2230'), mt.plastic, {'pos': [0, 0.597, -0.185 + i * 0.012]}))
+    # inverted 5-gallon jug: blue tinted glass shell + water inside (air bubble at the top)
+    jugP = [[0, 0], [0.04, 0], [0.045, 0.06], [0.12, 0.13], [0.135, 0.18], [0.135, 0.42], [0.12, 0.47], [0, 0.49]]
+    glass = game.mats.glass('#9FD8FF', {'opacity': 0.3})
+    jug = K.m(K.lathe(jugP, {'seg': 18, 'round': 0.02, 'steps': 1}), glass, {'pos': [0, 0.89, 0]})
+    jug.userData.noAO = True
+    jug.userData.noOcclude = True
+    g.add(jug)
+    for y in (0.24, 0.33):
+        g.add(K.m(K.tube(ring(0.137, 18, 0.89 + y), 0.005, {'seg': 18, 'radial': 3, 'closed': True}), glass))
+    water = K.m(K.lathe([[0, 0.01], [0.034, 0.01], [0.04, 0.06], [0.115, 0.13], [0.128, 0.18], [0.128, 0.36], [0, 0.36]], {'seg': 16}),
+                K.mat(game, 'plastic', '#3FA8E8', {'transparent': True, 'opacity': 0.55, 'keepColor': True}), {'pos': [0, 0.89, 0]})
+    water.userData.noOcclude = True
+    g.add(water)
+    g.add(K.m(tc(K.lathe([[0, 0], [0.07, 0], [0.075, 0.03], [0.05, 0.05], [0, 0.05]], {'seg': 16}), body), mt.lacquer, {'pos': [0, 0.91, 0]}))
+    # paper cone cup dispenser on the side
+    g.add(K.m(K.cyl(0.035, 0.035, 0.22, {'seg': 12}), mt.chrome, {'pos': [0.2, 0.46, 0]}))
+    g.add(K.m(tc(K.lathe([[0.004, 0], [0.032, 0.07], [0.03, 0.07], [0, 0.005]], {'seg': 10}), '#FBF6EA'), mt.plastic, {'pos': [0.2, 0.39, 0]}))
+    g.add(K.m(K.box(0.03, 0.08, 0.02, 0.006), mt.chrome, {'pos': [0.17, 0.52, 0]}))
+    g.userData.colliders = [{'min': [-0.17, 0, -0.18], 'max': [0.24, 1.4, 0.17]}]
+    g.userData.interact = {'point': [0, 0.72, -0.25], 'radius': 1}
+    return K.finish(game, g)
+
+
+registerProp('water_cooler', _water_cooler, {'category': CAT, 'tags': ['newsroom', 'green_room', 'appliance'], 'size': [0.45, 1.4, 0.35], 'desc': 'cream water cooler: inverted blue jug, hot/cold taps, drip grate, AQUA-PURE label, cone cups'})
+
+
+# ------------------------------------------------------------------------------------------ filing cabinet
+def _filing_cabinet(game, opts=None):
+    opts = opts or {}
+    g = K.prop('filing_cabinet')
+    mt, atl = M(game), atlasMat(game)
+    col = _nn(opts.get('color'), '#C9A45A')
+    n = _nn(opts.get('drawers'), 4)
+    W, D, dh = 0.46, 0.64, 0.3
+    H = n * (dh + 0.01) + 0.08
+    dark = THREE.Color(col).multiplyScalar(0.55).getStyle()
+    g.add(K.m(tc(K.box(W, H - 0.05, D, 0.02), col), mt.paint, {'pos': [0, (H - 0.05) / 2 + 0.05, 0]}))
+    g.add(K.m(tc(K.box(W - 0.04, 0.05, D - 0.06, 0.01), dark), mt.paint, {'pos': [0, 0.025, 0]}))
+    g.add(K.m(tc(K.box(W + 0.01, 0.018, D + 0.01, 0.008), col), mt.paint, {'pos': [0, H, 0]}))
+    for i in range(n):
+        y = 0.07 + dh / 2 + i * (dh + 0.01)
+        ajar = 0.14 if i == n - 1 and opts.get('ajar') is not False else 0
+        dr = THREE.Group()
+        dr.position.set(0, y, -D / 2 - ajar)
+        dr.add(K.m(tc(K.box(W - 0.03, dh - 0.012, 0.03, 0.014), col), mt.paint, {'pos': [0, 0, -0.005]}))
+        dr.add(K.m(K.tube([[-0.08, 0.03, 0], [-0.075, 0.03, -0.024], [0.075, 0.03, -0.024], [0.08, 0.03, 0]], 0.008, {'seg': 8, 'radial': 5}), mt.chrome))
+        dr.add(K.m(cbox(0.03, 0.02, 0.012, 0.004), mt.chrome, {'pos': [0, 0.052, -0.022]}))
+        dr.add(K.m(cbox(0.1, 0.05, 0.008, 0.003), mt.chrome, {'pos': [0, -0.04, -0.024]}))
+        dr.add(K.m(cell(cbox(0.085, 0.036, 0.004, 0.001), 1, 2), atl, {'pos': [0, -0.04, -0.029]}))
+        if ajar:
+            dr.add(K.m(tc(K.box(W - 0.06, dh - 0.05, ajar + 0.02, 0.01), dark), mt.paint, {'pos': [0, -0.01, ajar / 2 + 0.01]}))
+            for f in range(5):
+                dr.add(K.m(cell(cbox(W - 0.1, 0.09 + (f % 2) * 0.02, 0.004, 0.001), 3, 3), atl, {'pos': [(f - 2) * 0.004, dh / 2 - 0.02, 0.03 + f * 0.024], 'rot': [-0.12 + f * 0.05, 0, (f - 2) * 0.03]}))
+        g.add(dr)
+    put(g, paperStack(game, 4, 11), [0.02, H + 0.009, 0.08], 0.2)
+    put(g, mugGroup(game), [-0.13, H + 0.009, -0.16], 1.0)
+    g.userData.colliders = [{'min': [-W / 2, 0, -D / 2 - 0.05], 'max': [W / 2, H + 0.1, D / 2]}]
+    return K.finish(game, g)
+
+
+registerProp('filing_cabinet', _filing_cabinet, {'category': CAT, 'tags': ['cabinet', 'newsroom', 'master_control'], 'size': [0.47, 1.4, 0.8], 'desc': 'harvest steel 4-drawer filing cabinet, chrome pulls, label cards, top drawer ajar with folders (opts.color, opts.drawers, opts.ajar=false)'})
+
+
+# ---------------------------------------------------------------------------------------------- coat rack
+def _coat_rack(game, opts=None):
+    g = K.prop('coat_rack')
+    mt = M(game)
+    H = 1.8
+    # bentwood: four curved feet, turned pole, two rings of hooks with ball ends, finial
+    for i in range(4):
+        a = (i / 4) * TAU + math.pi / 4
+        c, s = math.cos(a), math.sin(a)
+        g.add(K.m(K.tube([[c * 0.03, 0.22, s * 0.03], [c * 0.16, 0.1, s * 0.16], [c * 0.27, 0.025, s * 0.27], [c * 0.3, 0.02, s * 0.3]], 0.018, {'seg': 8, 'radial': 6}), mt.walnut))
+        g.add(K.m(THREE.CylinderGeometry(0.018, 0.02, 0.02, 8, 1).translate(0, 0.01, 0), mt.brass, {'pos': [c * 0.3, 0, s * 0.3]}))
+    g.add(K.m(K.uvScale(K.lathe([[0, 0], [0.04, 0], [0.045, 0.06], [0.028, 0.16], [0.024, 0.3], [0.024, H - 0.2], [0.03, H - 0.14], [0.03, H - 0.1], [0.022, H - 0.06], [0, H - 0.05]], {'seg': 10, 'round': 0.01, 'steps': 1}).clone(), 2, 4), mt.walnut, {'pos': [0, 0.18, 0]}))
+    g.add(K.m(sph(0.045, 10, 7), mt.walnut, {'pos': [0, H + 0.16, 0]}))
+    hooks = []
+    for y, n, off, L in [[H - 0.02, 6, 0, 0.2], [H - 0.26, 3, math.pi / 3, 0.14]]:
+        for i in range(n):
+            a = (i / n) * TAU + off
+            c, s = math.cos(a), math.sin(a)
+            tip = [c * L, y + 0.1, s * L]
+            g.add(K.m(K.tube([[c * 0.02, y - 0.06, s * 0.02], [c * L * 0.6, y - 0.02, s * L * 0.6], [c * L, y + 0.04, s * L], tip], 0.011, {'seg': 7, 'radial': 4}), mt.walnut))
+            g.add(K.m(sph(0.017, 6, 4), mt.walnut, {'pos': tip}))
+            hooks.append([c, s, y, L])
+    # fedora on a top hook
+    hc, hs, hy, hl = hooks[1]
+    hat = THREE.Group()
+    hat.position.set(hc * hl * 0.95, hy + 0.1, hs * hl * 0.95)
+    hat.rotation.set(0.35, -math.atan2(hs, hc), 0.25)
+    hat.add(K.m(tc(K.lathe([[0, 0], [0.17, 0], [0.18, 0.012], [0.11, 0.02], [0.1, 0.1], [0.07, 0.13], [0, 0.12]], {'seg': 16, 'round': 0.012, 'steps': 1}), '#5A3A22'), mt.velvet))
+    hat.add(K.m(tc(K.lathe([[0.104, 0], [0.101, 0.03], [0, 0.03]], {'seg': 20}).clone(), '#E3662B'), mt.velvet, {'pos': [0, 0.018, 0]}))
+    g.add(hat)
+    # mustard knit scarf draped over a hook
+    sc, ss, sy, sl = hooks[3]
+    px, pz, ya = sc * sl * 0.85, ss * sl * 0.85, math.atan2(sc, ss)
+    knit = tc(K.cushion(0.13, 0.62, 0.024, {'puff': 0.008, 'r': 0.01, 'seg': [3, 6, 1], 'uv': 4}), '#D9A520')
+    for s2 in (-1, 1):
+        pnl = K.m(knit, mt.tweed)
+        pnl.position.set(px + sc * s2 * 0.02, sy - 0.24 + (0.05 if s2 > 0 else 0), pz + ss * s2 * 0.02)
+        pnl.rotation.set(0, ya, 0)
+        pnl.rotateX(s2 * 0.08)
+        g.add(pnl)
+    g.add(K.m(tc(K.tube([[px - sc * 0.03, sy + 0.04, pz - ss * 0.03], [px, sy + 0.075, pz], [px + sc * 0.03, sy + 0.04, pz + ss * 0.03]], 0.02, {'seg': 6, 'radial': 6}), '#D9A520'), mt.tweed))
+    for f in range(4):
+        for s2 in (-1, 1):
+            fx = px + sc * s2 * 0.02 + math.cos(ya) * (f - 1.5) * 0.03
+            fz = pz + ss * s2 * 0.02 - math.sin(ya) * (f - 1.5) * 0.03
+            fy = sy - 0.55 + (0.05 if s2 > 0 else 0)
+            g.add(K.m(tc(K.tube([[fx, fy, fz], [fx, fy - 0.06, fz]], 0.006, {'seg': 1, 'radial': 4}), '#E8B83A'), mt.tweed))
+    # WZTV satin crew jacket hanging by its collar loop
+    jc, js, jy, jl = hooks[5]
+    jk = THREE.Group()
+    jk.position.set(jc * jl * 0.95, jy + 0.06, js * jl * 0.95)
+    jk.rotation.y = math.atan2(jc, js)
+    jk.scale.setScalar(0.82)
+    blue = '#2F5BD3'
+    jk.add(K.m(tc(K.cushion(0.36, 0.56, 0.1, {'puff': 0.03, 'r': 0.04, 'seg': [5, 6, 2], 'uv': 3}), blue), mt.velvet, {'pos': [0, -0.34, 0.06]}))
+    jk.add(K.m(tc(K.cushion(0.26, 0.08, 0.1, {'puff': 0.02, 'r': 0.03, 'seg': [4, 2, 2]}), '#E23B3B'), mt.velvet, {'pos': [0, -0.08, 0.06]}))
+    for s2 in (-1, 1):
+        jk.add(K.m(tc(K.tube([[s2 * 0.16, -0.12, 0.06], [s2 * 0.2, -0.3, 0.07], [s2 * 0.17, -0.55, 0.06]], 0.05, {'seg': 8, 'radial': 7}), blue), mt.velvet))
+        jk.add(K.m(tc(THREE.CylinderGeometry(0.048, 0.048, 0.05, 8, 1), '#F4F1E8'), mt.velvet, {'pos': [s2 * 0.17, -0.6, 0.06]}))
+    jk.add(K.m(tc(cbox(0.36, 0.05, 0.105, 0.012), '#F4F1E8'), mt.velvet, {'pos': [0, -0.6, 0.06]}))
+    jk.add(K.m(cell(THREE.CircleGeometry(0.075, 20), 3, 1), atlasMat(game), {'pos': [0, -0.3, 0.113]}))
+    g.add(jk)
+    g.userData.colliders = [{'min': [-0.25, 0, -0.25], 'max': [0.25, H + 0.2, 0.25]}]
+    return K.finish(game, g)
+
+
+registerProp('coat_rack', _coat_rack, {'category': CAT, 'tags': ['green_room', 'lobby', 'newsroom'], 'size': [0.62, 2.0, 0.62], 'desc': 'bentwood walnut coat tree with a fedora, a mustard scarf and a rust umbrella'})
+
+
+# ------------------------------------------------------------------------------------------------ trash can
+def paperBall(r, seed):
+    geo = THREE.IcosahedronGeometry(r, 1)
+    p, rnd = geo.attributes.position, mulberry32(seed)
+    cache = {}
+    for i in range(p.count):
+        key = '%s,%s,%s' % (js_to_fixed(p.getX(i), 4), js_to_fixed(p.getY(i), 4), js_to_fixed(p.getZ(i), 4))
+        k = cache.get(key)
+        if k is None:
+            k = 0.75 + rnd() * 0.45
+            cache[key] = k
+        p.setXYZ(i, p.getX(i) * k, p.getY(i) * k, p.getZ(i) * k)
+    geo.computeVertexNormals()
+    return geo
+
+
+def _trash_can(game, opts=None):
+    opts = opts or {}
+    g = K.prop('trash_can')
+    mt = M(game)
+    col = _nn(opts.get('color'), '#E3662B')
+    R, H = 0.15, 0.36
+    g.add(K.m(tc(K.lathe([[0, 0], [R * 0.8, 0], [R, H - 0.01], [R + 0.012, H], [R - 0.008, H], [R * 0.8 - 0.01, 0.015], [0, 0.015]], {'seg': 24, 'round': 0.008, 'steps': 1}), col), mt.plastic))
+    g.add(K.m(tc(K.tube(ring(R + 0.004, 24, H), 0.012, {'seg': 24, 'radial': 5, 'closed': True}), col), mt.plastic))
+    rnd = mulberry32(5)
+    balls = [[0, H - 0.02, 0, 0.07], [0.06, H + 0.02, 0.03, 0.06], [-0.05, H + 0.03, -0.03, 0.055], [0.01, H + 0.07, -0.01, 0.05], [-0.04, H - 0.01, 0.06, 0.05]]
+    for i, (x, y, z, r) in enumerate(balls):
+        g.add(K.m(tc(paperBall(r, 10 + i), '#FFE36A' if i == 3 else '#FBF6EA'), mt.paint, {'pos': [x, y, z], 'rot': [rnd() * 3, rnd() * 3, 0]}))
+    g.add(K.m(tc(paperBall(0.055, 40), '#FBF6EA'), mt.paint, {'pos': [0.24, 0.045, -0.08]}))
+    g.userData.colliders = [{'min': [-R, 0, -R], 'max': [R, H, R]}]
+    return K.finish(game, g)
+
+
+registerProp('trash_can', _trash_can, {'category': CAT, 'tags': ['trash', 'newsroom', 'master_control', 'green_room'], 'size': [0.36, 0.45, 0.32], 'desc': 'orange plastic wastebasket overflowing with crumpled scripts, one on the floor (opts.color)'})
+
+
+# ------------------------------------------------------------------------------------------------ ash urn
+def _ash_urn(game, opts=None):
+    opts = opts or {}
+    g = K.prop('ash_urn')
+    mt = M(game)
+    col = _nn(opts.get('color'), '#8C9A3A')
+    g.add(K.m(tc(K.lathe([[0, 0], [0.16, 0], [0.165, 0.02], [0.13, 0.08], [0.12, 0.5], [0.15, 0.56], [0, 0.56]], {'seg': 24, 'round': 0.015, 'steps': 1}), col), mt.lacquer))
+    g.add(K.m(K.lathe([[0, 0], [0.155, 0], [0.175, 0.03], [0.17, 0.05], [0.14, 0.04], [0, 0.04]], {'seg': 24, 'round': 0.008, 'steps': 1}), mt.chrome, {'pos': [0, 0.56, 0]}))
+    g.add(K.m(K.uvScale(tc(THREE.CircleGeometry(0.14, 20), '#E8D8B0'), 3, 3), K.mat(game, 'soil', '#ffffff', {'map': K.tex.pebble('#E0CFA0')}), {'pos': [0, 0.6, 0], 'rot': [-math.pi / 2, 0, 0]}))
+    for x, z, a in [[0.04, 0.03, 0.4], [-0.05, -0.02, 2.1]]:
+        g.add(K.m(tc(K.cyl(0.005, 0.005, 0.04, {'seg': 6, 'bevel': 0.001}), '#FBF6EA'), mt.paint, {'pos': [x, 0.603, z], 'rot': [math.pi / 2 - 0.2, a, 0]}))
+    g.userData.colliders = [{'min': [-0.17, 0, -0.17], 'max': [0.17, 0.62, 0.17]}]
+    return K.finish(game, g)
+
+
+registerProp('ash_urn', _ash_urn, {'category': CAT, 'tags': ['lobby', 'green_room', 'trash'], 'size': [0.35, 0.62, 0.35], 'desc': 'avocado enamel lobby ash urn with a chrome sand bowl (opts.color)'})
+
+
+# ------------------------------------------------------------------------------------------ soda machine
+def sodaTex():
+    # 512x1024: [0..384] sign art, [384..512] selection-button labels column
+    def draw(ctx, W, H, rand):
+        g = ctx.createLinearGradient(0, 0, 0, H)
+        g.addColorStop(0, '#FFF4D6')
+        g.addColorStop(1, '#FFD9A0')
+        ctx.fillStyle = g
+        ctx.fillRect(0, 0, 384, H)
+        # bubbles
+        for i in range(70):
+            ctx.strokeStyle = 'rgba(227,59,59,0.35)'
+            ctx.lineWidth = 3
+            ctx.beginPath()
+            ctx.arc(rand() * 384, rand() * H, 4 + rand() * 16, 0, TAU)
+            ctx.stroke()
+        # red wave band + script logo
+        ctx.fillStyle = '#E23B3B'
+        ctx.beginPath()
+        ctx.moveTo(0, 120)
+        ctx.bezierCurveTo(130, 60, 250, 190, 384, 110)
+        ctx.lineTo(384, 330)
+        ctx.bezierCurveTo(250, 400, 130, 270, 0, 340)
+        ctx.fill()
+        ctx.save()
+        ctx.translate(192, 230)
+        ctx.rotate(-0.12)
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.font = '110px "Shrikhand", "Cooper Black", serif'
+        ctx.fillStyle = '#7A1A1A'
+        ctx.fillText('Fizz', 6, 8)
+        ctx.fillStyle = '#FFF4D6'
+        ctx.fillText('Fizz', 0, 0)
+        ctx.font = '40px "Bungee", "Arial Black", sans-serif'
+        ctx.fillText('- UP -', 0, 70)
+        ctx.restore()
+        # giant tilted can
+        ctx.save()
+        ctx.translate(200, 650)
+        ctx.rotate(0.18)
+        cgr = ctx.createLinearGradient(-90, 0, 90, 0)
+        cgr.addColorStop(0, '#9A1A1A')
+        cgr.addColorStop(0.35, '#FF5A4A')
+        cgr.addColorStop(0.6, '#E23B3B')
+        cgr.addColorStop(1, '#7A1212')
+        ctx.fillStyle = cgr
+        ctxRR(ctx, -90, -190, 180, 380, 30)
+        ctx.fill()
+        ctx.fillStyle = '#C9CED6'
+        ctxRR(ctx, -84, -205, 168, 26, 10)
+        ctx.fill()
+        ctxRR(ctx, -84, 180, 168, 22, 10)
+        ctx.fill()
+        ctx.fillStyle = '#FFF4D6'
+        ctx.font = '64px "Shrikhand", "Cooper Black", serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.save()
+        ctx.rotate(-math.pi / 2)
+        ctx.fillText('Fizz-Up', 0, 6)
+        ctx.restore()
+        ctx.restore()
+        ctx.fillStyle = '#E23B3B'
+        ctx.font = '46px "Bungee", "Arial Black", sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText('ICE COLD', 192, 930)
+        ctx.font = '30px "Titan One", "Arial Black", sans-serif'
+        ctx.fillStyle = '#5A1A1A'
+        ctx.fillText('25¢', 192, 980)
+        # button labels
+        flav = [['COLA', '#7A2A1A'], ['ORANGE', '#E3662B'], ['GRAPE', '#6B3A6E'], ['LEMON', '#C8B020'], ['ROOT BEER', '#5A3A22'], ['DIET', '#2F5BD3']]
+        for i, (t, c) in enumerate(flav):
+            y = i * (H / 6)
+            ctx.fillStyle = '#FFF8E8'
+            ctx.fillRect(384, y, 128, H / 6)
+            ctx.fillStyle = c
+            ctx.fillRect(392, y + 20, 112, H / 6 - 40)
+            ctx.fillStyle = '#FFF8E8'
+            ctx.font = '%spx "Bungee", "Arial Black", sans-serif' % (17 if len(t) > 6 else 24)
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            ctx.fillText(t, 448, y + H / 12)
+    return K.tex.canvas('furn_soda', 512, 1024, draw, {'repeat': False, 'fonts': True})
+
+
+def _vending_soda(game, opts=None):
+    opts = opts or {}
+    g = K.prop('vending_soda')
+    mt = M(game)
+    lit = _nn(opts.get('lit'), True)
+    body = _nn(opts.get('color'), '#D8342C')
+    W, H, D = 0.95, 1.84, 0.78
+    fz = -D / 2
+    tex = sodaTex()
+    sign = K.glow(game, '#ffffff', 0.7, {'map': tex}) if lit else K.mat(game, 'plastic', '#C8B8A0', {'map': tex})
+    g.add(K.m(tc(K.box(W - 0.06, 0.06, D - 0.06, 0.015), '#2A2230'), mt.plastic, {'pos': [0, 0.03, 0]}))
+    g.add(K.m(tc(K.box(W, H - 0.12, D, 0.06), body), mt.lacquer, {'pos': [0, 0.06 + (H - 0.12) / 2, 0]}))
+    g.add(K.m(tc(K.cushion(W + 0.03, 0.1, D + 0.03, {'puff': 0.02, 'r': 0.045, 'seg': [6, 2, 5]}), '#F6E7C8'), mt.lacquer, {'pos': [0, H - 0.05, 0]}))
+    # cream side stripes
+    for s in (-1, 1):
+        g.add(K.m(tc(K.box(0.012, H - 0.3, 0.16, 0.005), '#F6E7C8'), mt.lacquer, {'pos': [s * (W / 2 + 0.002), 0.95, -0.12]}))
+    # glowing sign panel with chrome frame
+    sw, sh, sx, sy = 0.56, 1.2, -0.14, 1.08
+    frame = K.roundRect(sw + 0.06, sh + 0.06, 0.05)
+    frame.holes.append(THREE.Path(K.roundRect(sw, sh, 0.035).getPoints(6)))
+    g.add(K.m(K.extrude(frame, 0.03, {'bevel': 0.01, 'bevelSeg': 1, 'curveSeg': 4}), mt.chrome, {'pos': [sx, sy, fz - 0.01]}))
+    panel = K.m(K.uvRect(THREE.PlaneGeometry(sw, sh), 0, 0, 0.75, 1), sign, {'pos': [sx, sy, fz - 0.006], 'rot': [0, math.pi, 0]})
+    panel.userData.noMerge = True
+    panel.userData.noOcclude = True
+    g.add(panel)
+    # selection buttons column (lit labels + chrome bezels)
+    bx = 0.31
+    col = K.m(K.uvRect(THREE.PlaneGeometry(0.16, 0.6), 0.75, 0, 1, 1), sign, {'pos': [bx, 1.25, fz - 0.006], 'rot': [0, math.pi, 0]})
+    col.userData.noMerge = True
+    col.userData.noOcclude = True
+    g.add(col)
+    for i in range(6):
+        g.add(K.m(K.box(0.17, 0.012, 0.02, 0.004), mt.chrome, {'pos': [bx, 0.95 + i * 0.1, fz - 0.012]}))
+    g.add(K.m(K.box(0.012, 0.6, 0.02, 0.004), mt.chrome, {'pos': [bx - 0.085, 1.25, fz - 0.012]}))
+    g.add(K.m(K.box(0.012, 0.6, 0.02, 0.004), mt.chrome, {'pos': [bx + 0.085, 1.25, fz - 0.012]}))
+    # coin plate + coin return
+    g.add(K.m(K.box(0.16, 0.22, 0.03, 0.012), mt.chrome, {'pos': [bx, 0.74, fz - 0.01]}))
+    g.add(K.m(tc(K.box(0.012, 0.05, 0.01, 0.003), '#1E1530'), mt.plastic, {'pos': [bx, 0.8, fz - 0.026]}))
+    g.add(K.m(tc(K.cyl(0.025, 0.025, 0.02, {'seg': 12}), '#E23B3B'), mt.plastic, {'pos': [bx, 0.7, fz - 0.03], 'rot': [math.pi / 2, 0, 0]}))
+    g.add(K.m(tc(K.box(0.07, 0.04, 0.03, 0.01), '#1E1530'), mt.plastic, {'pos': [bx, 0.64, fz - 0.02]}))
+    # can delivery door
+    g.add(K.m(K.box(0.5, 0.2, 0.03, 0.02), mt.chrome, {'pos': [sx, 0.3, fz - 0.01]}))
+    g.add(K.m(tc(K.box(0.44, 0.15, 0.03, 0.015), '#1E1530'), mt.plastic, {'pos': [sx, 0.3, fz - 0.02], 'rot': [0.12, 0, 0]}))
+    g.add(K.m(tc(K.box(0.3, 0.035, 0.012, 0.006), '#F6E7C8'), mt.lacquer, {'pos': [sx, 0.46, fz - 0.006]}))
+    g.userData.parts = {'glow': panel, 'glowButtons': col}
+    g.userData.lightAnchors = [{'pos': [sx, 1.1, fz - 0.5], 'color': '#FFE2C0', 'intensity': 1.3, 'distance': 3.5}] if lit else []
+    g.userData.colliders = [{'min': [-W / 2, 0, -D / 2 - 0.04], 'max': [W / 2, H + 0.02, D / 2]}]
+    g.userData.interact = {'point': [bx, 1.0, fz - 0.4], 'radius': 1.2}
+    return K.finish(game, g)
+
+
+registerProp('vending_soda', _vending_soda, {'category': CAT, 'tags': ['machine', 'vending', 'green_room', 'light'], 'size': [0.98, 1.86, 0.82], 'desc': 'red Fizz-Up soda machine with a glowing sign, lit flavour buttons, coin plate, can door (parts.glow; opts.color, opts.lit)', 'hero': True})
+
+
+# ------------------------------------------------------------------------------------- cigarette machine
+def cigTex():
+    def draw(ctx, W, H, rand):
+        # top 128: marquee; rest: pack display (3 rows x 6)
+        g = ctx.createLinearGradient(0, 0, 0, 128)
+        g.addColorStop(0, '#FFE3A3')
+        g.addColorStop(1, '#FFB347')
+        ctx.fillStyle = g
+        ctx.fillRect(0, 0, W, 128)
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = '#6B2A1A'
+        ctx.font = '64px "Shrikhand", "Cooper Black", serif'
+        ctx.fillText('Cigarettes', W / 2, 60)
+        ctx.fillStyle = '#B5472A'
+        ctx.font = '20px "Bungee", "Arial Black", sans-serif'
+        ctx.fillText('SERVE YOURSELF  ·  35¢', W / 2, 108)
+        ctx.fillStyle = '#FFF4DA'
+        ctx.fillRect(0, 128, W, H - 128)
+        packs = [['STATIC', '#E23B3B', '#F4F1E8'], ['NIGHT OWL', '#2A3A8A', '#FFD23A'], ['SIGNAL', '#F4F1E8', '#2E8C8C'], ['HI-FI', '#E8A92E', '#5A3A22'], ['PLAZA', '#2E6A3A', '#F4F1E8'], ['KOOLTONE', '#7FD4FF', '#1E4A8A']]
+        for r in range(3):
+            for c in range(6):
+                name, bg, fg = packs[(c + r * 2) % 6]
+                x, y = 8 + c * 84, 140 + r * 124
+                ctx.fillStyle = bg
+                ctxRR(ctx, x, y, 72, 110, 6)
+                ctx.fill()
+                ctx.fillStyle = fg
+                ctx.fillRect(x + 6, y + 36, 60, 30)
+                ctx.fillStyle = bg
+                ctx.font = '%spx "Bungee", "Arial Black", sans-serif' % (11 if len(name) > 6 else 14)
+                ctx.fillText(name, x + 36, y + 52)
+                ctx.fillStyle = fg
+                ctx.beginPath()
+                ctx.arc(x + 36, y + 88, 10, 0, TAU)
+                ctx.fill()
+                ctx.fillStyle = 'rgba(255,255,255,0.3)'
+                ctx.fillRect(x + 4, y + 4, 10, 100)
+    return K.tex.canvas('furn_cig', 512, 512, draw, {'repeat': False, 'fonts': True})
+
+
+def _vending_cigarette(game, opts=None):
+    opts = opts or {}
+    g = K.prop('vending_cigarette')
+    mt = M(game)
+    lit = _nn(opts.get('lit'), True)
+    W, H, D = 0.76, 1.46, 0.46
+    fz = -D / 2
+    tex = cigTex()
+    glowM = K.glow(game, '#ffffff', 0.75, {'map': tex}) if lit else K.mat(game, 'plastic', '#C8B8A0', {'map': tex})
+    g.add(K.m(tc(K.box(W - 0.05, 0.08, D - 0.05, 0.015), '#2A2230'), mt.plastic, {'pos': [0, 0.04, 0]}))
+    g.add(K.m(K.box(W, H - 0.08, D, 0.045, {'uv': 1.5, 'swap': True}), mt.walnut, {'pos': [0, 0.08 + (H - 0.08) / 2, 0]}))
+    g.add(K.m(K.box(W + 0.01, 0.03, D + 0.01, 0.012), mt.chrome, {'pos': [0, H, 0]}))
+    # lit marquee + pack window (one glow material, atlas halves)
+    mq = K.m(K.uvRect(THREE.PlaneGeometry(0.66, 0.17), 0, 0.75, 1, 1), glowM, {'pos': [0, H - 0.13, fz - 0.006], 'rot': [0, math.pi, 0]})
+    win = K.m(K.uvRect(THREE.PlaneGeometry(0.66, 0.5), 0, 0, 1, 0.75), glowM, {'pos': [0, 1.0, fz - 0.006], 'rot': [0, math.pi, 0]})
+    for p in (mq, win):
+        p.userData.noMerge = True
+        p.userData.noOcclude = True
+        g.add(p)
+    for y, h in [[H - 0.13, 0.17], [1.0, 0.5]]:
+        fr = K.roundRect(0.7, h + 0.04, 0.025)
+        fr.holes.append(THREE.Path(K.roundRect(0.66, h, 0.015).getPoints(4)))
+        g.add(K.m(K.extrude(fr, 0.025, {'bevel': 0.008, 'bevelSeg': 1, 'curveSeg': 3}), mt.chrome, {'pos': [0, y, fz - 0.008]}))
+    # pull knobs: 2 rows x 6, each with a label chip
+    knob = cg('cig_knob', lambda: K.lathe([[0, 0], [0.012, 0], [0.012, 0.04], [0.024, 0.05], [0.026, 0.07], [0.018, 0.08], [0, 0.08]], {'seg': 10, 'round': 0.004, 'steps': 1}))
+    chips = ['#E23B3B', '#2A3A8A', '#F4F1E8', '#E8A92E', '#2E6A3A', '#7FD4FF']
+    for r in range(2):
+        for c in range(6):
+            x, y = -0.275 + c * 0.11, 0.64 - r * 0.13
+            g.add(K.m(knob, mt.chrome, {'pos': [x, y, fz], 'rot': [-math.pi / 2, 0, 0]}))
+            g.add(K.m(tc(K.box(0.06, 0.025, 0.008, 0.003), chips[(c + r * 2) % 6]), mt.plastic, {'pos': [x, y + 0.05, fz - 0.013]}))
+    g.add(K.m(K.box(0.7, 0.3, 0.012, 0.006), mt.chrome, {'pos': [0, 0.58, fz - 0.003]}))
+    # coin head + delivery trough
+    g.add(K.m(K.box(0.14, 0.12, 0.04, 0.012), mt.chrome, {'pos': [0.26, 0.33, fz - 0.015]}))
+    g.add(K.m(tc(K.box(0.01, 0.04, 0.01, 0.003), '#1E1530'), mt.plastic, {'pos': [0.26, 0.35, fz - 0.036]}))
+    g.add(K.m(K.box(0.44, 0.1, 0.1, 0.02), mt.chrome, {'pos': [-0.08, 0.24, fz - 0.04]}))
+    g.add(K.m(tc(K.box(0.4, 0.06, 0.08, 0.012), '#1E1530'), mt.plastic, {'pos': [-0.08, 0.265, fz - 0.045]}))
+    g.userData.parts = {'glow': win, 'glowMarquee': mq}
+    g.userData.lightAnchors = [{'pos': [0, 1.1, fz - 0.45], 'color': '#FFD9A0', 'intensity': 1.1, 'distance': 3}] if lit else []
+    g.userData.colliders = [{'min': [-W / 2, 0, -D / 2 - 0.1], 'max': [W / 2, H + 0.02, D / 2]}]
+    g.userData.interact = {'point': [0, 0.6, fz - 0.4], 'radius': 1.1}
+    return K.finish(game, g)
+
+
+registerProp('vending_cigarette', _vending_cigarette, {'category': CAT, 'tags': ['machine', 'vending', 'green_room', 'light'], 'size': [0.77, 1.48, 0.56], 'desc': 'walnut & chrome cigarette machine: lit marquee, backlit pack window, 12 chrome pull knobs (parts.glow; opts.lit)', 'hero': True})
+
+
+# ------------------------------------------------------------------------------------- rotary payphone
+def _payphone_rotary(game, opts=None):
+    g = K.prop('payphone_rotary')
+    mt, atl, dm = M(game), atlasMat(game), decorMat(game)
+    steel = K.mat(game, 'metal', '#ffffff', {'map': K.tex.brushed('#9EA4AE'), 'env': 0.2})
+    # wall sign above
+    g.add(K.m(dcell(cbox(0.26, 0.26, 0.02, 0.006), 2, 0), dm, {'pos': [0, 0.84, -0.01]}))
+    # backplate + stainless housing
+    g.add(K.m(K.box(0.28, 0.66, 0.02, 0.02), steel, {'pos': [0, 0.33, -0.01]}))
+    g.add(K.m(K.box(0.21, 0.54, 0.13, 0.025), steel, {'pos': [0.02, 0.33, -0.085]}))
+    g.add(K.m(K.box(0.215, 0.05, 0.14, 0.015), mt.chrome, {'pos': [0.02, 0.62, -0.085]}))
+    for i in range(3):
+        g.add(K.m(tc(K.box(0.035, 0.006, 0.012, 0.002), '#1E1530'), mt.plastic, {'pos': [-0.03 + i * 0.05, 0.646, -0.1]}))
+    # instruction card, dial, coin return
+    g.add(K.m(dcell(cbox(0.15, 0.13, 0.006, 0.002), 1, 0), dm, {'pos': [0.02, 0.52, -0.153]}))
+    g.add(K.m(tc(puck(0.06, 0.02, 0.006, 18), '#2A2230'), mt.plastic, {'pos': [0.02, 0.36, -0.15], 'rot': [-math.pi / 2, 0, 0]}))
+    g.add(K.m(cell(THREE.CircleGeometry(0.052, 22), 0, 0), atl, {'pos': [0.02, 0.36, -0.1705], 'rot': [0, math.pi, 0]}))
+    g.add(K.m(K.box(0.006, 0.02, 0.006, 0.002), mt.chrome, {'pos': [0.06, 0.32, -0.174], 'rot': [0, 0, 0.6]}))
+    g.add(K.m(K.box(0.08, 0.05, 0.04, 0.012), mt.chrome, {'pos': [0.02, 0.14, -0.15]}))
+    g.add(K.m(tc(K.box(0.06, 0.03, 0.02, 0.006), '#1E1530'), mt.plastic, {'pos': [0.02, 0.14, -0.168]}))
+    # hook + black handset hanging on the left + armored cord
+    g.add(K.m(K.box(0.04, 0.03, 0.05, 0.01), mt.chrome, {'pos': [-0.1, 0.5, -0.1]}))
+    hs = THREE.Group()
+    hs.position.set(-0.13, 0.36, -0.11)
+    hs.add(K.m(tc(K.tube([[0, 0.14, 0], [-0.012, 0.07, 0], [-0.012, -0.07, 0], [0, -0.14, 0]], 0.017, {'seg': 10, 'radial': 7}), '#2A2230'), mt.plastic))
+    cup = K.lathe([[0, 0], [0.028, 0], [0.034, 0.018], [0.03, 0.03], [0, 0.03]], {'seg': 12, 'round': 0.006, 'steps': 1})
+    hs.add(K.m(tc(cup, '#2A2230'), mt.plastic, {'pos': [0.006, 0.15, 0], 'rot': [0, 0, -math.pi / 2]}))
+    hs.add(K.m(tc(cup, '#2A2230'), mt.plastic, {'pos': [0.006, -0.15, 0], 'rot': [0, 0, -math.pi / 2]}))
+    g.add(hs)
+    g.add(K.m(K.tube([[-0.14, 0.21, -0.11], [-0.15, 0.12, -0.12], [-0.08, 0.08, -0.13], [-0.06, 0.12, -0.14]], 0.009, {'seg': 16, 'radial': 6}), mt.chrome))
+    wallFit(g)
+    g.userData.colliders = []
+    g.userData.interact = {'point': [0.0, 0.5, -0.35], 'radius': 1.1}
+    return K.finish(game, g, {'ao': {'floor': False, 'height': 0}})
+
+
+registerProp('payphone_rotary', _payphone_rotary, {'category': CAT, 'tags': ['wall', 'phone', 'green_room', 'lobby'], 'size': [0.3, 1.15, 0.2], 'desc': 'stainless rotary payphone with hanging handset, armored cord and a PHONE sign above (wall prop; bottom at ~0.95 m)'})
+
+
+# ---------------------------------------------------------------------------------------------- wall clock
+# hands at 11:59:58, rotation.z clockwise as seen from the front (-z). parts: { hour, minute, second }
+def clockHands(game, g, cx, cy, cz, R, color='#2A2230'):
+    mt = M(game)
+
+    def mk(ln, w, col, ang, zoff, name):
+        hand = THREE.Group()
+        hand.name = name
+        hand.position.set(cx, cy, cz - zoff)
+        hand.rotation.z = ang
+        hand.userData.noMerge = True
+        hand.add(K.m(tc(K.box(w, ln, 0.005, min(w / 2 - 0.0005, 0.004)), col), mt.plastic, {'pos': [0, ln / 2 - ln * 0.15, 0]}))
+        g.add(hand)
+        return hand
+
+    def T(h, m, s):
+        return [((h % 12) + m / 60) / 12 * TAU, (m + s / 60) / 60 * TAU, s / 60 * TAU]
+    ah, am, as_ = T(11, 59, 58)
+    hour = mk(R * 0.55, R * 0.08, color, ah, 0.004, 'hour')
+    minute = mk(R * 0.8, R * 0.055, color, am, 0.01, 'minute')
+    second = mk(R * 0.85, R * 0.02, '#E23B3B', as_, 0.016, 'second')
+    g.add(K.m(tc(K.cyl(R * 0.05, R * 0.05, 0.02, {'seg': 10}), '#E23B3B'), mt.plastic, {'pos': [cx, cy, cz - 0.02], 'rot': [math.pi / 2, 0, 0]}))
+    return {'hour': hour, 'minute': minute, 'second': second}
+
+
+def _clock_wall(game, opts=None):
+    opts = opts or {}
+    g = K.prop('clock_wall')
+    mt, dm = M(game), decorMat(game)
+    R = _nn(opts.get('size'), 0.36) / 2
+    cy = R + 0.02
+    g.add(K.m(tc(puck(R, 0.05, 0.02, 32), _nn(opts.get('bezel'), '#F4F1E8')), mt.lacquer, {'pos': [0, cy, -0.005], 'rot': [-math.pi / 2, 0, 0]}))
+    g.add(K.m(THREE.TorusGeometry(R - 0.008, 0.016, 8, 36), mt.chrome, {'pos': [0, cy, -0.058]}))
+    g.add(K.m(dcell(THREE.CircleGeometry(R - 0.018, 32), 3, 0), dm, {'pos': [0, cy, -0.0565], 'rot': [0, math.pi, 0]}))
+    parts = clockHands(game, g, 0, cy, -0.058, R - 0.02)
+    if opts.get('label'):
+        labels = ['NEW YORK', 'LONDON', 'TOKYO', 'WZTV']
+        idx = labels.index(opts['label']) if opts['label'] in labels else -1
+        row = max(0, idx)
+        g.add(K.m(K.uvRect(cbox(R * 1.5, R * 0.32, 0.012, 0.003).clone(), 3 / 4, 1 - 3 / 4 + (3 - row) / 16, 1, 1 - 3 / 4 + (4 - row) / 16), dm, {'pos': [0, cy - R - 0.08, -0.012]}))
+    wallFit(g)
+    g.userData.parts = parts
+    g.userData.colliders = []
+    return K.finish(game, g, {'ao': {'floor': False, 'height': 0}})
+
+
+registerProp('clock_wall', _clock_wall, {'category': CAT, 'tags': ['wall', 'clock', 'newsroom', 'master_control', 'lobby'], 'size': [0.38, 0.4, 0.07], 'desc': 'chrome-ringed office wall clock stopped at 11:59 (parts.hour/minute/second; opts.size, opts.bezel, opts.label=NEW YORK|LONDON|TOKYO|WZTV; wall prop, bottom ~2.2 m)'})
+
+
+# ------------------------------------------------------------------------------------------ sunburst clock
+def _clock_sunburst(game, opts=None):
+    g = K.prop('clock_sunburst')
+    mt = M(game)
+    R, cy = 0.16, 0.4
+    g.add(K.m(K.uvScale(puck(R, 0.04, 0.015, 28).clone(), 1, 1), mt.teak, {'pos': [0, cy, -0.01], 'rot': [-math.pi / 2, 0, 0]}))
+    g.add(K.m(THREE.TorusGeometry(R, 0.012, 5, 28), mt.brass, {'pos': [0, cy, -0.05]}))
+    for i in range(12):
+        a = (i / 12) * TAU
+        g.add(K.m(cbox(0.014, 0.03 if i % 3 else 0.05, 0.01, 0.003), mt.brass, {'pos': [-math.sin(a) * (R - 0.035), cy + math.cos(a) * (R - 0.035), -0.052], 'rot': [0, 0, a]}))
+    for i in range(24):
+        a = (i / 24) * TAU + 0.13
+        L = 0.2 if i % 2 else 0.3
+        p0 = [-math.sin(a) * (R + 0.01), cy + math.cos(a) * (R + 0.01), -0.03]
+        p1 = [-math.sin(a) * (R + L), cy + math.cos(a) * (R + L), -0.03]
+        g.add(span(THREE.CylinderGeometry(0.0055, 0.009, L - 0.01, 5, 1, True).translate(0, (L - 0.01) / 2, 0), mt.brass, p0, p1))
+        g.add(K.m(sph(0.014 if i % 2 else 0.02, 6, 4), mt.brass, {'pos': p1}))
+    parts = clockHands(game, g, 0, cy, -0.054, R - 0.02, '#C8963C')
+    wallFit(g)
+    g.userData.parts = parts
+    g.userData.colliders = []
+    return K.finish(game, g, {'ao': {'floor': False, 'height': 0}})
+
+
+registerProp('clock_sunburst', _clock_sunburst, {'category': CAT, 'tags': ['wall', 'clock', 'lobby'], 'size': [0.98, 0.98, 0.07], 'desc': 'brass & teak sunburst clock stopped at 11:59 (parts.hour/minute/second; wall prop, bottom ~1.9 m)'})
+
+
+# ------------------------------------------------------------------------------------------------ cork board
+def _cork_board(game, opts=None):
+    opts = opts or {}
+    g = K.prop('cork_board')
+    mt, dm = M(game), decorMat(game)
+    W, H = _nn(opts.get('w'), 1.2), _nn(opts.get('h'), 0.8)
+
+    def draw(ctx, w, h, rand):
+        ctx.fillStyle = '#B8834A'
+        ctx.fillRect(0, 0, w, h)
+        for i in range(4000):
+            ctx.fillStyle = ['#8A5A2A', '#D4A060', '#A06A34', '#E0B070'][int(math.floor(rand() * 4))]
+            ctx.globalAlpha = 0.5 + rand() * 0.5
+            ctx.fillRect(rand() * w, rand() * h, 1 + rand() * 2.5, 1 + rand() * 2)
+        ctx.globalAlpha = 1
+    cork = K.mat(game, 'felt', '#ffffff', {'map': K.tex.canvas('furn_cork', 256, 256, draw), 'rim': 0.1})
+    g.add(K.m(K.uvScale(K.box(W - 0.06, H - 0.06, 0.02, 0.004).clone(), 1, 1), cork, {'pos': [0, H / 2, -0.012]}))
+    for w, h, x, y in [[W, 0.05, 0, H - 0.025], [W, 0.05, 0, 0.025], [0.05, H - 0.06, -W / 2 + 0.025, H / 2], [0.05, H - 0.06, W / 2 - 0.025, H / 2]]:
+        g.add(K.m(K.box(w, h, 0.04, 0.012, {'uv': 1.5, 'swap': w < h}), mt.walnut, {'pos': [x, y, -0.02]}))
+    rnd = mulberry32(_nn(opts.get('seed'), 8))
+    notes = [[0, 1, 0.2, 0.2], [1, 1, 0.2, 0.24], [2, 1, 0.26, 0.26], [3, 1, 0.14, 0.14], [0, 2, 0.24, 0.24], [1, 2, 0.22, 0.22], [3, 1, 0.12, 0.12], [2, 2, 0.16, 0.16]]
+    slots = [[-0.4, 0.55], [-0.12, 0.52], [0.22, 0.5], [0.44, 0.6], [-0.36, 0.22], [0.04, 0.2], [0.46, 0.28], [0.26, 0.2]]
+    pins = ['#E23B3B', '#F4E03A', '#2F5BD3', '#52D24A', '#F4F1E8']
+    for i, (cx, cy2, w, h) in enumerate(notes):
+        sx, sy = slots[i]
+        x, y = sx * W / 1.2, sy * H / 0.8
+        rz = (rnd() - 0.5) * 0.25
+        g.add(K.m(dcell(cbox(w, h, 0.003, 0.001), cx, cy2), dm, {'pos': [x, y, -0.024 - i * 0.0006], 'rot': [0, 0, rz]}))
+        px, py = x - math.sin(rz) * h * 0.4, y + math.cos(rz) * h * 0.4
+        g.add(K.m(tc(sph(0.012, 8, 6), pins[i % len(pins)]), mt.plastic, {'pos': [px, py, -0.036]}))
+        g.add(K.m(K.cyl(0.002, 0.002, 0.012, {'seg': 4, 'bevel': 0.0005}), mt.chrome, {'pos': [px, py, -0.036], 'rot': [-math.pi / 2, 0, 0]}))
+    wallFit(g)
+    g.userData.colliders = []
+    return K.finish(game, g, {'ao': {'floor': False, 'height': 0}})
+
+
+registerProp('cork_board', _cork_board, {'category': CAT, 'tags': ['wall', 'decor', 'newsroom', 'green_room', 'master_control'], 'size': [1.2, 0.8, 0.05], 'desc': 'walnut-framed cork board with memos, a polaroid, the on-air schedule, clippings, push pins (opts.w/h, opts.seed; wall prop, bottom ~1.0 m)'})
+
+
+# --------------------------------------------------------------------------------------- framed picture
+def _frame_picture(game, opts=None):
+    opts = opts or {}
+    g = K.prop('frame_picture')
+    mt = M(game)
+    id = _nn(opts.get('card'), 'hero_portrait_duke')
+    info = cardInfo(id) or {'w': 3, 'h': 4}
+    style = _nn(opts.get('style'), 'gold')
+    ph = _nn(opts.get('h'), 0.6)
+    pw = ph * info['w'] / info['h']
+    fw = 0.08 if style == 'gold' else 0.025 if style == 'chrome' else 0.05
+    mat = 0.05 if style == 'walnut' else 0
+    ow, oh = pw + 2 * (fw + mat), ph + 2 * (fw + mat)
+    fr = K.roundRect(ow, oh, 0.02 if style == 'chrome' else 0.012)
+    fr.holes.append(THREE.Path(K.roundRect(pw + 2 * mat, ph + 2 * mat, 0.012).getPoints(4)))
+    fmat = mt.brass if style == 'gold' else mt.chrome if style == 'chrome' else mt.walnut
+    # (three.js mis-triangulates holes with big negative-offset bevels: keep the slab bevel small, add beads)
+    depth = 0.045 if style == 'gold' else 0.035
+    g.add(K.m(K.extrude(fr, depth, {'bevel': 0.005, 'bevelSeg': 2, 'curveSeg': 2, 'uv': 1.5}), fmat, {'pos': [0, oh / 2, -depth / 2]}))
+
+    def bead(w, h, r, z):
+        return g.add(K.m(K.tube([[x, zz, 0] for x, _y, zz in K.roundRectPath(w, h, max(0.006, r * 1.2), 0)], r, {'seg': 44, 'radial': 6, 'closed': True}), fmat, {'pos': [0, oh / 2, z]}))
+    if style == 'gold':
+        bead(pw + 0.02, ph + 0.02, 0.012, -depth)
+        bead(ow - 0.03, oh - 0.03, 0.014, -depth - 0.004)
+        bead(pw + fw, ph + fw, 0.008, -depth - 0.008)
+    elif style == 'walnut':
+        bead(pw + 2 * mat + 0.012, ph + 2 * mat + 0.012, 0.007, -depth)
+    if mat:
+        g.add(K.m(tc(K.box(pw + 2 * mat, ph + 2 * mat, 0.01, 0.002), '#F6E7C8'), mt.paint, {'pos': [0, oh / 2, -0.012]}))
+    pic = K.m(THREE.PlaneGeometry(pw, ph), K.mat(game, 'paint', '#ffffff', {'map': getCard(id), 'rough': 0.5}), {'pos': [0, oh / 2, -0.019], 'rot': [0, math.pi, 0]})
+    g.add(pic)
+    g.add(K.m(tc(K.box(ow - 0.04, oh - 0.04, 0.01, 0.003), '#3A2A20'), mt.paint, {'pos': [0, oh / 2, -0.006]}))
+    g.userData.colliders = []
+    return K.finish(game, g, {'ao': {'floor': False, 'height': 0}})
+
+
+registerProp('frame_picture', _frame_picture, {'category': CAT, 'tags': ['wall', 'decor', 'lobby', 'portrait'], 'size': [0.64, 0.76, 0.05], 'desc': 'framed picture of any cards.js card (opts.card = hero_portrait_<id> | portrait_baron | portrait_stormy_stu | poster_*; opts.style gold|walnut|chrome; opts.h; wall prop, bottom ~1.3 m)'})
+
+
+# ------------------------------------------------------------------------------------------ trophy shelf
+def cupTrophy(game, h=0.3):
+    mt = M(game)
+    g = THREE.Group()
+    g.add(K.m(K.box(0.1, 0.05, 0.1, 0.01, {'uv': 2}), mt.walnut, {'pos': [0, 0.025, 0]}))
+    g.add(K.m(K.lathe([[0, 0], [0.035, 0], [0.03, 0.012], [0.012, 0.03], [0.01, h * 0.35], [0.02, h * 0.42], [0.06, h * 0.62], [0.066, h * 0.8], [0.062, h * 0.8], [0, h * 0.62]], {'seg': 14, 'round': 0.006, 'steps': 1}), mt.brass, {'pos': [0, 0.05, 0]}))
+    for s in (-1, 1):
+        g.add(K.m(THREE.TorusGeometry(0.03, 0.006, 5, 12, math.pi * 1.1), mt.brass, {'pos': [s * 0.068, 0.05 + h * 0.62, 0], 'rot': [0, 0, -math.pi * 0.55 if s > 0 else math.pi * 0.45]}))
+    return g
+
+
+def _trophy_shelf(game, opts=None):
+    g = K.prop('trophy_shelf')
+    mt, dm = M(game), decorMat(game)
+    L = 1.1
+    g.add(K.m(K.box(L, 0.04, 0.24, 0.012, {'uv': 1.5, 'swap': True}), mt.walnut, {'pos': [0, 0.2, -0.12]}))
+    for s in (-1, 1):
+        g.add(K.m(K.extrude([[0, 0], [0.16, 0], [0.16, 0.02], [0.02, 0.18], [0, 0.18]], 0.02, {'bevel': 0.004, 'round': 0.02}), mt.brass, {'pos': [s * (L / 2 - 0.12), 0.01, -0.01], 'rot': [0, math.pi / 2, 0]}))
+    sy = 0.22
+    put(g, cupTrophy(game, 0.34), [-0.38, sy, -0.12], 0)
+    put(g, cupTrophy(game, 0.24), [0.4, sy, -0.12], 0.3)
+    # gold microphone trophy
+    mic = THREE.Group()
+    mic.add(K.m(K.box(0.09, 0.06, 0.09, 0.01, {'uv': 2}), mt.walnut, {'pos': [0, 0.03, 0]}))
+    mic.add(K.m(K.cyl(0.012, 0.016, 0.18, {'seg': 10}), mt.brass, {'pos': [0, 0.06, 0]}))
+    mic.add(K.m(K.lathe([[0, 0], [0.02, 0], [0.034, 0.03], [0.036, 0.08], [0.02, 0.11], [0, 0.115]], {'seg': 14, 'round': 0.01}), mt.brass, {'pos': [0, 0.23, 0]}))
+    put(g, mic, [0.14, sy, -0.1], 0)
+    # leaning plaque with an engraved plate
+    pl = THREE.Group()
+    pl.add(K.m(K.box(0.24, 0.3, 0.025, 0.01, {'uv': 2}), mt.walnut))
+    pl.add(K.m(dcell(cbox(0.19, 0.19, 0.006, 0.002), 2, 2), dm, {'pos': [0, 0.01, -0.015]}))
+    put(g, pl, [-0.1, sy + 0.15, -0.16], 0, [-0.16, 0, 0])
+    g.userData.colliders = []
+    wallFit(g)
+    return K.finish(game, g, {'ao': {'floor': False, 'height': 0.0}})
+
+
+registerProp('trophy_shelf', _trophy_shelf, {'category': CAT, 'tags': ['wall', 'decor', 'lobby', 'newsroom'], 'size': [1.1, 0.6, 0.25], 'desc': 'walnut wall shelf on brass brackets with gold cups, a gold-mic award and a BEST LOCAL NEWS plaque (wall prop; bottom ~1.4 m)'})
+
+
+# ------------------------------------------------------------------------------------------------ bookshelf
+def _bookshelf(game, opts=None):
+    opts = opts or {}
+    g = K.prop('bookshelf')
+    mt, dm = M(game), decorMat(game)
+    W, H, D, t = 1.0, 1.8, 0.34, 0.03
+    for s in (-1, 1):
+        g.add(K.m(K.box(t, H, D, 0.01, {'uv': 1.4, 'swap': True}), mt.walnut, {'pos': [s * (W / 2 - t / 2), H / 2, 0]}))
+    g.add(K.m(K.box(W + 0.02, 0.04, D + 0.02, 0.012, {'uv': 1.4}), mt.walnut, {'pos': [0, H - 0.02, 0]}))
+    g.add(K.m(tc(K.box(W - 0.02, 0.07, D - 0.03, 0.01), '#3A2418'), mt.lacquer, {'pos': [0, 0.035, 0.01]}))
+    g.add(K.m(tc(K.box(W - 0.04, H - 0.06, 0.012, 0.004), '#6A4428'), mt.walnut, {'pos': [0, H / 2, D / 2 - 0.01]}))
+    shelfY = [0.07, 0.48, 0.9, 1.32]
+    for y in shelfY:
+        g.add(K.m(K.box(W - 2 * t, 0.025, D - 0.02, 0.006, {'uv': 1.4}), mt.walnut, {'pos': [0, y + 0.0125, 0]}))
+    rnd = mulberry32(_nn(opts.get('seed'), 12))
+    inner = W - 2 * t - 0.02
+    for si, y in enumerate(shelfY):
+        x = -inner / 2
+        y0 = y + 0.025
+        while x < inner / 2 - 0.08:
+            kind = rnd()
+            if kind < 0.62:  # block of books
+                w = min(0.12 + rnd() * 0.2, inner / 2 - x)
+                h = 0.22 + rnd() * 0.12
+                d = 0.2 + rnd() * 0.06
+                g.add(K.m(dcell(cbox(w, h, d, 0.004), int(math.floor(rnd() * 4)), 3), dm, {'pos': [x + w / 2, y0 + h / 2, -D / 2 + d / 2 + 0.02]}))
+                x += w + 0.004
+            elif kind < 0.78:  # horizontal stack
+                n = 2 + int(math.floor(rnd() * 3))
+                for k in range(n):
+                    g.add(K.m(tc(cbox(0.2 - k * 0.012, 0.035, 0.16, 0.004), ['#B5472A', '#2E8C8C', '#E8A92E', '#6B3A6E'][k % 4]), mt.paint, {'pos': [x + 0.11, y0 + 0.018 + k * 0.036, -0.02], 'rot': [0, (rnd() - 0.5) * 0.3, 0]}))
+                x += 0.23
+            elif kind < 0.9 and si > 0:  # knick-knack: ceramic owl or tiny planter
+                if rnd() < 0.5:
+                    g.add(K.m(tc(K.lathe([[0, 0], [0.045, 0], [0.05, 0.05], [0.04, 0.09], [0.042, 0.12], [0, 0.13]], {'seg': 12, 'round': 0.01, 'steps': 1}), '#E3662B'), mt.lacquer, {'pos': [x + 0.06, y0, -0.02]}))
+                    for s in (-1, 1):
+                        g.add(K.m(tc(sph(0.014, 8, 6), '#F6E7C8'), mt.lacquer, {'pos': [x + 0.06 + s * 0.018, y0 + 0.1, -0.058]}))
+                else:
+                    g.add(K.m(tc(K.cyl(0.05, 0.04, 0.08, {'seg': 12}), '#8C9A3A'), mt.lacquer, {'pos': [x + 0.06, y0, -0.02]}))
+                    sp = K.leafCluster({'count': 7, 'len': [0.1, 0.14], 'width': 0.04, 'a0': [1.1, 1.4], 'a1': [0.2, 0.8], 'seed': si + 3})
+                    K.tint(sp, '#4E8A34')
+                    g.add(K.m(sp, leafMat(game, leafTex(), {'rough': 0.5}), {'pos': [x + 0.06, y0 + 0.075, -0.02]}))
+                x += 0.14
+            else:  # leaning book
+                h = 0.24 + rnd() * 0.06
+                g.add(K.m(tc(cbox(0.035, h, 0.18, 0.004), ['#2F5BD3', '#E23B3B', '#D9A520'][int(math.floor(rnd() * 3))]), mt.paint, {'pos': [x + 0.06, y0 + h / 2 - 0.01, -0.03], 'rot': [0, 0, -0.35]}))
+                x += 0.12
+    g.userData.colliders = [{'min': [-W / 2, 0, -D / 2], 'max': [W / 2, H, D / 2]}]
+    return K.finish(game, g)
+
+
+registerProp('bookshelf', _bookshelf, {'category': CAT, 'tags': ['shelf', 'books', 'lobby', 'newsroom', 'green_room'], 'size': [1.02, 1.8, 0.36], 'desc': 'walnut bookcase: rows of colorful books, stacks, a leaning book, ceramic owl and a small planter (opts.seed)'})
+
+
+# ------------------------------------------------------------------------------------------------ shag rugs
+def shagRingTex(key, rings):
+    def draw(ctx, w, h, rand):
+        cx, cy, R = w / 2, h / 2, w / 2
+        ctx.fillStyle = rings[len(rings) - 1]
+        ctx.fillRect(0, 0, w, h)
+        ctx.lineCap = 'round'
+        for i in range(26000):
+            a, rr = rand() * TAU, math.sqrt(rand()) * R
+            band = min(len(rings) - 1, int(math.floor((rr / R) * len(rings) + math.sin(a * 7) * 0.08)))
+            base = rings[band]
+            x, y, d, l = cx + math.cos(a) * rr, cy + math.sin(a) * rr, rand() * TAU, 3 + rand() * 5
+            ctx.strokeStyle = base
+            ctx.globalAlpha = 0.6 + rand() * 0.4
+            ctx.lineWidth = 1.5 + rand() * 1.5
+            ctx.beginPath()
+            ctx.moveTo(x, y)
+            ctx.lineTo(x + math.cos(d) * l, y + math.sin(d) * l)
+            ctx.stroke()
+            if rand() < 0.25:
+                ctx.fillStyle = '#ffffff'
+                ctx.globalAlpha = 0.18
+                ctx.fillRect(x + math.cos(d) * l, y + math.sin(d) * l, 1.5, 1.5)
+            if rand() < 0.2:
+                ctx.fillStyle = '#000000'
+                ctx.globalAlpha = 0.15
+                ctx.fillRect(x, y, 1.5, 1.5)
+        ctx.globalAlpha = 1
+    return K.tex.canvas('furn_rug_%s' % key, 512, 512, draw, {'repeat': False})
+
+
+def rugGeo(R, h=0.028):
+    geo = puck(R, h, 0.014, 56).clone()
+    p, uv = geo.attributes.position, geo.attributes.uv
+    for i in range(p.count):
+        uv.setXY(i, p.getX(i) / (2 * R * 1.02) + 0.5, 0.5 - p.getZ(i) / (2 * R * 1.02))
+    uv.needsUpdate = True
+    return geo
+
+
+def _rug_shag_round(game, opts=None):
+    opts = opts or {}
+    g = K.prop('rug_shag_round')
+    R = _nn(opts.get('r'), 1.1)
+    rings = _nn(opts.get('rings'), ['#E8A92E', '#E3662B', '#B5472A', '#E8A92E', '#5A3A22'])
+    m = K.mat(game, 'fabric', '#ffffff', {'map': shagRingTex(''.join(rings).replace('#', ''), rings), 'rim': 0.12, 'rimPower': 3})
+    g.add(K.m(rugGeo(R), m))
+    g.userData.colliders = []
+    return K.finish(game, g, {'ao': {'height': 0.0, 'strength': 0.4}})
+
+
+registerProp('rug_shag_round', _rug_shag_round, {'category': CAT, 'tags': ['rug', 'floor', 'lobby', 'green_room', 'telly_home'], 'size': [2.2, 0.03, 2.2], 'desc': 'round shag rug in concentric harvest/orange/rust rings (opts.r, opts.rings = [inner..outer colors]; walkable, no collider)'})
+
+
+def _rug_shag_oval(game, opts=None):
+    opts = opts or {}
+    g = K.prop('rug_shag_oval')
+    L, Wd = _nn(opts.get('len'), 2.6), _nn(opts.get('w'), 1.7)
+    rings = _nn(opts.get('rings'), ['#8C9A3A', '#D9A520', '#F6E7C8', '#8C9A3A', '#5A3A22'])
+    m = K.mat(game, 'fabric', '#ffffff', {'map': shagRingTex(''.join(rings).replace('#', ''), rings), 'rim': 0.12, 'rimPower': 3})
+    g.add(K.m(rugGeo(Wd / 2), m, {'scale': [L / Wd, 1, 1]}))
+    g.userData.colliders = []
+    return K.finish(game, g, {'ao': {'height': 0.0, 'strength': 0.4}})
+
+
+registerProp('rug_shag_oval', _rug_shag_oval, {'category': CAT, 'tags': ['rug', 'floor', 'green_room', 'newsroom', 'telly_home'], 'size': [2.6, 0.03, 1.7], 'desc': 'oval shag rug in avocado/mustard/cream rings (opts.len, opts.w, opts.rings; walkable, no collider)'})
+
+
+# ------------------------------------------------------------------------------------------ wall trims
+# Moulding profiles [depth, height] (depth into the room), extruded along x (opts.len). Wall props: back at z = 0.
+TRIMS = {
+    'trim_baseboard': {'h': 0.14, 'prof': [[0, 0], [0.024, 0], [0.024, 0.09], [0.018, 0.1], [0.018, 0.112], [0.012, 0.128], [0.006, 0.136], [0, 0.14]], 'desc': 'walnut baseboard with an ogee cap (bottom at the floor)'},
+    'trim_chair_rail': {'h': 0.07, 'prof': [[0, 0], [0.012, 0.004], [0.026, 0.018], [0.03, 0.035], [0.026, 0.052], [0.012, 0.066], [0, 0.07]], 'desc': 'rounded walnut chair rail (bottom at ~0.9 m)'},
+    'trim_crown': {'h': 0.13, 'prof': [[0, 0], [0.018, 0], [0.018, 0.016], [0.03, 0.03], [0.06, 0.07], [0.09, 0.1], [0.1, 0.112], [0.1, 0.13], [0, 0.13]], 'desc': 'walnut cove crown moulding (bottom at ceiling - 0.13 m)'},
+}
+
+
+def _trim_builder(id, T):
+    def build(game, opts=None):
+        opts = opts or {}
+        g = K.prop(id)
+        mt = M(game)
+        ln = _nn(opts.get('len'), 2.0)
+        geo = K.extrude(T['prof'], ln, {'bevel': 0.002, 'bevelSeg': 1, 'uv': 3})
+        geo.rotateY(math.pi / 2)
+        # wood grain along the length
+        p, uv = geo.attributes.position, geo.attributes.uv
+        for i in range(p.count):
+            uv.setXY(i, (p.getY(i) - p.getZ(i)) * 2.5, p.getX(i) * 0.9)
+        g.add(K.m(tc(geo, _nn(opts.get('color'), '#F0DCC8')), mt.walnut))
+        g.userData.colliders = []
+        return K.finish(game, g, {'ao': False})
+    return build
+
+
+for _id, _T in TRIMS.items():
+    registerProp(_id, _trim_builder(_id, _T), {'category': CAT, 'tags': ['wall', 'trim'], 'size': [2.0, _T['h'], 0.1], 'desc': '%s; opts.len (m), opts.color (tint)' % _T['desc']})
+
+
+# set-dressing vignettes (propview review; also a placement reference for the room dressers)
+# back wall at z = +d/2 (wall props: rotY 0), left wall at x = -w/2 (wall props: rotY = -PI/2)
+registerScene('furn_lobby', {
+    'floor': 'shag', 'floorColor': '#C8562A', 'wall': 'panel', 'room': [7.2, 5.2], 'wallH': 3.2,
+    'items': [
+        {'id': 'rug_shag_round', 'pos': [-1.3, 0.75]},
+        {'id': 'sofa_cloud', 'pos': [-1.3, 2.02]},
+        {'id': 'table_coffee', 'pos': [-1.3, 0.85], 'rotY': 0.04},
+        {'id': 'lamp_arc', 'pos': [-2.55, 1.55], 'rotY': -math.pi / 2},
+        {'id': 'chair_ball', 'pos': [0.75, 0.55], 'rotY': -0.75},
+        {'id': 'table_side_tulip', 'pos': [0.35, 2.15]},
+        {'id': 'lamp_lava', 'pos': [0.35, 0.54, 2.15]},
+        {'id': 'plant_rubber', 'pos': [2.9, 2.1]},
+        {'id': 'armchair_barrel', 'pos': [2.1, 1.05], 'rotY': -1.0},
+        {'id': 'ash_urn', 'pos': [1.5, 2.25]},
+        {'id': 'frame_picture', 'pos': [-1.95, 1.3, 2.6], 'opts': {'card': 'hero_portrait_duke', 'h': 0.55}},
+        {'id': 'frame_picture', 'pos': [-0.65, 1.3, 2.6], 'opts': {'card': 'portrait_baron', 'style': 'walnut', 'h': 0.55}},
+        {'id': 'clock_sunburst', 'pos': [1.6, 1.55, 2.6]},
+        {'id': 'macrame_owl', 'pos': [-3.6, 1.15, 0.2], 'rotY': -math.pi / 2},
+        {'id': 'plant_fern', 'pos': [-3.1, -0.9]},
+        {'id': 'trim_chair_rail', 'pos': [0, 0.95, 2.6], 'opts': {'len': 7.2}},
+    ],
+    'cam': {'pos': [0.4, 1.65, -3.3], 'target': [-0.5, 0.95, 1.3], 'fov': 56}, 'hemi': 0.9,
+})
+registerScene('furn_newsroom', {
+    'floor': 'tile', 'tileA': '#E8E1D0', 'tileB': '#8C9A3A', 'wall': '#C9B48A', 'room': [8, 6], 'wallH': 3.4,
+    'items': [
+        {'id': 'desk_reporter', 'pos': [-1.9, -0.6]},
+        {'id': 'chair_office', 'pos': [-1.8, -1.35], 'rotY': math.pi + 0.3},
+        {'id': 'desk_reporter', 'pos': [0.2, -0.6], 'opts': {'typewriter': '#8C9A3A', 'phone': '#E23B3B'}},
+        {'id': 'chair_office', 'pos': [0.3, -1.3], 'rotY': math.pi - 0.2, 'opts': {'color': '#8C9A3A'}},
+        {'id': 'desk_anchor', 'pos': [1.2, 1.9]},
+        {'id': 'filing_cabinet', 'pos': [-3.7, 2.55]},
+        {'id': 'filing_cabinet', 'pos': [-3.2, 2.55], 'opts': {'color': '#8C9A7A', 'ajar': False}},
+        {'id': 'water_cooler', 'pos': [-2.5, 2.7]},
+        {'id': 'cork_board', 'pos': [-1.2, 1.0, 3.0]},
+        {'id': 'clock_wall', 'pos': [0.4, 2.2, 3.0], 'opts': {'label': 'NEW YORK'}},
+        {'id': 'clock_wall', 'pos': [1.2, 2.2, 3.0], 'opts': {'label': 'WZTV'}},
+        {'id': 'clock_wall', 'pos': [2.0, 2.2, 3.0], 'opts': {'label': 'TOKYO'}},
+        {'id': 'bookshelf', 'pos': [3.3, 2.75]},
+        {'id': 'trash_can', 'pos': [-1.0, -1.1]},
+        {'id': 'coat_rack', 'pos': [-3.5, 0.2]},
+        {'id': 'plant_snake', 'pos': [2.55, 2.75]},
+        {'id': 'trophy_shelf', 'pos': [-4.0, 1.5, -1.4], 'rotY': -math.pi / 2},
+    ],
+    'cam': {'pos': [0.3, 2.0, -3.6], 'target': [-0.4, 0.8, 1.2], 'fov': 60}, 'hemi': 0.95,
+})
+registerScene('furn_green', {
+    'floor': 'shag', 'floorColor': '#6E7A2A', 'fleck': '#D9A520', 'wall': '#8C9A3A', 'room': [7, 5], 'wallH': 3.0,
+    'items': [
+        {'id': 'rug_shag_oval', 'pos': [0.2, 0.9]},
+        {'id': 'couch_avocado', 'pos': [0.2, 1.95]},
+        {'id': 'table_side_drum', 'pos': [1.6, 2.1]},
+        {'id': 'lamp_lava', 'pos': [1.6, 0.52, 2.1]},
+        {'id': 'lamp_pole', 'pos': [-1.25, 2.2]},
+        {'id': 'bean_bag', 'pos': [-0.6, 0.3], 'rotY': 0.6},
+        {'id': 'bean_bag', 'pos': [1.0, 0.1], 'rotY': -0.7, 'opts': {'color': '#E8A92E', 'seed': 7}},
+        {'id': 'vending_soda', 'pos': [-2.7, 2.05]},
+        {'id': 'vending_cigarette', 'pos': [-1.95, 2.25]},
+        {'id': 'payphone_rotary', 'pos': [-3.5, 0.95, 0.4], 'rotY': -math.pi / 2},
+        {'id': 'macrame_hanger', 'pos': [2.5, 2.9, 1.2], 'opts': {'drop': 0.9}},
+        {'id': 'plant_snake', 'pos': [2.9, 2.2]},
+        {'id': 'coat_rack', 'pos': [3.0, 0.2]},
+        {'id': 'trash_can', 'pos': [-1.3, 1.1]},
+    ],
+    'cam': {'pos': [0.2, 1.6, -3.1], 'target': [-0.3, 1.0, 1.4], 'fov': 58}, 'hemi': 0.9,
+})

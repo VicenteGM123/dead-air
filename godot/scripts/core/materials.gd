@@ -227,6 +227,7 @@ func _applyVariant(mat) -> void:
 	var transparent: bool = vk.transparent or vk.additive
 	var twoPass: bool = transparent and vk.side == DoubleSide and mat.kind == "toon"
 	mat.shader = _shader(mat.kind, vk, twoPass)
+	var caster: Material = _shadowCaster() if transparent and mat.kind == "toon" else null
 	if twoPass:
 		if mat.twin == null:
 			mat.twin = ShaderMaterial.new()
@@ -236,10 +237,18 @@ func _applyVariant(mat) -> void:
 			var v = mat.get_shader_parameter(p.name)
 			if v != null:
 				mat.twin.set_shader_parameter(p.name, v)
+		mat.twin.next_pass = caster
 		mat.next_pass = mat.twin
-	elif mat.twin != null:
+	else:
 		mat.twin = null
-		mat.next_pass = null
+		mat.next_pass = caster
+
+var _caster: ShaderMaterial = null
+func _shadowCaster() -> ShaderMaterial:
+	if _caster == null:
+		_caster = ShaderMaterial.new()
+		_caster.shader = load("res://shaders/shadow_caster.gdshader")
+	return _caster
 
 func _newMat(kind: String) -> DAMaterial:
 	var m := DAMaterial.new()

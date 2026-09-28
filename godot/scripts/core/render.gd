@@ -145,7 +145,8 @@ func _init(g) -> void:
 	grade.shader = load("res://shaders/post.gdshader")
 	grade.set_shader_parameter("tDiffuse", view.get_texture())
 	grade.set_shader_parameter("tBloom", _bloom.comp.vp.get_texture())
-	grade.set_shader_parameter("uLift", Color(Config.PAL.shadow))
+	var lift := Color(Config.PAL.shadow).srgb_to_linear()
+	grade.set_shader_parameter("uLift", Vector3(lift.r, lift.g, lift.b))
 	postRect.material = grade
 	postLayer.add_child(postRect)
 

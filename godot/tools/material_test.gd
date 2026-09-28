@@ -24,7 +24,6 @@ var props = null
 var screens = null
 var _out := ""
 var _wait := 0
-var _sweep = null
 
 # placeProp test doubles (collision / screen registration are other systems)
 class MockCol extends RefCounted:
@@ -186,17 +185,4 @@ func _process(_d: float) -> void:
 		if _out != "":
 			img.save_png(_out)
 			print("material_test: saved ", _out)
-		# sweep=<json>: [{"levels": [7 floats], "intensity": x, "out": "/abs.png"}, ...] (glow tuning)
-		if params.has("sweep") and _sweep == null:
-			_sweep = JSON.parse_string(FileAccess.get_file_as_string(params.sweep))
-		if _sweep is Array and not _sweep.is_empty():
-			var v: Dictionary = _sweep.pop_front()
-			for i in 7:
-				render.env.set_glow_level(i, float(v.levels[i]))
-			render.env.glow_intensity = float(v.intensity)
-			if v.has("scale"):
-				render.env.glow_hdr_scale = float(v.scale)
-			_out = v.out
-			_wait = 8
-			return
 		get_tree().quit()

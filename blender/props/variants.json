@@ -373,5 +373,18 @@
 {"id": "boom_mic", "opts": {"upgraded": true, "pose": "hand", "signal": "cold_open"}, "key": "boom_mic__371"},
 {"id": "chroma_key", "opts": {"upgraded": true, "pose": "hand", "signal": "hot_mic"}, "key": "chroma_key__372"},
 {"id": "chroma_key", "opts": {"upgraded": true, "pose": "hand", "signal": "laugh_track"}, "key": "chroma_key__373"},
-{"id": "chroma_key", "opts": {"upgraded": true, "pose": "hand", "signal": "cold_open"}, "key": "chroma_key__374"}
+{"id": "chroma_key", "opts": {"upgraded": true, "pose": "hand", "signal": "cold_open"}, "key": "chroma_key__374"},
+{"id": "mc_laff_o_matic", "opts": {}, "key": "mc_laff_o_matic__000"},
+{"id": "mc_switcher", "opts": {}, "key": "mc_switcher__000"},
+{"id": "mc_scope_cart", "opts": {}, "key": "mc_scope_cart__000"},
+{"id": "mc_tape_shelf", "opts": {}, "key": "mc_tape_shelf__000"},
+{"id": "mc_cable_tray", "opts": {"L": 11.2, "rod": 0.36}, "key": "mc_cable_tray__000"},
+{"id": "mc_cable_tray", "opts": {"L": 7.2, "rod": 0.36}, "key": "mc_cable_tray__001"},
+{"id": "mc_picture_light", "opts": {}, "key": "mc_picture_light__000"},
+{"id": "mc_extinguisher", "opts": {}, "key": "mc_extinguisher__000"},
+{"id": "mc_floor_fan", "opts": {}, "key": "mc_floor_fan__000"},
+{"id": "mc_tape_cart", "opts": {}, "key": "mc_tape_cart__000"},
+{"id": "mc_tape_stack", "opts": {"n": 4, "seed": 2}, "key": "mc_tape_stack__000"},
+{"id": "mc_tape_stack", "opts": {"n": 2, "seed": 5}, "key": "mc_tape_stack__001"},
+{"id": "mc_meter_panel", "opts": {}, "key": "mc_meter_panel__000"}
 ]

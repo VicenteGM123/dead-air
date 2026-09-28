@@ -7,20 +7,24 @@
 # first item blits the previous content unless the op clears the whole canvas. Auxiliary RTs: clip masks, layers
 # (shadows, blur filter, non-local composite ops) and blur passes.
 #
-# Scheduling: at RenderingServer.frame_pre_draw every RT recorded this frame is sealed (a final "fixup" item turns
-# the premultiplied framebuffer into straight alpha), topologically sorted by its sampling dependencies and chained
+# Scheduling: at RenderingServer.frame_pre_draw every RT recorded this frame is sealed (a transparent canvas also gets
+# a small non-MSAA "display" RT that un-premultiplies its latest version), topologically sorted by its sampling
+# dependencies and chained
 # through viewport parents (children render before parents; the chain ends at the main viewport), so dependent
 # canvases render in the right order in the same frame. At frame_post_draw auxiliary / superseded RTs go back to
 # the pool and settled canvases are BAKED: their pixels are read back once into a mipmapped ImageTexture and the
 # RT is released, so a canvas that does not change costs nothing per frame (and little VRAM).
 # canvas.texture is a stable Texture2D over an RS texture proxy retargeted to the latest version / baked texture.
 #
-# Blending (framebuffer holds premultiplied colour during recording):
-#   direct  = blend_premul_alpha (source-over), blend_add (lighter, exact alpha via sqrt), blend_mul
-#             (destination-out); geometry must not overlap unless the paint is opaque (overdraw-safe);
-#   iso     = blend_disabled + backbuffer copy: result = mix(dst, composite(op, src, dst), clipCoverage) written
-#             per covered sample; overlap-safe, used for every other composite op, overlapping transparent geometry
-#             (strokes, multi-subpath fills) and non-local ops (source-in, destination-in, copy …) via a layer.
+# Blending (version RTs hold PREMULTIPLIED colour):
+#   direct = blend_premul_alpha (source-over), blend_add (lighter, exact alpha via sqrt), blend_mul
+#            (destination-out); geometry must not overlap unless the paint is opaque (overdraw-safe);
+#   layer  = overlapping transparent geometry (stroke pieces, overlapping subpaths) is first drawn into a small aux
+#            RT with blend_disabled (union: every covered sample gets the paint once), then composited as one quad;
+#   comp   = every other composite op (source-atop, multiply, overlay, destination-in …): the op is drawn into a
+#            layer, the canvas forks a new version whose first item blits the previous one, and a quad samples
+#            src (layer) and dst (previous version, as a normal texture: the 2D screen texture has no alpha in
+#            Godot 4.7) and writes mix(dst, composite(op, src, dst), clipCoverage) with blend_disabled.
 class_name DACanvasGPU
 extends RefCounted
 
@@ -76,7 +80,9 @@ class RT:
 	var frameRendered := -1
 	var hasContent := false
 	var keep: Array = []      # objects (textures, source canvases) that must live until this RT rendered
-	var mats := {}            # mask RT: variant -> material RID
+	var opMats: Array = []    # per-op materials (reused when the RT is recorded again)
+	var opShader: Array = []  # variant of each opMats entry
+	var nOpMats := 0
 	var maskMat: RID          # mask drawing material (with parent mask)
 	# open batch
 	var bKey := ""
@@ -159,6 +165,7 @@ static func resetRT(rt: RT) -> void:
 		RenderingServer.canvas_item_set_default_texture_filter(it, RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_DEFAULT)
 		RenderingServer.canvas_item_set_default_texture_repeat(it, RenderingServer.CANVAS_ITEM_TEXTURE_REPEAT_DEFAULT)
 	rt.nused = 0
+	rt.nOpMats = 0
 	rt.deps = []
 	rt.keep = []
 	rt.hasContent = false
@@ -191,9 +198,10 @@ static func _freeRT(rt: RT) -> void:
 	for it in rt.items:
 		RenderingServer.free_rid(it)
 	rt.items = []
-	for m in rt.mats.values():
+	for m in rt.opMats:
 		RenderingServer.free_rid(m)
-	rt.mats = {}
+	rt.opMats = []
+	rt.opShader = []
 	if rt.maskMat.is_valid():
 		RenderingServer.free_rid(rt.maskMat)
 	RenderingServer.free_rid(rt.cv)
@@ -255,14 +263,13 @@ static func watch(canvas) -> void:
 static func _preDraw() -> void:
 	if _recording.is_empty() and _dirtyCanvases.is_empty():
 		return
+	for c in _dirtyCanvases:
+		if c != null:
+			c._prepareDisplay()
 	var rec := _recording
 	_recording = []
 	for rt in rec:
 		flush(rt)
-		if rt.owner != null:
-			var c = rt.owner.get_ref()
-			if c != null and c._needsFixup(rt):
-				_fixup(rt)
 	var order: Array = []
 	var seen := {}
 	for rt in rec:
@@ -353,15 +360,15 @@ render_mode %s;
 uniform sampler2D clip_mask : filter_linear, repeat_disable;
 uniform vec4 clip_box = vec4(0.0);
 %s
-instance uniform vec4 pk = vec4(0.0);
-instance uniform vec4 pa = vec4(0.0);
-instance uniform vec4 pb = vec4(0.0);
-instance uniform vec4 rc = vec4(-1e9, -1e9, 1e9, 1e9);
-instance uniform vec4 m0 = vec4(1.0, 0.0, 0.0, 0.0);
-instance uniform vec4 m1 = vec4(0.0, 1.0, 0.0, 0.0);
-instance uniform vec4 m2 = vec4(0.0, 0.0, 1.0, 0.0);
-instance uniform vec4 m3 = vec4(0.0, 0.0, 0.0, 1.0);
-instance uniform vec4 mo = vec4(0.0);
+uniform vec4 pk = vec4(0.0);
+uniform vec4 pa = vec4(0.0);
+uniform vec4 pb = vec4(0.0);
+uniform vec4 rc = vec4(-1e9, -1e9, 1e9, 1e9);
+uniform vec4 m0 = vec4(1.0, 0.0, 0.0, 0.0);
+uniform vec4 m1 = vec4(0.0, 1.0, 0.0, 0.0);
+uniform vec4 m2 = vec4(0.0, 0.0, 1.0, 0.0);
+uniform vec4 m3 = vec4(0.0, 0.0, 0.0, 1.0);
+uniform vec4 mo = vec4(0.0);
 varying vec4 vcol;
 varying vec2 vpos;
 void vertex() {
@@ -525,13 +532,15 @@ static func _shader(name: String) -> RID:
 			code = PAINT_SHADER % ["blend_add", "", "", "\tvec4 o = s * cov;\n\tfloat q = sqrt(max(o.a, 0.0));\n\tCOLOR = q > 0.0 ? vec4(o.rgb / q, q) : vec4(0.0);"]
 		"mul":
 			code = PAINT_SHADER % ["blend_mul", "", "", "\tCOLOR = vec4(1.0 - s.a * cov);"]
-		"iso":
-			code = PAINT_SHADER % ["blend_disabled", "uniform sampler2D scr : hint_screen_texture, filter_nearest, repeat_disable;", ISO_FUNCS,
-				"\tvec4 d = texture(scr, SCREEN_UV);\n\tCOLOR = mix(d, composite(int(pk.z + 0.5), s, d), cov);"]
+		"layer":
+			code = PAINT_SHADER % ["blend_disabled", "", "", "\tCOLOR = s * cov;"]
+		"comp":
+			code = PAINT_SHADER % ["blend_disabled", "uniform sampler2D dst_tex : filter_nearest, repeat_disable;\nuniform vec4 dst_box = vec4(0.0, 0.0, 1.0, 1.0);", ISO_FUNCS,
+				"\tvec4 d = texture(dst_tex, (vpos - dst_box.xy) / dst_box.zw);\n\tCOLOR = mix(d, composite(int(pk.z + 0.5), s, d), cov);"]
 		"blur":
 			code = """shader_type canvas_item;
 render_mode blend_disabled;
-instance uniform vec4 bp = vec4(0.0);
+uniform vec4 bp = vec4(0.0);
 void fragment() {
 	vec4 acc = vec4(0.0);
 	float ws = 0.0;
@@ -545,16 +554,22 @@ void fragment() {
 	COLOR = acc / ws;
 }
 """
-		"fixup":
+		"unpremul":
 			code = """shader_type canvas_item;
 render_mode blend_disabled;
-uniform sampler2D scr : hint_screen_texture, filter_nearest, repeat_disable;
 void fragment() {
-	vec4 d = texture(scr, SCREEN_UV);
+	vec4 d = texture(TEXTURE, UV);
 	COLOR = d.a > 0.0 ? vec4(clamp(d.rgb / d.a, 0.0, 1.0), d.a) : vec4(0.0);
 }
 """
 		"copy":
+			code = """shader_type canvas_item;
+render_mode blend_disabled;
+void fragment() {
+	COLOR = texture(TEXTURE, UV);
+}
+"""
+		"copyStraight":
 			code = """shader_type canvas_item;
 render_mode blend_disabled;
 void fragment() {
@@ -592,17 +607,21 @@ static func _material(variant: String) -> RID:
 	_mats[variant] = r
 	return r
 
-# Material of a paint variant under a clip mask RT (or none).
-static func paintMaterial(variant: String, mask: RT) -> RID:
-	if mask == null:
-		return _material(variant)
-	var m = mask.mats.get(variant)
-	if m == null:
+# Per-op material of `variant` owned by rt (pooled with it). Canvas-item instance uniforms are NOT used: they
+# proved unreliable for many items per frame in Godot 4.7 (parameters of earlier items got lost).
+static func opMaterial(rt: RT, variant: String) -> RID:
+	var m: RID
+	if rt.nOpMats < rt.opMats.size():
+		m = rt.opMats[rt.nOpMats]
+		if rt.opShader[rt.nOpMats] != variant:
+			RenderingServer.material_set_shader(m, _shader(variant))
+			rt.opShader[rt.nOpMats] = variant
+	else:
 		m = RenderingServer.material_create()
 		RenderingServer.material_set_shader(m, _shader(variant))
-		mask.mats[variant] = m
-	RenderingServer.material_set_param(m, "clip_mask", mask.tex)
-	RenderingServer.material_set_param(m, "clip_box", Vector4(mask.origin.x, mask.origin.y, mask.w, mask.h))
+		rt.opMats.append(m)
+		rt.opShader.append(variant)
+	rt.nOpMats += 1
 	return m
 
 # ------------------------------------------------------------------------------------------------ items
@@ -615,6 +634,8 @@ static func _item(rt: RT) -> RID:
 		RenderingServer.canvas_item_set_parent(it, rt.cv)
 		rt.items.append(it)
 		stats.items += 1
+	# explicit order: Godot sorts sibling canvas items with an unstable sort (>= 16 siblings get reordered)
+	RenderingServer.canvas_item_set_draw_index(it, rt.nused)
 	rt.nused += 1
 	rt.hasContent = true
 	return it
@@ -664,37 +685,53 @@ static func addDefault(rt: RT, P: PackedVector2Array, I: PackedInt32Array, col: 
 			rt.bI.append(base + t)
 
 # One item with a paint material (instance params). Returns the item.
-static func addMaterial(rt: RT, P: PackedVector2Array, I: PackedInt32Array, col: Color, tex: RID, uv: PackedVector2Array, material: RID, params: Dictionary, filter: int, repeat: int, copyRect = null) -> RID:
+static func addMaterial(rt: RT, P: PackedVector2Array, I: PackedInt32Array, col: Color, tex: RID, uv: PackedVector2Array, variant: String, mask: RT, params: Dictionary, filter: int, repeat: int, dst: RT = null) -> RID:
 	flush(rt)
 	var it := _item(rt)
+	var material := opMaterial(rt, variant)
 	RenderingServer.canvas_item_set_material(it, material)
 	for k in params:
-		RenderingServer.canvas_item_set_instance_shader_parameter(it, k, params[k])
+		RenderingServer.material_set_param(material, k, params[k])
+	if mask != null:
+		RenderingServer.material_set_param(material, "clip_mask", mask.tex)
+		RenderingServer.material_set_param(material, "clip_box", Vector4(mask.origin.x, mask.origin.y, mask.w, mask.h))
+	else:
+		RenderingServer.material_set_param(material, "clip_box", Vector4(0, 0, 0, 0))
 	if filter != 0:
 		RenderingServer.canvas_item_set_default_texture_filter(it, filter)
 	if repeat != 0:
 		RenderingServer.canvas_item_set_default_texture_repeat(it, repeat)
-	if copyRect != null:
-		RenderingServer.canvas_item_set_copy_to_backbuffer(it, true, copyRect)
+	if dst != null:
+		RenderingServer.material_set_param(material, "dst_tex", dst.tex)
+		RenderingServer.material_set_param(material, "dst_box", Vector4(dst.origin.x, dst.origin.y, dst.w, dst.h))
 	if not I.is_empty():
 		var U := uv if tex.is_valid() or not uv.is_empty() else PackedVector2Array()
 		RenderingServer.canvas_item_add_triangle_array(it, I, P, _colors(col, P.size()), U, PackedInt32Array(), PackedFloat32Array(), tex)
 	return it
 
-# Straight-alpha texture blitted with blend disabled (putImageData, continuing a previous version).
-static func addCopy(rt: RT, rect: Rect2, tex: RID, src: Rect2, filter: int) -> void:
+# Texture blitted with blend disabled (putImageData, continuing a previous version). premul = the source holds
+# premultiplied colour (a version RT); otherwise it is straight (ImageTexture) and gets premultiplied.
+static func addCopy(rt: RT, rect: Rect2, tex: RID, src: Rect2, filter: int, premul: bool = false) -> void:
 	flush(rt)
 	var it := _item(rt)
-	RenderingServer.canvas_item_set_material(it, _material("copy"))
+	RenderingServer.canvas_item_set_material(it, _material("copy" if premul else "copyStraight"))
 	if filter != 0:
 		RenderingServer.canvas_item_set_default_texture_filter(it, filter)
 	RenderingServer.canvas_item_add_texture_rect_region(it, rect, tex, src)
 
-static func _fixup(rt: RT) -> void:
-	var it := _item(rt)
-	RenderingServer.canvas_item_set_material(it, _material("fixup"))
-	RenderingServer.canvas_item_set_copy_to_backbuffer(it, true, Rect2(rt.origin, Vector2(rt.w, rt.h)))
-	RenderingServer.canvas_item_add_rect(it, Rect2(rt.origin, Vector2(rt.w, rt.h)), Color.WHITE)
+# Display RT of a transparent canvas: its latest version un-premultiplied (straight alpha for materials / UI).
+static func display(src: RT, disp: RT) -> RT:
+	var d := disp
+	if d == null or d.state == 0 or d.w != src.w or d.h != src.h or d.readFrame == frame or d.state == 2:
+		d = newRT(src.w, src.h, 0, false)
+	else:
+		resetRT(d)
+	addDep(d, src)
+	var it := _item(d)
+	RenderingServer.canvas_item_set_material(it, _material("unpremul"))
+	RenderingServer.canvas_item_set_default_texture_filter(it, RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_NEAREST)
+	RenderingServer.canvas_item_add_texture_rect(it, Rect2(0, 0, src.w, src.h), src.tex)
+	return d
 
 # Separable Gaussian blur of an RT (premultiplied) into a new aux RT; sigma in device px.
 static func blur(src: RT, sigma: float) -> RT:
@@ -711,14 +748,16 @@ static func blur(src: RT, sigma: float) -> RT:
 	flush(src)
 	addDep(a, src)
 	var ia := _item(a)
-	RenderingServer.canvas_item_set_material(ia, _material("blur"))
-	RenderingServer.canvas_item_set_instance_shader_parameter(ia, "bp", Vector4(1.0 / src.w * ds, 0.0, s2, R))
+	var ma := opMaterial(a, "blur")
+	RenderingServer.canvas_item_set_material(ia, ma)
+	RenderingServer.material_set_param(ma, "bp", Vector4(1.0 / src.w * ds, 0.0, s2, R))
 	RenderingServer.canvas_item_add_texture_rect(ia, Rect2(0, 0, w, h), src.tex)
 	var b := newRT(w, h, 0, true)
 	addDep(b, a)
 	var ib := _item(b)
-	RenderingServer.canvas_item_set_material(ib, _material("blur"))
-	RenderingServer.canvas_item_set_instance_shader_parameter(ib, "bp", Vector4(0.0, 1.0 / h, s2, R))
+	var mb := opMaterial(b, "blur")
+	RenderingServer.canvas_item_set_material(ib, mb)
+	RenderingServer.material_set_param(mb, "bp", Vector4(0.0, 1.0 / h, s2, R))
 	RenderingServer.canvas_item_add_texture_rect(ib, Rect2(0, 0, w, h), a.tex)
 	retire(a)
 	retire(b)
