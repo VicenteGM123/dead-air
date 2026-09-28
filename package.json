@@ -17,6 +17,8 @@
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
-    "meshoptimizer": "^1.2.0"
+    "meshoptimizer": "^1.2.0",
+    "node-web-audio-api": "^2.2.0",
+    "wasm-media-encoders": "^0.7.0"
   }
 }

@@ -13,8 +13,16 @@
 /tools/*
 !/tools/build.mjs
 !/tools/bake/
+!/tools/audio/
+!/godot/
+!/blender/
 
 # never, even inside allowed folders
+.godot/
+__pycache__/
+*.pyc
+/blender/_vendor/
+/blender/out/
 node_modules/
 *.log
 .env*
