@@ -26,6 +26,8 @@ var music := {}
 var _streams := {}
 var _last := {}
 var _warned := {}
+var _queue: Array = []       # files still to request from the threaded loader
+var _requested := {}         # path -> true while a threaded load is pending
 
 func _init() -> void:
 	var path := ROOT + "index.json"
@@ -40,6 +42,35 @@ func _init() -> void:
 	parts = d.get("parts", {})
 	music = d.get("music", {}) if d.get("music") is Dictionary else {}
 	ok = true
+	# every one-shot file, queued for background loading (preloadStep) so a first play never stalls a frame
+	for id in cues:
+		for v in cues[id].get("variants", []):
+			for s in v.sets:
+				for f in s.f:
+					_queue.append(f.f)
+		if cues[id].get("loop") is Dictionary:
+			_queue.append(cues[id].loop.f)
+	for k in parts:
+		var fs = parts[k].get("f")
+		if fs is Dictionary:
+			_queue.append_array(fs.values())
+		elif fs is String:
+			_queue.append(fs)
+	for k in music.get("states", {}):
+		for stem in music.states[k].get("stems", {}).values():
+			_queue.append(stem.f)
+	_queue.reverse()      # pop_back() then serves the first cues (and the music last)
+
+# Requests a few queued files from ResourceLoader's threaded loader (called every frame by audio.gd).
+func preloadStep(n := 16) -> void:
+	while n > 0 and not _queue.is_empty():
+		var rel: String = _queue.pop_back()
+		n -= 1
+		var path := ROOT + rel
+		if _streams.has(rel) or _requested.has(path) or not ResourceLoader.exists(path):
+			continue
+		if ResourceLoader.load_threaded_request(path) == OK:
+			_requested[path] = true
 
 # ------------------------------------------------------------------------------------------------ streams
 # Loads (and caches) one rendered file. Looped streams get loop / loop_offset set once (each file is either always
@@ -49,7 +80,10 @@ func stream(rel: String, loop_start := -1.0) -> AudioStream:
 		return _streams[rel]
 	var path := ROOT + rel
 	var s: AudioStream = null
-	if ResourceLoader.exists(path):
+	if _requested.has(path):
+		_requested.erase(path)
+		s = ResourceLoader.load_threaded_get(path) as AudioStream
+	if s == null and ResourceLoader.exists(path):
 		s = load(path) as AudioStream
 	if s == null and FileAccess.file_exists(path):
 		if rel.ends_with(".ogg"):
@@ -93,14 +127,17 @@ static func fmtVal(v) -> String:
 		return ",".join(s)
 	return fmtNum(float(v))
 
-# Canonical variant key of a play opts dictionary for a cue reading `params` (render.mjs variantKey).
-static func variantKey(params: Array, opts: Dictionary) -> String:
+# Canonical variant key of a play opts dictionary for a cue reading `params` (render.mjs variantKey): params equal to
+# the recipe's default (index `defaults`) select the default variant.
+static func variantKey(params: Array, opts: Dictionary, defaults = null) -> String:
 	var out := []
 	for k in PARAMS:
 		if not params.has(k):
 			continue
 		var v = opts.get(k)
 		if v == null or (v is bool and v == false):
+			continue
+		if defaults is Dictionary and defaults.has(k) and fmtVal(defaults[k]) == fmtVal(v):
 			continue
 		out.append(k + "=" + fmtVal(v))
 	return ";".join(out)
@@ -120,7 +157,7 @@ func variantFor(entry: Dictionary, opts: Dictionary, wantTv: bool):
 	var vs: Array = entry.get("variants", [])
 	if vs.is_empty():
 		return null
-	var key := variantKey(entry.get("params", []), opts)
+	var key := variantKey(entry.get("params", []), opts, entry.get("defaults"))
 	var want := _keyParams(key)
 	var best = null
 	var bestScore := INF

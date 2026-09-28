@@ -970,7 +970,8 @@ class _Builder:
 
     # ------------------------------------------------------------------------------------------ meshes
     def mesh_data(self, geo, mat, name, inst_color=None):
-        key = (id(geo), mat.uuid if mat is not None else None, tuple(inst_color) if inst_color else None)
+        mk = tuple(m.uuid for m in mat) if isinstance(mat, list) else (mat.uuid if mat is not None else None)
+        key = (id(geo), mk, tuple(inst_color) if inst_color else None)
         me = self.meshes.get(key)
         if me is not None:
             return me
@@ -986,6 +987,15 @@ class _Builder:
         tris = idx.reshape(-1, 3)
         ok = (tris[:, 0] != tris[:, 1]) & (tris[:, 1] != tris[:, 2]) & (tris[:, 0] != tris[:, 2])
         ok &= (tris < n).all(axis=1)
+        mat_list = mat if isinstance(mat, list) else None
+        tri_mat = None
+        if mat_list is not None:
+            # multi-material mesh: geometry groups (start/count in index units) -> per-face material index
+            tri_mat = np.zeros(len(tris), dtype=np.int32)
+            for gr in (geo.groups or []):
+                a, c = int(gr['start']) // 3, int(min(gr['count'], len(idx) - gr['start'])) // 3
+                tri_mat[a:a + c] = int(gr.get('materialIndex') or 0)
+            tri_mat = tri_mat[ok]
         tris = tris[ok]
         me = bpy.data.meshes.new(name)
         vb = np.empty((n, 3), dtype=np.float32)
@@ -1002,7 +1012,8 @@ class _Builder:
         # UVs (three uv, texture repeat/offset baked, stored as 1 - v: the glTF exporter flips it back)
         uv = _attr_np(geo.attributes.uv) if geo.attributes.uv is not None else None
         if uv is not None:
-            xf = _uv_transform(getattr(mat, 'map', None)) if mat is not None else None
+            m0 = mat[0] if isinstance(mat, list) and mat else mat
+            xf = _uv_transform(getattr(m0, 'map', None)) if m0 is not None else None
             if xf is not None:
                 h = np.c_[uv[:, :2], np.ones(len(uv))] @ xf.T
                 uv = h[:, :2]
@@ -1051,7 +1062,12 @@ class _Builder:
                 a.data.foreach_set('vector', nb.ravel())
             else:
                 me.normals_split_custom_set_from_vertices([tuple(x) for x in nb])
-        if mat is not None:
+        if mat_list is not None:
+            for mm in mat_list:
+                me.materials.append(self.material(mm))
+            if len(tris):
+                me.polygons.foreach_set('material_index', tri_mat)
+        elif mat is not None:
             me.materials.append(self.material(mat))
         self.meshes[key] = me
         return me
@@ -1162,7 +1178,7 @@ def to_blender(root, names=None, texture_file=None, root_name=None, force_names=
                     if s.get('id') is not None:
                         sc['id'] = s.get('id')
         if geo is not None and not inst:
-            data = B.mesh_data(geo, o.material if not isinstance(o.material, list) else o.material[0], name)
+            data = B.mesh_data(geo, o.material, name)
         ob = B.node(o, parent_b, name, data)
         if is_root:
             ob.location = (0, 0, 0)

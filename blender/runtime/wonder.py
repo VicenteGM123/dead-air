@@ -271,16 +271,19 @@ def graphs():
     }
 
 
-def build(save_blend=False, only=None):
-    """Builds every wonder runtime asset into godot/assets/runtime/wonder/. Returns the written paths."""
+def build(save_blend=False, only=None, ids=None, godot=None, **_kw):
+    """Builds every wonder runtime asset into <godot>/assets/runtime/wonder/ (default: the repo's godot project).
+    only / ids: optional list of asset names (meshes, battery, gelatin, bunny). Returns the written paths."""
     from dalib import export as EX
-    os.makedirs(OUT_DIR, exist_ok=True)
+    out_dir = os.path.join(godot, 'assets', 'runtime', 'wonder') if godot else OUT_DIR
+    only = only or ids
+    os.makedirs(out_dir, exist_ok=True)
     written = []
     for name, make in graphs().items():
         if only and name not in only:
             continue
         root = make()
-        path = os.path.join(OUT_DIR, name + '.glb')
+        path = os.path.join(out_dir, name + '.glb')
         blend = os.path.join(_BLENDER, 'out', 'runtime_wonder_%s.blend' % name) if save_blend else None
         EX.export_graph(root, path, root_name=root.name or name, save_blend=blend)
         written.append(path)

@@ -1541,10 +1541,14 @@ func _lightRig(scene: Node3D, o: Dictionary) -> Dictionary:
 	return {"hemi": hemi, "key": key, "fill": fill, "points": points}
 
 func _card(id: String, opts: Dictionary = {}):
-	return _cardsCall("get", [id, opts])
+	return _cardsCall("get_", [id, opts])   # cards.get (renamed get_ by cards.gd)
 
-# game.cards: the broadcast-card namespace (an object or a Dictionary of Callables).
+# game.cards: the broadcast-card namespace (cards.gd installs it on first use: make sure it is loaded).
 func _cardsCall(m: String, args: Array):
+	if game.cards == null and ResourceLoader.exists("res://scripts/gfx/cards.gd"):
+		var CS = load("res://scripts/gfx/cards.gd")
+		if CS and CS.has_method("install"):
+			CS.install(game)
 	var C = game.cards
 	if C == null:
 		return null
@@ -2589,7 +2593,7 @@ func _drawCard(cv, id: String, time: float, sleepy: bool = true, opts: Dictionar
 	var o := opts.duplicate()
 	if not sleepy:
 		o["variant"] = "awake"
-	if game.cards != null:
+	if _cardsCall("ids", []) != null:
 		_cardsCall("drawTo", [x, id, cv.width, cv.height, time, o])
 	else:
 		x.fillStyle = "#1E1830"

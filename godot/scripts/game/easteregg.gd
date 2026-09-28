@@ -627,7 +627,7 @@ func _applyHook(k: int) -> void:
 # node carrying the "da" extras (JS root userData), with its materials converted by game.mats.fromSpec and every
 # node's "da" extras restored into DAU.ud(node). Parts ({name: node name}) are resolved to the nodes. A missing asset
 # yields an empty placeholder (warned once), so the egg's logic keeps running.
-func _loadModel(name: String) -> Node3D:
+func _loadModel(name: String, convertMats: bool = true) -> Node3D:
 	var path := ASSET_DIR + name + ".glb"
 	var ps = _models.get(name)
 	if ps == null:
@@ -659,7 +659,7 @@ func _loadModel(name: String) -> Node3D:
 		else:
 			inst.remove_child(root)
 			inst.free()
-	_convertModel(root)
+	_convertModel(root, convertMats)
 	return root
 
 static func _extrasDa(n):
@@ -673,8 +673,8 @@ static func _extrasDa(n):
 		return da
 	return null
 
-func _convertModel(root: Node3D) -> void:
-	var mats = game.mats
+func _convertModel(root: Node3D, convertMats: bool = true) -> void:
+	var mats = game.mats if convertMats else null
 	var nodes: Array = []
 	DAU.traverse(root, func(n): nodes.append(n))
 	for n in nodes:
@@ -775,7 +775,7 @@ func buildCannon(_game, aimDir: Vector3) -> Node3D:
 # Meshes + the face / rain canvas textures come from the asset; the materials are built here (the JS built them in
 # code too: the cloud toon, and unlit ones for the face, glow and rain).
 func buildStorm(g) -> Dictionary:
-	var root := _loadModel("ee_stray_storm")
+	var root := _loadModel("ee_stray_storm", false)   # (materials built below, like the JS)
 	root.name = "stray_storm"
 	var body: Node3D = _findNode(root, "body") as Node3D
 	if body == null:

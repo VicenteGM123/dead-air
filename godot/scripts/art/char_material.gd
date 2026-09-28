@@ -50,9 +50,8 @@ static func ensureGlobals() -> void:
 	if _globalsChecked:
 		return
 	_globalsChecked = true
-	var have := RenderingServer.global_shader_parameter_get_list()
 	for k in _GLOBALS:
-		if not have.has(StringName(k)):
+		if not ProjectSettings.has_setting("shader_globals/" + k):
 			var e: Array = _GLOBALS[k]
 			var v = e[1]
 			if v == null:
@@ -209,7 +208,7 @@ static func createCharMaterial(o: Dictionary) -> DAMaterial:
 			"uAOAmount", "uDebug", "uIBLDiffuse"]:
 		U[n] = DAMaterial.DAUniform.new(n, mat.get_shader_parameter(n), mat)
 	for n in ["uRimAmbient", "uHeroFade"]:
-		U[n] = DAMaterial.DAUniform.new(n, RenderingServer.global_shader_parameter_get(n), null, true)
+		U[n] = DAMaterial.DAUniform.new(n, 1.0, null, true)
 	mat.userData.uniforms = U
 	return mat
 
@@ -286,7 +285,7 @@ static func attachMaterial(o: Dictionary = {}) -> DAMaterial:
 	var U := {}
 	for n in ["uRimColor", "uRimStrength", "uWrapA", "uSSSA", "uIBLA"]:
 		U[n] = DAMaterial.DAUniform.new(n, m.get_shader_parameter(n), m)
-	U["uRimAmbient"] = DAMaterial.DAUniform.new("uRimAmbient", RenderingServer.global_shader_parameter_get("uRimAmbient"), null, true)
+	U["uRimAmbient"] = DAMaterial.DAUniform.new("uRimAmbient", 1.0, null, true)
 	m.userData.uniforms = U
 	_attachCache[key] = m
 	return m

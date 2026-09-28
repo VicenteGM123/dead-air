@@ -1255,9 +1255,9 @@ func _canvasClass():
 		return null
 	return load(path)
 
-func _canvasDone(cv) -> void:
-	if cv != null and cv.has_method("redraw"):
-		cv.redraw()
+# JS `texture.needsUpdate = true`: DACanvas re-renders by itself after drawing (nothing to do).
+func _canvasDone(_cv) -> void:
+	pass
 
 # The Tiny Tele's bouncy cartoon: a private 160x120 canvas redrawn at 12 fps while a tele is live.
 func _makeCartoon():
@@ -1266,6 +1266,7 @@ func _makeCartoon():
 		_warnOnce("canvas", "DACanvas (scripts/gfx/canvas2d.gd) missing: no Tiny Tele cartoon / splat marks")
 		return null
 	var cv = CV.new(160, 120)
+	cv.bakeMode = "never"   # redrawn at 12 fps while a tele is live (DACanvas hint: keep it on the GPU)
 	_cartoon = {"cv": cv, "ctx": cv.getContext("2d"), "tex": cv.texture, "frame": -1}
 	_drawCartoon(0.0)
 	return cv.texture
@@ -1370,6 +1371,7 @@ func _splatTexture(up: bool):
 	var S := 256.0
 	var H := S / 2
 	var c = CV.new(256, 256)
+	c.bakeMode = "now"      # static mark (DACanvas hint: bake to a mipmapped texture after the first render)
 	var x = c.getContext("2d")
 	var r: Callable = Rng.mulberry32(77 if up else 41)
 	var P: Dictionary = Config.PAL

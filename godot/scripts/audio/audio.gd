@@ -88,9 +88,11 @@ const SURF_ARP := [0, 7, 12, 10]      # music.js telly_surf_arp: root, fifth, oc
 const BUS_NAMES := {"master": "Master", "music": "Music", "sfx": "SFX", "ambience": "Ambience", "ui": "UI", "tv": "TV"}
 # Master chain (see the header): WebAudio DynamicsCompressor settings mapped onto Godot's effects. Godot's compressor
 # scales the overshoot by 2.0814 before applying the ratio, so a WebAudio ratio r becomes 1 / (1 - (r-1)/(2.0814·r))
-# (3:1 -> 1.471, 20:1 -> 1.840); the static curve then matches node-web-audio-api / Chrome within ~0.5 dB.
+# (3:1 -> 1.471, 20:1 -> 1.840); the static curve then matches node-web-audio-api / Chrome within ~0.5 dB. Chrome's
+# release is adaptive (much faster than the nominal 0.25 s for small reductions): 40 ms matches the energy of loud
+# transient cues through the whole chain best (measured: within ~1 dB of the original engine).
 const GODOT_OVER := 2.08136898
-const COMP := {"threshold": -10.0, "ratio": 3.0, "gain": 4.0, "attack_us": 2000.0, "release_ms": 250.0}
+const COMP := {"threshold": -10.0, "ratio": 3.0, "gain": 4.0, "attack_us": 2000.0, "release_ms": 40.0}
 const LIMIT := {"threshold": -2.5, "ratio": 20.0, "gain": 1.425, "attack_us": 1000.0, "release_ms": 80.0}
 
 static func _godotRatio(r: float) -> float:
@@ -124,6 +126,8 @@ var _node: Node             # non-positional players + the ticker (child of the 
 var _root3d: Node3D         # positional players + the listener (game.scene)
 var _listener: AudioListener3D
 var _t0usec := 0
+var _clock := 0.0
+var _clockFrame := -1
 var _reverbs: Array = []    # { bus, idx, send } every reverb effect (per-area parameters)
 var _mirrors := {}          # extra bus name -> bus key whose volume it mirrors
 var _hooked := false
@@ -569,10 +573,16 @@ func registerCues(table, defaults = null) -> void:
 			_warned["reg:" + str(id)] = true
 			push_warning("[audio] cue '%s' registered at runtime has no render (add it to tools/audio/render.mjs)" % id)
 
+# Audio clock (s): real time, frozen within one frame like AudioContext.currentTime within one JS task (so a stall
+# inside a frame does not split plays that belong together, e.g. the `gap` merge).
 func now() -> float:
 	if ctx == null:
 		return 0.0
-	return float(Time.get_ticks_usec() - _t0usec) / 1000000.0
+	var f := Engine.get_process_frames()
+	if f != _clockFrame:
+		_clockFrame = f
+		_clock = float(Time.get_ticks_usec() - _t0usec) / 1000000.0
+	return _clock
 
 func out(_opts := {}):
 	return null
@@ -847,6 +857,7 @@ func _tick() -> void:
 	if ctx == null or _n == null:
 		return
 	var now := now()
+	_lib.preloadStep()
 	_schedule(now)
 	for v in voices:
 		var g: float = v.gain.tick(now)

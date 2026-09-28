@@ -160,14 +160,22 @@ const VARIANTS = {
   announcer_wahwah: [{}, ...[...Object.values(PU_RHYTHM), ...Object.values(WAH)].map((rhythm) => ({ rhythm }))],
   boss_voice: [{}, { syllables: 3 }, { syllables: 5 }],
   pu_sweeps_week: [{}, { flip: true }],
-  ee_applause_near: [{}, { claps: CLAP_BEATS }, { dur: 3.8, claps: [] }],
+  ee_applause_near: [{}, { dur: 3.8, claps: [] }],
   crowd_applause: [{}, { dur: 2.2 }],
   crowd_laugh: [{}, { dur: 2.5 }, { opts: { dur: 0.45 }, rates: [[1.15, 1.4]] }],              // wonder, powerups
   tone_1khz: [{}, { dur: 0.8 }, { dur: 0.9 }],                                            // signon TL.power-TL.bars, uplink
   tele_tick: [{}, { dur: 5 }],                                                             // tiny tele fuse 6 = default, uplink 15-10
   uplink_motor: [{}, { dur: 0.5 }, { dur: 0.9 }],                                          // uplink FULL.swivel+0.1
-  ee_alarm_bell: [{ dur: 10 }],
+  ee_alarm_bell: [{}],                                                                     // dur 10 = default
   telly_surf_arp: [{ auto: true }],                                                        // step() notes are parts
+};
+// The recipes' own defaults of those parameters: a play whose value equals the default uses the default variant
+// (audio.gd drops such params from the variant key the same way).
+const PARAM_DEFAULTS = {
+  hurt_grunt: { base: 200 }, announcer_wahwah: { rhythm: [1.1, 0.95, 0.85] }, ee_applause_near: { dur: 1.45, claps: CLAP_BEATS },
+  crowd_applause: { dur: 2.6 }, crowd_laugh: { dur: 2.2 }, tone_1khz: { dur: 1.5 }, tele_tick: { dur: 6 }, uplink_motor: { dur: 0.8 },
+  ee_alarm_bell: { dur: 10 }, dish_crank: { dur: 3 }, boss_static_ball: { dur: 1.5 }, ee_applause_burst: { dur: 1.5 },
+  ee_ovation: { dur: 4.2 },
 };
 // Cues heard through a TV at some call sites (screens.speaker / tv:true) although the recipe has no static tv.
 const TV_EXTRA = new Set(['zmb_death_static', 'tone_1khz', 'crowd_ooh']);
@@ -487,12 +495,13 @@ function pitchBuckets(list) {
 // Canonical variant key (audio.gd builds the same from the play opts): "k=v;k=v" of the params in PARAMS order.
 const PARAMS = ['upgraded', 'flip', 'base', 'rhythm', 'syllables', 'claps', 'dur', 'auto'];
 const fmtNum = (x) => String(r3(+x));
-function variantKey(opts) {
+const fmtVal = (v) => (Array.isArray(v) ? (v.length ? v.map(fmtNum).join(',') : '[]') : v === true ? '1' : fmtNum(v));
+function variantKey(opts, defaults = {}) {
   const parts = [];
   for (const k of PARAMS) {
     if (!(k in opts) || opts[k] == null || opts[k] === false) continue;
-    const v = opts[k];
-    parts.push(k + '=' + (Array.isArray(v) ? (v.length ? v.map(fmtNum).join(',') : '[]') : v === true ? '1' : fmtNum(v)));
+    if (k in defaults && fmtVal(defaults[k]) === fmtVal(opts[k])) continue;
+    parts.push(k + '=' + fmtVal(opts[k]));
   }
   return parts.join(';');
 }
@@ -524,8 +533,9 @@ if (!ARGS['no-sfx']) {
     const entry = {
       ...props, music: MUSIC_IDS.has(id), wonder: WONDER_IDS.includes(id), pitch: pitchy,
       reads: [...info.reads].sort(), inherent: info.handle && !Number.isFinite(info.end),
-      params: PARAMS.filter((k) => info.reads.has(k)), variants: [], loop: null,
+      params: PARAMS.filter((k) => info.reads.has(k)), defaults: PARAM_DEFAULTS[id], variants: [], loop: null,
     };
+    fs.rmSync(path.join(OUT, 'sfx', id), { recursive: true, force: true });   // no stale variations of a re-render
     index.cues[id] = entry;
     const tvs = props.tv ? [true] : TV_EXTRA.has(id) ? [false, true] : [false];
     const vlist = (VARIANTS[id] || [{}]).map((v) => (v.opts ? v : { opts: v }));
@@ -535,7 +545,7 @@ if (!ARGS['no-sfx']) {
       vlist.forEach((v, vi) => {
         for (const tv of tvs) {
           const buckets = pitchy ? pitchBuckets(v.rates || RATE_USE[id]) : [1];
-          const ve = { k: variantKey(v.opts), o: v.opts, tv, sets: [] };
+          const ve = { k: variantKey(v.opts, PARAM_DEFAULTS[id]), o: v.opts, tv, sets: [] };
           entry.variants.push(ve);
           for (const p of buckets) {
             const set = { p, f: [] };

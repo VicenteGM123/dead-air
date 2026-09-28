@@ -239,8 +239,13 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
         rep = np.repeat(np.arange(len(cidx)), deg)
         off = np.arange(len(rep)) - np.repeat(np.cumsum(deg) - deg, deg)
         nbr = und[np.repeat(nstart[cu[cidx]], deg) + off, 1]
-        claim_c = np.concatenate([np.arange(len(cidx)), np.arange(len(cidx)), rep])
+        # claims: u, v EXCLUSIVE (moved / receiving); N(u) SHARED (read by the flip + link tests). Two collapses
+        # conflict when one's exclusive vertex is claimed (either way) by the other: then no face moves two vertices
+        # and the neighbourhoods the link / flip tests read are untouched by the other collapses of the pass.
+        nc = len(cidx)
+        claim_c = np.concatenate([np.arange(nc), np.arange(nc), rep])
         claim_v = np.concatenate([cu[cidx], cv[cidx], nbr])
+        claim_x = np.concatenate([np.ones(2 * nc, bool), np.zeros(len(rep), bool)])
         # link condition: common neighbours of u and v == faces on the edge (2 interior, 1 border)
         nbr_keys = und[:, 0] * nwv + und[:, 1]
         vk = np.repeat(cv[cidx], deg) * nwv + nbr
@@ -255,19 +260,20 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
         forder = np.argsort(fv, kind='stable')
         fstart = np.searchsorted(fv[forder], np.arange(nwv + 1))
         accepted_tris = 0
-        for rnd in range(8):
+        for rnd in range(12):
             pend = status == 0
             if not pend.any():
                 break
-            # parallel greedy: candidate accepted if it has the lowest rank on all its claimed vertices
+            # parallel greedy: accepted when no pending candidate of lower rank conflicts with it
             live = pend[claim_c]
-            lv, lc = claim_v[live], claim_c[live]
-            best = np.full(nwv, np.iinfo(np.int64).max)
-            so = np.lexsort((lc, lv))
-            fst = np.ones(len(so), bool)
-            fst[1:] = lv[so][1:] != lv[so][:-1]
-            best[lv[so][fst]] = lc[so][fst]
-            fails = np.bincount(lc, weights=(best[lv] != lc).astype(float), minlength=len(cidx))
+            lv, lc, lx = claim_v[live], claim_c[live], claim_x[live]
+            BIGI = np.iinfo(np.int64).max
+            exB = np.full(nwv, BIGI)
+            allB = np.full(nwv, BIGI)
+            np.minimum.at(exB, lv[lx], lc[lx])
+            np.minimum.at(allB, lv, lc)
+            bad = np.where(lx, allB[lv] < lc, exB[lv] < lc)
+            fails = np.bincount(lc, weights=bad.astype(float), minlength=nc)
             won = pend & (fails == 0)
             wi = np.nonzero(won)[0]
             if not len(wi):
@@ -283,11 +289,15 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
             wi = wi[_no_flip(cu[cidx[wi]], cv[cidx[wi]], FW, Ps, forder, fstart)]
             status[wi] = 1
             accepted_tris += int(np.where(kind[cu[cidx[wi]]] == 1, 1, 2).sum())
-            # candidates that claim a vertex claimed by an accepted one are out for this pass
-            taken = np.zeros(nwv, bool)
+            # candidates conflicting with an accepted one are out for this pass
             acc = status == 1
-            taken[claim_v[acc[claim_c]]] = True
-            conflict = np.bincount(claim_c, weights=taken[claim_v].astype(float), minlength=len(cidx)) > 0
+            ac = acc[claim_c]
+            tEx = np.zeros(nwv, bool)
+            tAll = np.zeros(nwv, bool)
+            tEx[claim_v[ac & claim_x]] = True
+            tAll[claim_v[ac]] = True
+            hit = np.where(claim_x, tAll[claim_v], tEx[claim_v])
+            conflict = np.bincount(claim_c, weights=hit.astype(float), minlength=nc) > 0
             status[(status == 0) & conflict] = -1
             # losers of the flip test stay rejected
             lost = won.copy()

@@ -76,6 +76,13 @@
   "wrap": "clamp",
   "ns": "k"
  },
+ "k.shag|#C8562A|#E8A92E|512|1": {
+  "file": "k_shag_C8562A_E8A92E_512_1_08507633.png",
+  "w": 512,
+  "h": 512,
+  "wrap": "repeat",
+  "ns": "k"
+ },
  "k.weave|#B88A4A|cord|null||256|4": {
   "file": "k_weave_B88A4A_cord_null_256_4_a0c3a489.png",
   "w": 256,
@@ -83,8 +90,29 @@
   "wrap": "repeat",
   "ns": "k"
  },
+ "k.weave|#E8A92E|cord|null||256|4": {
+  "file": "k_weave_E8A92E_cord_null_256_4_e610de55.png",
+  "w": 256,
+  "h": 256,
+  "wrap": "repeat",
+  "ns": "k"
+ },
  "k.wood|#7A4A2A|0|0.45|0|512": {
   "file": "k_wood_7A4A2A_0_0_45_0_512_19aacbd8.png",
+  "w": 512,
+  "h": 512,
+  "wrap": "repeat",
+  "ns": "k"
+ },
+ "k.wood|#7A4A2A|0|0.4|0|512": {
+  "file": "k_wood_7A4A2A_0_0_4_0_512_3ee7da11.png",
+  "w": 512,
+  "h": 512,
+  "wrap": "repeat",
+  "ns": "k"
+ },
+ "k.wood|#B07A45|5|0.32|0|512": {
+  "file": "k_wood_B07A45_5_0_32_0_512_a06d6b3a.png",
   "w": 512,
   "h": 512,
   "wrap": "repeat",
@@ -174,6 +202,34 @@
   "wrap": "clamp",
   "ns": "dc"
  },
+ "menu_checker_2A2E5A_3A4FA0": {
+  "file": "menu_checker_2A2E5A_3A4FA0_aaf4a552.png",
+  "w": 128,
+  "h": 128,
+  "wrap": "repeat",
+  "ns": "menu"
+ },
+ "menu_disco": {
+  "file": "menu_disco_552e84f0.png",
+  "w": 256,
+  "h": 256,
+  "wrap": "repeat",
+  "ns": "menu"
+ },
+ "menu_gold_badge": {
+  "file": "menu_gold_badge_80d7a31e.png",
+  "w": 128,
+  "h": 128,
+  "wrap": "clamp",
+  "ns": "menu"
+ },
+ "menu_night": {
+  "file": "menu_night_77dbb5b7.png",
+  "w": 512,
+  "h": 384,
+  "wrap": "clamp",
+  "ns": "menu"
+ },
  "movingPad": {
   "file": "dc_movingPad_b6766479.png",
   "w": 256,
@@ -201,6 +257,34 @@
   "h": 256,
   "wrap": "clamp",
   "ns": "cv"
+ },
+ "specials.bsFlare": {
+  "file": "k_specials_bsFlare_8b3e8d8f.png",
+  "w": 128,
+  "h": 128,
+  "wrap": "clamp",
+  "ns": "k"
+ },
+ "specials.fcDisc": {
+  "file": "k_specials_fcDisc_f0e3025d.png",
+  "w": 256,
+  "h": 256,
+  "wrap": "clamp",
+  "ns": "k"
+ },
+ "specials.fcDots": {
+  "file": "k_specials_fcDots_acd82e16.png",
+  "w": 256,
+  "h": 128,
+  "wrap": "repeat",
+  "ns": "k"
+ },
+ "specials.sockButtonCap": {
+  "file": "k_specials_sockButtonCap_0c3bda67.png",
+  "w": 64,
+  "h": 64,
+  "wrap": "clamp",
+  "ns": "k"
  },
  "stencil|ENGINEERING|512|128|#F4C21E": {
   "file": "dc_stencil_ENGINEERING_512_128_F4C21E_3e5c41a5.png",

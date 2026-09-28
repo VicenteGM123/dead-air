@@ -2602,3 +2602,561 @@ static func drawBars(ctx, w: float, h: float, o: Dictionary = {}) -> void:
 	if not o.get("plain"):
 		badge13(ctx, w - bw * 0.62, y2 + (h - y2) / 2, (h - y2) * 0.3, {"ol": 1.5})
 	vignette(ctx, w, h, 0.28, "28,16,46", 0.55)
+
+## JS String(v) for option values (integral floats print without ".0").
+static func _str(v) -> String:
+	if v is float:
+		return _num(v)
+	return str(v)
+
+## The WZTV test card with Telly in the centre circle.
+static func drawTestCard(ctx, w: float, h: float, o: Dictionary = {}) -> void:
+	var cx := w / 2
+	var cy := h / 2
+	var R := h * 0.445
+	ctx.fillStyle = "#8C8898"
+	ctx.fillRect(0, 0, w, h)
+	var cell := h / 12
+	var off := fmod(w, cell) / 2
+	var ncol := int(ceilf(w / cell))
+	ctx.fillStyle = "#6E6A7C"
+	for j in 12:
+		for i in ncol:
+			if (i + j) % 2 == 0:
+				ctx.fillRect(i * cell + off, j * cell, cell, cell)
+	ctx.strokeStyle = "rgba(246,242,232,0.9)"
+	ctx.lineWidth = 2
+	ctx.beginPath()
+	var x := off
+	while x <= w:
+		ctx.moveTo(jround(x) + 0.5, 0)
+		ctx.lineTo(jround(x) + 0.5, h)
+		x += cell
+	var y := 0.0
+	while y <= h:
+		ctx.moveTo(0, jround(y) + 0.5)
+		ctx.lineTo(w, jround(y) + 0.5)
+		y += cell
+	ctx.stroke()
+	# castellated border
+	var chh := h * 0.035
+	for i in ncol:
+		ctx.fillStyle = "#F4F1E8" if (i & 1) else "#2A2140"
+		ctx.fillRect(i * cell + off, 0, cell, chh)
+		ctx.fillStyle = "#2A2140" if (i & 1) else "#F4F1E8"
+		ctx.fillRect(i * cell + off, h - chh, cell, chh)
+	for j in 12:
+		ctx.fillStyle = "#F4F1E8" if (j & 1) else "#2A2140"
+		ctx.fillRect(0, j * cell, chh, cell)
+		ctx.fillStyle = "#2A2140" if (j & 1) else "#F4F1E8"
+		ctx.fillRect(w - chh, j * cell, chh, cell)
+	# resolution wedges left and right of the circle
+	for s in [-1, 1]:
+		var wx := cx + s * (R + (w / 2 - R) * 0.48)
+		var wy := cy
+		ctx.strokeStyle = "#1E1830"
+		ctx.lineWidth = 1.4
+		ctx.beginPath()
+		for k in range(-5, 6):
+			ctx.moveTo(wx - s * cell * 1.1, wy + k * cell * 0.26)
+			ctx.lineTo(wx + s * cell * 0.9, wy + k * cell * 0.04)
+		ctx.stroke()
+		for k in [-1, 1]:
+			circle(ctx, wx, wy + k * cell * 3.4, cell * 0.72)
+			inked(ctx, "#F4F1E8", 2, "#1E1830")
+			circle(ctx, wx, wy + k * cell * 3.4, cell * 0.3)
+			fill(ctx, "#1E1830")
+	# centre circle
+	ctx.save()
+	circle(ctx, cx, cy, R)
+	ctx.clip()
+	ctx.fillStyle = linear(ctx, 0, cy - R, 0, cy + R, ["#9ED8FF", "#CDEBFF", "#FFE9C2"])
+	ctx.fillRect(cx - R, cy - R, R * 2, R * 2)
+	var barH := R * 0.36
+	for i in BARS.size():
+		ctx.fillStyle = BARS[i]
+		ctx.fillRect(cx - R + (i * 2 * R) / 7, cy - R, (2 * R) / 7 + 1, barH)
+	ctx.fillStyle = "rgba(30,20,50,0.2)"
+	ctx.fillRect(cx - R, cy - R + barH - 3, R * 2, 3)
+	var steps := 6
+	var gy := cy + R * 0.62
+	for i in steps:
+		var v := int(jround(40 + (i * 200.0) / (steps - 1)))
+		ctx.fillStyle = "rgb(%d,%d,%d)" % [v, v - 4, v + 10]
+		ctx.fillRect(cx - R + (i * 2 * R) / steps, gy, (2 * R) / steps + 1, R)
+	ctx.strokeStyle = "rgba(40,30,70,0.25)"
+	ctx.lineWidth = 1.5
+	ctx.beginPath()
+	ctx.moveTo(cx - R, cy + R * 0.18); ctx.lineTo(cx + R, cy + R * 0.18)
+	ctx.moveTo(cx, cy - R + barH); ctx.lineTo(cx, gy)
+	ctx.stroke()
+	ellipse(ctx, cx, cy + R * 0.56, R * 0.55, R * 0.08)
+	fill(ctx, "rgba(58,42,90,0.25)")
+	var sz := R * 0.78
+	drawTelly(ctx, cx, cy + R * 0.14, sz, {"expr": _or(o.get("expr"), "idle"), "t": _or(o.get("t"), 0.0), "look": [0, 0.1], "cols": 26, "dial": 0.1})
+	ctx.restore()
+	circle(ctx, cx, cy, R)
+	stroke(ctx, "#F4F1E8", 5)
+	circle(ctx, cx, cy, R + 3)
+	stroke(ctx, "#2A2140", 2)
+	# station box
+	var bw := R * 0.9
+	var bh := R * 0.2
+	var by := cy + R * 0.66
+	rr(ctx, cx - bw / 2, by, bw, bh, bh * 0.25)
+	inked(ctx, "#1E1830", 2, "#F4F1E8")
+	drawLogo(ctx, cx, by + bh / 2 + 1, bh * 0.52, {"style": "flat"})
+
+# Station ID: chrome "13" spinning over colour bars, WZTV logo plate.
+static func chromeGlyph(dark: bool) -> DACanvas:
+	return layer("chrome13:%s" % ("side" if dark else "face"), 360, 260, func(g, w, h):
+		label(g, "13", w / 2, h / 2 + 8, {
+			"fam": FONT.round, "px": 230, "maxW": w * 0.92,
+			"fill": vgrad(["#8A96B4", "#3E4868", "#2A3050"]) if dark else vgrad(CHROME),
+			"stroke": "#1E2240" if dark else "#1E2A5A", "lw": 14,
+		})
+		if not dark:
+			g.globalCompositeOperation = "source-atop"
+			g.fillStyle = linear(g, 0, 0, w, h, ["rgba(255,255,255,0)", "rgba(255,255,255,0)", [0.46, "rgba(255,255,255,0.55)"], [0.52, "rgba(255,255,255,0)"], "rgba(255,255,255,0)"])
+			g.fillRect(0, 0, w, h))
+
+static func sparkle(ctx, x: float, y: float, r: float, a: float = 1.0) -> void:
+	ctx.save()
+	ctx.globalAlpha = a
+	ctx.fillStyle = "#FFFFFF"
+	ctx.shadowColor = "#BFE8FF"
+	ctx.shadowBlur = r
+	starPath(ctx, x, y, r, r * 0.16, 4, 0)
+	ctx.fill()
+	ctx.restore()
+
+# Hootie's Hullabaloo intro: owl host, rainbow and bouncing balloon letters.
+static func balloonText(ctx, s: String, cx: float, y: float, px: float, t: float, phase: float, maxW = null) -> void:
+	var cols := ["#FF4F5E", "#FFC23A", "#3FA9F5", "#52D24A", "#FF7AC8", "#FF8A2A", "#9B6BFF"]
+	ctx.save()
+	setFont(ctx, px, FONT.round)
+	var chars := []
+	for i in s.length():
+		chars.append(s[i])
+	var ws := []
+	var total := 0.0
+	for c in chars:
+		var cw0: float = ctx.measureText(c).width * 1.1
+		ws.append(cw0)
+		total += cw0
+	var sc := maxW / total if maxW and total > maxW else 1.0
+	total *= sc
+	var x := cx - total / 2
+	ctx.textAlign = "center"
+	ctx.textBaseline = "alphabetic"
+	ctx.lineJoin = "round"
+	for i in chars.size():
+		var ch: String = chars[i]
+		var cw: float = ws[i] * sc
+		var lx := x + cw / 2
+		x += cw
+		if ch == " ":
+			continue
+		var ph := t * 1.7 + phase + i * 0.42
+		var hop := absf(sin(ph * PI))
+		var squash := 1 - (0.18 - hop) * 0.9 if hop < 0.18 else 1.0
+		var col: String = cols[(i + int(jround(phase * 3))) % cols.size()]
+		ctx.save()
+		ctx.translate(lx, y - hop * px * 0.22)
+		ctx.scale(sc * (2 - squash), sc * squash)
+		ctx.rotate(sin(ph * 2) * 0.06)
+		ctx.beginPath()
+		ctx.moveTo(0, px * 0.05)
+		ctx.bezierCurveTo(px * 0.08, px * 0.25, -px * 0.08, px * 0.35, px * 0.02, px * 0.5)
+		stroke(ctx, "rgba(60,40,80,0.6)", 1.5)
+		ctx.strokeStyle = C.ink
+		ctx.lineWidth = px * 0.3
+		ctx.strokeText(ch, 0, 0)
+		ctx.strokeStyle = col
+		ctx.lineWidth = px * 0.16
+		ctx.strokeText(ch, 0, 0)
+		ctx.fillStyle = col
+		ctx.fillText(ch, 0, 0)
+		ctx.fillStyle = linear(ctx, 0, -px * 0.8, 0, -px * 0.1, ["rgba(255,255,255,0.75)", "rgba(255,255,255,0)"])
+		ctx.fillText(ch, -px * 0.03, -px * 0.03)
+		ellipse(ctx, -px * 0.12, -px * 0.55, px * 0.06, px * 0.1, 0.5)
+		fill(ctx, "rgba(255,255,255,0.85)")
+		ctx.restore()
+	ctx.restore()
+
+# The Baron on Channel 0.
+static func purpleStatic(ctx, w: float, h: float, k: int, a: float) -> void:
+	ctx.save()
+	ctx.globalAlpha = a
+	ctx.globalCompositeOperation = "screen"
+	ctx.imageSmoothingEnabled = false
+	ctx.drawImage(snowFrame(k % 6), 0, 0, w, h)
+	ctx.restore()
+
+const BARON_BG := {
+	"laugh": ["#5A2A8A", "#2A1448", "#140A26"],
+	"angry": ["#A8203A", "#5A0E2A", "#240818"],
+	"frantic": ["#6A2A9A", "#2A0E48", "#10061E"],
+	"goodnight": ["#2A3A8A", "#18204E", "#0C1030"],
+}
+
+# Sign-off film: WZTV logo over a waving "13" flag, then the test card (20 s loop, 15 fps).
+static func flagImage() -> DACanvas:
+	return layer("flag13", 300, 190, func(g, w, h):
+		g.fillStyle = linear(g, 0, 0, 0, h, ["#3A6AE8", C.blue, "#2448B0"])
+		g.fillRect(0, 0, w, h)
+		g.fillStyle = C.red
+		g.fillRect(0, 0, w, h * 0.1)
+		g.fillRect(0, h * 0.9, w, h * 0.1)
+		g.fillStyle = C.white
+		g.fillRect(0, h * 0.1, w, h * 0.035)
+		g.fillRect(0, h * 0.865, w, h * 0.035)
+		badge13(g, w * 0.55, h / 2, h * 0.3, {"disc": C.white, "ring": C.red, "num": C.blue, "ol": 3}))
+
+static func _reg_sources() -> void:
+	card("color_bars", {"w": 512, "h": 384, "opts": "plain: no station badge"}, func(ctx, w, h, t, o): drawBars(ctx, w, h, o))
+
+	card("test_card", {"w": 512, "h": 384, "opts": "variant: sleepy"}, func(ctx, w, h, t, o):
+		drawTestCard(ctx, w, h, {"expr": "sleepy" if o.get("variant") == "sleepy" else "idle", "t": t}))
+
+	card("stand_by", {"w": 512, "h": 384, "opts": "variant: awake (default sleepy Telly)"}, func(ctx, w, h, t, o):
+		drawTestCard(ctx, w, h, {"expr": "idle" if o.get("variant") == "awake" else "sleepy", "t": t})
+		var bw: float = w * 0.84
+		var bh: float = h * 0.2
+		var bx: float = (w - bw) / 2
+		var by: float = h * 0.7
+		ctx.save()
+		ctx.shadowColor = "rgba(20,10,40,0.6)"
+		ctx.shadowBlur = 16
+		ctx.shadowOffsetY = 5
+		rr(ctx, bx, by, bw, bh, bh * 0.28)
+		fill(ctx, linear(ctx, 0, by, 0, by + bh, ["#3A58E4", "#2F3FA8"]))
+		ctx.restore()
+		rr(ctx, bx, by, bw, bh, bh * 0.28)
+		stroke(ctx, "#F4F1E8", 4)
+		rr(ctx, bx + 7, by + 7, bw - 14, bh - 14, bh * 0.2)
+		stroke(ctx, alpha("#F4E03A", 0.9), 2)
+		label(ctx, "PLEASE STAND BY", w / 2, by + bh * 0.47, {
+			"fam": FONT.groovy, "px": bh * 0.62, "maxW": bw * 0.88, "fill": vgrad(["#FFFBEA", "#FFE28A"]),
+			"stroke": C.ink, "lw": bh * 0.07, "depth": 4, "depthFill": "#1E2A6E", "dx": 0.6, "dy": 1,
+		}))
+
+	card("station_id", {"w": 512, "h": 384, "fps": 12}, func(ctx, w, h, t, o):
+		ctx.drawImage(layer("station_id:bg", int(w), int(h), func(g, _w, _h):
+			drawBars(g, w, h, {"plain": true})
+			g.fillStyle = radial(g, w / 2, h * 0.42, 0, h * 0.55, ["rgba(22,18,52,0.9)", "rgba(22,18,52,0.72)", "rgba(22,18,52,0)"])
+			g.fillRect(0, 0, w, h)
+			var pw: float = w * 0.74
+			var ph: float = h * 0.19
+			var px: float = (w - pw) / 2
+			var py: float = h * 0.77
+			g.save()
+			g.shadowColor = "rgba(10,6,24,0.7)"
+			g.shadowBlur = 14
+			rr(g, px, py, pw, ph, ph / 2)
+			fill(g, linear(g, 0, py, 0, py + ph, ["#2A2466", "#161236"]))
+			g.restore()
+			rr(g, px, py, pw, ph, ph / 2)
+			stroke(g, "#C9D3EA", 3)
+			drawLogo(g, w / 2, py + ph / 2 + 1, ph * 0.56, {"style": "neon"})), 0, 0)
+		var th: float = (t * TAU) / 6.5
+		var cs := cos(th)
+		var sn := sin(th)
+		var face := chromeGlyph(false)
+		var side := chromeGlyph(true)
+		var gw := face.width * 0.92
+		var gh := face.height * 0.92
+		var cx: float = w / 2
+		var cy: float = h * 0.4 + sin(t * 1.3) * 3
+		var depth := 26.0
+		var steps := 12
+		var sgn := signf(cs if cs != 0.0 else 1.0)
+		ctx.save()
+		ctx.translate(cx, cy)
+		var k := steps
+		while k >= 1:
+			ctx.save()
+			ctx.translate(sn * depth * (float(k) / steps), 0)
+			ctx.scale(maxf(absf(cs), 0.02) * sgn, 1)
+			ctx.drawImage(side, -gw / 2, -gh / 2, gw, gh)
+			ctx.restore()
+			k -= 1
+		ctx.scale(maxf(absf(cs), 0.02) * sgn, 1)
+		if cs < 0:
+			ctx.filter = "brightness(0.8)"
+		ctx.drawImage(face, -gw / 2, -gh / 2, gw, gh)
+		ctx.restore()
+		var front := maxf(0, cs)
+		sparkle(ctx, cx - gw * 0.28 * cs, cy - gh * 0.3, 16 + 10 * sin(t * 7), front)
+		sparkle(ctx, cx + gw * 0.3 * cs, cy + gh * 0.18, 10 + 6 * sin(t * 5 + 1), front * 0.8))
+
+	card("right_back", {"w": 512, "h": 384, "fps": 12}, func(ctx, w, h, t, o):
+		var ox: float = w * 0.3
+		var oy: float = h * 0.62
+		ctx.fillStyle = radial(ctx, ox, oy, 0, w * 0.9, ["#FFB347", "#E3662B", "#B5472A"])
+		ctx.fillRect(0, 0, w, h)
+		rays(ctx, ox, oy, w * 1.2, 18, "rgba(255,214,120,0.35)", t * 0.25)
+		ctx.fillStyle = radial(ctx, ox, oy, w * 0.1, w * 0.8, ["rgba(255,240,200,0.35)", "rgba(255,240,200,0)"])
+		ctx.fillRect(0, 0, w, h)
+		ellipse(ctx, ox, oy + w * 0.23, w * 0.2, w * 0.03)
+		fill(ctx, "rgba(90,30,20,0.35)")
+		var bob := absf(sin(t * TAU * 1.1)) * -6
+		drawTelly(ctx, ox, oy + bob, w * 0.3, {"expr": "happy", "t": t, "wave": sin(t * TAU * 1.4) * 0.55, "earTwitch": sin(t * 9) * 4, "cols": 30})
+		var lines := ["WE'LL BE", "RIGHT", "BACK"]
+		var sizes: Array = [h * 0.12, h * 0.19, h * 0.21]
+		var y: float = h * 0.2
+		for i in lines.size():
+			var b := sin(t * TAU * 1.1 - i * 0.7) * 3
+			label(ctx, lines[i], w * 0.71, y + b, {
+				"fam": FONT.groovy, "px": sizes[i], "maxW": w * 0.5, "fill": vgrad(["#FFFDF0", "#FFE7A8"]),
+				"stroke": C.ink, "lw": sizes[i] * 0.1, "depth": jround(sizes[i] * 0.09), "depthFill": "#7A2A1A", "dx": 0.5, "dy": 1, "rot": -0.05,
+			})
+			y += sizes[i] * 0.5 + (sizes[i + 1] if i + 1 < sizes.size() else 0.0) * 0.62
+		badge13(ctx, w * 0.9, h * 0.88, h * 0.06, {"ol": 2})
+		vignette(ctx, w, h, 0.3, "70,20,20", 0.5))
+
+	card("hullabaloo", {"w": 512, "h": 384, "fps": 12}, func(ctx, w, h, t, o):
+		ctx.drawImage(layer("hullabaloo:bg", int(w), int(h), func(g, _w, _h):
+			g.fillStyle = linear(g, 0, 0, 0, h, ["#6EC8FF", "#BDEBFF", "#E8FAFF"])
+			g.fillRect(0, 0, w, h)
+			var bands := ["#FF6B6B", "#FFA94D", "#FFE066", "#69DB7C", "#4DABF7", "#9775FA"]
+			for i in bands.size():
+				g.beginPath()
+				g.arc(w / 2, h * 0.95, w * 0.58 - i * w * 0.04, PI, 0)
+				stroke(g, bands[i], w * 0.04 + 1)
+			g.fillStyle = "#8FD06A"
+			g.beginPath()
+			g.moveTo(0, h * 0.8)
+			g.bezierCurveTo(w * 0.25, h * 0.7, w * 0.4, h * 0.78, w * 0.55, h * 0.82)
+			g.bezierCurveTo(w * 0.75, h * 0.72, w * 0.9, h * 0.74, w, h * 0.78)
+			g.lineTo(w, h); g.lineTo(0, h)
+			g.fill()
+			g.fillStyle = "#5DB84E"
+			g.beginPath()
+			g.moveTo(0, h * 0.9)
+			g.bezierCurveTo(w * 0.3, h * 0.82, w * 0.7, h * 0.95, w, h * 0.86)
+			g.lineTo(w, h); g.lineTo(0, h)
+			g.fill()
+			var r := rng(9)
+			for i in 16:
+				var fx: float = r.call() * w
+				var fy: float = h * (0.84 + r.call() * 0.14)
+				var fr: float = 6 + r.call() * 3
+				flower(g, fx, fy, fr, ["#FFFFFF", "#FFD23A", "#FF8AC8"][i % 3], "#FF8A2A")), 0, 0)
+		for i in 3:
+			var x: float = fract(t * 0.03 + i * 0.37) * (w + 160) - 80
+			cloud(ctx, x, h * (0.12 + i * 0.1), 90 + i * 16, 50 + i * 8, "#FFFFFF", "rgba(90,140,200,0.45)", 2)
+		var bob := absf(sin(t * TAU * 0.9)) * -8
+		ellipse(ctx, w / 2, h * 0.93, 64, 10)
+		fill(ctx, "rgba(40,90,40,0.3)")
+		drawHootie(ctx, w / 2, h * 0.72 + bob, h * 0.19, {"t": t, "wave": sin(t * TAU * 1.2) * 0.6 - 0.5})
+		balloonText(ctx, "HOOTIE'S", w / 2, h * 0.2, h * 0.13, t, 0, w * 0.6)
+		balloonText(ctx, "HULLABALOO", w / 2, h * 0.41, h * 0.17, t, 2.3, w * 0.94))
+
+	card("baron", {"w": 512, "h": 384, "fps": 20, "opts": "variant: angry | frantic | goodnight (default laughing)"}, func(ctx, w, h, t, o):
+		var mood: String = o.variant if ["angry", "frantic", "goodnight"].has(o.get("variant")) else "laugh"
+		var f := int(jround(t * 20))
+		ctx.fillStyle = radial(ctx, w / 2, h * 0.45, 0, w * 0.75, BARON_BG[mood])
+		ctx.fillRect(0, 0, w, h)
+		if mood == "goodnight":
+			var r := rng(4)
+			for i in 40:
+				var tw := 0.5 + 0.5 * sin(t * 3 + i)
+				var sx: float = r.call() * w
+				var sy: float = r.call() * h * 0.7
+				var sr: float = 0.8 + r.call() * 1.6
+				circle(ctx, sx, sy, sr)
+				fill(ctx, "rgba(255,244,214,%s)" % _num(0.3 + tw * 0.6))
+			circle(ctx, w * 0.84, h * 0.2, 30)
+			fill(ctx, C.moon)
+			circle(ctx, w * 0.87, h * 0.18, 26)
+			fill(ctx, BARON_BG.goodnight[1])
+		else:
+			ctx.save()
+			ctx.translate(w / 2, h / 2)
+			ctx.rotate(t * (1.2 if mood == "frantic" else 0.35))
+			rays(ctx, 0, 0, w, 16, "rgba(255,90,60,0.12)" if mood == "angry" else "rgba(156,255,87,0.08)", 0)
+			ctx.restore()
+			purpleStatic(ctx, w, h, f, 0.28 if mood == "frantic" else 0.16)
+		var m := 0.35
+		var tilt := 0.0
+		var bob := 0.0
+		var shake := 0.0
+		if mood == "laugh":
+			m = 0.45 + 0.55 * absf(sin(t * TAU * 1.7))
+			tilt = sin(t * TAU * 0.85) * 0.07
+			bob = -absf(sin(t * TAU * 1.7)) * 8
+		elif mood == "angry":
+			shake = sin(t * 70) * 2
+			m = 0.2
+		elif mood == "frantic":
+			shake = sin(t * 90) * 5
+			tilt = sin(t * 13) * 0.1
+		else:
+			tilt = sin(t * 1.5) * 0.05
+			bob = sin(t * 2) * 3
+		ctx.save()
+		ctx.translate(w / 2 + shake, h * 0.54 + bob)
+		ctx.rotate(tilt)
+		ctx.scale(h * 0.34, h * 0.34)
+		ctx.lineJoin = "round"
+		ctx.lineCap = "round"
+		baronFace(ctx, mood, t, m)
+		ctx.restore()
+		if mood == "frantic":
+			ctx.strokeStyle = "rgba(240,250,255,0.85)"
+			ctx.lineWidth = 2
+			ctx.beginPath()
+			ctx.moveTo(w * 0.62, 0); ctx.lineTo(w * 0.58, h * 0.18); ctx.lineTo(w * 0.66, h * 0.3); ctx.lineTo(w * 0.61, h * 0.45)
+			ctx.moveTo(w * 0.58, h * 0.18); ctx.lineTo(w * 0.48, h * 0.24)
+			ctx.stroke()
+		var band: float = fract(t * 0.35) * (h + 80) - 40
+		ctx.fillStyle = linear(ctx, 0, band - 30, 0, band + 30, ["rgba(255,255,255,0)", "rgba(255,255,255,0.07)", "rgba(255,255,255,0)"])
+		ctx.fillRect(0, band - 30, w, 60)
+		osd(ctx, w, h, "0")
+		vignette(ctx, w, h, 0.55, "12,6,24", 0.45))
+
+	card("signoff_film", {"w": 512, "h": 384, "fps": 15, "opts": "time = seconds since the film started (loops at 20 s)"}, func(ctx, w, h, t, o):
+		var lt := fmod(t, 20.0)
+		var f := int(jround(t * 15))
+		var r := rng(f + 11)
+		var weaveX: float = (r.call() - 0.5) * 2
+		var weaveY: float = (r.call() - 0.5) * 2
+		ctx.fillStyle = "#1A1024"
+		ctx.fillRect(0, 0, w, h)
+		ctx.save()
+		ctx.translate(weaveX, weaveY)
+		if lt < 16:
+			ctx.drawImage(layer("signoff:sky", int(w), int(h), func(g, _w, _h):
+				g.fillStyle = linear(g, 0, 0, 0, h, ["#1B1E4A", "#3A3F8A", "#8A7AB8", "#FFB36B"])
+				g.fillRect(0, 0, w, h)
+				var sr := rng(77)
+				for i in 60:
+					var sx: float = sr.call() * w
+					var sy: float = sr.call() * h * 0.5
+					var srr: float = 0.6 + sr.call() * 1.2
+					circle(g, sx, sy, srr)
+					fill(g, "rgba(255,244,214,%s)" % _num(0.4 + sr.call() * 0.5))
+				g.fillStyle = "rgba(255,200,170,0.25)"
+				for i in 4:
+					var ex: float = sr.call() * w
+					var ey: float = h * (0.55 + sr.call() * 0.2)
+					var erx: float = 80 + sr.call() * 60
+					var ery: float = 10 + sr.call() * 6
+					ellipse(g, ex, ey, erx, ery)
+					g.fill()
+				g.fillStyle = "#2A1E40"
+				g.beginPath()
+				g.moveTo(0, h)
+				var x := 0.0
+				while x <= w:
+					g.lineTo(x, h * 0.9 - (sin(x * 0.03) * 8 + int(sr.call() * 14)))
+					x += 16
+				g.lineTo(w, h)
+				g.fill()), 0, 0)
+			# pole
+			var px: float = w * 0.2
+			rr(ctx, px - 5, h * 0.12, 10, h * 0.9, 5)
+			fill(ctx, linear(ctx, px - 5, 0, px + 5, 0, ["#8A8EA0", "#F4F6FF", "#8A8EA0"]))
+			circle(ctx, px, h * 0.11, 11)
+			fill(ctx, radial(ctx, px - 3, h * 0.1 - 3, 0, 12, ["#FFF6C8", C.gold, "#A87010"]))
+			# waving flag, sliced into strips
+			var img := flagImage()
+			var fw: float = w * 0.56
+			var fh: float = fw * (float(img.height) / img.width)
+			var fx: float = px + 4
+			var fy: float = h * 0.16
+			var strips := 56
+			var sw: float = fw / strips
+			for i in strips:
+				var u := float(i) / strips
+				var amp := 4 + u * 20
+				var ph := u * 7 - t * 4.2
+				var dy := sin(ph) * amp
+				var slope := cos(ph)
+				var sq := 1 - u * 0.06
+				ctx.drawImage(img, u * img.width, 0, float(img.width) / strips + 1, img.height, fx + i * sw, fy + dy + (fh * (1 - sq)) / 2, sw + 1, fh * sq)
+				ctx.fillStyle = "rgba(255,255,255,%s)" % _num(slope * 0.16) if slope > 0 else "rgba(20,10,40,%s)" % _num(-slope * 0.3)
+				ctx.fillRect(fx + i * sw, fy + dy + (fh * (1 - sq)) / 2, sw + 1, fh * sq)
+			var la := clampf((lt - 1.2) / 1.5, 0, 1)
+			if la > 0:
+				ctx.save()
+				ctx.globalAlpha = la
+				var ph2: float = h * 0.15
+				rr(ctx, w * 0.5 - w * 0.33, h * 0.75, w * 0.66, ph2, ph2 / 2)
+				fill(ctx, "rgba(20,14,48,0.8)")
+				drawLogo(ctx, w / 2, h * 0.75 + ph2 / 2 + 1, ph2 * 0.55, {"style": "neon"})
+				ctx.restore()
+		if lt > 15.2:
+			ctx.globalAlpha = clampf((lt - 15.2) / 0.8, 0, 1)
+			ctx.drawImage(layer("signoff:test", int(w), int(h), func(g, _w, _h): drawTestCard(g, w, h, {"expr": "sleepy"})), 0, 0)
+			ctx.globalAlpha = 1
+		ctx.restore()
+		# film artefacts
+		grain(ctx, w, h, 0.22, f)
+		ctx.fillStyle = "rgba(255,220,170,%s)" % _num(0.05 + r.call() * 0.05)
+		ctx.fillRect(0, 0, w, h)
+		ctx.fillStyle = "rgba(30,20,20,0.7)"
+		for i in 5:
+			var dx0: float = r.call() * w
+			var dy0: float = r.call() * h
+			var dr0: float = 0.6 + r.call() * 1.8
+			circle(ctx, dx0, dy0, dr0)
+			ctx.fill()
+		if r.call() < 0.35:
+			ctx.fillStyle = "rgba(255,250,235,0.35)"
+			ctx.fillRect(r.call() * w, 0, 1.2, h)
+		vignette(ctx, w, h, 0.65, "20,10,10", 0.4)
+		var fade := clampf(lt / 0.8, 0, 1)
+		if fade < 1:
+			ctx.fillStyle = "rgba(16,10,20,%s)" % _num(1 - fade)
+			ctx.fillRect(0, 0, w, h))
+
+	# LIVE VIA SATELLITE super (transparent, full 4:3 frame so it overlays 1:1).
+	card("satellite_super", {"w": 512, "h": 384, "alpha": true}, func(ctx, w, h, t, o):
+		var y: float = h * 0.74
+		var bh: float = h * 0.14
+		ctx.save()
+		ctx.shadowColor = "rgba(10,8,30,0.55)"
+		ctx.shadowBlur = 10
+		ctx.shadowOffsetY = 3
+		rr(ctx, w * 0.06, y, w * 0.2, bh, [bh * 0.3, 0, 0, bh * 0.3])
+		fill(ctx, linear(ctx, 0, y, 0, y + bh, ["#FF5A4A", "#D8242A"]))
+		rr(ctx, w * 0.26, y, w * 0.68, bh, [0, bh * 0.3, bh * 0.3, 0])
+		fill(ctx, linear(ctx, 0, y, 0, y + bh, ["rgba(40,70,190,0.92)", "rgba(22,34,110,0.92)"]))
+		ctx.restore()
+		ctx.fillStyle = "rgba(255,255,255,0.18)"
+		ctx.fillRect(w * 0.06, y + 3, w * 0.88, bh * 0.3)
+		ctx.fillStyle = "#F4E03A"
+		ctx.fillRect(w * 0.26, y + bh - 4, w * 0.68, 4)
+		circle(ctx, w * 0.085, y + bh / 2, bh * 0.1)
+		fill(ctx, "#FFFFFF")
+		label(ctx, "LIVE", w * 0.172, y + bh * 0.53, {"fam": FONT.sign, "px": bh * 0.55, "maxW": w * 0.12, "fill": "#FFFFFF", "stroke": "#7A0E14", "lw": 3})
+		var sx: float = w * 0.33
+		var sy: float = y + bh / 2
+		ctx.save()
+		ctx.translate(sx, sy)
+		ctx.rotate(-0.5)
+		rr(ctx, -bh * 0.1, -bh * 0.12, bh * 0.2, bh * 0.24, 2)
+		inked(ctx, "#D8DCE6", 1.5)
+		for s in [-1, 1]:
+			rr(ctx, bh * 0.12 if s > 0 else -bh * 0.4, -bh * 0.07, bh * 0.28, bh * 0.14, 1)
+			inked(ctx, "#5FA8FF", 1.5)
+		ctx.restore()
+		ctx.strokeStyle = "#FFFFFF"
+		ctx.lineWidth = 2
+		for k in [1, 2]:
+			ctx.beginPath()
+			ctx.arc(sx - bh * 0.18, sy + bh * 0.18, bh * 0.14 * k + 4, PI * 0.55, PI * 1.0)
+			ctx.stroke()
+		label(ctx, "VIA SATELLITE", w * 0.63, y + bh * 0.53, {"fam": FONT.sign, "px": bh * 0.52, "maxW": w * 0.52, "fill": "#FFFFFF", "stroke": "#141040", "lw": 4, "track": 1})
+		ctx.globalAlpha = 0.85
+		badge13(ctx, w * 0.9, h * 0.1, h * 0.055, {"ol": 2}))
+
+	card("telly_face", {"w": 384, "h": 288, "fps": 12, "opts": "expr: %s; look: [x, y] gaze -1..1" % " | ".join(TELLY_EXPRS)}, func(ctx, w, h, t, o):
+		tellyScreen(ctx, 0, 0, w, h, o.expr if TELLY_EXPRS.has(o.get("expr")) else "idle", t, _or(o.get("look"), [0, 0]), 64))
+
+	card("snow", {"w": 512, "h": 384, "fps": 20, "opts": "channel: OSD number for snow channels (3, 6, 10)"}, func(ctx, w, h, t, o):
+		drawSnow(ctx, w, h, int(jround(t * 20)))
+		if o.has("channel") and o.channel != null:
+			osd(ctx, w, h, _str(o.channel)))
