@@ -557,7 +557,7 @@ static func popCloud(game, z: Dictionary) -> bool:
 	rb.visible = true
 	rb.scale = Vector3.ONE * 0.01
 	SH.setOpacity(rb.material_override, 1.0)
-	SH.addTo(game.scene, rb)
+	SH.addTo(SH.sceneRoot(game), rb)
 	f.rainbowT = 0.0
 	# He sobs, then chases for the rest of his (doubled-damage) life.
 	f.sobbed = true
@@ -741,7 +741,7 @@ static func beginLock(game, z: Dictionary) -> void:
 	d.scale = Vector3.ONE * 0.05
 	SH.setOpacity(d.material_override, 0.5)
 	d.visible = true
-	SH.addTo(game.scene, d)
+	SH.addTo(SH.sceneRoot(game), d)
 	SH.audioPlay(game, "fc_rumble", {"pos": c.target})
 
 static func strike(game, z: Dictionary) -> void:
@@ -768,7 +768,7 @@ static func strike(game, z: Dictionary) -> void:
 	m.boltGlow.mesh = boltMesh({"pos": P, "idx": core.idx})
 	for b in [m.boltCore, m.boltGlow]:
 		b.visible = true
-		SH.addTo(game.scene, b)
+		SH.addTo(SH.sceneRoot(game), b)
 	SH.audioPlay(game, "fc_lightning", {"pos": bot})
 	if game.fx != null:
 		game.fx.flashLight(Vector3(bot.x, bot.y + 1.0, bot.z), "#C8D4FF", 16, 0.14)
@@ -1291,7 +1291,7 @@ func build(game, z: Dictionary) -> void:
 		# detach the cloud into the world; it follows on a spring
 		var piv: Node3D = m.cloud.pivot
 		DAU.detach(piv)
-		game.scene.add_child(piv)
+		SH.addTo(SH.sceneRoot(game), piv)
 		piv.visible = false
 		f.cloud.pos = Vector3(z.pos.x, z.pos.y + m.cloud.restY, z.pos.z)
 		f.cloudInit = false

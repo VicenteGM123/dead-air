@@ -25,6 +25,16 @@ var screens = null
 var _out := ""
 var _wait := 0
 
+# placeProp test doubles (collision / screen registration are other systems)
+class MockCol extends RefCounted:
+	var boxes: Array = []
+	func addBox(mn, mx, opts = {}) -> void:
+		boxes.append([mn, mx, opts])
+		print("material_test: col.addBox ", mn, " ", mx, " ", opts)
+class MockScreens extends RefCounted:
+	func register(mesh, group, opts = {}) -> void:
+		print("material_test: screens.register ", mesh.name if mesh else null, " ", group, " ", opts)
+
 func rand() -> float:
 	return randf()
 
@@ -70,6 +80,14 @@ func _ready() -> void:
 		if ob.has("bulge") and mat is DAMaterial and mat.uniforms.has("uBulge"):
 			mat.uniforms.uBulge.value = float(ob.bulge)
 		scene.add_child(mi)
+	if spec.has("props"):
+		level = {"col": MockCol.new()}
+		screens = MockScreens.new()
+		props = load("res://scripts/props/props.gd").new(self)
+		for pr in spec.props:
+			var g = props.place(scene, pr.id, {"pos": pr.get("pos", [0, 0, 0]), "rotY": float(pr.get("rotY", 0.0)), "opts": pr.get("opts", {}), "area": "lobby"})
+			if g != null:
+				print("material_test: prop ", pr.id, " ud=", JSON.stringify(_udJson(DAU.ud(g))))
 	var dt := 1.0 / 30.0
 	for i in int(spec.get("frames", 45)):
 		time.realNow += dt
@@ -83,6 +101,18 @@ func _ready() -> void:
 			U.uTime.value = float(spec.time)
 		render.frame(dt)
 	_wait = 12
+
+func _udJson(v):
+	if v is Node:
+		return "<node %s>" % v.name
+	if v is Dictionary:
+		var o := {}
+		for k in v:
+			o[k] = _udJson(v[k])
+		return o
+	if v is Array:
+		return v.map(func(x): return _udJson(x))
+	return v
 
 func callv_geo(g: Array) -> Mesh:
 	var kind: String = g[0]

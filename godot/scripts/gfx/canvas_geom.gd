@@ -99,7 +99,7 @@ static func fanIndices(idx: PackedInt32Array, base: int, n: int) -> void:
 		idx.append(base + i)
 		idx.append(base + i + 1)
 
-# Triangulates a Geo with the fill rule. Returns [points, indices]. `overlapOk` = the caller does not care if
+# Triangulates a Geo with the fill rule. Returns [points, indices, overlapPossible]. `overlapOk` = the caller does not care if
 # triangles of different polygons overlap (opaque paint, overdraw-safe op): every polygon is then triangulated on
 # its own (fast) unless the geometry needs winding (holes / evenodd / self-intersection).
 static func triangulate(pts: PackedVector2Array, starts: PackedInt32Array, evenodd: bool, overlapOk: bool) -> Array:
@@ -107,7 +107,7 @@ static func triangulate(pts: PackedVector2Array, starts: PackedInt32Array, eveno
 	var outP := PackedVector2Array()
 	var outI := PackedInt32Array()
 	if np == 0:
-		return [outP, outI]
+		return [outP, outI, false]
 	var needSweep := evenodd and np > 1
 	var kinds := PackedInt32Array()
 	kinds.resize(np)
@@ -138,7 +138,8 @@ static func triangulate(pts: PackedVector2Array, starts: PackedInt32Array, eveno
 			var b2 := starts[k + 1] if k + 1 < np else pts.size()
 			if b2 - a2 >= 3:
 				polys.append(pts.slice(a2, b2))
-		return sweep(polys, evenodd)
+		var swr := sweep(polys, evenodd)
+		return [swr[0], swr[1], false]
 	for k in np:
 		var a := starts[k]
 		var b := starts[k + 1] if k + 1 < np else pts.size()
@@ -159,7 +160,7 @@ static func triangulate(pts: PackedVector2Array, starts: PackedInt32Array, eveno
 			outP.append_array(poly)
 			for t in tri:
 				outI.append(base + t)
-	return [outP, outI]
+	return [outP, outI, np > 1]
 
 static func _appendTris(outP: PackedVector2Array, outI: PackedInt32Array, p: PackedVector2Array, idx: PackedInt32Array) -> void:
 	var base := outP.size()

@@ -1,5 +1,5 @@
 # Character materials for baked SDF characters (port of src/art/charMaterial.js).
-#   CharMaterial.createCharMaterial({ header, rim, envMap, globals, heroFade, aoAmount, iblDiffuse }) -> ShaderMaterial
+#   CharMaterial.createCharMaterial({ header, rim, envMap, globals, heroFade, aoAmount, iblDiffuse }) -> DAMaterial
 #     (shaders/char.gdshader; one per character type, shared by the skinned body and its rigid parts). Per-vertex
 #     inputs from the baker: colour (sRGB) + ao, cavity, material id, pattern mode, pattern coords, triplanar weights,
 #     hair flow, packed morph colour deltas (blender/chars/FORMAT.md §4).
@@ -17,6 +17,9 @@
 #   project.godot; ensureGlobals() adds them when missing, e.g. in isolated tests). `globals` / `envMap` options are
 #   accepted for API compatibility: the globals are always shared; envMap == false disables the RoomEnvironment IBL
 #   (daEnvMap global), any other value (the JS passed game.mats.envMap) keeps it.
+# Every material is a DAMaterial (scripts/core/da_material.gd, godot-core): the JS-like facade (mat.color, mat.emissive,
+#   mat.map, mat.opacity, mat.userData, mat.uniforms, mat.name, mat.clone()) works on character materials too (the
+#   zombie tints poke mat.color / mat.emissive of the body material). kind: "char" | "attach" | "basic".
 # Pattern tiles come as PNGs (godot/assets/chars/patterns) and are assembled into a Texture2DArray per layer list.
 class_name CharMaterial
 extends RefCounted
@@ -148,7 +151,7 @@ static func linesTexture(stitches: Array, chunks: Array) -> ImageTexture:
 
 # ------------------------------------------------------------------------------------------------ body material
 # o: { header, rim, envMap, globals, heroFade, aoAmount = 1, iblDiffuse = 0.3 }
-static func createCharMaterial(o: Dictionary) -> ShaderMaterial:
+static func createCharMaterial(o: Dictionary) -> DAMaterial:
 	ensureGlobals()
 	var header: Dictionary = o.header
 	var matNames: Array = header.get("matNames", [])
@@ -179,9 +182,10 @@ static func createCharMaterial(o: Dictionary) -> ShaderMaterial:
 	var rim = o.get("rim")
 	var rimC = rim.get("color") if rim is Dictionary and rim.get("color") != null else ("#8FF3FF" if kind == "zombie" else "#FFD9A0")
 	var rimS: float = float(rim.strength) if rim is Dictionary and rim.get("strength") != null else (0.3 if kind == "zombie" else 0.35)
-	var mat := ShaderMaterial.new()
+	var mat := DAMaterial.new()
+	mat.kind = "char"
 	mat.shader = CHAR_SHADER
-	mat.resource_name = "char:%s" % header.get("id", "")
+	mat.name = "char:%s" % header.get("id", "")
 	mat.set_shader_parameter("uMatA", A)
 	mat.set_shader_parameter("uMatB", B)
 	mat.set_shader_parameter("uMatC", C)
@@ -197,7 +201,16 @@ static func createCharMaterial(o: Dictionary) -> ShaderMaterial:
 	mat.set_shader_parameter("uIBLDiffuse", _f(o, "iblDiffuse", 0.3))
 	mat.set_shader_parameter("uEnv", 0.0 if (o.get("envMap") is bool and o.envMap == false) else 0.8)
 	mat.set_shader_parameter("uFade", 1.0 if Rig.truthy(o.get("heroFade")) else 0.0)
-	DAU.ud(mat).uniforms = {"kind": kind}
+	mat.color = Color(1, 1, 1)
+	mat.emissive = Color(0, 0, 0)
+	# JS mat.userData.uniforms (local uniforms + the shared globals), as DAMaterial uniform facades
+	var U := {}
+	for n in ["uMatA", "uMatB", "uMatC", "uMatD", "uPatterns", "uLines", "uLineCount", "uChunkCount", "uRimColor", "uRimStrength",
+			"uAOAmount", "uDebug", "uIBLDiffuse"]:
+		U[n] = DAMaterial.DAUniform.new(n, mat.get_shader_parameter(n), mat)
+	for n in ["uRimAmbient", "uHeroFade"]:
+		U[n] = DAMaterial.DAUniform.new(n, RenderingServer.global_shader_parameter_get(n), null, true)
+	mat.userData.uniforms = U
 	return mat
 
 # ------------------------------------------------------------------------------------------------ attachments
@@ -224,7 +237,7 @@ static func _cull(side) -> String:
 # attachMaterial(o): o = { color, rough, metal, map (Texture2D), mapRepeat, transparent, opacity, depthWrite, side,
 #   envMap, envIntensity, emissive, emissiveIntensity, vertexColors, polygonOffset, physical, clearcoat,
 #   clearcoatRough, rimColor, rim, globals, wrap, sss, iblDiffuse, renderOrder }
-static func attachMaterial(o: Dictionary = {}) -> ShaderMaterial:
+static func attachMaterial(o: Dictionary = {}) -> DAMaterial:
 	ensureGlobals()
 	var ko := {}
 	for k in o:
@@ -247,13 +260,15 @@ static func attachMaterial(o: Dictionary = {}) -> ShaderMaterial:
 	var physical := Rig.truthy(o.get("physical"))
 	if physical:
 		defines.append("DA_CC")
-	m = ShaderMaterial.new()
+	m = DAMaterial.new()
+	m.kind = "attach"
 	m.shader = _variantShader("res://shaders/char_attach.gdshaderinc", modes, defines)
-	m.set_shader_parameter("uColor", srgbColor(o.get("color", "#ffffff") if o.get("color") != null else "#ffffff"))
+	m.variantKey = {"transparent": transparent, "side": _sideInt(o.get("side")), "depthWrite": depthWrite, "additive": false, "ext": ""}
+	m.color = srgbColor(o.get("color", "#ffffff") if o.get("color") != null else "#ffffff")
 	m.set_shader_parameter("uOpacity", _f(o, "opacity", 1.0))
 	m.set_shader_parameter("uRough", _f(o, "rough", 0.5))
 	m.set_shader_parameter("uMetal", _f(o, "metal", 0.0))
-	m.set_shader_parameter("uEmissive", srgbColor(o.get("emissive") if o.get("emissive") != null else "#000000"))
+	m.emissive = srgbColor(o.get("emissive") if o.get("emissive") != null else "#000000")
 	m.set_shader_parameter("uEmissiveIntensity", _f(o, "emissiveIntensity", 1.0))
 	var env = o.get("envMap")
 	m.set_shader_parameter("uEnv", 0.0 if (env == null or (env is bool and env == false)) else _f(o, "envIntensity", 1.0))
@@ -266,18 +281,32 @@ static func attachMaterial(o: Dictionary = {}) -> ShaderMaterial:
 	if physical:
 		m.set_shader_parameter("uClearcoat", _f(o, "clearcoat", 1.0))
 		m.set_shader_parameter("uClearcoatRough", _f(o, "clearcoatRough", 0.05))
-	var tex = o.get("map")
-	if tex is Texture2D:
-		var rep := Rig.truthy(o.get("mapRepeat"))
-		m.set_shader_parameter("uMapMode", 1 if rep else 2)
-		m.set_shader_parameter("mapR" if rep else "mapC", tex)
+	_setMapTex(m, o)
 	m.render_priority = clampi(int(_f(o, "renderOrder", 0.0)), -128, 127)
+	var U := {}
+	for n in ["uRimColor", "uRimStrength", "uWrapA", "uSSSA", "uIBLA"]:
+		U[n] = DAMaterial.DAUniform.new(n, m.get_shader_parameter(n), m)
+	U["uRimAmbient"] = DAMaterial.DAUniform.new("uRimAmbient", RenderingServer.global_shader_parameter_get("uRimAmbient"), null, true)
+	m.userData.uniforms = U
 	_attachCache[key] = m
 	return m
 
+static func _sideInt(side) -> int:
+	return {"cull_back": 0, "cull_front": 1, "cull_disabled": 2}.get(_cull(side), 0)
+
+# GLB textures: plain glTF UVs (no flipY), wrap from the glTF sampler.
+static func _setMapTex(m: DAMaterial, o: Dictionary) -> void:
+	var tex = o.get("map")
+	if tex is Texture2D:
+		var rep := Rig.truthy(o.get("mapRepeat"))
+		m.mapWrap = "repeat" if rep else "clamp"
+		var t: Texture2D = tex
+		t.set_meta("flipY", false)
+		m.map = t
+
 # THREE.MeshBasicMaterial: o = { color ('#hex' | [r,g,b] linear), map (Texture2D), mapRepeat, transparent, opacity,
 #   depthWrite, side, vertexColors, name, renderOrder }. (toneMapped:false cannot be honoured per material.)
-static func basicMaterial(o: Dictionary = {}) -> ShaderMaterial:
+static func basicMaterial(o: Dictionary = {}) -> DAMaterial:
 	ensureGlobals()
 	var ko := {}
 	for k in o:
@@ -295,21 +324,19 @@ static func basicMaterial(o: Dictionary = {}) -> ShaderMaterial:
 	var defines := []
 	if transparent:
 		defines.append("DA_TRANSPARENT")
-	m = ShaderMaterial.new()
+	m = DAMaterial.new()
+	m.kind = "basic"
 	m.shader = _variantShader("res://shaders/unlit.gdshaderinc", modes, defines)
-	m.set_shader_parameter("uColor", srgbColor(o.get("color") if o.get("color") != null else "#ffffff"))
+	m.variantKey = {"transparent": transparent, "side": _sideInt(o.get("side")), "depthWrite": depthWrite, "additive": false, "ext": ""}
+	m.color = srgbColor(o.get("color") if o.get("color") != null else "#ffffff")
 	m.set_shader_parameter("uIntensity", 1.0)
 	m.set_shader_parameter("uOpacity", _f(o, "opacity", 1.0))
 	m.set_shader_parameter("uFogK", 1.0)
 	m.set_shader_parameter("uVColor", 1.0 if Rig.truthy(o.get("vertexColors")) else 0.0)
 	m.set_shader_parameter("uMapFlip", 0.0)
-	var tex = o.get("map")
-	if tex is Texture2D:
-		var rep := Rig.truthy(o.get("mapRepeat"))
-		m.set_shader_parameter("uMapMode", 1 if rep else 2)
-		m.set_shader_parameter("mapRL" if rep else "mapCL", tex)
+	_setMapTex(m, o)
 	if o.get("name") != null:
-		m.resource_name = str(o.name)
+		m.name = str(o.name)
 	m.render_priority = clampi(int(_f(o, "renderOrder", 0.0)), -128, 127)
 	_attachCache[key] = m
 	return m
@@ -341,7 +368,7 @@ static func fromSpec(spec: Dictionary, imported: Material, ctx: Dictionary = {})
 		o.envMap = ctx.get("envMap", true)
 	var m := attachMaterial(o)
 	if o.get("name") != null:
-		m.resource_name = str(o.name)
-	elif imported != null and m.resource_name == "":
-		m.resource_name = imported.resource_name
+		m.name = str(o.name)
+	elif imported != null and m.name == "":
+		m.name = imported.resource_name
 	return m

@@ -23,7 +23,7 @@ Build: `python3 blender/build_all.py --only chars [--id duke] [--save-blend]`
 Find nodes by name with `find_child(name, true, false)`; do not rely on the exact Skeleton3D path (the Blender
 exporter/Godot importer choose it). Node names are unique inside one GLB: repeated JS names get a `_<n>` suffix
 (`aviatorRim`, `aviatorRim_1`); the JS name is always `extras.da.name`. Import settings: every
-`godot/assets/chars/*.glb.import` is written with `meshes/force_disable_compression=true`,
+`godot/assets/chars/*.glb.import` is written with `meshes/force_disable_compression=true`, `meshes/ensure_tangents=false`,
 `meshes/generate_lods=false`, `nodes/use_name_suffixes=false` (exact per-vertex data, no LOD re-indexing).
 
 ## 2. Header (`root.get_meta("extras").da`, JSON)
@@ -95,34 +95,40 @@ delta for morph K has `dcK = 128 + 128·256 + 128·65536 = 8421504` (decodes to 
 ## 5. Attachments (eyes, lids, lashes, glasses, aviators, hoops, pointer, wheels, casters, googly eyes, ticket stub, decals …)
 
 Every object the JS `attachments(b)` added to a joint (or to a group the def created on a joint, e.g. the heroes'
-scaled `headScaled` group) is exported as a node tree, placed in **bind-pose model space** (so a plain import shows it
-on the body). The top-level node's `extras.da`:
+scaled `headScaled` group) is exported as a node tree built with the kit's scene graph (`blender/dalib/scene.py`),
+placed in **bind-pose model space** (so a plain import shows it on the body). Node `extras.da` (JSON):
 ```
-{ "name": "<JS name>", "joint": "<joint name>",
-  "local": {"pos": [x,y,z], "quat": [x,y,z,w], "scale": [sx,sy,sz], "rot": [x,y,z], "order": "XYZ"},   // JS local transform in the joint frame
-  "userData": {…JS userData flags: staticEye, staticEyeRim, googlyEye, googlyPupil, googlyRim, wheel, caster, pointer, tally, …},
-  "castShadow": bool, "renderOrder": n, "visible": bool }
+top-level node: { "name": "<JS name>", "joint": "<joint name>",
+                  "local": {"pos": [x,y,z], "quat": [x,y,z,w], "scale": [sx,sy,sz], "rot": [x,y,z], "order": "XYZ"},
+                  "userData": {…JS userData flags: staticEye, staticEyeRim, googlyEye, googlyPupil, googlyRim, wheel,
+                               caster, pointer, tally, lensFront …},
+                  "castShadow": bool (meshes), "renderOrder": n, "visible": bool }
+child node:     { "name", "userData", "castShadow", "renderOrder", "visible" }   (+ "subMesh": true, see below)
 ```
-Reparent it under the joint's Node3D and set its local transform from `local` (identical to its bind-pose placement
-relative to `bindWorld(joint)`). Children keep the JS hierarchy and local transforms (e.g. `eyeL` → `eyeL_ball` →
-sphere mesh, `eyeL_upper`, `eyeL_lower`, glints), each child node's `extras.da` = `{name, userData, castShadow,
-renderOrder, visible}`. Rotation order of every node: JS Euler order in `local.order` (always XYZ unless noted).
+`local` = the JS local transform in the joint frame: reparent the top node under the joint and set it (identical to
+its bind-pose placement relative to `bindWorld(joint)`). Children keep the JS hierarchy and local transforms. Names
+the JS left empty get stable names: eye rigs are `eyeL` (root) → `eyeL_ball` (→ `eyeL_sphere`), `eyeL_glint1/2`,
+`eyeL_upper` (→ `eyeL_upperLid`, `eyeL_lash`, lash wings), `eyeL_lower` (→ `eyeL_lowerLid`); the header's
+`face.eyes` gives the node names the FaceController drives. JS meshes with a material ARRAY (printed cards: face +
+edge) are split: the node keeps group 0 / material 0, each other material group is a child mesh `<name>_<i>` with
+`"subMesh": true` (same transform).
 
-Attachment materials (glTF material, baseColorTexture embedded when the JS material had a `map`), material
-`extras.da` (JSON):
+Materials (`material.extras.da`, JSON; the Blender Principled BSDF only previews it):
 ```
-{ "kind": "attach", "opts": {…attachMaterial opts: color, rough, metal, map (texture key), rim, rimColor, wrap, sss,
-  envIntensity, physical, clearcoat, clearcoatRough, transparent, opacity, depthWrite, side ('front'|'back'|'double'),
-  vertexColors, emissive, emissiveIntensity, polygonOffset, iblDiffuse}, "rimColor": "#…" (builder default), "map": key|null }
-{ "kind": "basic", "opts": {color ([r,g,b] linear floats when the JS used Color(r,g,b), else "#hex"), transparent, opacity,
-  depthWrite, toneMapped, map}, "map": key|null }            // THREE.MeshBasicMaterial (glints, static eye, veil, rim)
+{ "kind": "attach", "color": "#hex", "rimColor": "#…",
+  "opts": {…attachMaterial opts: rough, metal, rim, rimColor, wrap, sss, envIntensity, physical, clearcoat,
+           clearcoatRough, transparent, opacity, depthWrite, side ('front'|'back'|'double'), vertexColors, lensEnv …},
+  "map": "<texture key>" | null, "mapWrap", "mapFilter", "flipY": true, "mapFile": "res://assets/chars/tex/<file>.png" }
+{ "kind": "basic", "color": "#hex", "opts": {color ([r,g,b] linear floats when the JS used Color(r,g,b) > 1, else
+  "#hex"), transparent, opacity, depthWrite, toneMapped, name}, "map": …, "mapFile": … }   // THREE.MeshBasicMaterial
 ```
-UVs of attachments follow the glTF convention (textures display as in three.js with plain sampling). Canvas
-textures (eye iris equirect, "13 ADMIT ONE" ticket, patches, badges, static/veil) are embedded PNGs; the texture key is
-also `material.extras.da.map`. Vertex colours (aviator lens gradient) are COLOR_0 (linear).
+UV / texture convention = the kit's (SPEC §5.3, dalib/tex.py): glTF TEXCOORD_0 is the three.js uv (texture repeat /
+offset baked in); canvas textures are PNGs stored top-down as drawn (`godot/assets/chars/tex/*.png`, also embedded
+in the GLB) and three's flipY applies: sample at `(u, 1 − v)` like materials.gd. Vertex colours (aviator lens
+gradient) are COLOR_0 (linear).
 
 ## 6. Pattern tiles
-`godot/assets/chars/patterns/<type>_<hash8>.png`: 512×512 RGBA, RGB = sRGB albedo, A = LINEAR height (JS
+`godot/assets/chars/patterns/<type>_<hash8>.png` (+ .import: lossless, no mipmaps, no alpha-border fix): 512×512 RGBA, RGB = sRGB albedo, A = LINEAR height (JS
 `patterns.js` `makeTile`, pixel-identical port). Shared between characters (file name = hash of the pattern spec).
 `header.patterns.layers[k]` is the file of layer k (path relative to `godot/assets/chars/`); build a
 `Texture2DArray` in that order (wrap repeat, linear + mipmaps, sRGB for RGB). Sample exactly like `daPattern()`.

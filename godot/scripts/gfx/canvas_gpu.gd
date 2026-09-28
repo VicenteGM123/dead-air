@@ -72,6 +72,7 @@ class RT:
 	var gen := 0              # bumped on release
 	var frameRendered := -1
 	var hasContent := false
+	var keep: Array = []      # objects (textures, source canvases) that must live until this RT rendered
 	var mats := {}            # mask RT: variant -> material RID
 	var maskMat: RID          # mask drawing material (with parent mask)
 	# open batch
@@ -156,6 +157,7 @@ static func resetRT(rt: RT) -> void:
 		RenderingServer.canvas_item_set_default_texture_repeat(it, RenderingServer.CANVAS_ITEM_TEXTURE_REPEAT_DEFAULT)
 	rt.nused = 0
 	rt.deps = []
+	rt.keep = []
 	rt.hasContent = false
 	rt.sealed = false
 	if rt.state != 1:

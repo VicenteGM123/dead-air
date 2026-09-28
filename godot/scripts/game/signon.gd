@@ -177,7 +177,7 @@ func _build() -> void:
 	if box is Node3D:
 		var bu := DAU.ud(box)
 		var P = bu.get("parts", {})
-		var lampMats = bu.get("lampMats")
+		var lampMats = _lampMats(bu.get("lampMats"))
 		if P is Dictionary and P.get("lamp") != null and lampMats != null:
 			var lamp = P.lamp
 			var pos: Vector3 = DAU.worldPos(box)
@@ -781,6 +781,21 @@ func _basicMat(color: String, map, name: String) -> Material:
 	m.albedo_color = Color(color)
 	m.albedo_texture = map
 	return m
+
+# userData.lampMats {on, off}: Materials, or the Blender export's {"__material": spec} refs (built with
+# game.mats.fromSpec). null when missing.
+func _lampMats(lm):
+	if not (lm is Dictionary) or lm.get("on") == null or lm.get("off") == null:
+		return null
+	var out := {}
+	for k in ["on", "off"]:
+		var v = lm[k]
+		if v is Dictionary and v.has("__material"):
+			v = game.mats.fromSpec(v.__material) if game.mats != null and game.mats.has_method("fromSpec") else null
+		if not (v is Material):
+			return null
+		out[k] = v
+	return out
 
 # material colour = base colour (sRGB) x k in linear space.
 static func _scaleMat(m: Material, base: Color, k: float) -> void:

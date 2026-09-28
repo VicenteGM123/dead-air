@@ -343,7 +343,8 @@ type="CompressedTexture2D"
 [params]
 
 compress/mode=0
-mipmaps/generate=true
+process/fix_alpha_border=false
+mipmaps/generate=false
 detect_3d/compress_to=0
 """
 

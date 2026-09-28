@@ -8,6 +8,7 @@ import { Materials } from '../../../src/core/materials.js';
 import { Lights } from '../../../src/core/lights.js';
 import * as geo from '../../../src/core/geo.js';
 import * as tex from '../../../src/core/textures.js';
+import { placeProp } from '../../../src/props/index.js';
 
 function makeGame(spec) {
   const game = {
@@ -82,6 +83,9 @@ window.__mref = {
       const mesh = geo.mesh(g, mat, { pos: ob.pos, rot: ob.rot, scale: ob.scale, cast: ob.cast ?? true });
       if (ob.bulge !== undefined && mat.uniforms && mat.uniforms.uBulge) mat.uniforms.uBulge.value = ob.bulge;
       game.scene.add(mesh);
+    }
+    for (const pr of spec.props || []) {
+      try { placeProp(game, game.scene, pr.id, { pos: pr.pos || [0, 0, 0], rotY: pr.rotY || 0, opts: pr.opts || {}, area: 'lobby' }); } catch (e) { console.error('prop', pr.id, e); }
     }
     const dt = 1 / 30;
     const frames = spec.frames ?? 45;

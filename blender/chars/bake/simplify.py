@@ -144,8 +144,8 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
         kind[(kind == 1) & (nb_border != 2)] = 3
         kind[(kind == 2) & (nb_seam_dir != 2)] = 3
         # manifold fan check: number of distinct wedges at the vertex must be 1 (manifold/border) or 2 (seam)
-        vw = np.unique(np.stack([ha, wa], 1), axis=0)
-        nwedge = np.bincount(vw[:, 0], minlength=nwv)
+        vw = np.unique(ha * np.int64(n) + wa)
+        nwedge = np.bincount(vw // n, minlength=nwv)
         kind[(kind == 0) & (nwedge != 1)] = 3
         kind[(kind == 1) & (nwedge != 1)] = 3
         kind[(kind == 2) & (nwedge != 2)] = 3
@@ -225,7 +225,8 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
         if not len(consider):
             break
         # ---------------- one-ring for the claims
-        und = np.unique(np.concatenate([np.stack([ha, hb], 1), np.stack([hb, ha], 1)]), axis=0)
+        uk2 = np.unique(np.concatenate([ha * nwv + hb, hb * nwv + ha]))
+        und = np.stack([uk2 // nwv, uk2 % nwv], 1)
         nstart = np.searchsorted(und[:, 0], np.arange(nwv + 1))
         # candidate claim list: u, v, N(u)
         cidx = consider
@@ -255,11 +256,14 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
                 break
             # parallel greedy: candidate accepted if it has the lowest rank on all its claimed vertices
             live = pend[claim_c]
+            lv, lc = claim_v[live], claim_c[live]
             best = np.full(nwv, np.iinfo(np.int64).max)
-            np.minimum.at(best, claim_v[live], claim_c[live])
-            won = np.ones(len(cidx), bool)
-            np.logical_and.at(won, claim_c[live], best[claim_v[live]] == claim_c[live])
-            won &= pend
+            so = np.lexsort((lc, lv))
+            fst = np.ones(len(so), bool)
+            fst[1:] = lv[so][1:] != lv[so][:-1]
+            best[lv[so][fst]] = lc[so][fst]
+            fails = np.bincount(lc, weights=(best[lv] != lc).astype(float), minlength=len(cidx))
+            won = pend & (fails == 0)
             wi = np.nonzero(won)[0]
             if not len(wi):
                 break
@@ -278,8 +282,7 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
             taken = np.zeros(nwv, bool)
             acc = status == 1
             taken[claim_v[acc[claim_c]]] = True
-            conflict = np.zeros(len(cidx), bool)
-            np.logical_or.at(conflict, claim_c, taken[claim_v])
+            conflict = np.bincount(claim_c, weights=taken[claim_v].astype(float), minlength=len(cidx)) > 0
             status[(status == 0) & conflict] = -1
             # losers of the flip test stay rejected
             lost = won.copy()
@@ -299,7 +302,7 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
         wmap[su2[t2]] = tv2[t2]
         srcs = np.concatenate([su1[ai], su2[t2]])
         tgts = np.concatenate([tv1[ai], tv2[t2]])
-        np.add.at(Q, tgts, Q[srcs])
+        Q[tgts] += Q[srcs]      # targets are unique within a pass (every target vertex is claimed once)
         F = wmap[F]
         FW = W2P[F]
         keep = (FW[:, 0] != FW[:, 1]) & (FW[:, 1] != FW[:, 2]) & (FW[:, 0] != FW[:, 2])
@@ -332,6 +335,5 @@ def _no_flip(u, v, FW, Ps, forder, fstart):
     l0 = np.linalg.norm(n0, axis=1)
     l1 = np.linalg.norm(n1, axis=1)
     flip = ~hasv & ((dot <= 0.05 * l0 * l1) | (l1 < 1e-14))
-    bad = np.zeros(k, bool)
-    np.logical_or.at(bad, rep, flip)
+    bad = np.bincount(rep, weights=flip.astype(float), minlength=k) > 0
     return ~bad

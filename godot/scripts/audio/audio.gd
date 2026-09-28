@@ -86,9 +86,15 @@ const START_LAG := 0.012
 const SURF_ARP := [0, 7, 12, 10]      # music.js telly_surf_arp: root, fifth, octave, flat seventh
 
 const BUS_NAMES := {"master": "Master", "music": "Music", "sfx": "SFX", "ambience": "Ambience", "ui": "UI", "tv": "TV"}
-# Master chain (see the header): WebAudio DynamicsCompressor settings mapped onto Godot's effects.
+# Master chain (see the header): WebAudio DynamicsCompressor settings mapped onto Godot's effects. Godot's compressor
+# scales the overshoot by 2.0814 before applying the ratio, so a WebAudio ratio r becomes 1 / (1 - (r-1)/(2.0814·r))
+# (3:1 -> 1.471, 20:1 -> 1.840); the static curve then matches node-web-audio-api / Chrome within ~0.5 dB.
+const GODOT_OVER := 2.08136898
 const COMP := {"threshold": -10.0, "ratio": 3.0, "gain": 4.0, "attack_us": 2000.0, "release_ms": 250.0}
 const LIMIT := {"threshold": -2.5, "ratio": 20.0, "gain": 1.425, "attack_us": 1000.0, "release_ms": 80.0}
+
+static func _godotRatio(r: float) -> float:
+	return 1.0 / (1.0 - (r - 1.0) / (GODOT_OVER * r))
 const CLIP_DB := -0.131   # 0.985
 
 var game
@@ -363,14 +369,14 @@ func _build() -> void:
 	var m := _bus("Master", "")
 	var comp := AudioEffectCompressor.new()
 	comp.threshold = COMP.threshold
-	comp.ratio = COMP.ratio
+	comp.ratio = _godotRatio(COMP.ratio)
 	comp.gain = COMP.gain
 	comp.attack_us = COMP.attack_us
 	comp.release_ms = COMP.release_ms
 	AudioServer.add_bus_effect(m, comp)
 	var lim := AudioEffectCompressor.new()
 	lim.threshold = LIMIT.threshold
-	lim.ratio = LIMIT.ratio
+	lim.ratio = _godotRatio(LIMIT.ratio)
 	lim.gain = LIMIT.gain
 	lim.attack_us = LIMIT.attack_us
 	lim.release_ms = LIMIT.release_ms

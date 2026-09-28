@@ -70,6 +70,13 @@
 #   merging and the crowd batches (updateCrowd, resetCrowd, crowdWarmup, crowdStats, CROWD_LAYER).
 # Node names: ':' is not allowed in Godot node names, so 'part:headCenter' is 'part_headCenter' and
 #   'zombie:<type>:<art>' is 'zombie_<type>_<art>'.
+# Port notes: module-level JS state (registry, pools, shared looks) = static vars. Materials: the shared eye / FX
+#   materials are MeshBasicMaterial equivalents (basicMaterial(), an unlit shader). The looks touch other systems'
+#   materials through matGetColor / matSetColor / matGetEmissive / matSetEmissive / matGetMap / matSetMap (LINEAR
+#   colours like THREE.Color): DAMaterial facade (color / emissive / map), BaseMaterial3D, or ShaderMaterial
+#   uniforms (uColor / uEmissive ..., Color-typed = source_color sRGB, vec3 = linear). The ONE TAKE star / feed eye
+#   canvases are Blender runtime textures (blender/runtime/zombies.py). _crScript / _crChecked: tests may point the
+#   art hook at another char runtime script.
 class_name ZombieTypes
 extends RefCounted
 

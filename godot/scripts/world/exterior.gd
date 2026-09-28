@@ -76,7 +76,7 @@ uniform vec3 uColor : source_color;
 uniform float uMul = 1.35;
 uniform sampler2D uMap : source_color, filter_linear_mipmap;
 void fragment() {
-	vec4 t = texture(uMap, UV);
+	vec4 t = texture(uMap, vec2(UV.x, 1.0 - UV.y));   // three flipY (the canvas PNG is stored top row first)
 	ALBEDO = uColor * uMul * t.rgb;
 	ALPHA = t.a;
 }
@@ -120,8 +120,13 @@ static func _skyMaterials(sky: Node3D) -> void:
 		m3.shader = _shader(MOON_SHADER)
 		m3.set_shader_parameter("uColor", Color(Config.PAL.moon))
 		var base := Surf.importedMat(moon)
+		var tex: Texture2D = null
 		if base is BaseMaterial3D:
-			m3.set_shader_parameter("uMap", (base as BaseMaterial3D).albedo_texture)
+			tex = (base as BaseMaterial3D).albedo_texture
+		var spec = Surf.matDa(base)
+		if tex == null and spec != null and spec.get("mapFile") is String and ResourceLoader.exists(spec.mapFile):
+			tex = load(spec.mapFile)
+		m3.set_shader_parameter("uMap", tex)
 		m3.render_priority = -8
 		moon.material_override = m3
 		moon.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

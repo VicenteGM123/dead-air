@@ -270,8 +270,8 @@ func _effective() -> Dictionary:
 	return e
 
 func _windowSize() -> Vector2i:
-	var w := game.get_window()
-	var s := w.size if w != null else Vector2i(1280, 720)
+	var w: Window = game.get_window()
+	var s: Vector2i = w.size if w != null else Vector2i(1280, 720)
 	return Vector2i(maxi(1, s.x), maxi(1, s.y))
 
 func resize() -> void:
@@ -505,7 +505,7 @@ func _qa() -> void:
 		game.get_tree().quit()
 
 func _saveShot() -> void:
-	var img := game.get_viewport().get_texture().get_image()
+	var img: Image = game.get_viewport().get_texture().get_image()
 	if img != null:
 		var err := img.save_png(_shotPath)
 		print("[render] screenshot ", _shotPath, " ", "ok" if err == OK else "error %d" % err)

@@ -183,15 +183,17 @@ def _export_glb(root, name, path, save_blend=False):
     return path
 
 
-def build(save_blend=False, only=None):
-    """Builds every zombies runtime asset into godot/assets/runtime/zombies/. Returns the written paths."""
-    os.makedirs(OUT_DIR, exist_ok=True)
+def build(save_blend=False, only=None, godot=None):
+    """Builds every zombies runtime asset into godot/assets/runtime/zombies/ (or <godot>/assets/runtime/zombies/ when
+    a Godot project dir is given). Returns the written paths."""
+    out_dir = os.path.join(godot, 'assets', 'runtime', 'zombies') if godot else OUT_DIR
+    os.makedirs(out_dir, exist_ok=True)
     written = []
     pngs = {'ticket.png': ticketTexture, 'eye_star.png': makeStarTexture, 'eye_normal.png': makeNormalEyeTexture}
     for fname, make in pngs.items():
         if only and fname.split('.')[0] not in only:
             continue
-        path = os.path.join(OUT_DIR, fname)
+        path = os.path.join(out_dir, fname)
         make().save_png(path)
         written.append(path)
         print('[runtime/zombies] %s' % path)
@@ -201,7 +203,7 @@ def build(save_blend=False, only=None):
             continue
         root = make()
         root.name = name
-        path = os.path.join(OUT_DIR, name + '.glb')
+        path = os.path.join(out_dir, name + '.glb')
         _export_glb(root, name, path, save_blend)
         written.append(path)
         print('[runtime/zombies] %s' % path)

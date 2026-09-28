@@ -164,6 +164,10 @@ vec3 da_feed_skin( vec3 daFc ) {
 	return mix( daFc, daFl * vec3( 1.5, 0.9, 0.57 ) * 1.05, daFk );
 }
 """
+# Injection points (JS injectSkin): before the char shader's `daAlbedo = diffuseColor.rgb;` (the albedo before
+# lighting), else at the end of fragment() on ALBEDO.
+const SKIN_AT := "daAlbedo = diffuseColor.rgb;"
+const SKIN_DIFFUSE := "\tif ( ( CAMERA_VISIBLE_LAYERS & ( 1u << 17u ) ) != 0u ) { diffuseColor.rgb = da_feed_skin( diffuseColor.rgb ); } // DA feed skin (screens.gd)\n"
 const SKIN_CALL := "\n\t{ // DA feed skin (screens.gd)\n\t\tif ( ( CAMERA_VISIBLE_LAYERS & ( 1u << 17u ) ) != 0u ) { ALBEDO = da_feed_skin( ALBEDO ); }\n\t}\n"
 
 # The zombie eyes on feeds: the normal eye drawn over the static snow, on feed cameras only.
@@ -1602,6 +1606,9 @@ func _target(w: int, h: int, samples: int, depth: bool = true, shader: Shader = 
 		vp.msaa_3d = Viewport.MSAA_4X
 		if game.scene != null and game.scene.is_inside_tree():
 			vp.world_3d = game.scene.get_world_3d()
+		var mainView = game.render.get("view") if game.render != null else null
+		if mainView is SubViewport:
+			vp.positional_shadow_atlas_size = mainView.positional_shadow_atlas_size
 		var cam := Camera3D.new()
 		cam.name = "cam"
 		cam.current = true
@@ -1797,7 +1804,7 @@ func _findCamProps() -> void:
 		f.headBase = f.head.rotation.y if f.head != null else 0.0
 		f.lens = P.get("lensTip") if P.get("lensTip") is Node3D else null
 		f.tally = P.get("tally")
-		f.lamps = bu.get("lampMats")
+		f.lamps = _lampMats(bu.get("lampMats"))
 		f.tallyOn = null
 		# rest aim from the lens (head at its base yaw) through the look target: the lens sits up to ~1.3 m off the
 		# anchor, and aiming along anchor -> target from there left the subject (the EE puppets) well off-centre
@@ -1926,13 +1933,23 @@ func _buildInsert() -> void:
 	insertCamera = cam
 	_insertSet = set_
 
-# Imported runtime-asset materials carry the §5.5 spec in their "extras" meta (key "da"): build the game material.
+# A Blender runtime asset: node "da" extras -> userData (+ visible / castShadow), Euler order XYZ, and every material
+# spec (material "extras" meta, key "da") built through game.mats.fromSpec (SPEC §5.4 / §5.5).
 func _convertMaterials(root: Node) -> void:
 	var M = game.mats
-	if M == null or not M.has_method("fromSpec"):
-		return
 	DAU.traverse(root, func(o):
-		if not (o is MeshInstance3D) or o.mesh == null:
+		if o is Node3D:
+			o.rotation_order = EULER_ORDER_XYZ
+		var nx = o.get_meta("extras") if o.has_meta("extras") else null
+		if nx is Dictionary and nx.has("da"):
+			var da = JSON.parse_string(nx.da) if nx.da is String else nx.da
+			if da is Dictionary:
+				DAU.ud(o).merge(da, true)
+				if da.get("visible") == false and o is Node3D:
+					o.visible = false
+				if da.has("castShadow") and o is GeometryInstance3D:
+					o.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if da.castShadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if not (o is MeshInstance3D) or o.mesh == null or M == null or not M.has_method("fromSpec"):
 			return
 		for si in o.mesh.get_surface_count():
 			var m = o.mesh.surface_get_material(si)
@@ -1977,7 +1994,12 @@ func _skinShader(sh: Shader):
 	var code := sh.code
 	if code.find("shader_type spatial") >= 0 and code.find("da_feed_skin") < 0:
 		var fi := code.find("void fragment()")
-		if fi >= 0:
+		var at := code.find(SKIN_AT, fi) if fi >= 0 else -1
+		if at >= 0:
+			var ls := code.rfind("\n", at) + 1
+			out = Shader.new()
+			out.code = code.substr(0, fi) + SKIN_SWAP + "\n" + code.substr(fi, ls - fi) + SKIN_DIFFUSE + code.substr(ls)
+		elif fi >= 0:
 			var open := code.find("{", fi)
 			var depth := 0
 			var close := -1
@@ -2227,7 +2249,7 @@ func _screenMat(mesh):
 				shared = true
 				break
 	if shared:
-		m = m.duplicate()
+		m = m.clone() if m.has_method("clone") else m.duplicate()
 		if mesh.material_override != null:
 			mesh.material_override = m
 		else:
@@ -2356,6 +2378,21 @@ static func _flipMesh(am: Mesh) -> ArrayMesh:
 		out.surface_set_material(s, am.surface_get_material(s))
 		out.surface_set_name(s, am.surface_get_name(s))
 	out.resource_name = am.resource_name
+	return out
+
+# userData.lampMats {on, off}: Materials, or the Blender export's {"__material": spec} refs (built with
+# game.mats.fromSpec). null when missing.
+func _lampMats(lm):
+	if not (lm is Dictionary) or lm.get("on") == null or lm.get("off") == null:
+		return null
+	var out := {}
+	for k in ["on", "off"]:
+		var v = lm[k]
+		if v is Dictionary and v.has("__material"):
+			v = game.mats.fromSpec(v.__material) if game.mats != null and game.mats.has_method("fromSpec") else null
+		if not (v is Material):
+			return null
+		out[k] = v
 	return out
 
 static func _setMat(n, m) -> void:

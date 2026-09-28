@@ -2761,8 +2761,8 @@ func _defeat() -> void:
 	_completeEgg()
 	g.events.emit("boss:defeated", {"round": round})
 	if ending != null and ending.has_method("play"):
-		if ending.play({"round": round}):
-			return
+		ending.play({"round": round})
+		return
 	end({"quiet": true})
 	g.victory()
 

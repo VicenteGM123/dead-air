@@ -41,8 +41,8 @@
 #   confetti); the clone performs the five channel gags, the keyed swirl, the playback tumble or the tele implosion.
 #   Status effects write temporary state and restore it: z.speed (record slow 35 %, Cold Open on specials 50 %),
 #   z.stun (seated, laughing, frozen, panicking; direct writes, no stars), z.animator.override (poses),
-#   z.animator.updateFn (frozen solid: rig.gd's assignable update), mesh materials (material_override: ice, static, bars). Damage bonuses lower z.hp directly unless lethal (then
-#   zombies.damage with cause 'signal_bonus').
+#   z.animator.updateFn (frozen solid: rig.gd's assignable update), mesh materials (material_override: ice, static,
+#   bars). Damage bonuses lower z.hp directly unless lethal (then zombies.damage with cause 'signal_bonus').
 #
 # PORT NOTES (GDScript / Godot plumbing; behaviour is the JS one):
 #   * Zombies are Dictionaries: maps / sets keyed by zombie (JS Map / Set) are keyed by z.id here (_zk), identity
@@ -1005,13 +1005,12 @@ func _screenMat(tex, opts: Dictionary) -> Material:
 	m.albedo_texture = tex
 	return m
 
-# screenMat.map = tex (materials.js defines `map` as the tScreen uniform + uTexel).
+# screenMat.map = tex (materials.gd DAMaterial facade: `map` is the tScreen uniform + uTexel, like the JS).
 func _setScreenMap(mat, tex) -> void:
 	if mat == null:
 		return
-	var M = _M()
-	if M != null and M.has_method("setScreenMap"):
-		M.setScreenMap(mat, tex)
+	if "map" in mat:
+		mat.map = tex
 	elif mat is ShaderMaterial:
 		mat.set_shader_parameter("tScreen", tex)
 		if tex is Texture2D and tex.get_width() > 0:
@@ -2029,8 +2028,9 @@ func _corpse(z):
 	var h := _zh(z)
 	var vis: bool = src.visible
 	src.visible = true
-	# SkeletonUtils.clone: a plain deep copy (bone poses included), no scene re-instancing, no groups / signals
-	var body = src.duplicate(Node.DUPLICATE_SCRIPTS)
+	# SkeletonUtils.clone: a plain deep copy (Skeleton3D bone poses included) frozen in the current pose: no scene
+	# re-instancing, no groups / signals / scripts (a copied script could keep following the live rig)
+	var body = src.duplicate(0)
 	src.visible = vis
 	if not (body is Node3D):
 		body = DAU.node3d()
@@ -3367,8 +3367,9 @@ func _teleLive(t: Dictionary, dt: float) -> void:
 	t.spin.scale = Vector3(1.0 / sqrt(sq), sq, 1.0 / sqrt(sq))
 	if t.parts.ant is Node3D:
 		t.parts.ant.rotation.z = sin(beat * 0.5) * 0.25
-	if t.screenMat is ShaderMaterial and t.screenMat.get_shader_parameter("uBright") != null:
-		t.screenMat.set_shader_parameter("uBright", 1.1 + (0.8 if (late > 0.0 and sin(t.live * 40.0) > 0.4) else 0.0))
+	var U = _g(t.screenMat, "uniforms")
+	if U is Dictionary and U.get("uBright") != null:
+		U.uBright.value = 1.1 + (0.8 if (late > 0.0 and sin(t.live * 40.0) > 0.4) else 0.0)
 	_seatZombies(t, dt)
 	if t.live >= fuse:
 		t.state = "implode"

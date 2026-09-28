@@ -174,7 +174,7 @@ static func _lookXf(p: Vector3, target: Vector3) -> Transform3D:
 func chromeIdent():
 	var W := 900
 	var H := 640
-	var c = _newCanvas(W, H)
+	var c = _newCanvas(W, H, "now")
 	var x = c.getContext("2d")
 	var font := "470px %s" % FONTS.logo
 	x.font = font
@@ -203,7 +203,6 @@ func chromeIdent():
 	x.lineWidth = 5
 	x.strokeStyle = "rgba(255,255,255,0.85)"
 	x.strokeText("13", cx - 2, cy - 3)
-	_flush(c)
 	return c
 
 static func star(x, cx: float, cy: float, r: float, a: float) -> void:
@@ -302,17 +301,16 @@ func _music(id: String) -> void:
 func _post():
 	return _gp(game.render, "post") if game.render != null else null
 
-func _newCanvas(w: int, h: int):
+# document.createElement('canvas') -> DACanvas (bakeMode: "never" for canvases redrawn every frame, "now" for static
+# ones; texture.needsUpdate is not needed: DACanvas presents what was drawn).
+func _newCanvas(w: int, h: int, bake: String = "auto"):
 	if _canvasScript == null and ResourceLoader.exists("res://scripts/gfx/canvas2d.gd"):
 		_canvasScript = load("res://scripts/gfx/canvas2d.gd")
 	if _canvasScript == null:
 		return null
-	return _canvasScript.new(w, h)
-
-# The canvas was drawn this frame: let DACanvas present it (texture.needsUpdate in the JS).
-static func _flush(cv) -> void:
-	if cv != null and cv is Object and cv.has_method("flush"):
-		cv.flush()
+	var cv = _canvasScript.new(w, h)
+	cv.bakeMode = bake
+	return cv
 
 func _B():
 	if _bossLib == null:
@@ -677,7 +675,7 @@ func _fit() -> Dictionary:
 	var w := maxi(320, mini(1920, int(vs.x)))
 	var h := roundi(w * vs.y / vs.x)
 	if _dom.cv == null or _dom.cv.width != w or _dom.cv.height != h:
-		var cv = _newCanvas(w, h)
+		var cv = _newCanvas(w, h, "never")
 		_dom.cv = cv
 		_dom.ctx = cv.getContext("2d") if cv != null else null
 		(_dom.canvas as TextureRect).texture = cv.texture if cv != null else null
@@ -700,7 +698,6 @@ func _paintBlack(a: float) -> void:
 	if a > 0.0:
 		x.fillStyle = "rgba(0,0,0,%s)" % str(a)
 		x.fillRect(0, 0, f.w, f.h)
-	_flush(_dom.cv)
 
 # 4–7: the lingering dot grows two tiny eyes and winks.
 func _drawDot(tt: float) -> void:
@@ -759,7 +756,6 @@ func _drawDot(tt: float) -> void:
 		x.beginPath()
 		x.arc(cx, cy + r * 0.12, r * 0.28, PI * 0.2, PI * 0.8)
 		x.stroke()
-	_flush(_dom.cv)
 
 # ------------------------------------------------------------------------------------------ living room (7–17)
 func _enterRoom() -> void:
@@ -776,7 +772,7 @@ func _enterRoom() -> void:
 		return
 	# the TV picture: our own canvas (sign-off film -> Telly's face -> CRT power-off)
 	if _tv == null:
-		var c = _newCanvas(384, 288)
+		var c = _newCanvas(384, 288, "never")
 		if c != null:
 			_tv = {"canvas": c, "ctx": c.getContext("2d"), "tex": c.texture}
 	if _tv != null:
@@ -906,7 +902,6 @@ func _drawTv(tt: float) -> void:
 			gr.addColorStop(1, "rgba(255,255,255,0)")
 			x.fillStyle = gr
 			x.fillRect(w / 2.0 - 16.0, h / 2.0 - 16.0, 32, 32)
-	_flush(tv.canvas)
 
 func _animateTelly(tt: float) -> void:
 	var telly = _gp(_room, "telly")
@@ -1131,7 +1126,7 @@ func _buildKid(room) -> void:
 		grp.add_child(bowl)
 		# sleepy "z Z z" floating up from the kid
 		var zs := []
-		var zc = _newCanvas(96, 96)
+		var zc = _newCanvas(96, 96, "now")
 		var ztex: Texture2D = null
 		if zc != null:
 			var zx = zc.getContext("2d")
@@ -1144,7 +1139,6 @@ func _buildKid(room) -> void:
 			zx.strokeText("Z", 48, 52)
 			zx.fillStyle = "#FFF1CC"
 			zx.fillText("Z", 48, 52)
-			_flush(zc)
 			ztex = zc.texture
 		var BL = _B()
 		for i in 3:
@@ -1338,7 +1332,7 @@ func _drawCredits(tt: float) -> void:
 	x.globalAlpha = 1
 	# glint sweeping across the chrome only (composited on a scratch copy of the ident)
 	if _glint == null:
-		_glint = _newCanvas(I.width, I.height)
+		_glint = _newCanvas(I.width, I.height, "never")
 	var gc = _glint
 	var gx2 = gc.getContext("2d")
 	gx2.globalCompositeOperation = "source-over"
@@ -1352,7 +1346,6 @@ func _drawCredits(tt: float) -> void:
 	gl.addColorStop(1, "rgba(255,255,255,0)")
 	gx2.fillStyle = gl
 	gx2.fillRect(0, 0, gc.width, gc.height)
-	_flush(gc)
 	x.save()
 	x.globalCompositeOperation = "lighter"
 	x.globalAlpha = 0.55
@@ -1409,7 +1402,6 @@ func _drawCredits(tt: float) -> void:
 	vg.addColorStop(1, "rgba(0,0,0,0.55)")
 	x.fillStyle = vg
 	x.fillRect(0, 0, w, h)
-	_flush(_dom.cv)
 	# the crawl gives way to the portrait (31.0–31.8)
 	var k := clampf((tt - (E.portrait + 0.4)) / 0.8, 0.0, 1.0)
 	_dom.canvas.modulate.a = 1.0 - k

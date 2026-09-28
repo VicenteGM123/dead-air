@@ -289,7 +289,7 @@ def build_blender(d, res, save_blend=False, log=print):
         if v in reserved:
             names[k] = v + '_att'
     rootOb = SG.to_blender(aroot, names, texture_file, d.id)
-    # the dalib "da" of attachment nodes: userData flags (+ joint/local on top-level nodes, jsName)
+    _attachment_da(bpy, aroot, names)
     # ---- header
     bw = bindWorld(R)
     hair = _hair_info(body, R, bw)
@@ -396,6 +396,44 @@ def build_blender(d, res, save_blend=False, log=print):
         os.makedirs(BLEND_OUT, exist_ok=True)
         bpy.ops.wm.save_as_mainfile(filepath=os.path.join(BLEND_OUT, 'char_%s.blend' % d.id))
     return rootOb
+
+
+_OWN = ('joint', 'local', 'jsName', 'subMesh')
+
+
+def _attachment_da(bpy, aroot, names):
+    """FORMAT.md §5 node "da": {name, joint, local (top-level only), userData, castShadow, renderOrder, visible}
+    (+ material "da": rimColor at the top level)."""
+    from dalib import scene as SG
+    for o in _walk(aroot):
+        if o is aroot:
+            continue
+        ob = bpy.data.objects.get(names[id(o)])
+        if ob is None:
+            continue
+        ud = {k: v for k, v in dict(o.userData).items() if k not in _OWN}
+        da = {'name': o.userData.get('jsName', o.name), 'userData': SG.jsonable(ud, names, strict=False)}
+        if o.userData.get('joint'):
+            da['joint'] = o.userData['joint']
+            da['local'] = o.userData['local']
+        if o.userData.get('subMesh'):
+            da['subMesh'] = True
+        if getattr(o, 'isMesh', False):
+            da['castShadow'] = bool(o.castShadow)
+        da['renderOrder'] = o.renderOrder
+        da['visible'] = bool(o.visible)
+        if o.rotation.order != 'XYZ':
+            da['rotationOrder'] = o.rotation.order
+        ob['da'] = json.dumps(da, separators=(',', ':'))
+    for m in bpy.data.materials:
+        if 'da' in m.keys():
+            try:
+                spec = json.loads(m['da'])
+            except Exception:
+                continue
+            if spec.get('kind') == 'attach' and 'rimColor' not in spec:
+                spec['rimColor'] = (spec.get('opts') or {}).get('rimColor')
+                m['da'] = json.dumps(spec, separators=(',', ':'))
 
 
 def _hair_info(body, R, bw):

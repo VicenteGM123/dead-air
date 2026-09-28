@@ -253,6 +253,58 @@ static func fitTf(vw: float, vh: float, x: float, y: float, w: float, h: float) 
 	var k := minf(w / vw, h / vh)
 	return "translate(%s %s) scale(%s)" % [n_(x + (w - vw * k) / 2.0), n_(y + (h - vh * k) / 2.0), n_(k)]
 
+# A CSS box (w x h) as SVG: spec = { r: radius | [tl, tr, br, bl], bg: colour | {lin: deg, stops} |
+# {rad: [cx, cy] (fractions), stops, shape: 'circle' | 'ellipse'} | [layers, first on top], shadows: [[dx, dy, blur,
+# spread, colour], ...] (outer, CSS order), insets: [[dx, dy, blur, spread, colour], ...], extra: svg drawn on top,
+# extraDefs }. Returns [svg, pad]: draw the texture at (x - pad, y - pad, w + 2 pad, h + 2 pad).
+static func cssBoxSvg(w: float, h: float, spec: Dictionary) -> Array:
+	var r = spec.get("r", 0.0)
+	var pad := 2.0
+	for s in spec.get("shadows", []):
+		pad = maxf(pad, absf(s[0]) + absf(s[1]) + s[2] * 1.5 + maxf(0.0, s[3]) + 2.0)
+	pad = ceilf(pad)
+	var defs: Array = []
+	var d := rrd(0, 0, w, h, r)
+	defs.append(clipDef("bx", d))
+	var body := ""
+	var sh: Array = spec.get("shadows", [])
+	for i in range(sh.size() - 1, -1, -1):
+		var s: Array = sh[i]
+		body += boxShadow(defs, "os%d" % i, 0, 0, w, h, r, s[0], s[1], s[2], s[3], s[4])
+	var bgs = spec.get("bg")
+	if bgs != null:
+		if not (bgs is Array):
+			bgs = [bgs]
+		for i in range(bgs.size() - 1, -1, -1):
+			var bg = bgs[i]
+			if bg is String:
+				body += '<path d="%s" %s/>' % [d, fillAttr(bg)]
+			elif bg is Dictionary and bg.has("lin"):
+				defs.append(linGrad("bg%d" % i, 0, 0, w, h, float(bg.lin), bg.stops))
+				body += '<path d="%s" fill="url(#bg%d)"/>' % [d, i]
+			elif bg is Dictionary and bg.has("rad"):
+				var cx: float = float(bg.rad[0]) * w
+				var cy: float = float(bg.rad[1]) * h
+				if bg.get("shape", "circle") == "ellipse":
+					# farthest-corner ellipse with the closest-side aspect ratio
+					var csx := minf(cx, w - cx)
+					var csy := minf(cy, h - cy)
+					var fx := maxf(cx, w - cx)
+					var fy := maxf(cy, h - cy)
+					var k := sqrt(pow(fx / maxf(1e-3, csx), 2.0) + pow(fy / maxf(1e-3, csy), 2.0))
+					var rx := csx * k
+					var ry := csy * k
+					defs.append('<radialGradient id="bg%d" gradientUnits="userSpaceOnUse" cx="%s" cy="%s" r="%s" fx="%s" fy="%s" gradientTransform="translate(%s %s) scale(1 %s) translate(%s %s)">%s</radialGradient>' % [i, n_(cx), n_(cy), n_(rx), n_(cx), n_(cy), n_(cx), n_(cy), n_(ry / rx), n_(-cx), n_(-cy), _stops(bg.stops)])
+				else:
+					defs.append(radGrad("bg%d" % i, cx, cy, float(bg.get("radius", farCorner(0, 0, w, h, cx, cy))), bg.stops))
+				body += '<path d="%s" fill="url(#bg%d)"/>' % [d, i]
+	var ins: Array = spec.get("insets", [])
+	for i in range(ins.size() - 1, -1, -1):
+		var s: Array = ins[i]
+		body += insetShadow(defs, "is%d" % i, "bx", 0, 0, w, h, r, s[0], s[1], s[2], s[3], s[4])
+	body += spec.get("extra", "")
+	return [svgDoc(-pad, -pad, w + pad * 2.0, h + pad * 2.0, body, "".join(defs) + spec.get("extraDefs", "")), pad]
+
 # ------------------------------------------------------------------------------------------------ text
 static func font(css: String) -> Font:
 	return FontsScript.family(css)

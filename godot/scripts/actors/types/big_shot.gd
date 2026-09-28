@@ -873,7 +873,7 @@ static func flashPop(game, z: Dictionary) -> void:
 	f.glow = 1.0
 	m.flare.visible = true
 	m.flare.position = a
-	SH.addTo(game.scene, m.flare)
+	SH.addTo(SH.sceneRoot(game), m.flare)
 	# Does it land? camera forward within 60° of the direction to him, line of sight, in range.
 	var cam: Camera3D = game.camera
 	var cp := SH.camPos(game)
@@ -1159,7 +1159,7 @@ static func startDeath(game, z: Dictionary, _info) -> void:
 	f.flareT = 0.0
 	m.flare.visible = true
 	m.flare.position = a
-	SH.addTo(game.scene, m.flare)
+	SH.addTo(SH.sceneRoot(game), m.flare)
 	var cp := SH.camPos(game)
 	if cp.distance_to(a) < 26.0:
 		var see := SH.lineOfSight(game, a, cp)
@@ -1182,7 +1182,7 @@ static func startDeath(game, z: Dictionary, _info) -> void:
 			st.p[i] = pp
 			st.q[i] = pp
 	m.film.visible = true
-	SH.addTo(game.scene, m.film)
+	SH.addTo(SH.sceneRoot(game), m.film)
 	SH.setColorLin(m.prongMat, Color(0.25, 0.2, 0.15))
 	m.halo.visible = false
 	# FULL REEL on his first death this game
@@ -1429,8 +1429,8 @@ func build(game, z: Dictionary) -> void:
 	f.dustT = 0.0
 	z.animator = BigShotAnimator.new(z, get_script())
 	gameState(game)
-	game.scene.add_child(m.cable)
-	game.scene.add_child(m.plug)
+	SH.addTo(SH.sceneRoot(game), m.cable)
+	SH.addTo(SH.sceneRoot(game), m.plug)
 	registerPlug(game, z)
 	f.rollSnd = game.audio.loop("bs_roll", {"pos": Vector3.ZERO, "vol": 0}) if game.audio != null and game.audio.has_method("loop") else null
 

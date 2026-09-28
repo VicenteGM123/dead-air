@@ -6,6 +6,8 @@
 #   mat.map                        Texture2D or null (textures are sampled with three's flipY unless the texture has
 #                                  meta "flipY" = false; wrap/filter from meta "wrap" ("repeat"|"clamp") / "filter"
 #                                  ("linear"|"nearest") or mat.mapWrap / mat.mapFilter)
+#   mat.mapOffset / mat.mapRepeat   Vector2 (three map.offset / map.repeat; the repeat of textures.gd repeat() is
+#                                  picked up from the texture meta "repeat")
 #   mat.transparent, mat.side (FrontSide 0 / BackSide 1 / DoubleSide 2), mat.depthWrite, mat.additive
 #                                  (compile-time in Godot: setting them switches the shader variant)
 #   mat.uniforms.uX.value = v      ShaderMaterial.uniforms facade (screen: uBulge, uWobble, uBright, uTint ...)
@@ -61,6 +63,8 @@ var mapWrap := ""                    # "" = from the texture meta (default clamp
 var mapFilter := ""                  # "" = from the texture meta (default linear), else "linear" | "nearest"
 var twin: ShaderMaterial = null      # front-face pass of a DoubleSide transparent material
 
+var _mapOffset := Vector2.ZERO
+var _mapRepeat := Vector2.ONE
 var _color := Color(1, 1, 1)
 var _emissive := Color(0, 0, 0)
 var _map: Texture2D = null
@@ -107,6 +111,19 @@ var map: Texture2D:
 		return _map
 	set(v):
 		_setMap(v)
+# three map.offset / map.repeat (kept on the texture in three; per material here): mat.mapOffset.x = t * 0.08
+var mapOffset: Vector2:
+	get:
+		return _mapOffset
+	set(v):
+		_mapOffset = v
+		setParam("uMapXf", Vector4(_mapRepeat.x, _mapRepeat.y, v.x, v.y))
+var mapRepeat: Vector2:
+	get:
+		return _mapRepeat
+	set(v):
+		_mapRepeat = v
+		setParam("uMapXf", Vector4(v.x, v.y, _mapOffset.x, _mapOffset.y))
 var transparent: bool:
 	get:
 		return variantKey.transparent
@@ -166,6 +183,8 @@ func _setMap(t: Texture2D) -> void:
 	else:
 		mode = 2 if filt != "nearest" else 4
 	setParam(["", "mapRL", "mapCL", "mapRN", "mapCN"][mode], t)
+	if t.has_meta("repeat"):
+		mapRepeat = t.get_meta("repeat")
 	setParam("uMapMode", mode)
 	setParam("uMapFlip", 0.0 if t.has_meta("flipY") and not t.get_meta("flipY") else 1.0)
 
@@ -190,6 +209,8 @@ func clone() -> DAMaterial:
 	m._color = _color
 	m._emissive = _emissive
 	m._map = _map
+	m._mapOffset = _mapOffset
+	m._mapRepeat = _mapRepeat
 	m.userData = userData.duplicate(true)
 	# the toon locals / screen facades must point at the copy
 	var lu = m.userData.get("uniforms")

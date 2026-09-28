@@ -36,6 +36,7 @@ uniform float uFlat = 0.0;
 // flipY (textures stored top row first: canvas PNGs, DACanvas, viewports).
 uniform int uMapMode = 0;
 uniform float uMapFlip = 1.0;
+uniform vec4 uMapXf = vec4(1.0, 1.0, 0.0, 0.0);   // three map repeat.xy, offset.zw
 uniform sampler2D mapRL : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D mapCL : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D mapRN : source_color, filter_nearest, repeat_enable;
@@ -76,7 +77,8 @@ varying vec3 vHemiK;
 varying vec4 vG;
 
 vec4 daMapSample(vec2 uv) {
-	vec2 st = vec2(uv.x, uMapFlip > 0.5 ? 1.0 - uv.y : uv.y);
+	vec2 t0 = uv * uMapXf.xy + uMapXf.zw;
+	vec2 st = vec2(t0.x, uMapFlip > 0.5 ? 1.0 - t0.y : t0.y);
 	if (uMapMode == 1) return texture(mapRL, st);
 	if (uMapMode == 2) return texture(mapCL, st);
 	if (uMapMode == 3) return texture(mapRN, st);

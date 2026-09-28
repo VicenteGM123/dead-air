@@ -70,17 +70,20 @@ static func _C():
 # document.createElement('canvas') with width/height (null when the Canvas 2D emulation is missing).
 static func canvas(w: float, h: float):
 	var C = _C()
-	if C == null:
+	if C == null or not C.can_instantiate():
 		return null
 	return C.new(maxi(1, _round(w)), maxi(1, _round(h)))
 
-# Draws a canvas once (draw(ctx, w, h)) and returns its texture (null without the Canvas 2D emulation).
+# Draws a canvas once (draw(ctx, w, h)) and returns its texture (null without the Canvas 2D emulation). The canvas
+# is kept alive with its texture (the JS CanvasTexture held its canvas).
+static var _keep: Array = []
 static func canvasTex(w: int, h: int, draw: Callable):
 	var c = canvas(w, h)
 	if c == null:
 		return null
 	var ctx = c.getContext("2d")
 	draw.call(ctx, w, h)
+	_keep.append(c)
 	return c.texture
 
 static func roundRect(ctx, x: float, y: float, w: float, h: float, r: float) -> void:
@@ -341,6 +344,8 @@ class CommercialOverlay extends RefCounted:
 		el = CO.canvas(W * dpr, H * dpr)
 		if el == null:
 			return
+		if "bakeMode" in el:
+			el.bakeMode = "never"      # (emulation hint) redrawn every frame while it shows
 		ctx = el.getContext("2d")
 		rect.texture = el.texture
 		_layout = _makeLayout(W, H)

@@ -147,6 +147,14 @@ static func _truthy(v) -> bool:
 		return v != ""
 	return true
 
+# Imported glTF nodes use YXZ Euler order: switch a JS-rotated node to three's 'XYZ' keeping its transform.
+static func _xyzOrder(n: Node3D) -> void:
+	if n.rotation_order == EULER_ORDER_XYZ:
+		return
+	var t := n.transform
+	n.rotation_order = EULER_ORDER_XYZ
+	n.transform = t
+
 static func _nodeWorldQ(n: Node3D) -> Quaternion:
 	return n.global_basis.get_rotation_quaternion()
 
@@ -1051,7 +1059,7 @@ func _equip(i: int, raise: bool) -> void:
 		for k in h.parts:
 			var o = h.parts[k]
 			if o is Node3D:
-				(o as Node3D).rotation_order = EULER_ORDER_XYZ
+				_xyzOrder(o)
 				h.rest[o] = {"pos": o.position, "rot": o.rotation, "scale": o.scale, "visible": o.visible}
 		_held[key] = h
 	h.def = WD.weaponDef(s.id, s.upgraded)
@@ -2418,7 +2426,7 @@ func _launchGrenade(cooked: float) -> void:
 	vel.x += p.vel.x * 0.5
 	vel.z += p.vel.z * 0.5
 	var model: Node3D = WM.buildGrenadeModel(g)
-	model.rotation_order = EULER_ORDER_XYZ
+	_xyzOrder(model)
 	model.scale = Vector3(1.25, 1.25, 1.25)
 	model.position = origin
 	g.scene.add_child(model)

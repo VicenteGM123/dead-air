@@ -462,7 +462,8 @@ class Points(Mesh):
 
 class InstancedMesh(Mesh):
     """Exported as a parent node `<name>` ("da": {"instanced": true, "count": n}) with one child `<name>_<i>` per
-    instance (SPEC §5.4). instanceColor is multiplied into that instance's vertex colours and kept in its "da"."""
+    instance (SPEC §5.4); instanceColor goes to that child's "da" {"instanceColor": [r, g, b]} (linear; props.gd
+    applies it per instance like three does, the vertex colours are not touched)."""
     isInstancedMesh = True
 
     def __init__(self, geometry=None, material=None, count=1):
@@ -1023,13 +1024,6 @@ class _Builder:
                 layer.data.foreach_set('uv', arr.ravel())
         # vertex colours (linear, like three's color attribute)
         col = _attr_np(geo.attributes.color, 3) if geo.attributes.color is not None else None
-        if inst_color is not None:
-            if col is None:
-                col = np.ones((n, 3))
-            col = col.copy()
-            col[:, 0] *= inst_color[0]
-            col[:, 1] *= inst_color[1]
-            col[:, 2] *= inst_color[2]
         if col is not None:
             rgba = np.ones((n, 4), dtype=np.float32)
             rgba[:, :min(4, col.shape[1])] = col[:, :4]
@@ -1052,7 +1046,12 @@ class _Builder:
             ln = np.linalg.norm(nb, axis=1)
             ln[ln == 0] = 1
             nb /= ln[:, None]
-            me.normals_split_custom_set_from_vertices(nb.tolist() if False else [tuple(x) for x in nb])
+            if bpy.app.version >= (4, 5, 0):
+                # "free" custom normals (float3 per vertex): exact, also on degenerate faces (lathe poles)
+                a = me.attributes.new('custom_normal', 'FLOAT_VECTOR', 'POINT')
+                a.data.foreach_set('vector', nb.ravel())
+            else:
+                me.normals_split_custom_set_from_vertices([tuple(x) for x in nb])
         if mat is not None:
             me.materials.append(self.material(mat))
         self.meshes[key] = me
@@ -1185,7 +1184,7 @@ def to_blender(root, names=None, texture_file=None, root_name=None, force_names=
                 if o.instanceColor is not None:
                     c = o.instanceColor[i]
                     ic = (c.r, c.g, c.b)
-                me = B.mesh_data(geo, o.material, '%s_mesh' % name, ic)
+                me = B.mesh_data(geo, o.material, '%s_mesh' % name)
                 cname = names[(id(o), i)]
                 ch = B.node(o, ob, cname, me)
                 B.set_trs(ch, p, q, s)

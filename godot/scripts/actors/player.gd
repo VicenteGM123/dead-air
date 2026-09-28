@@ -643,5 +643,6 @@ func _setHeroFade(fade: float) -> void:
 	if M == null:
 		return
 	var U = M.get("uniforms")
-	if U is Dictionary and U.get("uHeroFade") is Dictionary:
-		U.uHeroFade.value = fade
+	var u = U.get("uHeroFade") if U is Dictionary else null
+	if u != null:
+		u.value = fade

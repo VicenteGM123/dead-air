@@ -242,6 +242,12 @@ static func animateWeapon(group: Node3D, t: float, state := {}) -> void:
 	var p = DAU.ud(group).get("parts")
 	if not (p is Dictionary):
 		p = {}
+	for k in ["reelL", "reelR", "needle"]:
+		if p.get(k) is Node3D and (p[k] as Node3D).rotation_order != EULER_ORDER_XYZ:
+			# imported glTF nodes use YXZ: switch to three's XYZ keeping the transform
+			var t: Transform3D = p[k].transform
+			p[k].rotation_order = EULER_ORDER_XYZ
+			p[k].transform = t
 	if p.get("reelL") is Node3D:
 		var w := 9.0 if state.get("recording") else 1.2
 		p.reelL.rotation.y = t * w

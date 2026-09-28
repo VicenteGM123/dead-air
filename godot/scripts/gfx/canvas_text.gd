@@ -168,8 +168,7 @@ static func _parse(css: String) -> Spec:
 			break
 	if sp.font == null:
 		return null
-	var bundled := BUNDLED.has(fams[0]) and sp.font != null and _fonts.get("%s|%d|%s" % [fams[0], sp.weight, sp.italic]) == sp.font
-	if bundled or BUNDLED.has(sp.family):
+	if BUNDLED.has(sp.family):
 		sp.synthItalic = sp.italic
 		if sp.weight >= 600:
 			sp.synthBold = 1.0 / 32.0 if px >= 36.0 else lerpf(1.0 / 24.0, 1.0 / 32.0, clampf((px - 9.0) / 27.0, 0.0, 1.0))

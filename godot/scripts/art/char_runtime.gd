@@ -185,7 +185,7 @@ static func _relTransform(n: Node3D, root: Node3D) -> Transform3D:
 		p = p.get_parent()
 	return t
 
-static func material(id: String, header: Dictionary, def: Dictionary, opts: Dictionary) -> ShaderMaterial:
+static func material(id: String, header: Dictionary, def: Dictionary, opts: Dictionary) -> DAMaterial:
 	var env: bool = not (opts.get("envMap") is bool and opts.envMap == false)
 	var key := "%s|%s|%d|%d" % [id, "env" if env else "", 1 if Rig.truthy(opts.get("heroFade")) else 0, 1 if Rig.truthy(opts.get("globals")) else 0]
 	var m = matCache.get(key)
@@ -405,6 +405,9 @@ static func _slot(parent: Node3D, name: String, pos, rig) -> Node3D:
 static func _setupAttachment(node: Node, da: Dictionary, top: bool, actx: Dictionary) -> void:
 	if node is Node3D:
 		var n3 := node as Node3D
+		# XYZ Euler order first, then (re)set the transform so .rotation is re-derived in that order
+		var t := n3.transform
+		n3.rotation_order = EULER_ORDER_XYZ
 		if top and da.get("local") is Dictionary:
 			var L: Dictionary = da.local
 			var q = L.get("quat")
@@ -412,8 +415,8 @@ static func _setupAttachment(node: Node, da: Dictionary, top: bool, actx: Dictio
 			var basis := Basis(Quaternion(q[0], q[1], q[2], q[3])) if q is Array else Basis()
 			if s is Array:
 				basis = basis * Basis.from_scale(DAU.v3(s))
-			n3.transform = Transform3D(basis, DAU.v3(L.get("pos", [0, 0, 0])))
-		n3.rotation_order = EULER_ORDER_XYZ
+			t = Transform3D(basis, DAU.v3(L.get("pos", [0, 0, 0])))
+		n3.transform = t
 		if da.get("visible") is bool:
 			n3.visible = da.visible
 	if da.get("userData") is Dictionary:

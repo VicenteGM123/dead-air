@@ -36,6 +36,10 @@ uniform float uIBLDiffuse = 0.3;
 uniform float uEnv = 0.8;      // envMapIntensity (0: no envMap)
 uniform float uFade = 0.0;     // DA_FADE (opts.heroFade): dithered by the global uHeroFade
 uniform float uFogK = 1.0;
+// MeshStandardMaterial color / emissive (white / black; the zombie tints change them: DAMaterial.color / .emissive)
+uniform vec3 uColor : source_color = vec3(1.0);
+uniform vec3 uEmissive : source_color = vec3(0.0);
+uniform float uEmissiveIntensity = 1.0;
 // morph colour weights (= blend shape values of header.morphs[0..2]), set per instance by face.gd
 instance uniform vec3 uMorphW = vec3(0.0);
 
@@ -128,7 +132,7 @@ void fragment() {
 	}
 
 	// color_fragment (vertex colour) + FRAG_COLOR: pattern, stitch lines, cavity
-	vec4 diffuseColor = vec4(1.0);
+	vec4 diffuseColor = vec4(uColor, 1.0);
 	diffuseColor.rgb *= vColor;
 	int daM = int(vMat + 0.5);
 	vec4 daA = uMatA[daM];
@@ -224,7 +228,7 @@ void fragment() {
 		indirectSpec = rad * ss + ms * cwi;
 		indirectDiff = diffC * (1.0 - (ssD + msD)) * cwi;
 	}
-	vec3 outgoing = indirectDiff * ao + indirectSpec * ao * ao;
+	vec3 outgoing = indirectDiff * ao + indirectSpec * ao * ao + uEmissive * uEmissiveIntensity;
 
 	// FRAG_OUT: fresnel rim (brighter on up-facing normals) + fabric fuzz
 	float nv = dotNV;

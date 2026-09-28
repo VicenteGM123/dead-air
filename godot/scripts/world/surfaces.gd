@@ -123,6 +123,8 @@ static func _fallback(spec: Dictionary, base: Material) -> Material:
 	m.albedo_color = c
 	if base is BaseMaterial3D and (base as BaseMaterial3D).albedo_texture != null:
 		m.albedo_texture = (base as BaseMaterial3D).albedo_texture
+	elif spec.get("mapFile") is String and ResourceLoader.exists(spec.mapFile):
+		m.albedo_texture = load(spec.mapFile)
 	m.roughness = float(opts.get("rough", 0.75))
 	m.metallic = float(opts.get("metal", 0.0))
 	if opts.get("vertexColors", false):
@@ -183,6 +185,10 @@ static func applyDa(game, root: Node, surf = null) -> void:
 					cache[src] = conv
 					if surf != null and spec != null and spec.get("surface") is String:
 						surf.register(spec.surface, conv, spec.get("tile"), not spec.get("opts", {}).get("vertexColors", false))
+				if da != null and da.get("renderOrder") != null and conv != null:
+					# three renderOrder (lamp pools: 2) -> render_priority of this node's own copy
+					conv = conv.duplicate()
+					conv.render_priority = clampi(int(da.renderOrder), -128, 127)
 				if conv != src:
 					mi.set_surface_override_material(i, conv)
 	)

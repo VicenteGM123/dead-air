@@ -23,10 +23,14 @@ uniform float uIBLA = 0.3;
 uniform float uClearcoat = 0.0;
 uniform float uClearcoatRough = 0.05;
 uniform float uFogK = 1.0;
-// map: 0 none, 1 repeat, 2 clamp (linear + mipmaps + anisotropy, like the JS canvas textures)
+// map (DAMaterial facade names): uMapMode 0 none, 1 repeat+linear, 2 clamp+linear, 3 repeat+nearest, 4 clamp+nearest;
+// uMapFlip 1 = three's flipY (canvas textures stored top row first); GLB textures use plain glTF UVs (0).
 uniform int uMapMode = 0;
-uniform sampler2D mapR : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
-uniform sampler2D mapC : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
+uniform float uMapFlip = 0.0;
+uniform sampler2D mapRL : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D mapCL : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
+uniform sampler2D mapRN : source_color, filter_nearest, repeat_enable;
+uniform sampler2D mapCN : source_color, filter_nearest, repeat_disable;
 
 // fragment -> light
 varying vec3 vDiff;
@@ -38,11 +42,18 @@ varying float vFogKeep;
 varying float vCcKeep;
 varying float vCcRough;
 
+vec4 daMapSample(vec2 uv) {
+	vec2 st = vec2(uv.x, uMapFlip > 0.5 ? 1.0 - uv.y : uv.y);
+	if (uMapMode == 1) return texture(mapRL, st);
+	if (uMapMode == 2) return texture(mapCL, st);
+	if (uMapMode == 3) return texture(mapRN, st);
+	return texture(mapCN, st);
+}
+
 void fragment() {
 	float viewZ = -VERTEX.z;
 	vec4 diffuseColor = vec4(uColor, uOpacity);
-	if (uMapMode == 1) diffuseColor *= texture(mapR, UV);
-	else if (uMapMode == 2) diffuseColor *= texture(mapC, UV);
+	if (uMapMode > 0) diffuseColor *= daMapSample(UV);
 	if (uVColor > 0.5) diffuseColor.rgb *= COLOR.rgb;
 
 	vec3 N = normalize(NORMAL);

@@ -651,6 +651,9 @@ func _loadModel(name: String) -> Node3D:
 			if c is Node3D and _extrasDa(c) != null:
 				root = c
 				break
+		# plain groups carry no extras: a single top node is the root (the storm, the gloves)
+		if root == null and inst.get_child_count() == 1 and inst.get_child(0) is Node3D:
+			root = inst.get_child(0)
 		if root == null:
 			root = inst as Node3D
 		else:
@@ -799,7 +802,7 @@ func buildStorm(g) -> Dictionary:
 		glow.material_override = glowMat
 		glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# rain column: additive streaks scrolling down (canvas 'egg.storm_rain', repeat (4, 1))
-	var rainTex := {"offset": Vector2(0, 0), "repeat": Vector2(4, 1), "vdir": _uvVDir(rain)}
+	var rainTex := {"offset": Vector2(0, 0), "repeat": Vector2(4, 1)}
 	var rainMat := _basicMat({"map": _surfaceTex(rain), "color": _lin("#AFC4FF"), "transparent": true, "opacity": 0.7, "additive": true, "depthWrite": false, "side": "double", "repeat": true})
 	if rain != null:
 		rain.material_override = rainMat
@@ -809,45 +812,31 @@ func buildStorm(g) -> Dictionary:
 	return {"root": root, "body": body, "cloud": cloud, "face": face, "faceMat": faceMat, "glow": glow, "glowMat": glowMat,
 		"rain": rain, "rainMat": rainMat, "rainTex": rainTex}
 
-# albedo texture of the imported material of a mesh (the canvas texture baked by the asset)
+# the canvas texture of a mesh's imported material: its "da" spec mapFile (the shared PNG), else the albedo texture
 static func _surfaceTex(mi: MeshInstance3D) -> Texture2D:
 	if mi == null or mi.mesh == null or mi.mesh.get_surface_count() == 0:
 		return null
 	var m = mi.mesh.surface_get_material(0)
+	var spec = _extrasDa(m) if m != null else null
+	if spec is Dictionary and spec.get("mapFile") is String and ResourceLoader.exists(spec.mapFile):
+		var t = load(spec.mapFile)
+		if t is Texture2D:
+			return t
 	if m is BaseMaterial3D:
 		return (m as BaseMaterial3D).albedo_texture
 	return null
 
-# +1 when Godot's UV.y grows toward the mesh's +Y (three's v direction on the rain cylinder), else -1.
-static func _uvVDir(mi: MeshInstance3D) -> float:
-	if mi == null or mi.mesh == null or mi.mesh.get_surface_count() == 0:
-		return -1.0
-	var arr := mi.mesh.surface_get_arrays(0)
-	var pos: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
-	var uv = arr[Mesh.ARRAY_TEX_UV]
-	if not (uv is PackedVector2Array) or uv.size() != pos.size():
-		return -1.0
-	var hi := 0
-	var lo := 0
-	for i in pos.size():
-		if pos[i].y > pos[hi].y:
-			hi = i
-		if pos[i].y < pos[lo].y:
-			lo = i
-	return 1.0 if uv[hi].y > uv[lo].y else -1.0
-
-# three.js texture repeat/offset on the rain map, in three's v direction (v up the column).
+# three.js texture repeat/offset on the rain map (the rainTex clone's transform; the asset keeps raw UVs).
 static func _rainUv(mat: ShaderMaterial, rt: Dictionary) -> void:
 	if mat == null:
 		return
-	var vd: float = rt.vdir
-	var rep: Vector2 = rt.repeat
-	var off: Vector2 = rt.offset
-	mat.set_shader_parameter("uv_scale", Vector2(rep.x, rep.y))
-	mat.set_shader_parameter("uv_offset", Vector2(off.x, off.y * vd))
+	mat.set_shader_parameter("uv_scale", rt.repeat)
+	mat.set_shader_parameter("uv_offset", rt.offset)
 
 # Unlit material (THREE.MeshBasicMaterial): color (linear, may be HDR), opacity, map (sRGB), alphaTest, additive,
-# side 'front'|'back'|'double', depthWrite, renderOrder, repeat (map wrap), uv_scale/uv_offset (texture transform).
+# side 'front'|'back'|'double', depthWrite, renderOrder, repeat (map wrap), uv_scale/uv_offset (three texture
+# repeat/offset). Mesh UVs from the assets are three.js UVs (dalib); the canvas is sampled at (u, 1 - v) = three's flipY.
+const FOG_INC := "res://shaders/da_common.gdshaderinc"
 static var _basicShaders := {}
 static func _basicMat(o: Dictionary) -> ShaderMaterial:
 	var additive: bool = o.get("additive", false)
@@ -863,15 +852,24 @@ static func _basicMat(o: Dictionary) -> ShaderMaterial:
 		modes.append("blend_add" if additive else "blend_mix")
 		modes.append({"front": "cull_back", "back": "cull_front", "double": "cull_disabled"}.get(side, "cull_back"))
 		modes.append("depth_draw_opaque" if depthWrite else "depth_draw_never")
+		# three's scene fog (THREE.Fog) as the project's fog-as-uniform (shaders/da_common.gdshaderinc)
+		var fog := ResourceLoader.exists(FOG_INC)
+		if fog:
+			modes.append("fog_disabled")
 		var code := "shader_type spatial;\nrender_mode %s;\n" % ", ".join(modes)
+		if fog:
+			code += "#include \"%s\"\n" % FOG_INC
 		code += "uniform vec4 color = vec4(1.0);\nuniform float opacity = 1.0;\nuniform float alpha_test = 0.0;\n"
 		code += "uniform vec2 uv_scale = vec2(1.0);\nuniform vec2 uv_offset = vec2(0.0);\n"
 		if hasMap:
 			code += "uniform sampler2D map : source_color, filter_linear_mipmap%s;\n" % (", repeat_enable" if repeat else ", repeat_disable")
 		code += "void fragment() {\n\tvec4 c = color;\n"
 		if hasMap:
-			code += "\tc *= texture(map, UV * uv_scale + uv_offset);\n"
-		code += "\tif (c.a * opacity < alpha_test) { discard; }\n\tALBEDO = c.rgb;\n"
+			code += "\tvec2 t = UV * uv_scale + uv_offset;\n\tc *= texture(map, vec2(t.x, 1.0 - t.y));\n"
+		code += "\tif (c.a * opacity < alpha_test) { discard; }\n"
+		if fog:
+			code += "\tc.rgb = mix(c.rgb, daFogColor, daFogF(-VERTEX.z, CAMERA_VISIBLE_LAYERS));\n"
+		code += "\tALBEDO = c.rgb;\n"
 		if transparent:
 			code += "\tALPHA = c.a * opacity;\n"
 		code += "}\n"
@@ -1953,7 +1951,8 @@ func _buildHands() -> void:
 	src.free()
 
 # White glove: a keepColor toon (vertex colours, soft wrap, cream rim) with a per-instance alpha (INSTANCE_CUSTOM.a, the
-# JS aFade attribute) so each pair fades on its own: a copy of the toon shader patched with two lines.
+# JS aFade attribute) so each pair fades on its own: a copy of the toon material whose shader is the toon include
+# patched with the JS onBeforeCompile's lines (varying vEggFade; diffuseColor.a *= vEggFade after the colour).
 func _clapMaterial():
 	var mats = game.mats
 	if mats == null or not _has(mats, "toon"):
@@ -1961,19 +1960,42 @@ func _clapMaterial():
 	var base = mats.toon("#ffffff", {"keepColor": true, "vertexColors": true, "rough": 0.55, "rim": 0.5, "rimColor": "#FFF1D8", "rimPower": 2.0, "wrap": 0.7, "transparent": true})
 	if not (base is ShaderMaterial) or (base as ShaderMaterial).shader == null:
 		return base
-	var code: String = (base as ShaderMaterial).shader.code
-	var patched := _patchFade(code)
+	var patched := _patchFade(_inlineIncludes((base as ShaderMaterial).shader.code))
 	if patched == "":
+		push_warning("[egg] applause glove: toon shader not patchable (no per-pair fade)")
 		return base
 	var sh := Shader.new()
 	sh.code = patched
-	var mat: ShaderMaterial = (base as ShaderMaterial).duplicate()
+	var mat = base.clone() if base.has_method("clone") else (base as ShaderMaterial).duplicate()
 	mat.shader = sh
+	for u in (base as ShaderMaterial).shader.get_shader_uniform_list():
+		var v = (base as ShaderMaterial).get_shader_parameter(u.name)
+		if v != null:
+			mat.set_shader_parameter(u.name, v)
 	mat.resource_name = "egg:applause_glove"
 	return mat
 
-# Inserts `varying float vEggFade;`, vEggFade = INSTANCE_CUSTOM.a in vertex() and ALPHA *= vEggFade at the end of
-# fragment(). Returns "" when the shader has no fragment() to patch.
+# `#include "res://…"` lines of a shader whose include holds fragment() are replaced by the include's code.
+static func _inlineIncludes(code: String) -> String:
+	if code.find("void fragment()") >= 0:
+		return code
+	var out := ""
+	for line in code.split("\n"):
+		var l := line.strip_edges()
+		if l.begins_with("#include"):
+			var a := l.find("\"")
+			var b := l.rfind("\"")
+			var path := l.substr(a + 1, b - a - 1) if a >= 0 and b > a else ""
+			var inc = load(path) if path != "" and ResourceLoader.exists(path) else null
+			if inc is ShaderInclude and (inc as ShaderInclude).code.find("void fragment()") >= 0:
+				out += (inc as ShaderInclude).code + "\n"
+				continue
+		out += line + "\n"
+	return out
+
+# Inserts `varying float vEggFade;`, vEggFade = INSTANCE_CUSTOM.a in vertex() and the fade on the diffuse alpha
+# (after the colour, like the JS `#include <color_fragment>` hook; else ALPHA at the end of fragment()).
+# Returns "" when the shader has no fragment() to patch.
 static func _patchFade(code: String) -> String:
 	var fi := code.find("void fragment()")
 	if fi < 0:
@@ -1988,6 +2010,10 @@ static func _patchFade(code: String) -> String:
 	else:
 		fi = out.find("void fragment()")
 		out = out.substr(0, fi) + "void vertex() {\n\tvEggFade = INSTANCE_CUSTOM.a;\n}\n" + out.substr(fi)
+	var hook := "diffuseColor.rgb *= instanceColor.rgb;"
+	var hi := out.find(hook, out.find("void fragment()"))
+	if hi >= 0:
+		return out.substr(0, hi + hook.length()) + "\n\tdiffuseColor.a *= vEggFade;" + out.substr(hi + hook.length())
 	fi = out.find("void fragment()")
 	var ob := out.find("{", fi)
 	var depth := 0

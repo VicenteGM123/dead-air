@@ -182,6 +182,12 @@ static func setCast(n: Node, on: bool) -> void:
 static func isSkinned(n) -> bool:
 	return n is MeshInstance3D and ((n as MeshInstance3D).skin != null or not (n as MeshInstance3D).skeleton.is_empty())
 
+# game.scene (render.scene, the 3D world root), or the game node while render is missing (like zombies.gd).
+static func sceneRoot(game) -> Node:
+	if game == null:
+		return null
+	return game.scene if game.scene != null else game
+
 # three's parent.add(child): re-parents.
 static func addTo(parent: Node, child: Node) -> void:
 	if parent == null or child == null:
@@ -307,14 +313,18 @@ static func toon(game, color: String, opts := {}):
 # opts: map, transparent, opacity, additive, depthWrite, side ('double'), fog, vertexColors, renderOrder
 static func basic(game, lin: Color, opts := {}) -> Material:
 	var M = game.mats if game != null else null
+	var dm = null
 	if M != null and M.has_method("basic"):
 		var o := {}
 		for k in ["map", "transparent", "opacity", "depthWrite", "side", "fog", "vertexColors"]:
 			if opts.has(k):
 				o[k] = opts[k]
 		if opts.get("additive", false):
-			o.blending = "additive"
-		var dm = M.basic("#ffffff", o).clone()
+			o.blending = 2          # THREE.AdditiveBlending
+		var base = M.basic("#ffffff", o)
+		if base != null:
+			dm = base.clone()
+	if dm != null:
 		dm.color = Color(lin.r, lin.g, lin.b).linear_to_srgb()
 		if opts.has("renderOrder"):
 			dm.render_priority = clampi(int(opts.renderOrder), -128, 127)
@@ -717,7 +727,7 @@ static func popButton(game, pos: Vector3, dir: Vector3) -> void:
 	b.spin = Vector3(8 + randf() * 8, randf() * 4, 6 + randf() * 6)
 	var fy := floorAt(game, pos.x, pos.z, pos.y + 0.3)
 	b.floor = (fy if fy > -INF else pos.y) + 0.005
-	addTo(game.scene, b.mesh)
+	addTo(sceneRoot(game), b.mesh)
 
 # PLEASE STAND BY look for the specials' own materials (zombie_types' setZombieTint only knows the materials it built):
 # the same test-card grey (colour ×0.5 + a lilac emissive lift) while zombies are frozen by the power-up. Shared by the

@@ -122,7 +122,7 @@ class CardTexture:
         self.card = card
         self.cardOpts = dict(opts or {})
         self.key = 'card:%s|%s' % (card, js_json(self.cardOpts))
-        self.name = card
+        self.name = 'card:%s' % card
         self.repeat = Vector2(1, 1)
         self.offset = Vector2(0, 0)
         self.center = Vector2(0, 0)

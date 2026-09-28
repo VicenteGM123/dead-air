@@ -47,7 +47,7 @@ def mat_info(m):
     from dalib.scene import Material
     if not isinstance(m, Material):
         return {'type': getattr(m, 'type', '?')}
-    t = m.map
+    t = m.map if m.map is not None else getattr(m, '_card', None)
     mp = None
     if t is not None:
         mp = getattr(t, 'name', None) or getattr(t, 'card', None) or 'tex'

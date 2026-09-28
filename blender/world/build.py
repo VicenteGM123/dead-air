@@ -118,19 +118,39 @@ def build_graph(merge=True, surf_hook=None):
             'buckets': buckets, 'surf': surf}
 
 
-def build_world(save_blend=False, out_dir=None):
+PARTS = ['layout', 'architecture', 'exterior', 'boards', 'doors']
+
+
+def build_world(save_blend=False, out_dir=None, godot=None, parts=None):
+    """Writes layout.json and the world GLBs. parts: subset of PARTS (default all; the graph is always built whole:
+    the shared texture stream needs the JS build order)."""
     t0 = time.time()
-    out = out_dir or OUT
-    written = [layout.write_json()]
+    gd = godot or os.path.join(REPO, 'godot')
+    out = out_dir or os.path.join(gd, 'assets', 'world')
+    parts = parts or PARTS
+    written = []
+    if 'layout' in parts:
+        written.append(layout.write_json(os.path.join(gd, 'data', 'layout.json')))
     roots = build_graph()
     print('[world] graph built in %.1fs' % (time.time() - t0))
-    written.append(wk.export_glb(roots['architecture'], os.path.join(out, 'architecture.glb'), 'architecture', save_blend))
-    written.append(wk.export_glb(roots['exterior'], os.path.join(out, 'exterior.glb'), 'exterior_root', save_blend))
-    written.append(wk.export_glb(roots['boards'], os.path.join(out, 'boards.glb'), 'boards', save_blend))
-    for did, pivot in roots['doors']:
-        written.append(wk.export_glb(pivot, os.path.join(out, 'doors', did + '.glb'), 'pivot', save_blend))
+    if 'architecture' in parts:
+        written.append(wk.export_glb(roots['architecture'], os.path.join(out, 'architecture.glb'), 'architecture', save_blend))
+    if 'exterior' in parts:
+        written.append(wk.export_glb(roots['exterior'], os.path.join(out, 'exterior.glb'), 'exterior_root', save_blend))
+    if 'boards' in parts:
+        written.append(wk.export_glb(roots['boards'], os.path.join(out, 'boards.glb'), 'boards', save_blend))
+    if 'doors' in parts:
+        for did, pivot in roots['doors']:
+            written.append(wk.export_glb(pivot, os.path.join(out, 'doors', did + '.glb'), 'pivot', save_blend))
     print('[world] %d files in %.1fs' % (len(written), time.time() - t0))
     return written
+
+
+def build(ids=None, save_blend=False, godot=None):
+    """blender/build_all.py --only world [--id architecture,doors …] entry point."""
+    parts = [i for i in (ids or []) if i in PARTS] or None
+    build_world(save_blend=save_blend, godot=godot, parts=parts)
+    return True
 
 
 if __name__ == '__main__':
