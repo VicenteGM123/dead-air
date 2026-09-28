@@ -18,6 +18,7 @@ missing keys read as None like JS `undefined`).
 """
 
 import math
+import numbers as _numbers
 import random as _random
 import json as _json
 from decimal import Decimal, ROUND_HALF_UP
@@ -29,7 +30,7 @@ except Exception:  # pragma: no cover
 
 __all__ = [
     'JSObj', 'js_round', 'js_str', 'js_json', 'js_to_fixed', 'js_keys', 'js_mod', 'js_sign', 'js_trunc',
-    'to_int32', 'to_uint32', 'imul', 'f32', 'EPSILON', 'MAX_VALUE', 'PI',
+    'to_int32', 'to_uint32', 'imul', 'f32', 'js_defaults', 'EPSILON', 'MAX_VALUE', 'PI',
     'MathUtils', 'DEG2RAD', 'RAD2DEG', 'clamp', 'euclideanModulo', 'mapLinear', 'inverseLerp', 'lerp', 'damp',
     'pingpong', 'smoothstep', 'smootherstep', 'randInt', 'randFloat', 'randFloatSpread', 'seededRandom',
     'degToRad', 'radToDeg', 'isPowerOfTwo', 'ceilPowerOfTwo', 'floorPowerOfTwo', 'generateUUID',
@@ -240,6 +241,32 @@ def js_keys(obj):
     keys = list(obj.keys())
     idx = sorted((k for k in keys if _is_index_key(k)), key=lambda k: int(k))
     return idx + [k for k in keys if not _is_index_key(k)]
+
+
+def js_defaults(fn):
+    """Decorator: a positional/keyword argument passed as None takes the parameter's default, like a JS `undefined`
+    argument does (ports pass `opts.get('seg')` where the JS passed `opts.seg`)."""
+    import inspect
+    import functools
+    params = list(inspect.signature(fn).parameters.values())
+    defaults = [(i, p.name, p.default) for i, p in enumerate(params)
+                if p.default is not inspect.Parameter.empty and p.default is not None]
+    if not defaults:
+        return fn
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kw):
+        if None in args or None in kw.values():
+            args = list(args)
+            for i, name, d in defaults:
+                if i < len(args):
+                    if args[i] is None:
+                        args[i] = d
+                elif name in kw and kw[name] is None:
+                    kw[name] = d
+        return fn(*args, **kw)
+    wrapper.__wrapped_js__ = fn
+    return wrapper
 
 
 # ============================================================================================ MathUtils
@@ -1719,6 +1746,48 @@ class Matrix4:
         scale.z = sz
         return self
 
+    def makePerspective(self, left, right, top, bottom, near, far, coordinateSystem=2000, reversedDepth=False):
+        te = self.elements
+        x = 2 * near / (right - left)
+        y = 2 * near / (top - bottom)
+        a = (right + left) / (right - left)
+        b = (top + bottom) / (top - bottom)
+        if reversedDepth:
+            c = near / (far - near)
+            d = (far * near) / (far - near)
+        elif coordinateSystem == 2000:  # WebGLCoordinateSystem
+            c = -(far + near) / (far - near)
+            d = (-2 * far * near) / (far - near)
+        else:  # WebGPUCoordinateSystem
+            c = -far / (far - near)
+            d = (-far * near) / (far - near)
+        te[0] = x; te[4] = 0; te[8] = a; te[12] = 0
+        te[1] = 0; te[5] = y; te[9] = b; te[13] = 0
+        te[2] = 0; te[6] = 0; te[10] = c; te[14] = d
+        te[3] = 0; te[7] = 0; te[11] = -1; te[15] = 0
+        return self
+
+    def makeOrthographic(self, left, right, top, bottom, near, far, coordinateSystem=2000, reversedDepth=False):
+        te = self.elements
+        x = 2 / (right - left)
+        y = 2 / (top - bottom)
+        a = -(right + left) / (right - left)
+        b = -(top + bottom) / (top - bottom)
+        if reversedDepth:
+            c = 1 / (far - near)
+            d = far / (far - near)
+        elif coordinateSystem == 2000:
+            c = -2 / (far - near)
+            d = -(far + near) / (far - near)
+        else:
+            c = -1 / (far - near)
+            d = -near / (far - near)
+        te[0] = x; te[4] = 0; te[8] = 0; te[12] = a
+        te[1] = 0; te[5] = y; te[9] = 0; te[13] = b
+        te[2] = 0; te[6] = 0; te[10] = c; te[14] = d
+        te[3] = 0; te[7] = 0; te[11] = 0; te[15] = 1
+        return self
+
     def equals(self, m):
         return all(a == b for a, b in zip(self.elements, m.elements))
 
@@ -2373,7 +2442,7 @@ class Color:
             value = r
             if value is not None and getattr(value, 'isColor', False):
                 self.copy(value)
-            elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            elif isinstance(value, _numbers.Real) and not isinstance(value, bool):
                 self.setHex(value)
             elif isinstance(value, str):
                 self.setStyle(value)

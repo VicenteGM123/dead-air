@@ -71,7 +71,7 @@ rest-rotation-identity joints with the bind-pose inverses; to drive it with the 
 |---|---|---|
 | `ARRAY_VERTEX` | POSITION | bind-pose model position (three coords) |
 | `ARRAY_NORMAL` | NORMAL | SDF-gradient normal (JS `nrm`, int8 quantised then normalised) |
-| `ARRAY_COLOR` | COLOR_0 (vec4) | `(albedo.r, albedo.g, albedo.b, ao)`; albedo LINEAR (= JS `LUT[col_u8]`), ao = `aux.x/255` (Godot stores COLOR as 8-bit) |
+| `ARRAY_COLOR` | COLOR_0 (vec4) | `(albedo.r, albedo.g, albedo.b, ao)`; albedo = **sRGB** `col_u8/255` (exact in Godot's 8-bit colour; the shader converts sRGB→linear exactly like the JS `LUT`), ao = `aux.x/255` |
 | `ARRAY_TEX_UV` | TEXCOORD_0 | `(pco.x, pco.y)` pattern coords (m; cyl mode: u around incl. wrap copies, v along) |
 | `ARRAY_TEX_UV2` | TEXCOORD_1 | `(pco.z, cavity)`; cavity = `(aux.y − 128)/127` (−1 concave … +1 convex) |
 | `ARRAY_CUSTOM0` (RGBA_FLOAT) | TEXCOORD_2+3 | `(matId, patternMode, pw.x, pw.y)`; matId = `aux.z` (index into matNames), patternMode = `aux.w` (0 triplanar, 1 cylindrical), pw = triplanar weights `/255` |
@@ -84,7 +84,8 @@ rest-rotation-identity joints with the bind-pose inverses; to drive it with the 
 Verified with Godot 4.7.2: TEXCOORD_2..7 import as CUSTOM0..2 `ARRAY_CUSTOM_RGBA_FLOAT`, values bit-exact.
 
 ### 4.1 Morph colour deltas (`CUSTOM2`)
-Godot blend shapes cannot carry colours, so the JS morph colour deltas (`morph_<ex>_dc`, linear, relative) are packed
+Godot blend shapes cannot carry colours, so the JS morph colour deltas (`morph_<ex>_dc`, LINEAR, relative to the
+linear base colour = `LUT[col_u8]`; the shader adds them after its sRGB→linear conversion) are packed
 per vertex: `dcK = (r8 + 128) + (g8 + 128)·256 + (b8 + 128)·65536` (an integer < 2^24, exact in float32) with
 `c8 = clamp(round(dc.c · 127), −127, 127)`. Decode in the shader:
 `int v = int(dcK + 0.5); vec3 d = (vec3(v & 255, (v >> 8) & 255, (v >> 16) & 255) - 128.0) / 127.0;` and add

@@ -22,6 +22,9 @@
 #       JS  `const orig = a.update.bind(a); a.update = (dt, st) => {...}`  ->  `var orig = a.updateFn if
 #           a.updateFn.is_valid() else a._procUpdate; a.updateFn = func(dt, st): ...`
 #       JS  `a.update = () => {}` / restore            ->  `a.updateFn = func(_dt, _st): pass` / `a.updateFn = prev`
+#   * JS weapons.js also wraps the hero's update to run its IK pose after everything else; here that is the
+#     `postUpdate` Array of Callables (rig, dt), called in order at the very end of update() (after updateFn /
+#     the procedural pose, the override and the charRuntime wrapper work).
 #   * FnAnimator is the base of the custom animators returned by character definitions (createAnimator): an object
 #     with the same surface (update, kick, override, updateFn) whose update is the Callable `updateFn`.
 #   * Math.random() -> randf(). JS quaternion math (setFromEuler, slerp, multiply) is reproduced exactly (quatXYZ,
@@ -360,6 +363,7 @@ class Animator extends RefCounted:
 	var air := 0.0
 	var override = null   # Callable (rig, dt) | null
 	var updateFn: Callable = Callable()   # assignable `update` (see the header)
+	var postUpdate: Array = []            # Callables (rig, dt) run at the end of update() (weapons IK pose)
 	var _poses := {}
 	var _grounded := true
 	var _hurt := 0.0
@@ -409,6 +413,9 @@ class Animator extends RefCounted:
 			updateFn.call(dt, st)
 		else:
 			_procUpdate(dt, st)
+		for fn in postUpdate:
+			if fn is Callable and (fn as Callable).is_valid():
+				(fn as Callable).call(rig, dt)
 
 	func _procUpdate(dt: float, st: Dictionary = {}) -> void:
 		var J: Dictionary = rig.joints
@@ -675,10 +682,14 @@ class FnAnimator extends RefCounted:
 	var override = null
 	var updateFn: Callable = Callable()
 	var kickFn: Callable = Callable()
+	var postUpdate: Array = []
 
 	func update(dt: float, st: Dictionary = {}) -> void:
 		if updateFn.is_valid():
 			updateFn.call(dt, st)
+		for fn in postUpdate:
+			if fn is Callable and (fn as Callable).is_valid():
+				(fn as Callable).call(rig, dt)
 
 	func kick(amount: float = 1.0) -> void:
 		if kickFn.is_valid():

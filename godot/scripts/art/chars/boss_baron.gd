@@ -45,11 +45,10 @@ static func def() -> Dictionary:
 			"dims": {"height": 1.2, "headH": 0.52},
 		},
 		"rim": {"color": "#C9A0FF", "strength": 0.45},
-		"createAnimator": func(rig, _ctx): return createAnimator(rig),
 	}
 
 # charview preview only: a slow hover sway with the gloves breathing. boss.gd drives the joints in game.
-static func createAnimator(rig) -> Rig.FnAnimator:
+static func createAnimator(rig, _ctx = null) -> Rig.FnAnimator:
 	var J: Dictionary = rig.joints
 	var S := {"t": 0.0}
 	var a := Rig.FnAnimator.new()

@@ -75,14 +75,6 @@ const DISCO := {"shoulderR": [2.72, 0, 0.28], "elbowR": [0.12, 0, 0], "shoulderL
 const SHOT := {"wobble_up": {"orbit": -0.42, "maxD": 2.8}}
 const WAH := {"replay_ade": [1.1, 0.95, 1.05, 0.85], "wobble_up": [0.9, 1.05, 0.8], "jump_cut": [1.15, 1, 1.1, 0.9], "roller_boogie": [1, 1.2, 0.95, 1.1, 0.85], "double_vision": [1.05, 1.15, 0.9]}
 const REST := {"shoulderL": [0.05, 0, 0.1], "shoulderR": [0.05, 0, -0.1], "elbowL": [0.25, 0, 0], "elbowR": [0.25, 0, 0], "spine": [0, 0, 0], "head": [0, 0, 0]}
-# rig.js POSES used here (fallback copy only when scripts/core/rig.gd does not expose POSES).
-const POSES_FALLBACK := {
-	"thumbsup": {"shoulderR": [0.8, 0, 0.25], "elbowR": [1.5, 0, 0], "shoulderL": [0.8, 0, -0.25], "elbowL": [1.5, 0, 0], "head": [0.1, 0, 0.12]},
-	"fingerguns": {"shoulderR": [1.45, 0, -0.25], "elbowR": [0.25, 0, 0], "shoulderL": [1.45, 0, 0.25], "elbowL": [0.25, 0, 0], "chest": [0, 0.2, 0]},
-	"point": {"shoulderR": [2.7, 0, 0.82], "elbowR": [0.1, 0, 0], "handR": [0, 1.3, 0], "shoulderL": [-0.2, 0, -0.55], "elbowL": [1.75, 0, 0], "hips": [0, 0, 0.08], "spine": [0, 0, 0.06], "head": [0.25, -0.15, 0.1]},
-	"shoulder": {"shoulderR": [0.82, -0.53, 0.95], "elbowR": [2.55, 0, 0], "handR": [-0.9, 0.8, 0], "shoulderL": [-0.2, 0, -0.55], "elbowL": [1.75, 0, 0], "head": [0.05, 0.1, 0.06]},
-}
-
 var game
 var inCommercial := false
 var sets := {}
@@ -156,31 +148,9 @@ static func _m(o, m: String, args: Array = []):
 func _play(id: String, opts: Dictionary = {}):
 	return _m(game.audio, "play", [id, opts])
 
-# rig.js POSES (the Godot rig module's copy when it exposes one).
-static var _posesCache = null
+# rig.js POSES (scripts/core/rig.gd, Rig.POSES).
 static func _POSES() -> Dictionary:
-	if _posesCache != null:
-		return _posesCache
-	var out := {}
-	var path := "res://scripts/core/rig.gd"
-	if ResourceLoader.exists(path):
-		var R = load(path)
-		if R != null:
-			var cm: Dictionary = R.get_script_constant_map()
-			if cm.get("POSES") is Dictionary:
-				out = cm.POSES
-			else:
-				var v = R.get("POSES")
-				if v is Dictionary:
-					out = v
-	if out.is_empty():
-		out = POSES_FALLBACK.duplicate(true)
-		out["commercial_skip"] = out.thumbsup
-		out["commercial_roxy"] = out.point
-		out["commercial_penny"] = out.shoulder
-		out["commercial_duke"] = out.fingerguns
-	_posesCache = out
-	return out
+	return Rig.POSES
 
 # The station layout tables (layout.js AREAS / PLATFORMS / DOORS / WINDOWS): data/layout.json written by the Blender
 # world pipeline (the single source of truth, same shapes as the JS), else the world port's layout.gd.
@@ -227,8 +197,9 @@ static func _gxf(n: Node3D) -> Transform3D:
 static func _wpos(n: Node3D) -> Vector3:
 	return _gxf(n).origin
 
+# three's Quaternion.setFromEuler(new Euler(x, y, z)) (order XYZ: this module's own Euler never changes order).
 static func _qe(e) -> Quaternion:
-	return Basis.from_euler(Vector3(float(e[0]), float(e[1]), float(e[2])), EULER_ORDER_XYZ).get_rotation_quaternion()
+	return Rig.quatXYZ(float(e[0]), float(e[1]), float(e[2]))
 
 # ------------------------------------------------------------------------------------------ placement fitting
 # Rotated rectangle (center c, half extents hx/hz along axes X/Z) vs axis-aligned rect: separating axis test.
@@ -502,6 +473,10 @@ func init() -> void:
 				var h = U.uHeroFade
 				if h is Dictionary:
 					h.value = 1.0
+			# (the JS uniform object is read at draw time; the Godot global is uploaded by materials.gd before this
+			# pre-pass, so it is written here too for this frame's draw)
+			if RenderingServer.global_shader_parameter_get_list().has(&"uHeroFade"):
+				RenderingServer.global_shader_parameter_set(&"uHeroFade", 1.0)
 			var pl = game.player
 			var m = _f(pl, "model")
 			if m and _f(pl, "_hidden"):
@@ -1440,7 +1415,7 @@ func _pose(rig, _dt: float = 0.0) -> void:
 		var j = J.get(name) if J is Dictionary else _f(J, name)
 		if j == null or e == null:
 			return
-		j.quaternion = j.quaternion.slerp(_qe(e), w * W)
+		j.quaternion = Rig.slerp(Rig.quatOf(j), _qe(e), w * W)
 	var pose := func(P: Dictionary, w: float = 1.0) -> void:
 		for n in P:
 			setJ.call(n, P[n], w)

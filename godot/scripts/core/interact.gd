@@ -126,7 +126,7 @@ func _los(it: Dictionary, p) -> bool:
 		left -= hit.dist + 0.01
 	return false
 
-func check(itemOrId):
+func check(itemOrId) -> Variant:
 	var it = items.get(itemOrId) if (itemOrId is String or itemOrId is StringName) else itemOrId
 	var p = game.player
 	if it == null or p == null:
@@ -206,7 +206,7 @@ func update(dt: float) -> void:
 			_use(best)
 	_updateHud(best, bestPrompt)
 
-static func _callv(fn):
+static func _callv(fn) -> Variant:
 	if fn is Callable and fn.is_valid():
 		return fn.call()
 	return fn

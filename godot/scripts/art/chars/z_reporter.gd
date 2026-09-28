@@ -28,7 +28,6 @@ static func mouth() -> Dictionary:
 	}
 
 static func def() -> Dictionary:
-	var MOUTH := mouth()
 	return {
 		"id": "z_reporter",
 		"name": "Tuned-In: Field Reporter",
@@ -37,5 +36,8 @@ static func def() -> Dictionary:
 		"armOut": 0.1,
 		"poseOffset": {"spine": [-0.06, 0, 0], "chest": [-0.06, 0, 0], "head": [0.16, 0, -0.1], "handL": [-0.5, 0, 0], "handR": [-0.35, 0, 0]},
 		"rim": {"color": "#8FF3FF", "strength": 0.3},
-		"anchors": func(_ctx): return {"EYES": EYES, "MOUTH": MOUTH},
 	}
+
+# def.anchors(ctx) (head-local anchors consumed by the attachment builders).
+static func anchors(_ctx = null) -> Dictionary:
+	return {"EYES": EYES, "MOUTH": mouth()}

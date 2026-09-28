@@ -4,9 +4,9 @@
 # (moves + attacks itself), updateEntry, onDamage, onDeath/updateDeath, warmup, entry).
 #
 # Look: the sculpted z_sock (char_runtime.buildCharacter('z_sock'), custom 5-joint chain root -> s1 -> s2 -> s3 -> head
-#   (+ jaw)), baked by the Blender character pipeline; art=0 or a missing bake -> a small procedural sock on the same
-#   joints (Blender runtime asset specials/sock_placeholder.glb). Googly pupils jiggle on springs (k 120, d 12), the
-#   body squash/stretches, bends into the hop, the jaw flaps.
+#   (+ jaw)), baked by the Blender character pipeline (the JS art=0 / missing-bake procedural placeholder sock is a
+#   placeholder-art path: not ported, SPEC §0.2). Googly pupils jiggle on springs (k 120, d 12), the body
+#   squash/stretches, bends into the hop, the jaw flaps.
 # Behaviour:
 #   - HOPS: one hop per 0.33 s (T.zombies.sock.speed 4.5 m/s, speed15 from round 15 -> ~1.5 m hops): 24 % of the cycle
 #     on the floor (landing squash 0.7 -> anticipation crouch), the rest in the air (stretch 1.3). When music plays
@@ -32,11 +32,12 @@
 #   - Module-level JS state (pool, buttons, sound budget, beat cache, tint set) = static vars (one set per process,
 #     like the JS module scope). JS module functions = static funcs; the default-export object = this script's
 #     instance (fields + methods with the JS names).
-#   - Static meshes (placeholder sock, flying button) come from blender/runtime/specials.py
-#     (res://assets/runtime/specials/*.glb + *.png textures); materials are created here with the same factory calls
+#   - Static meshes (the flying button) come from blender/runtime/specials.py
+#     (res://assets/runtime/specials/*.glb); canvas textures are redrawn with DACanvas (SPEC §6); materials are
+#     created here with the same factory calls
 #     as the JS (game.mats.toon ...).
 #   - Also hosts the port helpers the three special modules share (registerSpecialTint is shared in the JS too):
-#     Spring (copy of rig.js Spring), collision / material / scene-graph glue. See the "port glue" section.
+#     collision / material / scene-graph glue. See the "port glue" section. Spring = rig.gd's Rig.Spring.
 #   - charOpt.gen pool invalidation and mergeAttachments (draw-call merging, A/B tooling) are engine plumbing: not
 #     ported (SPEC §0.2); pupils stay separate meshes on their pivots.
 #   - Renames: parameter `round` -> `r` (GDScript builtin).
@@ -53,6 +54,7 @@ const HEAR := 15.0
 const DEATH := 2.3
 const ASSETS := "res://assets/runtime/specials/"
 const CHAR_RUNTIME := "res://scripts/art/char_runtime.gd"
+const CANVAS := "res://scripts/gfx/canvas2d.gd"
 
 static var S: Dictionary = Config.T.zombies.sock
 static var R: Dictionary = Config.T.rounds
@@ -112,47 +114,18 @@ static func num(d, key: String, def := 0.0) -> float:
 		return def
 	return float(v)
 
-# ------------------------------------------------------------------------------------------------ Spring
-# Damped spring (GDD §3.6: k=120, damping 12). update(dt, target) -> x. Substepped for stability. Same code as
-# rig.js Spring (the specials' own springs; rig.gd's copy lives with the Animator).
-class Spring extends RefCounted:
-	var k := 120.0
-	var d := 12.0
-	var x := 0.0
-	var v := 0.0
-
-	func _init(k_ := 120.0, d_ := 12.0, x_ := 0.0) -> void:
-		k = k_
-		d = d_
-		x = x_
-		v = 0.0
-
-	func update(dt: float, target := 0.0) -> float:
-		var n := maxi(1, ceili(dt / (1.0 / 120.0)))
-		var h := dt / n
-		for i in n:
-			v += (-k * (x - target) - d * v) * h
-			x += v * h
-		return x
-
-	func kick(impulse: float) -> void:
-		v += impulse
-
-	func reset(x_ := 0.0) -> void:
-		x = x_
-		v = 0.0
-
 # ------------------------------------------------------------------------------------------------ port glue
 # (shared with forecaster.gd / big_shot.gd: `const SH = preload(".../sock_hopper.gd")`)
 
-# level.col.moveCircle(z.pos, delta, ...) mutates pos in JS: here the result carries the new position ("pos"),
-# which is stored back into z.pos. Returns the result Dictionary ({onGround, hitWall, groundY, hitCeiling, ...}).
+# level.col.moveCircle(z.pos, delta, ...) mutates pos in JS: collision.gd returns the moved feet in "pos", stored
+# back into z.pos here; z is the owner (collision.gd remembers "grounded" per owner, the JS per pos object).
+# Returns the (reused) result Dictionary ({onGround, hitWall, groundY, hitCeiling, normal, pos}): read it at once.
 static func moveZ(g, z: Dictionary, delta: Vector3, rad: float, h: float, stepUp := 0.45) -> Dictionary:
 	var col = colOf(g)
 	if col == null:
 		z.pos = z.pos + delta
 		return {"onGround": false, "hitWall": false, "groundY": -INF, "hitCeiling": false}
-	var r = col.moveCircle(z.pos, delta, rad, h, stepUp)
+	var r = col.moveCircle(z.pos, delta, rad, h, stepUp, null, z)
 	if r is Dictionary:
 		if r.has("pos"):
 			z.pos = r.pos
@@ -179,11 +152,11 @@ static func lineOfSight(g, a: Vector3, b: Vector3) -> bool:
 		return true
 	return bool(col.lineOfSight(a, b))
 
-# nav.dir(x, z, out) -> out (unit XZ toward the goal, 0 if unreachable)
+# JS nav.dir(x, z, out) -> out (unit XZ toward the goal, 0 if unreachable); nav.gd returns the Vector3.
 static func navDir(g, x: float, zz: float) -> Vector3:
 	if g == null or g.nav == null:
 		return Vector3.ZERO
-	var r = g.nav.dir(x, zz, Vector3.ZERO)
+	var r = g.nav.dir(x, zz)
 	return r if r is Vector3 else Vector3.ZERO
 
 static func audioPlay(g, cue: String, opts := {}):
@@ -247,7 +220,6 @@ static func camQuat(g) -> Quaternion:
 
 # ---- glTF runtime assets (blender/runtime/specials.py)
 static var _scenes := {}
-static var _texs := {}
 
 static func loadScene(nm: String) -> Node3D:
 	var path := ASSETS + nm + ".glb"
@@ -287,20 +259,46 @@ static func loadMesh(asset: String, nm: String) -> Mesh:
 	_meshes[key] = mesh
 	return mesh
 
-static func loadTex(nm: String) -> Texture2D:
-	if _texs.has(nm):
-		return _texs[nm]
-	var path := ASSETS + nm + ".png"
+# the albedo texture of a node's imported material (the Blender asset carries the canvas textures too)
+static func glbTex(asset: String, nm: String) -> Texture2D:
+	var root := loadScene(asset)
+	if root == null:
+		return null
 	var t: Texture2D = null
-	if ResourceLoader.exists(path):
-		t = load(path)
-	elif FileAccess.file_exists(path):
-		var img := Image.load_from_file(ProjectSettings.globalize_path(path))
-		if img != null:
-			img.generate_mipmaps()
-			t = ImageTexture.create_from_image(img)
-	_texs[nm] = t
+	var n := byName(root, nm)
+	if n is MeshInstance3D and n.mesh != null and n.mesh.get_surface_count() > 0:
+		var m: Material = n.mesh.surface_get_material(0)
+		if m is BaseMaterial3D:
+			t = (m as BaseMaterial3D).albedo_texture
+	root.free()
 	return t
+
+# document.createElement('canvas') -> DACanvas (scripts/gfx/canvas2d.gd, SPEC §6); null while it is missing.
+static var _canvases: Array = []      # keeps the canvases (and their textures) alive
+static func newCanvas(w: int, h: int):
+	if not ResourceLoader.exists(CANVAS):
+		return null
+	var C = load(CANVAS)
+	if C == null or not C.can_instantiate():
+		return null
+	var c = C.new(w, h)
+	_canvases.append(c)
+	return c
+
+# a mesh whose surfaces are the first surfaces of `meshes` (three multi-material groups on one geometry)
+static func joinMeshes(meshes: Array) -> ArrayMesh:
+	var am := ArrayMesh.new()
+	for me in meshes:
+		if me != null and me.get_surface_count() > 0:
+			am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, me.surface_get_arrays(0))
+	return am
+
+# game.mats.toon(color, opts) (null while materials.gd is missing)
+static func toon(game, color: String, opts := {}):
+	var M = game.mats if game != null else null
+	if M == null or not M.has_method("toon"):
+		return null
+	return M.toon(color, opts)
 
 # ---- materials
 # THREE.MeshBasicMaterial with a LINEAR colour (new THREE.Color(r, g, b) / Color(hex).multiplyScalar(k)).
@@ -313,6 +311,9 @@ static func basic(lin: Color, opts := {}) -> StandardMaterial3D:
 	m.albedo_color = Color(c.r, c.g, c.b, a)
 	if opts.get("map") != null:
 		m.albedo_texture = opts.map
+		# three CanvasTexture flipY: the three uv (Godot's uv on these meshes) samples the canvas at (u, 1 - v)
+		m.uv1_scale = Vector3(1, -1, 1)
+		m.uv1_offset = Vector3(0, 1, 0)
 	if opts.get("transparent", false) or opts.get("additive", false):
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	if opts.get("additive", false):
@@ -336,35 +337,15 @@ static func hexLin(hex: String, k := 1.0) -> Color:
 	var c := Color(hex).srgb_to_linear()
 	return Color(c.r * k, c.g * k, c.b * k)
 
-# THREE material .color (linear) of a basic/toon material; set / get.
+# THREE material .color / .emissive (LINEAR colours) of a basic / toon / character material: the zombie registry's
+# accessors (zombie_types.gd: BaseMaterial3D albedo/emission, ShaderMaterial Color uniforms sRGB, vec3 linear).
 static func setColorLin(mat: Material, lin: Color) -> void:
-	if mat == null:
-		return
-	if mat is BaseMaterial3D:
-		var a: float = (mat as BaseMaterial3D).albedo_color.a
-		var c := Color(lin.r, lin.g, lin.b).linear_to_srgb()
-		(mat as BaseMaterial3D).albedo_color = Color(c.r, c.g, c.b, a)
-	elif mat is ShaderMaterial:
-		var p := _param(mat, ["color", "uColor", "albedo", "diffuse", "baseColor"])
-		if p != "":
-			var cur = mat.get_shader_parameter(p)
-			var a := 1.0
-			if cur is Color:
-				a = cur.a
-			mat.set_shader_parameter(p, Color(lin.r, lin.g, lin.b, a) if _linParam(mat, p) else Color(Color(lin.r, lin.g, lin.b).linear_to_srgb(), a))
+	if mat != null:
+		ZombieTypes.matSetColor(mat, lin)
 
 static func getColorLin(mat: Material) -> Color:
-	if mat is BaseMaterial3D:
-		return (mat as BaseMaterial3D).albedo_color.srgb_to_linear()
-	if mat is ShaderMaterial:
-		var p := _param(mat, ["color", "uColor", "albedo", "diffuse", "baseColor"])
-		if p != "":
-			var cur = mat.get_shader_parameter(p)
-			if cur is Color:
-				return cur if _linParam(mat, p) else (cur as Color).srgb_to_linear()
-			if cur is Vector3:
-				return Color(cur.x, cur.y, cur.z)
-	return Color(1, 1, 1)
+	var c = ZombieTypes.matGetColor(mat) if mat != null else null
+	return c if c is Color else Color(1, 1, 1)
 
 static func setOpacity(mat: Material, a: float) -> void:
 	if mat == null:
@@ -394,28 +375,10 @@ static func setEmissiveLin(mat: Material, lin: Color) -> void:
 		return
 	if mat is BaseMaterial3D:
 		(mat as BaseMaterial3D).emission_enabled = true
-		(mat as BaseMaterial3D).emission = Color(lin.r, lin.g, lin.b).linear_to_srgb()
-	elif mat is ShaderMaterial:
-		var p := _param(mat, ["emissive", "uEmissive", "emission"])
-		if p != "":
-			var cur = mat.get_shader_parameter(p)
-			if cur is Vector3:
-				mat.set_shader_parameter(p, Vector3(lin.r, lin.g, lin.b))
-			else:
-				mat.set_shader_parameter(p, Color(lin.r, lin.g, lin.b) if _linParam(mat, p) else Color(lin.r, lin.g, lin.b).linear_to_srgb())
+	ZombieTypes.matSetEmissive(mat, lin)
 
 static func getEmissiveLin(mat: Material):
-	if mat is BaseMaterial3D:
-		return (mat as BaseMaterial3D).emission.srgb_to_linear() if (mat as BaseMaterial3D).emission_enabled else null
-	if mat is ShaderMaterial:
-		var p := _param(mat, ["emissive", "uEmissive", "emission"])
-		if p != "":
-			var cur = mat.get_shader_parameter(p)
-			if cur is Color:
-				return cur if _linParam(mat, p) else (cur as Color).srgb_to_linear()
-			if cur is Vector3:
-				return Color(cur.x, cur.y, cur.z)
-	return null
+	return ZombieTypes.matGetEmissive(mat) if mat != null else null
 
 static var _paramCache := {}
 static func _param(mat: ShaderMaterial, names: Array) -> String:
@@ -435,13 +398,6 @@ static func _param(mat: ShaderMaterial, names: Array) -> String:
 			break
 	_paramCache[key] = found
 	return found
-
-# a colour uniform without source_color holds linear values
-static func _linParam(mat: ShaderMaterial, p: String) -> bool:
-	for u in mat.shader.get_shader_uniform_list():
-		if u.name == p:
-			return not String(u.get("hint_string", "")).contains("source_color") and int(u.get("hint", 0)) != PROPERTY_HINT_COLOR_NO_ALPHA
-	return true
 
 # the material a MeshInstance3D draws with (override, surface override, mesh surface)
 static func meshMat(mi: MeshInstance3D) -> Material:
@@ -614,63 +570,6 @@ static func buildBakedModel(game):
 		registerSpecialTint(game, meshMat(c.skinnedMesh))
 	return finishModel(game, group, c.rig, J, eyes, whites, bodies, true)
 
-# Procedural stand-in on the same joints (art=0 / no bake): a striped tube, a head, googly eyes.
-# Geometry: specials/sock_placeholder.glb (blender/runtime/specials.py); materials as in the JS.
-static func buildPlaceholderModel(game):
-	var M = game.mats
-	var src := loadScene("sock_placeholder")
-	if src == null:
-		return null
-	var root: Node3D = byName(src, "rig")
-	DAU.detach(root)
-	src.free()
-	root.name = "rig"
-	var J := {}
-	for nm in ["root", "s1", "s2", "s3", "head", "jaw"]:
-		J[nm] = byName(root, nm)
-	var toy := func(col: String, o := {}) -> Material:
-		var opts := {"rough": 0.8, "rim": 0.4, "rimColor": "#8FF3FF", "keepColor": true}
-		opts.merge(o, true)
-		return M.toon(col, opts) if M != null else null
-	var cols := ["#EDE0C4", "#E0392F", "#F7C630", "#2F63D8"]
-	for i in 4:
-		var seg: MeshInstance3D = byName(root, "seg%d" % i)
-		if seg:
-			seg.material_override = toy.call(cols[i])
-	var hm: MeshInstance3D = byName(root, "headMesh")
-	if hm:
-		hm.material_override = toy.call("#EDE0C4")
-	var jm: MeshInstance3D = byName(root, "jawMesh")
-	if jm:
-		jm.material_override = toy.call("#E0392F")
-	var eyes := {}
-	var whites: Array = []
-	for s in [1, -1]:
-		var side := "L" if s > 0 else "R"
-		var g: Node3D = byName(root, "googly" + side)
-		var pv: Node3D = byName(g, "googlyPupilPivot" + side) if g else null
-		if g == null or pv == null:
-			continue
-		var wm: MeshInstance3D = byName(g, "googlyWhite" + side)
-		if wm:
-			wm.material_override = toy.call("#F4F4F0", {"rough": 0.2})
-			noShadow(wm)
-		var pm: MeshInstance3D = byName(pv, "googlyPupil" + side)
-		if pm:
-			pm.material_override = toy.call("#050305", {"rough": 0.3})
-			noShadow(pm)
-		eyes[side] = {"pivot": pv, "base": pv.position}
-		whites.append(g)
-	var group := DAU.node3d()
-	group.rotation_order = EULER_ORDER_YXZ
-	group.add_child(root)
-	var rig := {"root": root, "joints": J, "dims": {"height": 0.72, "headH": 0.2}}
-	var bodies: Array = []
-	DAU.traverse(root, func(o):
-		if o is MeshInstance3D and (o as MeshInstance3D).cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
-			bodies.append(o))
-	return finishModel(game, group, rig, J, eyes, whites, bodies, false)
-
 static func finishModel(game, group: Node3D, rig, J: Dictionary, eyes: Dictionary, whites: Array, bodies: Array, baked: bool) -> Dictionary:
 	var head := DAU.node3d("part_headCenter")
 	head.position = Vector3(0, 0.06, -0.07)
@@ -693,8 +592,10 @@ static func acquire(game):
 			return m
 		if not bakedWarned:
 			bakedWarned = true
-			push_warning("[sock_hopper] baked sock failed, using the placeholder")
-	return buildPlaceholderModel(game)
+			push_warning("[sock_hopper] baked sock failed")
+	# the art=0 / no-bake procedural placeholder is not ported (SPEC §0.2): without baked art the type cannot
+	# build and the manager spawns a Tuned-In instead (like zombie_types.gd)
+	return null
 
 static func resetPose(m: Dictionary) -> void:
 	var g: Node3D = m.group
@@ -718,27 +619,43 @@ static func resetPose(m: Dictionary) -> void:
 		w.scale = Vector3.ONE
 
 # ------------------------------------------------------------------------------------------------ buttons (death)
-# Geometry: specials/sock_button.glb (CylinderGeometry(0.03, 0.03, 0.01, 18), side + caps); the cap texture
-# (the JS 64x64 canvas) is specials/sock_button_cap.png.
+# Geometry: specials/sock_button.glb (CylinderGeometry(0.03, 0.03, 0.01, 18): side / caps meshes, joined back into
+# one two-surface mesh); the 64x64 cap canvas is drawn with DACanvas (the Blender asset's copy if it is missing).
+static var buttonTex = null
+
 static func buttonAssets(game) -> void:
 	if buttonMesh != null:
 		return
-	var tex := loadTex("sock_button_cap")
-	var side = game.mats.toon("#D99A22", {"rough": 0.35, "keepColor": true, "rim": 0.4})
-	var cap = game.mats.toon("#ffffff", {"rough": 0.35, "keepColor": true, "map": tex, "rim": 0.3, "name": "sockButtonCap"})
-	buttonMesh = loadMesh("sock_button", "sock_button")
+	var c = newCanvas(64, 64)
+	if c != null:
+		var x = c.getContext("2d")
+		x.fillStyle = "#E8A92E"
+		x.fillRect(0, 0, 64, 64)
+		x.strokeStyle = "#B97A14"
+		x.lineWidth = 6
+		x.beginPath()
+		x.arc(32, 32, 24, 0, PI * 2)
+		x.stroke()
+		x.fillStyle = "#6B4A12"
+		for dd in [[-7, -7], [7, -7], [-7, 7], [7, 7]]:
+			x.beginPath()
+			x.arc(32 + dd[0], 32 + dd[1], 4, 0, PI * 2)
+			x.fill()
+		buttonTex = c.texture
+	else:
+		buttonTex = glbTex("sock_button", "sock_button_cap")
+	var side = toon(game, "#D99A22", {"rough": 0.35, "keepColor": true, "rim": 0.4})
+	var cap = toon(game, "#ffffff", {"rough": 0.35, "keepColor": true, "map": buttonTex, "rim": 0.3, "name": "sockButtonCap"})
+	buttonMesh = joinMeshes([loadMesh("sock_button", "sock_button_side"), loadMesh("sock_button", "sock_button_cap")])
 	buttonMats = [side, cap, cap]
 
 static func makeButtonMesh() -> MeshInstance3D:
 	var mesh := MeshInstance3D.new()
 	mesh.rotation_order = EULER_ORDER_XYZ
 	mesh.mesh = buttonMesh
-	if buttonMesh != null:
-		# surfaces: the Blender asset keeps the side / cap material slots (named) -> the JS [side, cap, cap] groups
-		for s in buttonMesh.get_surface_count():
-			var sm := buttonMesh.surface_get_material(s)
-			var isCap := sm != null and String(sm.resource_name).to_lower().contains("cap")
-			mesh.set_surface_override_material(s, buttonMats[1] if isCap else buttonMats[0])
+	if buttonMesh != null and buttonMats != null:
+		for sfc in mini(buttonMesh.get_surface_count(), 2):
+			mesh.set_surface_override_material(sfc, buttonMats[sfc])
 	return mesh
 
 static func popButton(game, pos: Vector3, dir: Vector3) -> void:
@@ -1403,6 +1320,8 @@ func entry(_game, _z, win):
 
 func build(game, z: Dictionary) -> void:
 	var m = acquire(game)
+	if m == null:
+		return
 	resetPose(m)
 	z.model = m
 	z.group = m.group
@@ -1431,9 +1350,9 @@ func build(game, z: Dictionary) -> void:
 	f.losT = randf() * 0.25
 	f.giggleT = 2.0 + randf() * 5.0
 	f.side = -1.0 if randf() < 0.5 else 1.0
-	f.sq = Spring.new(260, 15)
-	f.bend = Spring.new(120, 12)
-	f.eyeS = [0, 1].map(func(_i): return {"x": Spring.new(120, 12), "y": Spring.new(120, 12, -0.55)})
+	f.sq = Rig.Spring.new(260, 15)
+	f.bend = Rig.Spring.new(120, 12)
+	f.eyeS = [0, 1].map(func(_i): return {"x": Rig.Spring.new(120, 12), "y": Rig.Spring.new(120, 12, -0.55)})
 	f.driven = false
 	f.spotted = false
 	f.beatLock = false

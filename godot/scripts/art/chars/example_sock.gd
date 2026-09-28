@@ -26,10 +26,9 @@ static func def() -> Dictionary:
 			"bindPose": {},
 		},
 		"slots": {"head": {"joint": "head", "pos": [0, 0.14, 0]}},
-		"createAnimator": func(rig, _ctx): return createAnimator(rig),
 	}
 
-static func createAnimator(rig) -> Rig.FnAnimator:
+static func createAnimator(rig, _ctx = null) -> Rig.FnAnimator:
 	var J: Dictionary = rig.joints
 	var S := {"t": randf() * 10.0}
 	var a := Rig.FnAnimator.new()

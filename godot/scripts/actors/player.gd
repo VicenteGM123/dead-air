@@ -47,7 +47,7 @@ static func _truthy(v) -> bool:
 	return true
 
 # o.k for a Dictionary or an Object (null when missing).
-static func _g(o, k: String):
+static func _g(o, k: String) -> Variant:
 	if o is Dictionary:
 		return o.get(k)
 	if o is Object:
@@ -138,14 +138,14 @@ class History extends RefCounted:
 			push(pos, yaw, area)
 
 	# i-th newest sample (0 = newest) or null. (JS get: renamed, Object.get)
-	func get_(i: int):
+	func get_(i: int) -> Variant:
 		if i < 0 or i >= count:
 			return null
 		return samples[(head - i + n) % n]
 
 	# Sample about `seconds` ago (clamped to the oldest). Returns the sample ({x, y, z, yaw, area}; the JS also
 	# copied its position into `out`: read sample.x/y/z instead).
-	func at(seconds: float, _out = null):
+	func at(seconds: float, _out = null) -> Variant:
 		if count == 0:
 			return null
 		return get_(mini(count - 1, int(floorf(seconds / step + 0.5))))
@@ -499,12 +499,12 @@ func _moveUpdate(dt: float) -> void:
 	knock *= exp(-dt * 6.0)
 
 	var _delta := Vector3((vel.x + knock.x) * dt, (vy0 + vel.y) * 0.5 * dt, (vel.z + knock.z) * dt)
-	var col = g.level.col
+	var col = g.level.get("col") if g.level != null else null
 	var wasGrounded := grounded
 	var expectY := pos.y + _delta.y
 	var res = _moveCircle(col, _delta)
 	var onGround := _truthy(res.onGround)
-	if not onGround and wasGrounded and vel.y <= 0.0:
+	if not onGround and wasGrounded and vel.y <= 0.0 and col != null:
 		# Walk down steps/ramps instead of hopping off them.
 		var f: float = col.floorAt(pos.x, pos.z, pos.y)
 		if f > -INF and pos.y - f <= STEP_UP:
@@ -517,18 +517,22 @@ func _moveUpdate(dt: float) -> void:
 	elif vel.y > 0.0 and pos.y < expectY - 1e-4:
 		vel.y = 0.0  # head bump
 	grounded = onGround
-	var a = g.level.areaAt(pos.x, pos.z)
+	var a = g.level.areaAt(pos.x, pos.z) if g.level != null else null
 	area = a if _truthy(a) else area
 	history.tick(dt, pos, yaw, area)
 
 # collision.moveCircle(pos, delta, radius, height, stepUp) mutated pos in the JS; the GDScript collision returns the
-# moved feet position in the result (res.pos) — see collision.gd for the convention.
-func _moveCircle(col, delta: Vector3):
-	var res = col.moveCircle(pos, delta, radius, height, STEP_UP)
-	if res is Dictionary and res.has("pos"):
-		pos = res.pos
-	elif _g(res, "pos") is Vector3:
-		pos = res.pos
+# moved feet position in res.pos and remembers "grounded" per owner (this player object) — see collision.gd.
+# (No level/collision loaded — an incomplete port only: free motion over a y = 0 floor.)
+func _moveCircle(col, delta: Vector3) -> Variant:
+	if col == null:
+		pos += delta
+		var on := pos.y <= 0.0
+		if on:
+			pos.y = 0.0
+		return {"onGround": on, "hitWall": false, "groundY": 0.0, "normal": Vector3.ZERO, "hitCeiling": false, "pos": pos}
+	var res = col.moveCircle(pos, delta, radius, height, STEP_UP, null, self)
+	pos = res.pos
 	return res
 
 func _vitals(dt: float) -> void:

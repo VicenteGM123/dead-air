@@ -29,12 +29,10 @@ static func def() -> Dictionary:
 		},
 		"rim": {"color": "#8FF3FF", "strength": 0.3},
 		"slots": {"head": {"joint": "head", "pos": [0, 0.17, -0.06]}},
-		"anchors": func(_ctx): return {"EYES": EYES},
-		"createAnimator": func(rig, _ctx): return createAnimator(rig),
 	}
 
 # Preview animator (charview): idle sway, or a hop loop when speed > 0. The game drives joints itself.
-static func createAnimator(rig) -> Rig.FnAnimator:
+static func createAnimator(rig, _ctx = null) -> Rig.FnAnimator:
 	var J: Dictionary = rig.joints
 	var S := {"t": randf() * 10.0}
 	var a := Rig.FnAnimator.new()
@@ -55,3 +53,7 @@ static func createAnimator(rig) -> Rig.FnAnimator:
 		var at := Rig.num(st.get("attack"))
 		J.jaw.rotation.x = 0.5 * sin(minf(1.0, at) * PI) if at != 0.0 else 0.05 + maxf(0.0, sin(t * 5.0)) * 0.08
 	return a
+
+# def.anchors(ctx) (head-local anchors consumed by the attachment builders).
+static func anchors(_ctx = null) -> Dictionary:
+	return {"EYES": EYES}

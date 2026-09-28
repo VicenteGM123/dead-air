@@ -278,7 +278,7 @@ func shakeRumble(amount: float, duration = null) -> void:
 	var a := minf(0.8, amount)
 	rumble(a * 0.6, a * 0.7, minf(0.4, maxf(0.1, GP.U.orf(duration, 0.2))) * 1000.0)
 
-func _defs():
+func _defs() -> Variant:
 	if _weaponDefs == null and ResourceLoader.exists("res://scripts/game/weapon_defs.gd"):
 		var s = load("res://scripts/game/weapon_defs.gd")
 		if s != null:

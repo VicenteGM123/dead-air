@@ -19,6 +19,9 @@ static func def() -> Dictionary:
 		"armOut": 0.2,
 		"poseOffset": {"hipL": [0, 0, -0.04], "hipR": [0, 0, 0.04], "footL": [0, 0, 0.04], "footR": [0, 0, -0.04]},
 		"rim": {"color": "#FFD9A0", "strength": 0.4},
-		"anchors": func(_ctx): return {"EYE": EYE},
 		"expressions": ["smile", "frown", "o_mouth"],
 	}
+
+# def.anchors(ctx) (head-local anchors consumed by the attachment builders).
+static func anchors(_ctx = null) -> Dictionary:
+	return {"EYE": EYE}

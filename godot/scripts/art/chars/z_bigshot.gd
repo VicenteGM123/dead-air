@@ -45,9 +45,7 @@ static func def() -> Dictionary:
 			"dims": {"height": 2.2, "headH": 0.5},
 		},
 		"rim": {"color": "#8FF3FF", "strength": 0.3},
-		"anchors": func(_ctx): return {"EYES": EYES},
 		"slots": {"head": {"joint": "head", "pos": [0, 0.58, -0.12]}, "handL": {"joint": "handL", "pos": [0, 0, 0]}, "handR": {"joint": "handR", "pos": [0, 0, 0]}},
-		"createAnimator": func(rig, _ctx): return createAnimator(rig),
 	}
 
 static func _findWheels(root: Node, out: Array) -> void:
@@ -56,7 +54,7 @@ static func _findWheels(root: Node, out: Array) -> void:
 			out.append(o))
 
 # Preview animator (charview): gentle idle; speed > 0 rolls the casters. The game drives joints itself.
-static func createAnimator(rig) -> Rig.FnAnimator:
+static func createAnimator(rig, _ctx = null) -> Rig.FnAnimator:
 	var J: Dictionary = rig.joints
 	var S := {"t": randf() * 10.0}
 	var wheels := []
@@ -75,3 +73,7 @@ static func createAnimator(rig) -> Rig.FnAnimator:
 		J.head.rotation.x = sin(t * 1.1 + 1.0) * 0.03
 		J.head.rotation.y = sin(t * 0.7) * 0.06
 	return a
+
+# def.anchors(ctx) (head-local anchors consumed by the attachment builders).
+static func anchors(_ctx = null) -> Dictionary:
+	return {"EYES": EYES}

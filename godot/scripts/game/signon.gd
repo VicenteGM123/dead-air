@@ -195,8 +195,8 @@ func _build() -> void:
 		_lampMat = StandardMaterial3D.new()
 		_lampMat.resource_name = "signon:lamp"
 		_lampMat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		if g.cards != null:
-			_lampMat.albedo_texture = g.cards.get("on_air", {"lit": true})
+		if g.screens != null:
+			_lampMat.albedo_texture = g.screens._cardGet("on_air", {"lit": true})
 		_jewelMat = StandardMaterial3D.new()
 		_jewelMat.resource_name = "signon:jewels"
 		_jewelMat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED

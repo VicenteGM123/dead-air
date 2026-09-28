@@ -40,11 +40,16 @@
 #   maskOf(tags) → int                             boxes (Array of every Box record, read-only: change
 #                                                  `enabled` with setEnabled; the setter also keeps the hash in sync)
 #   DACollision.rampHeight(b, x, z)                (static)
-# Engine notes (no gameplay change): the box data is mirrored in packed arrays (struct of arrays) for the hot
-# loops; `cells` and `big` hold box INDICES (into `boxes`) instead of box records; the gather stamp lives in the
-# packed `_stamps` array (Box has no `stamp` field). All maths runs on 64-bit floats like the JS; only the
-# returned Vector3s are 32-bit. _navGrid() is a bulk floorAt + blockedAt for Nav.build (same results, one gather
-# per hash cell instead of two per nav cell).
+#   DACollision.hypot2(a, b) / hypot3(a, b, c)   Math.hypot bit-exactly as V8 computes it (static helpers)
+# Engine notes (no gameplay change; every query answer matches the JS, verified by tools/test_collision_nav.gd):
+# the box data is mirrored in packed arrays (struct of arrays) for the hot loops; `cells` and `big` hold box
+# INDICES (into `boxes`) instead of box records; the gather stamp lives in the packed `_stamps` array (Box has no
+# `stamp` field); the JS module functions circleHitsRect / slab / slabAxis are inlined or index-based (_circleHits,
+# _slab); a one-cell gather skips the stamps (same output). All maths runs on 64-bit floats like the JS; only the
+# Vector3s passed in and returned are 32-bit. _navGrid() is a bulk floorAt + blockedAt for Nav.build (same
+# results, one gather per 4 × 4 nav cells instead of two per nav cell).
+# The JS maskOf cache (a WeakMap keyed by the tags array) is not kept: the mask is recomputed (same value).
+# Renames: addBox's `min`/`max` parameters are `min_v`/`max_v` (GDScript built-ins); no API name changes.
 class_name DACollision
 extends RefCounted
 
@@ -288,7 +293,9 @@ func _insert(b: Box) -> Box:
 	else:
 		for k in range(k0, k1 + 1):
 			for i in range(i0, i1 + 1):
-				cells[k * nx + i].append(idx)
+				var c: PackedInt32Array = cells[k * nx + i]
+				c.append(idx)
+				cells[k * nx + i] = c
 	if _list.size() < boxes.size():
 		_list.resize(boxes.size() + 64)
 	return b
@@ -298,17 +305,30 @@ func _gather(minX: float, minZ: float, maxX: float, maxZ: float) -> int:
 	var n := 0
 	_stamp += 1
 	var stamp := _stamp
-	for bi in big:
+	for bi: int in big:
 		if (_flags[bi] & F_ENABLED) != 0 and _mxx[bi] >= minX and _mnx[bi] <= maxX and _mxz[bi] >= minZ and _mnz[bi] <= maxZ:
 			_list[n] = bi
 			n += 1
-	var i0 := _cellI(minX)
-	var i1 := _cellI(maxX)
-	var k0 := _cellK(minZ)
-	var k1 := _cellK(maxZ)
+	# _cellI / _cellK inlined
+	var f := floorf((minX - bx0) / CELL)
+	var i0 := 0 if f < 0.0 else (nx - 1 if f >= nx else int(f))
+	f = floorf((maxX - bx0) / CELL)
+	var i1 := 0 if f < 0.0 else (nx - 1 if f >= nx else int(f))
+	f = floorf((minZ - bz0) / CELL)
+	var k0 := 0 if f < 0.0 else (nz - 1 if f >= nz else int(f))
+	f = floorf((maxZ - bz0) / CELL)
+	var k1 := 0 if f < 0.0 else (nz - 1 if f >= nz else int(f))
+	if i0 == i1 and k0 == k1:
+		# one cell: every box appears once, no stamps needed (same output)
+		for bi: int in cells[k0 * nx + i0]:
+			if (_flags[bi] & F_ENABLED) != 0 and _mxx[bi] >= minX and _mnx[bi] <= maxX and _mxz[bi] >= minZ and _mnz[bi] <= maxZ:
+				_list[n] = bi
+				n += 1
+		_n = n
+		return n
 	for k in range(k0, k1 + 1):
 		for i in range(i0, i1 + 1):
-			for bi in cells[k * nx + i]:
+			for bi: int in cells[k * nx + i]:
 				if _stamps[bi] == stamp:
 					continue
 				_stamps[bi] = stamp
@@ -321,7 +341,7 @@ func _gather(minX: float, minZ: float, maxX: float, maxZ: float) -> int:
 # --------------------------------------------------------------------------------------------- floor
 static func rampHeight(b, x: float, z: float) -> float:
 	var e := minf(minf(x - b.minX, b.maxX - x), minf(z - b.minZ, b.maxZ - z))
-	var k := 0.0 if e <= 0.0 else (1.0 if e >= b.ramp else e / b.ramp)
+	var k: float = 0.0 if e <= 0.0 else (1.0 if e >= b.ramp else e / b.ramp)
 	return b.minY + (b.maxY - b.minY) * k
 
 func _rampH(bi: int, x: float, z: float) -> float:
@@ -393,6 +413,45 @@ func _blocksI(bi: int, feet: float, stepUp: float, height: float) -> bool:
 		return _mxy[bi] > feet + stepUp + EPS
 	return _mxy[bi] > feet + 0.02
 
+# Math.hypot exactly as V8 computes it (magnitudes normalised by the largest one, Kahan-compensated sum of
+# squares): bit-identical to the JS values (a plain sqrt(x*x + z*z) differs by one ulp for ~40 % of inputs).
+static func hypot2(a: float, b: float) -> float:
+	var x := absf(a)
+	var y := absf(b)
+	if x == INF or y == INF:
+		return INF
+	if is_nan(x) or is_nan(y):
+		return NAN
+	var m := maxf(x, y)
+	if m == 0.0:
+		return 0.0
+	var n1 := x / m
+	var n2 := y / m
+	return sqrt(n1 * n1 + n2 * n2) * m
+
+static func hypot3(a: float, b: float, c: float) -> float:
+	var x := absf(a)
+	var y := absf(b)
+	var z := absf(c)
+	if x == INF or y == INF or z == INF:
+		return INF
+	if is_nan(x) or is_nan(y) or is_nan(z):
+		return NAN
+	var m := maxf(maxf(x, y), z)
+	if m == 0.0:
+		return 0.0
+	var n := x / m
+	var sum := n * n
+	n = y / m
+	var summand := n * n
+	var pre := sum + summand
+	var comp := (pre - sum) - summand
+	sum = pre
+	n = z / m
+	summand = n * n - comp
+	sum = sum + summand
+	return sqrt(sum) * m
+
 func _getGrounded(owner) -> bool:
 	if owner == null:
 		return true
@@ -413,12 +472,12 @@ func _setGrounded(owner, on: bool) -> void:
 # ------------------------------------------------------------------------------------------ movement
 # Returns the reused result Dictionary; the moved feet position is res.pos (write it back: see the header).
 func moveCircle(pos: Vector3, delta: Vector3, radius: float, height: float, stepUp: float = 0.45, ignore = null, owner = null) -> Dictionary:
-	var mask := maskOf(ignore)
+	var mask := 0 if ignore == null else maskOf(ignore)
 	var res := _res
 	res.hitWall = false
 	res.hitCeiling = false
 	res.normal = Vector3.ZERO
-	var wasGrounded := _getGrounded(owner)
+	var wasGrounded: bool = owner.get(GROUNDED_KEY, true) if owner is Dictionary else _getGrounded(owner)
 	var px: float = pos.x
 	var py: float = pos.y
 	var pz: float = pos.z
@@ -430,7 +489,19 @@ func moveCircle(pos: Vector3, delta: Vector3, radius: float, height: float, step
 	var reach := radius + 0.05
 	_gather(minf(px, px + ddx) - reach, minf(pz, pz + ddz) - reach, maxf(px, px + ddx) + reach, maxf(pz, pz + ddz) + reach)
 
-	var len := sqrt(ddx * ddx + ddz * ddz)
+	# Math.hypot(delta.x, delta.z) (hypot2 inlined)
+	var len := 0.0
+	var ax := absf(ddx)
+	var az := absf(ddz)
+	var am := maxf(ax, az)
+	if ax == INF or az == INF:
+		len = INF
+	elif am > 0.0:
+		ax /= am
+		az /= am
+		len = sqrt(ax * ax + az * az) * am
+	elif is_nan(ddx) or is_nan(ddz):
+		len = NAN
 	var steps := maxi(1, int(ceilf(len / minf(MAX_SUBSTEP, radius * 0.5))))
 	var sx := ddx / steps
 	var sz := ddz / steps
@@ -474,7 +545,10 @@ func moveCircle(pos: Vector3, delta: Vector3, radius: float, height: float, step
 		y = ground
 		onGround = true
 	py = y
-	_setGrounded(owner, onGround)
+	if owner is Dictionary:
+		owner[GROUNDED_KEY] = onGround
+	else:
+		_setGrounded(owner, onGround)
 	res.onGround = onGround
 	res.groundY = ground
 	res.pos = Vector3(px, py, pz)
@@ -584,76 +658,86 @@ func _circleHits(x: float, z: float, r: float, bi: int) -> bool:
 # z0 + (k + 0.5) * cell) of a w × h grid returns [heights, base] with
 #   heights[idx] = floorAt(x, z, INF)
 #   base[idx]    = 1 if heights[idx] > -INF and not blockedAt(x, z, r, heights[idx], stepUp, height, ignore) else 0
-# evaluated with one gather per 4 m hash cell (a superset, filtered with the exact per-query overlap tests, so the
-# results are identical to the per-cell calls).
+# evaluated with one gather per NAV_BLOCK × NAV_BLOCK cells (a superset of each per-cell gather, filtered with the
+# exact per-query overlap tests, so the results are identical to the per-cell calls).
+const NAV_BLOCK := 4
+
 func _navGrid(x0: float, z0: float, cell: float, w: int, h: int, r: float, stepUp: float, height: float, ignore) -> Array:
 	var mask := maskOf(ignore)
 	var heights := PackedFloat64Array()
 	heights.resize(w * h)
 	var base := PackedByteArray()
 	base.resize(w * h)
-	# group the cells by the hash cell of their centre
-	var groups := {}
-	for k in h:
-		var z := z0 + (k + 0.5) * cell
-		var hk := _cellK(z)
-		for i in w:
-			var x := x0 + (i + 0.5) * cell
-			var key := hk * nx + _cellI(x)
-			if not groups.has(key):
-				groups[key] = PackedInt32Array()
-			var g: PackedInt32Array = groups[key]
-			g.append(k * w + i)
-			groups[key] = g
-	for key in groups:
-		var idxs: PackedInt32Array = groups[key]
-		# bounds of the member centres (plus the disc) → one gather
-		var gx0 := INF
-		var gx1 := -INF
-		var gz0 := INF
-		var gz1 := -INF
-		for idx in idxs:
-			var x := x0 + (idx % w + 0.5) * cell
-			var z := z0 + (idx / w + 0.5) * cell
-			gx0 = minf(gx0, x)
-			gx1 = maxf(gx1, x)
-			gz0 = minf(gz0, z)
-			gz1 = maxf(gz1, z)
-		var n := _gather(gx0 - r - 1.0, gz0 - r - 1.0, gx1 + r + 1.0, gz1 + r + 1.0)
-		var cand := _list.slice(0, n)
-		for idx in idxs:
-			var i := idx % w
-			var k := idx / w
-			var x := x0 + (i + 0.5) * cell
-			var z := z0 + (k + 0.5) * cell
-			# floorAt(x, z, INF)
-			var best := -INF
-			for bi in cand:
-				if not (_mxx[bi] >= x and _mnx[bi] <= x and _mxz[bi] >= z and _mnz[bi] <= z):
-					continue
+	var fc := PackedInt32Array()
+	var bc := PackedInt32Array()
+	fc.resize(boxes.size())
+	bc.resize(boxes.size())
+	for k0 in range(0, h, NAV_BLOCK):
+		var k1 := mini(h, k0 + NAV_BLOCK)
+		for i0 in range(0, w, NAV_BLOCK):
+			var i1 := mini(w, i0 + NAV_BLOCK)
+			var n := _gather(x0 + (i0 + 0.5) * cell - r, z0 + (k0 + 0.5) * cell - r, x0 + (i1 - 0.5) * cell + r, z0 + (k1 - 0.5) * cell + r)
+			# floor candidates (walkable) and blocker candidates (the static part of _blocks + the ignore mask)
+			var nf := 0
+			var nb := 0
+			for j in n:
+				var bi := _list[j]
 				var f := _flags[bi]
-				if (f & F_WALKABLE) == 0:
-					continue
-				var top: float = _rampH(bi, x, z) if (f & F_RAMP) != 0 else _mxy[bi]
-				if top <= INF and top > best:
-					best = top
-			heights[idx] = best
-			if best == -INF:
-				base[idx] = 0
-				continue
-			# blockedAt(x, z, r, best, stepUp, height, ignore)
-			var blocked := false
-			var qx0 := x - r
-			var qx1 := x + r
-			var qz0 := z - r
-			var qz1 := z + r
-			for bi in cand:
-				if not (_mxx[bi] >= qx0 and _mnx[bi] <= qx1 and _mxz[bi] >= qz0 and _mnz[bi] <= qz1):
-					continue
-				if (_bits[bi] & mask) == 0 and _blocksI(bi, best, stepUp, height) and _circleHits(x, z, r, bi):
-					blocked = true
-					break
-			base[idx] = 0 if blocked else 1
+				if (f & F_WALKABLE) != 0:
+					fc[nf] = bi
+					nf += 1
+				if (f & F_SOLID) != 0 and (f & F_RAMP) == 0 and (_bits[bi] & mask) == 0:
+					bc[nb] = bi
+					nb += 1
+			for k in range(k0, k1):
+				var z := z0 + (k + 0.5) * cell
+				for i in range(i0, i1):
+					var x := x0 + (i + 0.5) * cell
+					var idx := k * w + i
+					# floorAt(x, z, INF)
+					var best := -INF
+					for j in nf:
+						var bi := fc[j]
+						if not (_mxx[bi] >= x and _mnx[bi] <= x and _mxz[bi] >= z and _mnz[bi] <= z):
+							continue
+						var top: float = _rampH(bi, x, z) if (_flags[bi] & F_RAMP) != 0 else _mxy[bi]
+						if top <= INF and top > best:
+							best = top
+					heights[idx] = best
+					if best == -INF:
+						base[idx] = 0
+						continue
+					# blockedAt(x, z, r, best, stepUp, height, ignore)
+					var blocked := false
+					var qx0 := x - r
+					var qx1 := x + r
+					var qz0 := z - r
+					var qz1 := z + r
+					var top0 := best + height - EPS
+					var limW := best + stepUp + EPS
+					var limN := best + 0.02
+					var rr := r * r
+					for j in nb:
+						var bi := bc[j]
+						if not (_mxx[bi] >= qx0 and _mnx[bi] <= qx1 and _mxz[bi] >= qz0 and _mnz[bi] <= qz1):
+							continue
+						if _mny[bi] >= top0:
+							continue
+						if (_flags[bi] & F_WALKABLE) != 0:
+							if not (_mxy[bi] > limW):
+								continue
+						elif not (_mxy[bi] > limN):
+							continue
+						var a := _mnx[bi]
+						var b := _mxx[bi]
+						var dx := x - (a if x < a else (b if x > b else x))
+						a = _mnz[bi]
+						b = _mxz[bi]
+						var dz := z - (a if z < a else (b if z > b else z))
+						if dx * dx + dz * dz < rr:
+							blocked = true
+							break
+					base[idx] = 0 if blocked else 1
 	return [heights, base]
 
 # ------------------------------------------------------------------------------------------- queries
@@ -688,7 +772,7 @@ func lineOfSight(a: Vector3, b: Vector3) -> bool:
 	var dx: float = b.x - ax
 	var dy: float = b.y - ay
 	var dz: float = b.z - az
-	var d := sqrt(dx * dx + dy * dy + dz * dz)
+	var d := hypot3(dx, dy, dz)
 	if d < 1e-6:
 		return true
 	return not _cast(ax, ay, az, dx / d, dy / d, dz / d, d - 1e-3, 0, F_SHOTS, true)
@@ -717,11 +801,14 @@ func _cast(ox: float, oy: float, oz: float, dx: float, dy: float, dz: float, max
 	_hitBox = -1
 	_stamp += 1
 	var stamp := _stamp
-	for bi in big:
+	for bi: int in big:
 		if (_flags[bi] & F_ENABLED) != 0 and (_flags[bi] & flag) != 0 and (_bits[bi] & mask) == 0 and _slab(ox, oy, oz, dx, dy, dz, bi, _hitT) and anyHit:
 			return true
 	var i := int(floorf((ox - bx0) / CELL))
 	var k := int(floorf((oz - bz0) / CELL))
+	var adx := absf(dx)
+	var ady := absf(dy)
+	var adz := absf(dz)
 	var stepI := 1 if dx > 0.0 else -1
 	var stepK := 1 if dz > 0.0 else -1
 	var tDeltaI := CELL / absf(dx) if absf(dx) > 1e-9 else INF
@@ -729,14 +816,109 @@ func _cast(ox: float, oy: float, oz: float, dx: float, dy: float, dz: float, max
 	var tMaxI := (bx0 + (i + (1 if stepI > 0 else 0)) * CELL - ox) / dx if absf(dx) > 1e-9 else INF
 	var tMaxK := (bz0 + (k + (1 if stepK > 0 else 0)) * CELL - oz) / dz if absf(dz) > 1e-9 else INF
 	var tCell := 0.0
+	var inv := 0.0
+	var ta := 0.0
+	var tb := 0.0
+	var tt := 0.0
+	var s := 0.0
 	while tCell <= _hitT:
 		if i >= 0 and i < nx and k >= 0 and k < nz:
-			for bi in cells[k * nx + i]:
+			for bi: int in cells[k * nx + i]:
 				if _stamps[bi] == stamp:
 					continue
 				_stamps[bi] = stamp
 				var f := _flags[bi]
-				if (f & F_ENABLED) != 0 and (f & flag) != 0 and (_bits[bi] & mask) == 0 and _slab(ox, oy, oz, dx, dy, dz, bi, _hitT) and anyHit:
+				if (f & F_ENABLED) == 0 or (f & flag) == 0 or (_bits[bi] & mask) != 0:
+					continue
+				# slab(o, d, b, best.t) inlined (see _slab)
+				var ins := _ramp[bi]
+				var minX := _mnx[bi] + ins
+				var maxX := _mxx[bi] - ins
+				var minZ := _mnz[bi] + ins
+				var maxZ := _mxz[bi] - ins
+				var minY := _mny[bi]
+				var maxY := _mxy[bi]
+				if ox >= minX and ox <= maxX and oy >= minY and oy <= maxY and oz >= minZ and oz <= maxZ:
+					continue
+				var tMax := _hitT
+				var t0 := 0.0
+				var t1 := tMax
+				var axis := -1
+				var sgn := 0.0
+				# x
+				if adx < 1e-12:
+					if not (ox >= minX and ox <= maxX):
+						continue
+				else:
+					inv = 1.0 / dx
+					ta = (minX - ox) * inv
+					tb = (maxX - ox) * inv
+					s = -1.0
+					if ta > tb:
+						tt = ta
+						ta = tb
+						tb = tt
+						s = 1.0
+					if ta > t0:
+						t0 = ta
+						axis = 0
+						sgn = s
+					if tb < t1:
+						t1 = tb
+					if not (t0 <= t1):
+						continue
+				# y
+				if ady < 1e-12:
+					if not (oy >= minY and oy <= maxY):
+						continue
+				else:
+					inv = 1.0 / dy
+					ta = (minY - oy) * inv
+					tb = (maxY - oy) * inv
+					s = -1.0
+					if ta > tb:
+						tt = ta
+						ta = tb
+						tb = tt
+						s = 1.0
+					if ta > t0:
+						t0 = ta
+						axis = 1
+						sgn = s
+					if tb < t1:
+						t1 = tb
+					if not (t0 <= t1):
+						continue
+				# z
+				if adz < 1e-12:
+					if not (oz >= minZ and oz <= maxZ):
+						continue
+				else:
+					inv = 1.0 / dz
+					ta = (minZ - oz) * inv
+					tb = (maxZ - oz) * inv
+					s = -1.0
+					if ta > tb:
+						tt = ta
+						ta = tb
+						tb = tt
+						s = 1.0
+					if ta > t0:
+						t0 = ta
+						axis = 2
+						sgn = s
+					if tb < t1:
+						t1 = tb
+					if not (t0 <= t1):
+						continue
+				if axis < 0 or t0 >= tMax:
+					continue
+				_hitT = t0
+				_hitBox = bi
+				_hitNx = sgn if axis == 0 else 0.0
+				_hitNy = sgn if axis == 1 else 0.0
+				_hitNz = sgn if axis == 2 else 0.0
+				if anyHit:
 					return true
 		if tMaxI < tMaxK:
 			tCell = tMaxI

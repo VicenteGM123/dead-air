@@ -75,7 +75,7 @@ extends RefCounted
 
 const TYPES_DIR := "res://scripts/actors/types/"
 const CHAR_RUNTIME := "res://scripts/art/char_runtime.gd"
-const CANVAS := "res://scripts/gfx/canvas2d.gd"
+const RUNTIME_DIR := "res://assets/runtime/zombies/"
 const CHARS_DIR := "res://assets/chars/"
 const TYPE_IDS := ["tuned_in", "sock_hopper", "forecaster", "big_shot"]
 
@@ -130,7 +130,7 @@ static func _fallback() -> Dictionary:
 			"hp": func(r, _g = null): return int(_jsRound(float(Z.sock.hpMix) * hpAt(int(r)))),
 			"speed": func(r, _g = null): return float(Z.sock.speed15) if int(r) >= 15 else float(Z.sock.speed),
 			"entry": func(game, _z = null, _win = null):
-				return {"tear": false, "time": 1.0, "style": "squeeze"} if game.rounds != null and game.rounds.special == "hullabaloo" else null,
+				return {"tear": false, "time": 1.0, "style": "squeeze"} if game.rounds != null and str(game.rounds.special) == "hullabaloo" else null,
 		},
 		"forecaster": {
 			"id": "forecaster", "height": 1.8, "radius": 0.4, "dmg": Z.forecaster.strikeDmg, "range": 1.5,
@@ -204,7 +204,7 @@ static func _ensure() -> void:
 	var FB := _fallback()
 	for id in FB:
 		var mod = _loadModule(id)
-		var real: bool = mod != null and not bool(mod.get("stub")) and mod.has_method("build")
+		var real: bool = mod != null and mod.get("stub") != true and mod.has_method("build")
 		if real:
 			ZOMBIE_TYPES[id] = _merge(FB[id], mod)
 		else:
@@ -283,16 +283,18 @@ static var _eyePrev = null    # JS eyeMat.userData.prev
 static var _shaders := {}
 
 # MeshBasicMaterial equivalent: unlit colour × map (map decoded sRGB -> linear, `color` is LINEAR like THREE's
-# setRGB / multiplyScalar results).
+# setRGB / multiplyScalar results). flip_y (default on): the meshes carry three.js UVs (glTF from the Blender
+# pipeline, SPEC §5.3), so the top-down canvas image is sampled at (u, 1 - v) like THREE's flipY textures.
 const BASIC_SHADER := """
 shader_type spatial;
 render_mode unshaded, %s;
 uniform sampler2D map : source_color, filter_linear_mipmap, repeat_enable;
 uniform bool use_map = false;
+uniform bool flip_y = true;
 uniform vec3 color = vec3(1.0);
 void fragment() {
 	vec3 c = color;
-	if (use_map) { c *= texture(map, UV).rgb; }
+	if (use_map) { c *= texture(map, vec2(UV.x, flip_y ? 1.0 - UV.y : UV.y)).rgb; }
 	ALBEDO = c;
 }
 """
@@ -305,10 +307,11 @@ static func basicShader(side := "cull_back") -> Shader:
 	return _shaders[side]
 
 # A MeshBasicMaterial-like ShaderMaterial: color = LINEAR Color, map = Texture2D | null, side 'front'|'double'.
-static func basicMaterial(color: Color, map = null, side := "front", name := "") -> ShaderMaterial:
+static func basicMaterial(color: Color, map = null, side := "front", name := "", flipY := true) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = basicShader("cull_disabled" if side == "double" else "cull_back")
 	m.resource_name = name
+	m.set_shader_parameter("flip_y", flipY)
 	_basicSet(m, map, color)
 	return m
 
@@ -328,48 +331,20 @@ static func zombieEyeMaterial() -> ShaderMaterial:
 		eyeMat = basicMaterial(Color(1.35, 1.4, 1.45), _staticNoise(), "front", "zombieEyes")
 	return eyeMat
 
-static func _newCanvas(w: int, h: int):
-	if not ResourceLoader.exists(CANVAS):
+# The two static canvas textures are drawn by blender/runtime/zombies.py (makeStarTexture / makeNormalEyeTexture,
+# the same canvas code over skia) into res://assets/runtime/zombies/eye_star.png / eye_normal.png.
+static func _runtimeTex(file: String):
+	var path := RUNTIME_DIR + file
+	if not ResourceLoader.exists(path):
+		push_warning("[zombies] %s missing (run blender/build_all.py --only runtime)" % path)
 		return null
-	var C = load(CANVAS)
-	if C == null or not C.can_instantiate():
-		return null
-	return C.new(w, h)
+	return load(path)
 
 static func makeStarTexture():
-	var c = _newCanvas(128, 128)
-	if c == null:
-		return null
-	var g = c.getContext("2d")
-	g.fillStyle = "#3B2340"
-	g.fillRect(0, 0, 128, 128)
-	var star := func(r0: float, r1: float, col: String) -> void:
-		g.beginPath()
-		for i in 10:
-			var a := -PI / 2.0 + (i * PI) / 5.0
-			var r := r1 if i % 2 else r0
-			g.lineTo(64 + cos(a) * r, 64 + sin(a) * r)
-		g.closePath()
-		g.fillStyle = col
-		g.fill()
-	star.call(60.0, 26.0, "#FFC23A")
-	star.call(40.0, 17.0, "#FFF3B0")
-	return c.texture
+	return _runtimeTex("eye_star.png")
 
 static func makeNormalEyeTexture():
-	var c = _newCanvas(128, 128)
-	if c == null:
-		return null
-	var g = c.getContext("2d")
-	g.fillStyle = "#F7F4EC"
-	g.fillRect(0, 0, 128, 128)
-	g.fillStyle = "#5A3A22"
-	g.beginPath(); g.arc(64, 64, 26, 0, TAU); g.fill()
-	g.fillStyle = "#1B1420"
-	g.beginPath(); g.arc(64, 64, 13, 0, TAU); g.fill()
-	g.fillStyle = "#ffffff"
-	g.beginPath(); g.arc(56, 55, 6, 0, TAU); g.fill()
-	return c.texture
+	return _runtimeTex("eye_normal.png")
 
 # 'static' (default) | 'stars' (ONE TAKE). Shared materials, so this is free. Baked eyes map only a small patch of
 # the static texture across the disc, so the star goes on their veil (a full-disc overlay) instead.
@@ -437,7 +412,7 @@ static func setZombieTint(mode) -> void:
 
 # Feed-camera look (GDD §8 common): human peach skin + plain eyes. Call around a feed render: on, render, off.
 static func setFeedLook(on) -> void:
-	on = bool(on)
+	on = _t(on)
 	if on == feedLook:
 		return
 	feedLook = on
@@ -782,6 +757,20 @@ static func humanoidHitZones(model):
 	return zones
 
 # ------------------------------------------------------------------------------------------ helpers
+# JS truthiness (!!v): null/false/0/NaN/"" are false; objects, arrays and dictionaries are true.
+static func _t(v) -> bool:
+	if v == null:
+		return false
+	if v is bool:
+		return v
+	if v is int:
+		return v != 0
+	if v is float:
+		return v != 0.0 and not is_nan(v)
+	if v is String or v is StringName:
+		return v != ""
+	return true
+
 # JS `o.k` on a Dictionary or an Object (null / d when missing).
 static func _f(o, k: String, d = null):
 	if o is Dictionary:

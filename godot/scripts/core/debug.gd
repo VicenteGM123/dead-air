@@ -27,12 +27,12 @@ func init() -> void:
 			g.time.scale = 0.0
 			freeze(true))
 
-func _vec(v):
+func _vec(v) -> Variant:
 	if v == null:
 		return null
 	return DAU.v3(v)
 
-func teleport(x: float, z: float, yaw = null):
+func teleport(x: float, z: float, yaw = null) -> Variant:
 	game.player.teleport(x, z, yaw)
 	return state().player
 
@@ -47,7 +47,7 @@ func mouseDelta(dx: float, dy: float) -> void:
 func god(on = true) -> void:
 	game.player.god = bool(on)
 
-func addPoints(n):
+func addPoints(n) -> Variant:
 	game.economy.add(n, "debug")
 	return game.economy.points
 
@@ -60,13 +60,13 @@ func power(on = true) -> void:
 func openAllDoors() -> void:
 	game.level.openAllDoors()
 
-func give(weaponId: String, upgraded: bool = false):
+func give(weaponId: String, upgraded: bool = false) -> Variant:
 	return game.weapons.give(weaponId, {"upgraded": upgraded})
 
-func perk(perkId: String):
+func perk(perkId: String) -> Variant:
 	return game.perks.give(perkId)
 
-func spawn(typeId: String = "tuned_in", x = null, z = null):
+func spawn(typeId: String = "tuned_in", x = null, z = null) -> Variant:
 	var g = game
 	var pos = null
 	if x != null and z != null:
@@ -122,6 +122,8 @@ func freeCam(on = true) -> void:
 		_release()
 		return
 	_take("free")
+	if g.camera == null:
+		return
 	var _v: Vector3 = -g.camera.transform.basis.z
 	_yaw = atan2(-_v.x, -_v.z)
 	_pitch = asin(clampf(_v.y, -1.0, 1.0))
@@ -181,7 +183,7 @@ func showCard(id: String) -> bool:
 		g.screens.setSource("scr_preview", id)
 	return true
 
-func egg(step):
+func egg(step) -> Variant:
 	var e = game.egg
 	if e.has_method("setStep"):
 		e.setStep(step)
@@ -220,6 +222,8 @@ func update(dt: float) -> void:
 	var g = game
 	var input = g.input
 	var cam: Camera3D = g.camera
+	if cam == null or input == null:
+		return
 	var d: Dictionary = input.lookDelta(_look)
 	_yaw += d.yaw
 	_pitch = clampf(_pitch + d.pitch, -1.5, 1.5)

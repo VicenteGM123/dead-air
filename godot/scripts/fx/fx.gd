@@ -20,6 +20,8 @@
 #    Octahedron / Icosahedron / Cylinder generators); the extruded star particle is a Blender runtime asset
 #    (blender/runtime/weapons_fx.py -> res://assets/runtime/weapons_fx/fx_star.glb).
 #  * The scale curves are a match instead of per-pool closures (same numbers).
+#  * The toon pools (puff, goo) pass vertexColors:true to mats.toon: in Godot the MultiMesh instance colour reaches
+#    the shader through COLOR (three multiplies instanceColor into the diffuse on its own).
 extends RefCounted
 
 const ASSET_DIR := "res://assets/runtime/weapons_fx/"
@@ -48,6 +50,23 @@ const DEFAULTS := {
 static var ZERO_T := Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO)
 const _UP := Vector3(0, 1, 0)
 const _Z := Vector3(0, 0, 1)
+
+# ================================================================================================ math helpers
+# THREE.Quaternion.setFromUnitVectors / Matrix4.compose (inner classes cannot call the outer script's statics).
+class M3:
+	static func quatFromUnitVectors(vFrom: Vector3, vTo: Vector3) -> Quaternion:
+		var r := vFrom.dot(vTo) + 1.0
+		var q: Quaternion
+		if r < 1e-8:
+			r = 0.0
+			if absf(vFrom.x) > absf(vFrom.z):
+				q = Quaternion(-vFrom.y, vFrom.x, 0.0, r)
+			else:
+				q = Quaternion(0.0, -vFrom.z, vFrom.y, r)
+		else:
+			var c := vFrom.cross(vTo)
+			q = Quaternion(c.x, c.y, c.z, r)
+		return q.normalized()
 
 # ================================================================================================ particle pool
 # One particle shape = one MultiMeshInstance3D + struct-of-arrays simulation.
@@ -152,7 +171,7 @@ class ParticlePool extends RefCounted:
 			if align:
 				var v := Vector3(vel[i3], vel[i3 + 1], vel[i3 + 2])
 				var sp := v.length()
-				var q := quatFromUnitVectors(_Z, v / sp) if sp > 1e-4 else Quaternion.IDENTITY
+				var q := M3.quatFromUnitVectors(Vector3(0, 0, 1), v / sp) if sp > 1e-4 else Quaternion.IDENTITY
 				b = Basis(q) * Basis.from_scale(Vector3(sc, sc, sc * (1.0 + minf(sp, 12.0) * 0.9)))
 			else:
 				b = Basis.from_euler(Vector3(rot[i], rot[i] * 0.7, rot[i] * 0.3), EULER_ORDER_XYZ).scaled(Vector3(sc, sc, sc))
@@ -257,8 +276,9 @@ func init() -> void:
 	if starGeo == null:
 		starGeo = _starFallbackMesh(1.0, 0.45, 5, 0.25)
 	var staticMat := basicMaterial({"map": _tex("staticNoise"), "side": "double"})
-	var puffMat = M.toon("#ffffff", {"rough": 0.8, "rim": 0.4, "keepColor": true, "wrap": 0.8, "name": "fx:puff"}) if M != null else basicMaterial({})
-	var gooMat = M.toon("#ffffff", {"rough": 0.15, "rim": 0.5, "keepColor": true, "name": "fx:goo"}) if M != null else basicMaterial({})
+	# vertexColors: Godot's COLOR carries the MultiMesh instance colour (three multiplies instanceColor by itself)
+	var puffMat = M.toon("#ffffff", {"rough": 0.8, "rim": 0.4, "keepColor": true, "wrap": 0.8, "name": "fx:puff", "vertexColors": true}) if M != null else basicMaterial({})
+	var gooMat = M.toon("#ffffff", {"rough": 0.15, "rim": 0.5, "keepColor": true, "name": "fx:goo", "vertexColors": true}) if M != null else basicMaterial({})
 	pools = {
 		"spark": ParticlePool.new(_root, sparkGeo, additiveMaterial(Color(3, 3, 3), null, "front"), 400, {"align": true, "fade": true}, "spark"),
 		"puff": ParticlePool.new(_root, icosahedronMesh(1.0, 2), puffMat, 300, {"bounce": false}, "puff"),
@@ -653,18 +673,7 @@ static func lin(c) -> Color:
 
 # THREE.Quaternion.setFromUnitVectors (same degenerate-case axis).
 static func quatFromUnitVectors(vFrom: Vector3, vTo: Vector3) -> Quaternion:
-	var r := vFrom.dot(vTo) + 1.0
-	var q: Quaternion
-	if r < 1e-8:
-		r = 0.0
-		if absf(vFrom.x) > absf(vFrom.z):
-			q = Quaternion(-vFrom.y, vFrom.x, 0.0, r)
-		else:
-			q = Quaternion(0.0, -vFrom.z, vFrom.y, r)
-	else:
-		var c := vFrom.cross(vTo)
-		q = Quaternion(c.x, c.y, c.z, r)
-	return q.normalized()
+	return M3.quatFromUnitVectors(vFrom, vTo)
 
 # THREE.Matrix4.compose(position, quaternion, scale).
 static func compose(p: Vector3, q: Quaternion, s: Vector3) -> Transform3D:

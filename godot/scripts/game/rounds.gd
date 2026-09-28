@@ -183,6 +183,10 @@ func reset() -> void:
 	if g.zombies != null:
 		g.zombies.maxAlive = int(_R().maxAlive)
 
+# special is false | 'hullabaloo' (GDScript refuses bool == String comparisons).
+func _isHul() -> bool:
+	return special is String and special == "hullabaloo"
+
 func isHullabaloo(r: int) -> bool:
 	return r == nextHullabaloo
 
@@ -247,7 +251,7 @@ func _buildQueue(r: int) -> Array:
 	var g = game
 	var rand: Callable = g.rand
 	var R := _R()
-	if special == "hullabaloo":
+	if _isHul():
 		# A Big Shot scheduled on a Hullabaloo round moves to the next round.
 		_bigShotCarry += bigShotScheduled(r)
 		var hq: Array = []
@@ -295,7 +299,7 @@ func _buildQueue(r: int) -> Array:
 	return q
 
 func pauseSpawning(on) -> void:
-	paused = bool(on)
+	paused = _t(on)
 
 # GDD §7.3 per-zombie tier roll with the round's 60 % super-sprint cap (excess become sprinters).
 func rollTunedInSpeed() -> float:
@@ -317,7 +321,7 @@ func onZombieKilled(z) -> void:
 	if z.type == "sock_hopper":
 		_lastSockPos = z.pos
 	if killsThisRound >= count:
-		if special == "hullabaloo":
+		if _isHul():
 			# The last Sock Hopper always drops FULL REEL, then "…and now back to our program".
 			var pos: Vector3 = _lastSockPos if _lastSockPos != null else z.pos
 			var pu = g.powerups
@@ -416,7 +420,7 @@ func update(dt: float) -> void:
 		return
 	var type: String = queue[i]
 	var opts := {"fromRound": token}
-	if special == "hullabaloo" and type == "sock_hopper":
+	if _isHul() and type == "sock_hopper":
 		opts.hp = hullabalooHp(hullabalooIndex, round)
 	var z = Zs.spawn(type, null, null, opts)
 	if z == null:
@@ -425,7 +429,7 @@ func update(dt: float) -> void:
 	queue.remove_at(i)
 	toSpawn = queue.size()
 	_spawned += 1
-	_spawnT = float(_R().hullabaloo.interval) if special == "hullabaloo" else spawnInterval(round)
+	_spawnT = float(_R().hullabaloo.interval) if _isHul() else spawnInterval(round)
 
 # First queue entry whose type is not at its alive cap (Forecasters 2 / 3 from r15, Big Shots 1 / 2 from r20).
 func _nextIndex() -> int:
@@ -446,7 +450,7 @@ func _nextIndex() -> int:
 func _music() -> void:
 	if _bossActive():
 		return
-	if special == "hullabaloo":
+	if _isHul():
 		_audioMusic("hullabaloo")
 	else:
 		_audioMusic("round" if round >= 10 and _powered() else "ambient")
@@ -457,11 +461,11 @@ func _powered() -> bool:
 
 func _bossActive() -> bool:
 	var b = game.boss
-	return bool(b != null and (_f(b, "active", false) or _f(b, "running", false) or _f(b, "fighting", false)))
+	return _t(b != null and (_f(b, "active", false) or _f(b, "running", false) or _f(b, "fighting", false)))
 
 func _eeForce() -> bool:
 	var e = game.egg
-	return bool(e != null and _f(e, "forceForecaster", false))
+	return _t(e != null and _f(e, "forceForecaster", false))
 
 func _stormActive() -> bool:
 	var e = game.egg
@@ -567,6 +571,20 @@ func _applyTint() -> void:
 # THREE.Color.lerp works on linear components; Godot Colors (Light3D.light_color, Color("#hex")) hold sRGB.
 static func _lerpLinear(a: Color, b: Color, t: float) -> Color:
 	return a.srgb_to_linear().lerp(b.srgb_to_linear(), t).linear_to_srgb()
+
+# JS truthiness (!!v): null/false/0/NaN/"" are false; objects, arrays and dictionaries are true.
+static func _t(v) -> bool:
+	if v == null:
+		return false
+	if v is bool:
+		return v
+	if v is int:
+		return v != 0
+	if v is float:
+		return v != 0.0 and not is_nan(v)
+	if v is String or v is StringName:
+		return v != ""
+	return true
 
 # Reads a field of a Dictionary or an Object (null when missing), like JS `o.k`.
 static func _f(o, k: String, d = null):

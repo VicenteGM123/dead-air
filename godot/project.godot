@@ -24,3 +24,86 @@ window/stretch/aspect="expand"
 
 anti_aliasing/quality/msaa_3d=2
 lights_and_shadows/directional_shadow/size=2048
+
+[shader_globals]
+
+uSatEnv={
+"type": "float",
+"value": 0.7
+}
+uAmber={
+"type": "float",
+"value": 0.08
+}
+uWaveOrigin={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+uWaveRadius={
+"type": "float",
+"value": -1.0
+}
+uTime={
+"type": "float",
+"value": 0.0
+}
+uHeroFade={
+"type": "float",
+"value": 1.0
+}
+uRimAmbient={
+"type": "float",
+"value": 1.0
+}
+uOccRect={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+uOccZ={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+uOccAmt={
+"type": "float",
+"value": 0.0
+}
+uOccBox0={
+"type": "mat4",
+"value": Projection(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+}
+uOccBox1={
+"type": "mat4",
+"value": Projection(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+}
+uOccWall0={
+"type": "mat4",
+"value": Projection(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+}
+uOccWall1={
+"type": "mat4",
+"value": Projection(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+}
+daOccCam={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+daFogColor={
+"type": "vec3",
+"value": Vector3(0.00749, 0.00478, 0.01228)
+}
+daFogNear={
+"type": "float",
+"value": 1000.0
+}
+daFogFar={
+"type": "float",
+"value": 2000.0
+}
+daEnvMap={
+"type": "sampler2D",
+"value": ""
+}
+daDFG={
+"type": "sampler2D",
+"value": ""
+}

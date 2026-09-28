@@ -93,7 +93,7 @@ class U:
 		return d if f == 0.0 or is_nan(f) else f
 
 	# o.k for a Dictionary or an Object (null when missing).
-	static func g(o, k: String):
+	static func g(o, k: String) -> Variant:
 		if o is Dictionary:
 			return o.get(k)
 		if o is Object:
@@ -181,7 +181,7 @@ class Gamepad extends RefCounted:
 		return p is Dictionary and U.truthy(p.get("connected")) and p.get("mapping") == "standard"
 
 	# The pad in use while it stays connected, else the first connected 'standard' pad.
-	func _pick(list: Array):
+	func _pick(list: Array) -> Variant:
 		var cur = list[index] if index >= 0 and index < list.size() else null
 		if _ok(cur):
 			return cur
@@ -270,7 +270,7 @@ class Gamepad extends RefCounted:
 		if act != null and act.has_method("reset"):
 			act.reset()
 
-	func _actuator():
+	func _actuator() -> Variant:
 		var gp = _gp
 		var act = gp.get("vibrationActuator") if gp is Dictionary else null
 		return act if act is Object and act.has_method("playEffect") else null
@@ -377,7 +377,7 @@ class AimAssist extends RefCounted:
 				best = minf(best, FRICTION_NEAR + (1.0 - FRICTION_NEAR) * (dist / bubble))
 		return best
 
-	func snap():
+	func snap() -> Variant:
 		var g = game
 		var W = g.weapons
 		var p = g.player
