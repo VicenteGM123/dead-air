@@ -4291,7 +4291,7 @@ static func _reg_wallPosters() -> void:
 			glowBlob(ctx, hx, hy, w * 0.5, "#FFE9C0", 0.3)
 			ctx.restore()
 			var dk: Dictionary = P.duke.duplicate()
-			dk.wink = bool(o.get("winked"))
+			dk.wink = true if o.get("winked") else false
 			drawBust(ctx, "duke", hx, hy, s, dk)
 			if o.get("winked"):
 				sparkle(ctx, hx + s * 0.62, hy - s * 0.18, 17)

@@ -636,6 +636,13 @@
   "wrap": "repeat",
   "ns": "k"
  },
+ "wpn_grooves_v2": {
+  "file": "k_wpn_grooves_v2_5e864577.png",
+  "w": 512,
+  "h": 512,
+  "wrap": "clamp",
+  "ns": "k"
+ },
  "wpn_stickers_v3": {
   "file": "k_wpn_stickers_v3_140b6daf.png",
   "w": 1024,
