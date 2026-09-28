@@ -1,4 +1,158 @@
 {
+ "bc_on_air": [
+  {
+   "key": "bc_on_air__007",
+   "opts": {
+    "lit": false
+   }
+  }
+ ],
+ "hut_tubes": [
+  {
+   "key": "hut_tubes__183",
+   "opts": {}
+  }
+ ],
+ "sign_on_lever": [
+  {
+   "key": "sign_on_lever__246",
+   "opts": {
+    "anchorId": "signon_lamp",
+    "lamp": 0.2
+   }
+  }
+ ],
+ "telly_rug": [
+  {
+   "key": "telly_rug__252",
+   "opts": {}
+  }
+ ],
+ "telly_lamp": [
+  {
+   "key": "telly_lamp__253",
+   "opts": {
+    "anchorId": "telly_lamp_telly_home_green",
+    "level": 1
+   }
+  },
+  {
+   "key": "telly_lamp__255",
+   "opts": {
+    "anchorId": "telly_lamp_telly_home_newsroom",
+    "level": 1
+   }
+  },
+  {
+   "key": "telly_lamp__256",
+   "opts": {
+    "anchorId": "telly_lamp_telly_home_studio_a",
+    "level": 1
+   }
+  },
+  {
+   "key": "telly_lamp__257",
+   "opts": {
+    "anchorId": "telly_lamp_telly_home_studio_b",
+    "level": 1
+   }
+  }
+ ],
+ "telly_cord": [
+  {
+   "key": "telly_cord__254",
+   "opts": {}
+  }
+ ],
+ "telly": [
+  {
+   "key": "telly__258",
+   "opts": {
+    "card": "telly_face",
+    "expr": "zzz",
+    "channel": 13,
+    "pose": "hidden"
+   }
+  }
+ ],
+ "revolver_38": [
+  {
+   "key": "revolver_38__259",
+   "opts": {
+    "pose": "wall"
+   }
+  },
+  {
+   "key": "revolver_38__282",
+   "opts": {
+    "upgraded": false,
+    "pose": "hand"
+   }
+  },
+  {
+   "key": "revolver_38__283",
+   "opts": {
+    "upgraded": true,
+    "pose": "hand"
+   }
+  },
+  {
+   "key": "revolver_38__351",
+   "opts": {
+    "upgraded": true,
+    "pose": "hand",
+    "signal": "hot_mic"
+   }
+  },
+  {
+   "key": "revolver_38__352",
+   "opts": {
+    "upgraded": true,
+    "pose": "hand",
+    "signal": "laugh_track"
+   }
+  },
+  {
+   "key": "revolver_38__353",
+   "opts": {
+    "upgraded": true,
+    "pose": "hand",
+    "signal": "cold_open"
+   }
+  }
+ ],
+ "uplink_dish": [
+  {
+   "key": "uplink_dish__277",
+   "opts": {}
+  }
+ ],
+ "uplink_cradle": [
+  {
+   "key": "uplink_cradle__278",
+   "opts": {}
+  }
+ ],
+ "uplink_crank": [
+  {
+   "key": "uplink_crank__279",
+   "opts": {}
+  }
+ ],
+ "uplink_booth": [
+  {
+   "key": "uplink_booth__280",
+   "opts": {}
+  }
+ ],
+ "skylark_13": [
+  {
+   "key": "skylark_13__281",
+   "opts": {
+    "beacon": "red"
+   }
+  }
+ ],
  "sample_floor_lamp": [
   {
    "key": "sample_floor_lamp__348",

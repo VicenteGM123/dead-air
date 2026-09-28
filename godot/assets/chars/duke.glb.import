@@ -23,4 +23,4 @@ skins/use_named_skins=true
 animation/import=false
 materials/extract=0
 gltf/naming_version=2
-gltf/embedded_image_handling=1
+gltf/embedded_image_handling=3

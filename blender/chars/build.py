@@ -59,7 +59,7 @@ skins/use_named_skins=true
 animation/import=false
 materials/extract=0
 gltf/naming_version=2
-gltf/embedded_image_handling=1
+gltf/embedded_image_handling=3
 """
 
 
@@ -476,7 +476,8 @@ def export_glb(d, res, path, log=print):
         meshes['part_' + name] = dict(data=vertex_channels(pm), morphs=None)
     done = patch_glb(path, meshes)
     imp = path + '.import'
-    if not os.path.exists(imp):
+    old = open(imp).read() if os.path.exists(imp) else None
+    if old is None or '[params]' not in old or old.split('[params]', 1)[1].strip() != IMPORT_FILE.split('[params]', 1)[1].strip():
         with open(imp, 'w') as f:
             f.write(IMPORT_FILE)
     return done

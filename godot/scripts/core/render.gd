@@ -2,11 +2,13 @@
 # §14).
 #
 # Pipeline (Godot): the 3D world renders into `view`, an HDR SubViewport (use_hdr_2d: linear half-float, 4x MSAA,
-# sized window x pixelRatio) whose camera environment has the bloom (Godot glow tuned to UnrealBloom strength 0.45,
-# radius 0.55, threshold 0.8; linear tone mapper, exposure 1: the image stays linear HDR). A full-screen ColorRect on
-# a CanvasLayer (layer -100, under every UI layer) shows it through shaders/post.gdshader = the GradePass, which
-# works in linear HDR and ends with three's ACES Filmic (toneMappingExposure 1.05) + sRGB, exactly like the JS
-# pass that folds the OutputPass in. It implements every `render.post` knob:
+# sized window x pixelRatio; linear tone mapper, exposure 1: the image stays linear HDR). The bloom is an exact port
+# of three's UnrealBloomPass (strength 0.45, radius 0.55, threshold 0.8: luminance high pass at half res, 5 mips of
+# separable gaussian blurs, composite) as a chain of nested half-float SubViewports (shaders/bloom.gdshader; nesting
+# makes Godot draw them after the world view, in order). A full-screen ColorRect on a CanvasLayer (layer -100, under
+# every UI layer) shows the view + bloom through shaders/post.gdshader = the GradePass, which works in linear HDR
+# and ends with three's ACES Filmic (toneMappingExposure 1.05) + sRGB, exactly like the JS pass that folds the
+# OutputPass in. It implements every `render.post` knob:
 #   saturation (1), contrast, warmth (70s tint), grain, vignette (extra, on top of a subtle base), chroma (px),
 #   damage   signal loss: static creeping in from the edges + chromatic aberration + line jitter + hold slip,
 #   static   full-screen snow, roll = vertical roll, whiteout = Big Shot flash (also boosts bloom),
@@ -28,20 +30,21 @@
 # addMainHook(hook = {before, shadow, after}): before(camera) and shadow() run at the end of frame() (Godot draws
 # the frame after the scripts), after() when the frame has been drawn (RenderingServer.frame_post_draw).
 #
-# Godot-only plumbing (no JS counterpart): `view` (SubViewport), `env` (main camera Environment: background, bloom),
-# `envFeed` (the WorldEnvironment of the shared World3D, no bloom: feed cameras use it), `fog` (THREE scene.fog of
-# game.scene: {color: Color sRGB, near, far}; lights.gd drives it, frame() uploads daFog* + the native fog of both
-# environments for non-DEAD-AIR materials), CAM_NOFOG / CAM_FULLCOLOR (camera cull_mask flag bits read by the
-# shaders), makeEnvironment(bg, glow), QA params screenshot=/abs/path.png + shotafter=<s> (saves the window
-# image after s seconds of wall time, then quits) and quitafter=<s>.
+# Godot-only plumbing (no JS counterpart): `view` (the world SubViewport; SubViewports rendering game.scene from other
+# cameras (feeds) share its World3D automatically), `env` (the WorldEnvironment of game.scene's world: background
+# #150F1C, no Godot ambient/reflections/glow), `fog` (THREE scene.fog of game.scene: {color: Color sRGB, near, far};
+# lights.gd drives it, frame() uploads the daFog* shader globals + the native depth fog of `env` for non-DEAD-AIR
+# materials), CAM_NOFOG / CAM_FULLCOLOR (camera cull_mask flag bits read by the shaders: other worlds' cameras set
+# them), makeEnvironment(bg) (the same settings for other worlds: menu, ending), bloomStrength (current UnrealBloom
+# strength), QA params screenshot=/abs/path.png + shotafter=<s> (saves the window image after s seconds of wall
+# time, then quits) and quitafter=<s>.
 # Not ported (engine plumbing, SPEC §0.2): WebGLRenderer/EffectComposer setup, NaN guard, program sort, two-pass
 # twins, skipHiddenRoots, the shadow-map render hook of staticopt.js.
 extends RefCounted
 
 const BLOOM := {"strength": 0.45, "radius": 0.55, "threshold": 0.8}
 const MIN_PR := 0.6
-# Godot glow intensity per unit of UnrealBloom strength (tuned against JS renders: tools/material_test).
-const BLOOM_GAIN := 1.0
+const BLOOM_KERNELS := [6, 10, 14, 18, 22]
 const CAM_NOFOG := 1 << 18
 const CAM_FULLCOLOR := 1 << 19
 const BG := "#150F1C"
@@ -51,8 +54,8 @@ var view: SubViewport
 var scene: Node3D
 var camera: Camera3D
 var env: Environment
-var envFeed: Environment
 var worldEnv: WorldEnvironment
+var bloomStrength: float = BLOOM.strength
 var postLayer: CanvasLayer
 var postRect: ColorRect
 var grade: ShaderMaterial
@@ -77,7 +80,7 @@ var _highT := 0.0
 var _rollPhase := 0.0
 var _override: Camera3D = null
 var _overrideAspect := 4.0 / 3.0
-var _overrideEnv = null
+var _bloom := {}            # UnrealBloomPass chain: {bright, h: [5], v: [5], comp} = {vp: SubViewport, mat}
 var _fx := {}               # owner -> { knobs, until }: temporary effect layers (setFx)
 var _eff := {}              # effective knob values of the current frame (render.post + layers)
 var _prePasses: Array = []
@@ -105,15 +108,13 @@ func _init(g) -> void:
 	view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	view.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
 	view.positional_shadow_atlas_size = 0
-	game.add_child(view)
+	_buildBloom()
 
-	# The shared World3D's default environment (feed cameras, anything without its own): no bloom.
-	envFeed = makeEnvironment(Color(BG), false)
+	env = makeEnvironment(Color(BG))
 	worldEnv = WorldEnvironment.new()
 	worldEnv.name = "WorldEnvironment"
-	worldEnv.environment = envFeed
+	worldEnv.environment = env
 	view.add_child(worldEnv)
-	env = makeEnvironment(Color(BG), true)
 
 	scene = Node3D.new()
 	scene.name = "World"
@@ -129,7 +130,6 @@ func _init(g) -> void:
 	camera.far = 260.0
 	camera.keep_aspect = Camera3D.KEEP_HEIGHT
 	camera.cull_mask = (1 << Config.LAYERS.WORLD) | (1 << Config.LAYERS.ZOMBIES)
-	camera.environment = env
 	scene.add_child(camera)
 	camera.current = true
 
@@ -144,6 +144,7 @@ func _init(g) -> void:
 	grade = ShaderMaterial.new()
 	grade.shader = load("res://shaders/post.gdshader")
 	grade.set_shader_parameter("tDiffuse", view.get_texture())
+	grade.set_shader_parameter("tBloom", _bloom.comp.vp.get_texture())
 	grade.set_shader_parameter("uLift", Color(Config.PAL.shadow))
 	postRect.material = grade
 	postLayer.add_child(postRect)
@@ -158,8 +159,9 @@ func _init(g) -> void:
 
 # Environment with the DEAD AIR settings: flat background colour, no Godot ambient / reflections (the shaders do
 # three's hemisphere + RoomEnvironment IBL themselves), linear tone mapping (the grade does ACES), native depth fog
-# (only for non-DEAD-AIR materials; ours use render_mode fog_disabled + daFog*), optional bloom.
-static func makeEnvironment(bg: Color, glow: bool) -> Environment:
+# (only for non-DEAD-AIR materials; ours use render_mode fog_disabled + daFog*), no Godot glow (the bloom is the
+# UnrealBloomPass chain of the main view; three renders feeds and other targets without bloom).
+static func makeEnvironment(bg: Color) -> Environment:
 	var e := Environment.new()
 	e.background_mode = Environment.BG_COLOR
 	e.background_color = bg
@@ -174,6 +176,7 @@ static func makeEnvironment(bg: Color, glow: bool) -> Environment:
 	e.ssr_enabled = false
 	e.ssil_enabled = false
 	e.sdfgi_enabled = false
+	e.glow_enabled = false
 	e.fog_enabled = false
 	e.fog_mode = Environment.FOG_MODE_DEPTH
 	e.fog_density = 1.0
@@ -183,29 +186,98 @@ static func makeEnvironment(bg: Color, glow: bool) -> Environment:
 	e.fog_sky_affect = 0.0
 	e.fog_sun_scatter = 0.0
 	e.fog_aerial_perspective = 0.0
-	e.glow_enabled = glow
-	if glow:
-		e.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
-		e.glow_normalized = false
-		e.glow_hdr_threshold = BLOOM.threshold
-		e.glow_hdr_scale = 0.01
-		e.glow_hdr_luminance_cap = 256.0
-		e.glow_bloom = 0.0
-		e.glow_strength = 1.0
-		e.glow_intensity = BLOOM.strength * BLOOM_GAIN
-		for i in 7:
-			e.set_glow_level(i, _bloomLevel(i))
 	return e
 
-# UnrealBloomPass composite factors: mix(factor, 1.2 - factor, radius) for its 5 mips (1.0 0.8 0.6 0.4 0.2).
-# Godot level i+1 has about the reach of Unreal mip i (half-res mip chain, blurred once per level).
-static func _bloomLevel(i: int) -> float:
-	var F := [1.0, 0.8, 0.6, 0.4, 0.2]
-	var j := i - 1
-	if j < 0 or j >= F.size():
-		return 0.0
-	var f: float = F[j]
-	return lerpf(f, 1.2 - f, BLOOM.radius)
+# ---- UnrealBloomPass (see shaders/bloom.gdshader): nested SubViewports, innermost = the world view.
+func _stage(name: String, inner: Viewport, mode: int) -> Dictionary:
+	var vp := SubViewport.new()
+	vp.name = name
+	vp.use_hdr_2d = true
+	vp.disable_3d = true
+	vp.transparent_bg = false
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
+	vp.size = Vector2i(8, 8)
+	var rect := ColorRect.new()
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/bloom.gdshader")
+	m.set_shader_parameter("mode", mode)
+	rect.material = m
+	vp.add_child(rect)
+	if inner != null:
+		vp.add_child(inner)
+	return {"vp": vp, "mat": m, "rect": rect}
+
+static func _blurKernel(k: int) -> Dictionary:
+	var coeff: Array = []
+	var sigma := k / 3.0
+	for i in k:
+		coeff.append(0.39894 * exp(-0.5 * i * i / (sigma * sigma)) / sigma)
+	var offsets := PackedFloat32Array()
+	var weights := PackedFloat32Array()
+	for i in range(1, k, 2):
+		var wa: float = coeff[i]
+		var wb: float = coeff[i + 1] if i + 1 < k else 0.0
+		var w := wa + wb
+		offsets.append((i * wa + (i + 1) * wb) / w)
+		weights.append(w)
+	var n := offsets.size()
+	offsets.resize(11)
+	weights.resize(11)
+	return {"center": coeff[0], "offsets": offsets, "weights": weights, "pairs": n}
+
+func _buildBloom() -> void:
+	var inner: Viewport = view
+	var bright := _stage("BloomBright", inner, 0)
+	bright.mat.set_shader_parameter("colorTexture", view.get_texture())
+	bright.mat.set_shader_parameter("luminosityThreshold", BLOOM.threshold)
+	bright.mat.set_shader_parameter("smoothWidth", 0.01)
+	inner = bright.vp
+	var src: Viewport = bright.vp
+	var hs: Array = []
+	var vs: Array = []
+	for i in 5:
+		var K := _blurKernel(BLOOM_KERNELS[i])
+		var h := _stage("BloomH%d" % i, inner, 1)
+		var v := _stage("BloomV%d" % i, h.vp, 1)
+		for st in [h, v]:
+			st.mat.set_shader_parameter("centerWeight", K.center)
+			st.mat.set_shader_parameter("gaussianOffsets", K.offsets)
+			st.mat.set_shader_parameter("gaussianWeights", K.weights)
+			st.mat.set_shader_parameter("pairs", K.pairs)
+		h.mat.set_shader_parameter("colorTexture", src.get_texture())
+		h.mat.set_shader_parameter("direction", Vector2(1, 0))
+		v.mat.set_shader_parameter("colorTexture", h.vp.get_texture())
+		v.mat.set_shader_parameter("direction", Vector2(0, 1))
+		hs.append(h)
+		vs.append(v)
+		src = v.vp
+		inner = v.vp
+	var comp := _stage("BloomComposite", inner, 2)
+	for i in 5:
+		comp.mat.set_shader_parameter("blurTexture%d" % (i + 1), vs[i].vp.get_texture())
+	comp.mat.set_shader_parameter("bloomStrength", BLOOM.strength)
+	comp.mat.set_shader_parameter("bloomRadius", BLOOM.radius)
+	game.add_child(comp.vp)
+	_bloom = {"bright": bright, "h": hs, "v": vs, "comp": comp}
+
+# UnrealBloomPass.setSize(w, h): half res, then halved per mip (Math.round).
+func _resizeBloom(w: int, h: int) -> void:
+	if _bloom.is_empty():
+		return
+	var rx := int(floorf(w / 2.0 + 0.5))
+	var ry := int(floorf(h / 2.0 + 0.5))
+	_bloom.bright.vp.size = Vector2i(maxi(1, rx), maxi(1, ry))
+	_bloom.comp.vp.size = Vector2i(maxi(1, rx), maxi(1, ry))
+	for i in 5:
+		var sz := Vector2i(maxi(1, rx), maxi(1, ry))
+		for st in [_bloom.h[i], _bloom.v[i]]:
+			st.vp.size = sz
+			st.mat.set_shader_parameter("invSize", Vector2(1.0 / sz.x, 1.0 / sz.y))
+		rx = int(floorf(rx / 2.0 + 0.5))
+		ry = int(floorf(ry / 2.0 + 0.5))
 
 func init() -> void:
 	var p: Dictionary = game.params
@@ -292,6 +364,7 @@ func _resizeView() -> void:
 	var size := Vector2i(maxi(1, int(roundf(w))), maxi(1, int(roundf(h))))
 	if view.size != size:
 		view.size = size
+		_resizeBloom(size.x, size.y)
 	grade.set_shader_parameter("uRes", Vector2(s.x * pixelRatio, s.y * pixelRatio))
 
 func setPixelRatio(pr: float) -> void:
@@ -304,15 +377,9 @@ func setPixelRatio(pr: float) -> void:
 # Render from `camera` into a centered viewport of `aspect` (null restores the gameplay camera).
 func setCameraOverride(cam, opts := {}) -> void:
 	var aspect: float = float(opts.get("aspect", 4.0 / 3.0))
-	if _override != null and _override != cam and is_instance_valid(_override):
-		_override.environment = _overrideEnv
-	var prev := _override
 	_override = cam if cam != null else null
 	_overrideAspect = aspect
 	if _override != null:
-		if prev != _override:
-			_overrideEnv = _override.environment
-		_override.environment = env
 		if not view.is_ancestor_of(_override):
 			push_warning("[render] setCameraOverride: the camera is not under game.scene; it cannot render the world")
 		_override.current = true
@@ -442,7 +509,8 @@ func frame(dt: float) -> bool:
 	u.set_shader_parameter("uScanlines", p.scanlines)
 	u.set_shader_parameter("uCrt", p.crt)
 	u.set_shader_parameter("uCollapse", p.collapse)
-	env.glow_intensity = (BLOOM.strength + p.whiteout * 2.5) * BLOOM_GAIN
+	bloomStrength = BLOOM.strength + p.whiteout * 2.5
+	_bloom.comp.mat.set_shader_parameter("bloomStrength", bloomStrength)
 
 	for fn in _prePasses.duplicate():
 		if not (fn is Callable) or not fn.is_valid():
@@ -462,7 +530,7 @@ func frame(dt: float) -> bool:
 	_qa()
 	return true
 
-# THREE scene.fog of game.scene -> daFog* globals (DEAD AIR shaders) + the native fog of both environments.
+# THREE scene.fog of game.scene -> daFog* globals (DEAD AIR shaders) + the native fog of `env`.
 func _syncFog() -> void:
 	var c: Color = DAU.color(fog.color)
 	var near := float(fog.near)
@@ -474,11 +542,10 @@ func _syncFog() -> void:
 	RenderingServer.global_shader_parameter_set("daFogColor", Vector3(lin.r, lin.g, lin.b))
 	RenderingServer.global_shader_parameter_set("daFogNear", near)
 	RenderingServer.global_shader_parameter_set("daFogFar", far)
-	for e in [env, envFeed]:
-		e.fog_enabled = far < 999.0
-		e.fog_light_color = c
-		e.fog_depth_begin = near
-		e.fog_depth_end = far
+	env.fog_enabled = far < 999.0
+	env.fog_light_color = c
+	env.fog_depth_begin = near
+	env.fog_depth_end = far
 
 # Drop the pixel ratio in 0.1 steps when the average fps stays < 50 for 2 s; raise it again above 58.
 func _dynamicResolution(dt: float) -> void:

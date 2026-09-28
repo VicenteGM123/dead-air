@@ -35,7 +35,9 @@
 #
 # Rooms: rooms/<areaId>.gd (optional) is loaded after the graybox and its build(game, area, root) is called with
 # the layout area Dictionary and the area's 'dressing' Node3D (a static func, or an instance method: the instance
-# is then kept in level._rooms[areaId]). A missing file is skipped; a runtime error aborts that room only.
+# is then kept in level._rooms[areaId], and added under 'dressing' first when it is a Node, so its _process can do
+# the per-frame work the JS rooms ran from onBeforeRender hooks). A missing file is skipped; a runtime error aborts
+# that room only. level.objects is the shared registry the rooms fill (game.level.objects[id] = {...}).
 #
 # Not ported (engine plumbing, SPEC §0.2): the static merges (mergeByMaterial), staticopt.js (baked colours,
 # shadow proxies, area batches), the render hooks of the per-object portal culling (portalBegin/portalEnd:
@@ -226,6 +228,8 @@ func _buildRoom(a: Dictionary, dressing: Node3D) -> void:
 	else:
 		var inst = R.new()
 		_rooms[a.id] = inst
+		if inst is Node:
+			dressing.add_child(inst)   # a Node room gets _process (the JS rooms ticked from onBeforeRender hooks)
 		inst.build(game, a, dressing)
 
 # The glTF scene's root instance (or null when the asset is missing: the level still runs without it).

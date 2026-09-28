@@ -300,6 +300,7 @@ static func buildCharacter(defOrId, opts: Dictionary = {}) -> Character:
 		if joint == null:
 			joint = J.get("head", rig.root)
 		node.get_parent().remove_child(node)
+		DAU.traverse(node, func(o): o.owner = null)
 		_setupAttachment(node, da, true, actx)
 		joint.add_child(node)
 	inst.free()

@@ -22,6 +22,6 @@ if (mode === 'env') {
   const base = 'file://' + path.dirname(path.resolve(a)) + '/';
   const r = await p.evaluate(async ([s, base]) => await window.__mref.run(s, base), [spec, base]);
   fs.writeFileSync(b, Buffer.from(r.png.split(',')[1], 'base64'));
-  console.log('shot', r.w, r.h, b);
+  console.log('shot', r.w, r.h, b, JSON.stringify(r.probe));
 }
 await br.close();

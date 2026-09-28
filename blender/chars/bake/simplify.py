@@ -255,6 +255,8 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
         faces_on_edge = np.where(kind[cu[cidx]] == 1, 1, 2)
         link_ok = common == faces_on_edge
         status = np.where(link_ok, 0, -1)          # 0 pending, 1 accepted, -1 rejected
+        so_c = np.lexsort((claim_c, claim_v))
+        so_v, so_cc, so_x = claim_v[so_c], claim_c[so_c], claim_x[so_c]
         # flip test data: faces around u (by welded vertex)
         fv = FW.reshape(-1)
         forder = np.argsort(fv, kind='stable')
@@ -270,8 +272,18 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
             BIGI = np.iinfo(np.int64).max
             exB = np.full(nwv, BIGI)
             allB = np.full(nwv, BIGI)
-            np.minimum.at(exB, lv[lx], lc[lx])
-            np.minimum.at(allB, lv, lc)
+            # per-vertex minimum rank (claims pre-sorted by (vertex, rank): first live entry of each vertex group)
+            lo = live[so_c]
+            sv, sc, sx = so_v[lo], so_cc[lo], so_x[lo]
+            if len(sv):
+                f = np.ones(len(sv), bool)
+                f[1:] = sv[1:] != sv[:-1]
+                allB[sv[f]] = sc[f]
+                ev_, ec_ = sv[sx], sc[sx]
+                if len(ev_):
+                    f = np.ones(len(ev_), bool)
+                    f[1:] = ev_[1:] != ev_[:-1]
+                    exB[ev_[f]] = ec_[f]
             bad = np.where(lx, allB[lv] < lc, exB[lv] < lc)
             fails = np.bincount(lc, weights=bad.astype(float), minlength=nc)
             won = pend & (fails == 0)

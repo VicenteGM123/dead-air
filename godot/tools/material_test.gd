@@ -177,6 +177,12 @@ func _process(_d: float) -> void:
 	if _wait == 0:
 		await RenderingServer.frame_post_draw
 		var img := get_viewport().get_texture().get_image()
+		if params.has("probe"):
+			var vi: Image = render.view.get_texture().get_image()
+			var bi: Image = render._bloom.comp.vp.get_texture().get_image()
+			for pt in [[10, 10], [640, 700], [640, 100]]:
+				var q := Vector2i(int(pt[0] * vi.get_width() / 1280.0), int(pt[1] * vi.get_height() / 720.0))
+				print("material_test: probe ", pt, " view ", vi.get_pixelv(q), " bloom ", bi.get_pixelv(q / 2), " out ", img.get_pixelv(Vector2i(pt[0], pt[1])))
 		if _out != "":
 			img.save_png(_out)
 			print("material_test: saved ", _out)

@@ -101,7 +101,16 @@ window.__mref = {
       if (spec.time !== undefined) U.uTime.value = spec.time;
       game.render.frame(dt);
     }
-    return { w: game.renderer.domElement.width, h: game.renderer.domElement.height, png: game.renderer.domElement.toDataURL('image/png') };
+    const probe = [];
+    {
+      const rt = game.render.composer.renderTarget1, buf = new Uint16Array(4);
+      const hf = (h) => { const s = (h & 0x8000) ? -1 : 1, e = (h >> 10) & 31, f = h & 1023; return e === 0 ? s * f * 2 ** -24 : s * (1 + f / 1024) * 2 ** (e - 15); };
+      for (const [x, y] of [[10, 10], [640, 700], [640, 100]]) {
+        game.renderer.readRenderTargetPixels(rt, x, rt.height - 1 - y, 1, 1, buf);
+        probe.push([x, y, Array.from(buf).map(hf)]);
+      }
+    }
+    return { probe, w: game.renderer.domElement.width, h: game.renderer.domElement.height, png: game.renderer.domElement.toDataURL('image/png') };
   },
   // The RoomEnvironment PMREM atlas of materials.js as raw RGBA half floats (row 0 = GL bottom row).
   bakeEnv() {

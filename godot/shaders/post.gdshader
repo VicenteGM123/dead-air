@@ -6,6 +6,7 @@ shader_type canvas_item;
 render_mode unshaded;
 
 uniform sampler2D tDiffuse : filter_linear, repeat_disable;
+uniform sampler2D tBloom : filter_linear, repeat_disable;   // render.gd bloom chain (UnrealBloomPass composite)
 uniform vec2 uRes = vec2(1280.0, 720.0);
 uniform float uTime = 0.0;
 uniform float uSaturation = 1.0;
@@ -44,8 +45,10 @@ float box(vec2 uv, vec2 px) {
 	return e.x * e.y;
 }
 
+// the scene target after the UnrealBloomPass additive blend
 vec3 tex(vec2 uv) {
-	return texture(tDiffuse, vec2(uv.x, 1.0 - uv.y)).rgb;
+	vec2 st = vec2(uv.x, 1.0 - uv.y);
+	return texture(tDiffuse, st).rgb + texture(tBloom, st).rgb;
 }
 
 vec3 RRTAndODTFit(vec3 v) {

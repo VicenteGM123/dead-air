@@ -39,7 +39,7 @@ import math
 
 from dalib import kit as K
 from dalib.kit import registerProp, registerScene, PAL, THREE, getCard
-from dalib.mathutils3 import clamp, lerp, smoothstep, js_str, js_round
+from dalib.mathutils3 import JSObj, clamp, lerp, smoothstep, js_str, js_round
 
 TAU = math.pi * 2
 UP = THREE.Vector3(0, 1, 0)
@@ -1182,7 +1182,7 @@ def dropShell(game, type):
     g.userData.dropType = type
     g.userData.glow = glowCol
     g.userData.lightAnchors = [{'pos': [0, 0.15, 0], 'color': glowCol, 'intensity': 0.8, 'distance': 2.2}]  # floor glow, below the item
-    g.userData.parts = {'float': float_, 'model': model, 'bubble': glass, 'rim': rim, 'ring': ringG}
+    g.userData.parts = JSObj({'float': float_, 'model': model, 'bubble': glass, 'rim': rim, 'ring': ringG})
     return {'g': g, 'float': float_, 'model': model}
 
 

@@ -549,6 +549,7 @@ class Handle:
 	var frame := -1
 	var dirty := true
 	var last := 0.0
+	var renderFn: Callable
 	func tick(time: float) -> bool:
 		last = time
 		var f := int(floorf(time * def.fps + 1e-6)) if def.fps else 0
@@ -556,7 +557,7 @@ class Handle:
 			return false
 		frame = f
 		dirty = false
-		DACards.render(def, ctx, f / def.fps if def.fps else time, opts)
+		renderFn.call(def, ctx, f / def.fps if def.fps else time, opts)
 		return true
 	func set_(patch: Dictionary) -> void:
 		opts.merge(patch, true)
@@ -579,6 +580,7 @@ static func getAnimated(id: String, opts: Dictionary = {}) -> Handle:
 	h.ctx = canvas.getContext("2d")
 	h.texture = wrap_(canvas, def.id, true)
 	h.opts = opts.duplicate()
+	h.renderFn = render
 	h.tick(0)
 	animCache[key] = h
 	return h
@@ -615,20 +617,36 @@ static func invalidateAll() -> void:
 ## Namespace form of the API (see header). JS `cards.get` -> get_.
 class Namespace:
 	extends RefCounted
+	var _get: Callable
+	var _animated: Callable
+	var _drawTo: Callable
+	var _ids: Callable
+	var _info: Callable
+	var _inv: Callable
 	func get_(id: String, opts: Dictionary = {}) -> Texture2D:
-		return DACards.getCard(id, opts)
+		return _get.call(id, opts)
 	func animated(id: String, opts: Dictionary = {}):
-		return DACards.getAnimated(id, opts)
+		return _animated.call(id, opts)
 	func drawTo(ctx, id: String, w: float, h: float, time: float = 0.0, opts: Dictionary = {}) -> void:
-		DACards.drawTo(ctx, id, w, h, time, opts)
+		_drawTo.call(ctx, id, w, h, time, opts)
 	func ids() -> Array:
-		return DACards.cardIds()
+		return _ids.call()
 	func info(id: String):
-		return DACards.cardInfo(id)
+		return _info.call(id)
 	func invalidateAll() -> void:
-		DACards.invalidateAll()
+		_inv.call()
 
-static var cards: Namespace = Namespace.new()
+static func _makeNamespace() -> Namespace:
+	var n := Namespace.new()
+	n._get = getCard
+	n._animated = getAnimated
+	n._drawTo = drawTo
+	n._ids = cardIds
+	n._info = cardInfo
+	n._inv = invalidateAll
+	return n
+
+static var cards: Namespace = _makeNamespace()
 
 ## Installs the namespace as game.cards (DAGame calls DACards.install(self); also done on first use).
 static func install(game) -> void:
@@ -636,10 +654,8 @@ static func install(game) -> void:
 		game.cards = cards
 
 static func _static_init() -> void:
-	if ClassDB.class_exists("Node") and Engine.get_main_loop() != null:
-		var g = DAGame.inst if DAGame.inst != null else null
-		if g != null and g.cards == null:
-			g.cards = cards
+	if DAGame.inst != null and DAGame.inst.cards == null:
+		DAGame.inst.cards = cards
 
 static func _ensure() -> void:
 	if _registered:
@@ -1297,7 +1313,7 @@ static func eyes(ctx, skin: String, o: Dictionary = {}) -> void:
 	var look: Array = _or(o.get("look"), [0.04, 0])
 	var iris: String = _or(o.get("iris"), "#6B3A1E")
 	for s in [-1, 1]:
-		var ex := s * ex0
+		var ex: float = s * ex0
 		if o.get("wink") and s == 1:
 			ctx.beginPath()
 			ctx.arc(ex, y + ry * 0.55, rx * 1.05, PI * 1.15, PI * 1.85)
@@ -1857,7 +1873,7 @@ static func baronFace(ctx, mood: String = "grin", t: float = 0.0, m: float = 0.4
 		var laughSquint := 0.35 + m * 0.3 if mood == "laugh" else 0.0
 		for s in [-1, 1]:
 			var big := (1.25 if s < 0 else 0.95) if frantic else 1.0
-			var ex := s * 0.33 + shake
+			var ex: float = s * 0.33 + shake
 			var ey := 0.07
 			ellipse(ctx, ex, ey, 0.17 * big, (0.13 if angry else 0.19) * big)
 			inked(ctx, "#FFF1D0" if angry else "#FFFDF6", 0.04)
@@ -2173,7 +2189,7 @@ static func drawHootie(ctx, cx: float, cy: float, s: float, o: Dictionary = {}) 
 	inked(ctx, "#D8B484", LW * 0.8)
 	var blink: bool = o.get("blink") if o.get("blink") != null else fract(t / 3.1) > 0.94
 	for sx in [-1, 1]:
-		var ex := sx * 0.33
+		var ex: float = sx * 0.33
 		var ey := -0.26
 		circle(ctx, ex, ey, 0.3)
 		inked(ctx, "#F4B63A", LW)
@@ -2184,7 +2200,7 @@ static func drawHootie(ctx, cx: float, cy: float, s: float, o: Dictionary = {}) 
 			ctx.arc(ex, ey - 0.05, 0.2, 0.3, PI - 0.3)
 			stroke(ctx, C.ink, 0.06)
 		else:
-			var px := ex + sin(t * 1.3) * 0.03
+			var px: float = ex + sin(t * 1.3) * 0.03
 			circle(ctx, px, ey + 0.02, 0.15)
 			fill(ctx, "#1E1428")
 			circle(ctx, px + 0.06, ey - 0.05, 0.05)
@@ -2652,7 +2668,7 @@ static func drawTestCard(ctx, w: float, h: float, o: Dictionary = {}) -> void:
 		ctx.fillRect(w - chh, j * cell, chh, cell)
 	# resolution wedges left and right of the circle
 	for s in [-1, 1]:
-		var wx := cx + s * (R + (w / 2 - R) * 0.48)
+		var wx: float = cx + s * (R + (w / 2 - R) * 0.48)
 		var wy := cy
 		ctx.strokeStyle = "#1E1830"
 		ctx.lineWidth = 1.4
@@ -2744,7 +2760,7 @@ static func balloonText(ctx, s: String, cx: float, y: float, px: float, t: float
 		var cw0: float = ctx.measureText(c).width * 1.1
 		ws.append(cw0)
 		total += cw0
-	var sc := maxW / total if maxW and total > maxW else 1.0
+	var sc: float = maxW / total if maxW and total > maxW else 1.0
 	total *= sc
 	var x := cx - total / 2
 	ctx.textAlign = "center"
@@ -3071,7 +3087,7 @@ static func _reg_sources() -> void:
 			for i in strips:
 				var u := float(i) / strips
 				var amp := 4 + u * 20
-				var ph := u * 7 - t * 4.2
+				var ph: float = u * 7 - t * 4.2
 				var dy := sin(ph) * amp
 				var slope := cos(ph)
 				var sq := 1 - u * 0.06
@@ -4219,7 +4235,7 @@ static func gunMount(ctx, cx: float, cy: float, rx: float, ry: float, col: Strin
 	ctx.restore()
 	stroke(ctx, C.ink, 3)
 	for s in [-1, 1]:
-		var x := cx + s * rx * 0.42
+		var x: float = cx + s * rx * 0.42
 		var y := cy - ry * 0.18
 		rr(ctx, x - 9, y - 16, 18, 32, 6)
 		inked(ctx, linear(ctx, x - 9, 0, x + 9, 0, ["#8A90A8", "#FFFFFF", "#9AA2BC"]), 2)
@@ -4455,8 +4471,8 @@ static func starburst(ctx, w: float, h: float, cx: float, cy: float, c1: String,
 ## Banner ribbon with folded tails.
 static func ribbon(ctx, cx: float, cy: float, w: float, h: float, col: String) -> void:
 	for s in [-1, 1]:
-		var x0 := cx + s * (w / 2 - h * 0.3)
-		var x1 := cx + s * (w / 2 + h * 0.85)
+		var x0: float = cx + s * (w / 2 - h * 0.3)
+		var x1: float = cx + s * (w / 2 + h * 0.85)
 		poly(ctx, [x0, cy - h * 0.25, x1, cy - h * 0.25, x1 - s * h * 0.35, cy + h * 0.28, x1, cy + h * 0.8, x0, cy + h * 0.8])
 		inked(ctx, darken(col, 0.3), 3)
 	rr(ctx, cx - w / 2, cy - h / 2, w, h, 4)
@@ -5001,7 +5017,7 @@ static func neonPath(ctx, build: Callable, col: String, lw: float, lit: bool) ->
 static func _niReplay(ctx, x: float, y: float, s: float) -> void:
 	ctx.beginPath()
 	for k in [0, 1]:
-		var ox := x + s * (0.42 - k * 0.5)
+		var ox: float = x + s * (0.42 - k * 0.5)
 		ctx.moveTo(ox, y - s * 0.3)
 		ctx.lineTo(ox - s * 0.42, y)
 		ctx.lineTo(ox, y + s * 0.3)
@@ -5319,14 +5335,14 @@ static func _rd2(ctx, m: Dictionary, cx: float, cy: float) -> void:
 
 static func _rd3(ctx, m: Dictionary, cx: float, cy: float) -> void:
 	for s in [-1, 1]:
-		var bx := cx + s * 30
+		var bx: float = cx + s * 30
 		var palm_ := [bx - s * 4, cy + 44, bx - s * 26, cy + 6, bx - s * 22, cy - 34, bx - s * 8, cy - 40, bx + s * 8, cy - 20, bx + s * 10, cy + 40]
 		m.fillIn.call(palm_, "#F2C29B")
 		m.ink.call(palm_, true)
 		m.ink.call([bx - s * 12, cy - 30, bx - s * 4, cy - 2])
 	for s in [-1, 1]:
 		for k in 3:
-			var a := -PI / 2 + s * (0.45 + k * 0.4)
+			var a: float = -PI / 2 + s * (0.45 + k * 0.4)
 			m.ink.call([cx + cos(a) * 52, cy - 8 + sin(a) * 52, cx + cos(a) * 68, cy - 8 + sin(a) * 68])
 	label(ctx, "$", cx + 100, cy + 4, {"fam": FONT.round, "px": 58, "fill": MARK.green, "rot": 0.12})
 	label(ctx, "$", cx - 100, cy + 10, {"fam": FONT.round, "px": 34, "fill": MARK.green, "rot": -0.2})
@@ -5901,3 +5917,424 @@ static func _reg_portraits() -> void:
 		rr(ctx, 4, 4, w - 8, h - 8, 14)
 		stroke(ctx, "#2A2438", 3)
 		gloss(ctx, 4, 4, w - 8, h - 8, 14, 0.3))
+
+## The Baron's dressing room as painted for the porthole: bulb mirror with a lipstick "13", fan mail, plaque, wig stand.
+static func baronRoom(ctx, w: float, h: float) -> void:
+	ctx.fillStyle = "#4A2450"
+	ctx.fillRect(0, 0, w, h)
+	ctx.fillStyle = "rgba(255,79,160,0.12)"
+	var x0 := 0.0
+	while x0 < w:
+		ctx.fillRect(x0, 0, 10, h * 0.66)
+		x0 += 22
+	ctx.fillStyle = linear(ctx, 0, h * 0.66, 0, h, ["#6A3A22", "#3E2014"])
+	ctx.fillRect(0, h * 0.66, w, h * 0.34)
+	var mx := w * 0.42
+	var my := h * 0.36
+	var mw := 118.0
+	var mh := 96.0
+	rr(ctx, mx - mw / 2 - 12, my - mh / 2 - 12, mw + 24, mh + 24, 14)
+	inked(ctx, "#E8D8C0", 2)
+	rr(ctx, mx - mw / 2, my - mh / 2, mw, mh, 8)
+	fill(ctx, linear(ctx, mx - mw / 2, my - mh / 2, mx + mw / 2, my + mh / 2, ["#DDEBF4", "#9AB4C8", "#C8DCE8"]))
+	ctx.fillStyle = "rgba(255,255,255,0.4)"
+	poly(ctx, [mx - 40, my - mh / 2, mx - 20, my - mh / 2, mx - 56, my + mh / 2, mx - 59, my + mh / 2, mx - 59, my + 10])
+	ctx.fill()
+	label(ctx, "13", mx + 6, my + 4, {"fam": FONT.groovy, "px": 56, "fill": "rgba(210,30,60,0.85)", "rot": -0.12})
+	for i in 14:
+		var u := i / 13.0
+		var per := 2 * (mw + mh + 24 * 2)
+		var d := u * per
+		var bx: float
+		var by: float
+		var W := mw + 24
+		var H := mh + 24
+		if d < W:
+			bx = mx - W / 2 + d
+			by = my - H / 2
+		elif d < W + H:
+			bx = mx + W / 2
+			by = my - H / 2 + d - W
+		elif d < 2 * W + H:
+			bx = mx + W / 2 - (d - W - H)
+			by = my + H / 2
+		else:
+			bx = mx - W / 2
+			by = my + H / 2 - (d - 2 * W - H)
+		circle(ctx, bx, by, 5)
+		ctx.save()
+		ctx.shadowColor = "#FFD08A"
+		ctx.shadowBlur = 8
+		fill(ctx, "#FFF4C8")
+		ctx.restore()
+	ctx.fillStyle = linear(ctx, 0, h * 0.64, 0, h * 0.72, ["#8A5A3A", "#5A3420"])
+	ctx.fillRect(0, h * 0.64, w, h * 0.08)
+	var r := rng(76)
+	for i in 7:
+		var ex: float = 20 + i * 14 + r.call() * 6
+		var ey: float = h * 0.6 - (i % 3) * 4
+		ctx.save()
+		ctx.translate(ex, ey)
+		ctx.rotate((r.call() - 0.5) * 0.6)
+		rr(ctx, -14, -9, 28, 18, 2)
+		inked(ctx, "#FFF4DC" if (i % 2) else "#FFDDE8", 1.2)
+		poly(ctx, [-14, -9, 0, 1, 14, -9], false)
+		stroke(ctx, "#B8A080", 1)
+		heart(ctx, 7, 3, 5, C.red, 0)
+		ctx.restore()
+	var px := w * 0.86
+	var py := h * 0.32
+	rr(ctx, px - 24, py - 32, 48, 64, 5)
+	inked(ctx, linear(ctx, 0, py - 32, 0, py + 32, ["#6A3A22", "#3E2014"]), 2)
+	rr(ctx, px - 18, py - 26, 36, 52, 3)
+	fill(ctx, linear(ctx, 0, py - 26, 0, py + 26, GOLDEN))
+	rr(ctx, px - 8, py - 16, 16, 12, 3)
+	inked(ctx, "#B07A16", 1)
+	label(ctx, "HOST", px, py + 6, {"fam": FONT.sign, "px": 7, "fill": "#5A3A08"})
+	label(ctx, "1976", px, py + 16, {"fam": FONT.sign, "px": 8, "fill": "#5A3A08"})
+	var wx := w * 0.84
+	var wy := h * 0.58
+	capsule(ctx, wx, wy + 8, wx, wy + 40, 5, "#C9CED8", C.ink, 1.2)
+	ellipse(ctx, wx, wy + 42, 16, 5)
+	inked(ctx, "#8A90A8", 1.2)
+	ellipse(ctx, wx, wy - 8, 15, 19)
+	inked(ctx, "#F4F1E8", 1.5)
+	vignette(ctx, w, h, 0.5, "20,8,24", 0.4)
+
+const DOORS := {
+	"skip": {"name": "SKIP", "col": "#3A6AC8"},
+	"roxy": {"name": "ROXY", "col": "#D8467A"},
+	"penny": {"name": "PENNY", "col": "#E3662B"},
+	"duke": {"name": "DUKE", "col": "#8A5A2A"},
+	"baron": {"name": "THE BARON", "col": "#4A2A5A"},
+}
+
+## Studio light box (APPLAUSE / ON AIR): glass panel in a black housing; lit glows.
+static func lightBox(ctx, w: float, h: float, s: String, lit: bool, glass: String, bulbs: bool) -> void:
+	rr(ctx, 2, 2, w - 4, h - 4, h * 0.2)
+	fill(ctx, linear(ctx, 0, 0, 0, h, ["#3A3448", "#1A1624"]))
+	rr(ctx, 2, 2, w - 4, h - 4, h * 0.2)
+	stroke(ctx, "#0E0A14", 3)
+	var m := h * 0.16
+	var gx := m
+	var gy := m
+	var gw := w - m * 2
+	var gh := h - m * 2
+	rr(ctx, gx, gy, gw, gh, h * 0.1)
+	fill(ctx, radial(ctx, w / 2, h / 2, 0, w * 0.6, [lighten(glass, 0.35), glass, darken(glass, 0.25)]) if lit else linear(ctx, 0, gy, 0, gy + gh, [darken(glass, 0.45), darken(glass, 0.62)]))
+	if bulbs:
+		var n := int(floorf(gw / 26))
+		for i in n:
+			for yy in [gy + 9, gy + gh - 9]:
+				var bx := gx + 13 + i * ((gw - 26) / (n - 1))
+				circle(ctx, bx, yy, 5)
+				if lit:
+					ctx.save()
+					ctx.shadowColor = "#FFE0A0"
+					ctx.shadowBlur = 8
+					fill(ctx, "#FFF4D0")
+					ctx.restore()
+				else:
+					fill(ctx, "#6A5A50")
+	var px := gh * (0.46 if bulbs else 0.62)
+	if lit:
+		label(ctx, s, w / 2, h / 2 + 2, {"fam": FONT.sign, "px": px, "maxW": gw * 0.86, "fill": "#FFFFFF", "glow": lighten(glass, 0.4), "glowBlur": px * 0.5, "track": 3})
+	else:
+		label(ctx, s, w / 2, h / 2 + 2, {"fam": FONT.sign, "px": px, "maxW": gw * 0.86, "fill": alpha(lighten(glass, 0.2), 0.45), "track": 3})
+	gloss(ctx, gx, gy, gw, gh, h * 0.1, 0.25 if lit else 0.12)
+
+static func _reg_rooms() -> void:
+	card("cap_13", {"w": 128, "h": 128, "alpha": true}, func(ctx, w, h, t, o):
+		var r: float = w * 0.46
+		badge13(ctx, w / 2, h / 2, r, {"disc": "#FFFFFF", "ring": C.red, "num": C.blue, "ol": 3})
+		ctx.save()
+		ctx.setLineDash([3, 3])
+		circle(ctx, w / 2, h / 2, r * 0.9)
+		stroke(ctx, "rgba(255,255,255,0.75)", 1.2)
+		ctx.restore())
+
+	card("baron_dressing_room", {"w": 256, "h": 256}, func(ctx, w, h, t, o): baronRoom(ctx, w, h))
+
+	card("dressing_room_doors", {"w": 256, "h": 512, "opts": "who: skip | roxy | penny | duke | baron (porthole with the painted interior)"}, func(ctx, w, h, t, o):
+		var who: String = o.who if DOORS.has(o.get("who")) else "skip"
+		var D: Dictionary = DOORS[who]
+		ctx.fillStyle = linear(ctx, 0, 0, w, 0, [darken(D.col, 0.1), lighten(D.col, 0.08), darken(D.col, 0.15)])
+		ctx.fillRect(0, 0, w, h)
+		for yp in [[250 if who == "baron" else 200, 110], [380, 100]]:
+			var y: float = yp[0]
+			var ph: float = yp[1]
+			rr(ctx, 30, y, w - 60, ph, 8)
+			fill(ctx, darken(D.col, 0.08))
+			rr(ctx, 30, y, w - 60, ph, 8)
+			stroke(ctx, alpha("#FFFFFF", 0.25), 3)
+			rr(ctx, 33, y + 3, w - 66, ph - 6, 6)
+			stroke(ctx, alpha("#1E1030", 0.35), 2)
+		if who == "baron":
+			var cx: float = w / 2
+			var cy := 110.0
+			var R := 62.0
+			ctx.save()
+			circle(ctx, cx, cy, R)
+			ctx.clip()
+			ctx.drawImage(layer("baron_room", 256, 256, baronRoom), cx - R * 1.25, cy - R * 1.25, R * 2.5, R * 2.5)
+			ctx.fillStyle = linear(ctx, cx - R, cy - R, cx + R, cy + R, ["rgba(255,255,255,0.3)", "rgba(255,255,255,0)", [0.6, "rgba(255,255,255,0)"], "rgba(255,255,255,0.12)"])
+			ctx.fillRect(cx - R, cy - R, R * 2, R * 2)
+			ctx.restore()
+			circle(ctx, cx, cy, R + 7)
+			stroke(ctx, C.brass, 12)
+			circle(ctx, cx, cy, R + 7)
+			stroke(ctx, "#8A5A12", 1.5)
+			for i in 8:
+				var a := (i / 8.0) * TAU
+				circle(ctx, cx + cos(a) * (R + 7), cy + sin(a) * (R + 7), 2.5)
+				fill(ctx, "#8A5A12")
+		var sy := 206.0 if who == "baron" else 110.0
+		starPath(ctx, w / 2, sy, 36 if who == "baron" else 62, 16 if who == "baron" else 28, 5)
+		ctx.save()
+		ctx.shadowColor = "rgba(20,10,20,0.4)"
+		ctx.shadowBlur = 6
+		ctx.shadowOffsetY = 3
+		fill(ctx, linear(ctx, 0, sy - 62, 0, sy + 50, GOLDEN))
+		ctx.restore()
+		starPath(ctx, w / 2, sy, 36 if who == "baron" else 62, 16 if who == "baron" else 28, 5)
+		stroke(ctx, "#8A5A12", 2)
+		sparkle(ctx, w / 2 - 20, sy - 22, 8)
+		var ny := 236.0 if who == "baron" else 170.0
+		rr(ctx, 44, ny - 1, w - 88, 26, 5)
+		inked(ctx, "#FFFDF2", 2, "#5A3A08")
+		label(ctx, D.name, w / 2, ny + 12, {"fam": FONT.sign, "px": 17, "maxW": w - 104, "fill": "#2A1D3A"})
+		var kx: float = w - 34
+		var ky := 330.0
+		rr(ctx, kx - 9, ky - 26, 18, 52, 6)
+		inked(ctx, linear(ctx, 0, ky - 26, 0, ky + 26, GOLDEN), 1.5, "#8A5A12")
+		circle(ctx, kx, ky, 11)
+		inked(ctx, radial(ctx, kx - 3, ky - 3, 0, 12, ["#FFF6C8", C.gold, "#9A6A10"]), 1.5, "#8A5A12")
+		ctx.fillStyle = linear(ctx, 0, h - 40, 0, h, ["#E8ECF6", "#8A90A8"])
+		ctx.fillRect(0, h - 36, w, 36)
+		ctx.fillStyle = "rgba(30,16,30,0.25)"
+		ctx.fillRect(0, 0, 6, h)
+		ctx.fillRect(w - 6, 0, 6, h)
+		grain(ctx, w, h, 0.08, hash_(who) & 255))
+
+# ---------------------------------------------------------------------------------------------------------
+# Title logo and station extras: flinch fallback, exhibit sign, light boxes, clock, reel label, crack
+# ---------------------------------------------------------------------------------------------------------
+
+static func _reg_extras() -> void:
+	card("logo_dead_air", {"w": 512, "h": 256, "alpha": true}, func(ctx, w, h, t, o):
+		var s := "Dead Air"
+		var cx: float = w / 2
+		var cy: float = h * 0.44
+		ctx.save()
+		var px := fitFont(ctx, s, FONT.groovy, 124, w * 0.9)
+		var tw: float = ctx.measureText(s).width
+		var iX: float = cx - tw / 2 + ctx.measureText("Dead A").width + ctx.measureText("i").width / 2
+		ctx.restore()
+		# rabbit-ear antennas on the "i"
+		var ay := cy - px * 0.52
+		for sg in [-1, 1]:
+			capsule(ctx, iX, ay, iX + sg * px * 0.32, ay - px * 0.46, px * 0.045, "#D5DAE8", C.ink, 3)
+			circle(ctx, iX + sg * px * 0.32, ay - px * 0.46, px * 0.06)
+			inked(ctx, NEON.W if sg < 0 else NEON.V, 3)
+		for cd in [[C.plum, 13], [C.red, 9], [C.orange, 5]]:
+			label(ctx, s, cx + cd[1] * 0.7, cy + cd[1], {"fam": FONT.groovy, "px": px, "fill": cd[0], "stroke": C.ink, "lw": px * 0.07})
+		label(ctx, s, cx, cy, {"fam": FONT.groovy, "px": px, "fill": vgrad(["#FFFBEA", "#FFE28A", "#FFB347", "#E3662B"]), "stroke": C.ink, "lw": px * 0.08})
+		var tex := makeCanvas(int(w), int(h))
+		var g = tex.getContext("2d")
+		label(g, s, cx, cy, {"fam": FONT.groovy, "px": px, "fill": "#FFFFFF"})
+		g.globalCompositeOperation = "source-in"
+		g.fillStyle = linear(g, 0, cy - px * 0.5, 0, cy - px * 0.1, ["rgba(255,255,255,0.75)", "rgba(255,255,255,0)"])
+		g.fillRect(0, 0, w, h)
+		ctx.drawImage(tex, -px * 0.02, -px * 0.03)
+		sparkle(ctx, cx - tw * 0.36, cy - px * 0.28, 14)
+		sparkle(ctx, cx + tw * 0.42, cy + px * 0.12, 10)
+		ribbon(ctx, cx, h * 0.83, w * 0.62, 34, C.blue)
+		label(ctx, "LIVE FROM WZTV CHANNEL 13", cx, h * 0.835, {"fam": FONT.sign, "px": 17, "maxW": w * 0.58, "fill": "#FFFFFF", "stroke": "#141040", "lw": 3, "track": 1}))
+
+	card("flinch", {"w": 512, "h": 384, "opts": "fallback freeze-frame when no feed frame exists"}, func(ctx, w, h, t, o):
+		ctx.fillStyle = radial(ctx, w * 0.5, h * 0.45, 10, w * 0.7, ["#FFFFFF", "#FFF1C8", "#F2C27A", "#B07A45"])
+		ctx.fillRect(0, 0, w, h)
+		rays(ctx, w * 0.5, h * 0.4, w, 20, "rgba(255,255,255,0.55)", 0.1)
+		var j := picto(ctx, w * 0.5, h * 0.62, h * 0.52, {"lean": -10, "head": [-0.6, 0.4], "la": [-150, 150], "ra": [140, -160], "ll": [-14, -4], "rl": [18, 30]}, "#3A2A4A")
+		for i in 3:
+			ctx.beginPath()
+			ctx.arc(j.head[0], j.head[1], j.u * (2.2 + i * 0.9), -2.6, -0.6)
+			stroke(ctx, alpha("#3A2A4A", 0.55 - i * 0.12), 3)
+		for st in [[0.3, 0.2, 10], [0.72, 0.26, 8]]:
+			starPath(ctx, w * st[0], h * st[1], st[2], st[2] * 0.45, 5)
+			inked(ctx, "#FFE14A", 2)
+		ctx.fillStyle = "rgba(160,110,60,0.2)"
+		ctx.fillRect(0, 0, w, h)
+		grain(ctx, w, h, 0.25, 4)
+		var fb := 30.0
+		ctx.fillStyle = "#1E1624"
+		ctx.fillRect(0, 0, w, fb)
+		ctx.fillRect(0, h - fb, w, fb)
+		ctx.fillStyle = "#FFF4DC"
+		var x := 10.0
+		while x < w:
+			rr(ctx, x, 9, 18, 12, 3)
+			ctx.fill()
+			rr(ctx, x, h - 21, 18, 12, 3)
+			ctx.fill()
+			x += 34
+		ctx.strokeStyle = "rgba(30,22,36,0.8)"
+		ctx.lineWidth = 6
+		ctx.strokeRect(3, fb, w - 6, h - fb * 2)
+		vignette(ctx, w, h, 0.45, "40,24,20", 0.4))
+
+	card("sign_see_yourself", {"w": 512, "h": 256}, func(ctx, w, h, t, o):
+		rr(ctx, 0, 0, w, h, 16)
+		fill(ctx, linear(ctx, 0, 0, 0, h, ["#FFF4DC", "#F2DDB0"]))
+		ctx.save()
+		rr(ctx, 0, 0, w, h, 16)
+		ctx.clip()
+		rays(ctx, w * 0.2, h * 0.55, w, 18, "rgba(232,169,46,0.22)", 0.1)
+		ctx.fillStyle = C.red
+		ctx.fillRect(0, h - 26, w, 26)
+		grain(ctx, w, h, 0.1, 8)
+		ctx.restore()
+		rr(ctx, 5, 5, w - 10, h - 10, 12)
+		stroke(ctx, C.walnut, 6)
+		var tx: float = w * 0.19
+		var ty: float = h * 0.46
+		var tw := 124.0
+		var th := 100.0
+		rr(ctx, tx - tw / 2, ty - th / 2, tw, th, 16)
+		inked(ctx, linear(ctx, 0, ty - th / 2, 0, ty + th / 2, ["#B27A45", "#6A3C20"]), 3)
+		rr(ctx, tx - tw / 2 + 10, ty - th / 2 + 10, tw * 0.66, th - 20, 12)
+		inked(ctx, linear(ctx, 0, ty - th / 2, 0, ty + th / 2, ["#7FE7FF", "#2E8CB8"]), 2.5)
+		var j := picto(ctx, tx - tw * 0.1, ty + 10, 58, {"la": [-150, -170], "ra": [150, 170]}, C.ink)
+		circle(ctx, j.head[0] - 3, j.head[1], 1.6)
+		fill(ctx, "#FFFFFF")
+		circle(ctx, j.head[0] + 3, j.head[1], 1.6)
+		fill(ctx, "#FFFFFF")
+		circle(ctx, tx + tw * 0.34, ty - 18, 9)
+		inked(ctx, "#F6E7C8", 2)
+		circle(ctx, tx + tw * 0.34, ty + 12, 7)
+		inked(ctx, "#F6E7C8", 2)
+		for s in [-1, 1]:
+			capsule(ctx, tx - 6, ty - th / 2, tx - 6 + s * 30, ty - th / 2 - 36, 3, "#C9CED8", C.ink, 1.5)
+		label(ctx, "SEE YOURSELF", w * 0.64, h * 0.3, {"fam": FONT.sign, "px": 38, "maxW": w * 0.58, "fill": C.blue, "stroke": "#FFFFFF", "lw": 5})
+		label(ctx, "ON CHANNEL", w * 0.6, h * 0.53, {"fam": FONT.sign, "px": 30, "maxW": w * 0.5, "fill": C.red, "stroke": "#FFFFFF", "lw": 5})
+		badge13(ctx, w * 0.88, h * 0.53, 28, {"ol": 2.5})
+		label(ctx, "STEP RIGHT UP! YOU'RE ON TV!", w * 0.6, h * 0.74, {"fam": FONT.round, "px": 16, "maxW": w * 0.6, "fill": C.choc, "track": 1})
+		poly(ctx, [w * 0.93, h * 0.84, w * 0.85, h * 0.78, w * 0.85, h * 0.81, w * 0.74, h * 0.81, w * 0.74, h * 0.87, w * 0.85, h * 0.87, w * 0.85, h * 0.9])
+		inked(ctx, C.gold, 2)
+		label(ctx, "WZTV 13 STUDIO TOUR", w / 2, h - 13, {"fam": FONT.round, "px": 13, "fill": "#FFFFFF", "track": 3}))
+
+	card("applause_sign", {"w": 512, "h": 160, "opts": "lit: false = dark box"}, func(ctx, w, h, t, o): lightBox(ctx, w, h, "APPLAUSE", o.get("lit") != false, "#E4302A", true))
+	card("on_air", {"w": 256, "h": 96, "opts": "lit: false = dark box"}, func(ctx, w, h, t, o): lightBox(ctx, w, h, "ON AIR", o.get("lit") != false, C.onAir, false))
+
+	card("clock_face", {"w": 256, "h": 256, "alpha": true, "opts": "hands: false = dial only; time: [h, m, s] (default 11:59:58)"}, func(ctx, w, h, t, o):
+		var cx: float = w / 2
+		var cy: float = h / 2
+		var R: float = w * 0.47
+		circle(ctx, cx, cy, R)
+		fill(ctx, linear(ctx, 0, cy - R, 0, cy + R, ["#FFB347", C.orange, C.rust]))
+		circle(ctx, cx, cy, R)
+		stroke(ctx, C.ink, 3)
+		circle(ctx, cx, cy, R * 0.86)
+		fill(ctx, radial(ctx, cx - R * 0.2, cy - R * 0.25, 0, R, ["#FFFDF4", "#F6E7C8", "#E8D2A8"]))
+		circle(ctx, cx, cy, R * 0.86)
+		stroke(ctx, C.choc, 2.5)
+		ctx.strokeStyle = C.ink
+		for i in 60:
+			var a := (i / 60.0) * TAU
+			var big := i % 5 == 0
+			ctx.lineWidth = 4 if big else 1.5
+			ctx.beginPath()
+			ctx.moveTo(cx + sin(a) * R * (0.7 if big else 0.76), cy - cos(a) * R * (0.7 if big else 0.76))
+			ctx.lineTo(cx + sin(a) * R * 0.82, cy - cos(a) * R * 0.82)
+			ctx.stroke()
+		for na in [["12", 0.0], ["3", 0.25], ["6", 0.5], ["9", 0.75]]:
+			label(ctx, na[0], cx + sin(na[1] * TAU) * R * 0.55, cy - cos(na[1] * TAU) * R * 0.55 + 2, {"fam": FONT.round, "px": 26, "fill": C.choc})
+		badge13(ctx, cx, cy + R * 0.3, R * 0.14, {"ol": 1.5})
+		if o.get("hands") != false:
+			var tm: Array = _or(o.get("time"), [11, 59, 58])
+			var hh: float = tm[0]
+			var mm: float = tm[1]
+			var ss: float = tm[2]
+			var hand := func(a: float, ln: float, wd: float, col):
+				capsule(ctx, cx - sin(a) * ln * 0.15, cy + cos(a) * ln * 0.15, cx + sin(a) * ln, cy - cos(a) * ln, wd, col, C.ink, 1.5)
+			hand.call((fmod(hh, 12.0) + mm / 60) / 12 * TAU, R * 0.42, 9, C.choc)
+			hand.call((mm + ss / 60) / 60 * TAU, R * 0.66, 6, C.choc)
+			hand.call((ss / 60) * TAU, R * 0.72, 2.5, C.red)
+			circle(ctx, cx, cy, 6)
+			inked(ctx, C.gold, 1.5)
+		ctx.save()
+		circle(ctx, cx, cy, R * 0.86)
+		ctx.clip()
+		ctx.fillStyle = linear(ctx, cx - R, cy - R, cx, cy, ["rgba(255,255,255,0.45)", "rgba(255,255,255,0)"])
+		ctx.beginPath()
+		ctx.ellipse(cx - R * 0.25, cy - R * 0.35, R * 0.6, R * 0.3, -0.5, 0, TAU)
+		ctx.fill()
+		ctx.restore())
+
+	card("reel_label", {"w": 128, "h": 128, "alpha": true, "opts": "hub label for the quad tape reel"}, func(ctx, w, h, t, o):
+		circle(ctx, w / 2, h / 2, w * 0.46)
+		inked(ctx, "#FFFDF4", 2.5, "#B8A890")
+		circle(ctx, w / 2, h / 2, w * 0.14)
+		inked(ctx, "#8A90A8", 2, "#4A4E60")
+		label(ctx, "13", w * 0.5, h * 0.23, {"fam": FONT.round, "px": 24, "fill": "#D8322B", "rot": -0.1})
+		label(ctx, "SIGN-OFF", w * 0.5, h * 0.77, {"fam": FONT.round, "px": 13, "fill": "#2A2438", "rot": 0.05}))
+
+	card("crack_overlay", {"w": 512, "h": 384, "alpha": true, "opts": "transparent cracked-glass overlay (boss screen at 66%)"}, func(ctx, w, h, t, o):
+		var r := rng(66)
+		var ox: float = w * 0.68
+		var oy: float = h * 0.32
+		var lines := []
+		for i in 11:
+			var a: float = (i / 11.0) * TAU + r.call() * 0.4
+			var x := ox
+			var y := oy
+			var pts := [x, y]
+			var ln: float = 60 + r.call() * 260
+			var steps := 6
+			for k in range(1, steps + 1):
+				var aa: float = a + (r.call() - 0.5) * 0.5
+				var d: float = (ln / steps) * (0.6 + r.call() * 0.8)
+				x += cos(aa) * d
+				y += sin(aa) * d
+				pts.append(x)
+				pts.append(y)
+			lines.append(pts)
+		for k in range(1, 4):
+			var ring := []
+			for i in 12:
+				var a2 := (i / 11.0) * TAU
+				var rr0: float = k * 34 * (0.8 + r.call() * 0.4)
+				ring.append(ox + cos(a2) * rr0)
+				ring.append(oy + sin(a2) * rr0)
+			lines.append(ring)
+		var draw := func(col: String, lw: float):
+			ctx.strokeStyle = col
+			ctx.lineWidth = lw
+			ctx.lineJoin = "round"
+			ctx.lineCap = "round"
+			for pts in lines:
+				poly(ctx, pts, false)
+				ctx.stroke()
+		draw.call("rgba(20,16,40,0.6)", 5.5)
+		draw.call("rgba(240,250,255,0.95)", 2.2)
+		circle(ctx, ox, oy, 12)
+		fill(ctx, radial(ctx, ox, oy, 0, 14, ["rgba(255,255,255,0.9)", "rgba(255,255,255,0.2)"])))
+
+# ---------------------------------------------------------------------------------------------------------
+# Registration (JS module top-level card() calls, in source order)
+# ---------------------------------------------------------------------------------------------------------
+static func _register() -> void:
+	_reg_sources()
+	_reg_shows()
+	_reg_promos()
+	_reg_worlds()
+	_reg_wallPosters()
+	_reg_decorPosters()
+	_reg_sponsorPosters()
+	_reg_sponsorLogos()
+	_reg_sponsorSigns()
+	_reg_weather()
+	_reg_lobby()
+	_reg_portraits()
+	_reg_rooms()
+	_reg_extras()
