@@ -64,7 +64,7 @@ class ParticlePool extends RefCounted:
 	var vel := PackedFloat32Array()
 	var col := PackedFloat32Array()
 	var life := PackedFloat32Array()
-	var max := PackedFloat32Array()
+	var max_ := PackedFloat32Array()   # JS 'max'
 	var size := PackedFloat32Array()
 	var rot := PackedFloat32Array()
 	var spin := PackedFloat32Array()
@@ -96,7 +96,7 @@ class ParticlePool extends RefCounted:
 			var arr := PackedFloat32Array()
 			arr.resize(cap * 3)
 			set(a, arr)
-		for a in ["life", "max", "size", "rot", "spin", "grav", "drag", "floor_"]:
+		for a in ["life", "max_", "size", "rot", "spin", "grav", "drag", "floor_"]:
 			var arr := PackedFloat32Array()
 			arr.resize(cap)
 			set(a, arr)
@@ -110,7 +110,7 @@ class ParticlePool extends RefCounted:
 		pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z
 		vel[i * 3] = vx; vel[i * 3 + 1] = vy; vel[i * 3 + 2] = vz
 		col[i * 3] = color.r; col[i * 3 + 1] = color.g; col[i * 3 + 2] = color.b
-		size[i] = sz; life[i] = lf; max[i] = lf
+		size[i] = sz; life[i] = lf; max_[i] = lf
 		rot[i] = randf() * PI * 2.0; spin[i] = (randf() - 0.5) * 16.0
 		grav[i] = gv; drag[i] = dg; floor_[i] = fl
 		mm.set_instance_color(i, Color(color.r, color.g, color.b, 1.0))
@@ -124,7 +124,7 @@ class ParticlePool extends RefCounted:
 			pos[i * 3 + k] = pos[j * 3 + k]
 			vel[i * 3 + k] = vel[j * 3 + k]
 			col[i * 3 + k] = col[j * 3 + k]
-		life[i] = life[j]; max[i] = max[j]; size[i] = size[j]; rot[i] = rot[j]; spin[i] = spin[j]
+		life[i] = life[j]; max_[i] = max_[j]; size[i] = size[j]; rot[i] = rot[j]; spin[i] = spin[j]
 		grav[i] = grav[j]; drag[i] = drag[j]; floor_[i] = floor_[j]
 
 	func update(dt: float) -> void:
@@ -145,7 +145,7 @@ class ParticlePool extends RefCounted:
 				vel[i3] *= 0.6; vel[i3 + 2] *= 0.6
 				spin[i] *= 0.5
 			rot[i] += spin[i] * dt
-			var t := 1.0 - life[i] / max[i]
+			var t := 1.0 - life[i] / max_[i]
 			var sc: float = size[i] * _scaleCurve(curve, t)
 			var p := Vector3(pos[i3], pos[i3 + 1], pos[i3 + 2])
 			var b: Basis
@@ -202,7 +202,7 @@ class LightPoolHandle extends RefCounted:
 			last.index = index
 			fx._writePool(last)
 		var mm: MultiMesh = P.mm
-		mm.set_instance_transform(P.handles.size(), fx.ZERO_T)
+		mm.set_instance_transform(P.handles.size(), Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO))
 		mm.visible_instance_count = P.handles.size()
 		P.mesh.visible = P.handles.size() > 0
 
@@ -273,7 +273,8 @@ func init() -> void:
 	var tcols: Array = []
 	for i in 32:
 		tcols.append(Color(1, 1, 1))
-	tracers = {"mesh": _instanced(tracerGeo, additiveMaterial(Color(2.5, 2.5, 2.5), null, "front"), 32), "life": _floats(32), "max": _floats(32), "col": tcols, "head": 0}
+	tracers = _instanced(tracerGeo, additiveMaterial(Color(2.5, 2.5, 2.5), null, "front"), 32)
+	tracers.merge({"life": _floats(32), "max": _floats(32), "col": tcols, "head": 0})
 
 	# Muzzle flashes: crossed star cards.
 	var flashTex := _flashTexture()
@@ -283,14 +284,16 @@ func init() -> void:
 	var fdata: Array = []
 	for i in 12:
 		fdata.append({"pos": Vector3.ZERO, "q": Quaternion.IDENTITY, "size": 0.3})
-	flashes = {"mesh": _instanced(cross.toMesh(), flashMat, 12), "life": _floats(12), "head": 0, "data": fdata}
+	flashes = _instanced(cross.toMesh(), flashMat, 12)
+	flashes.merge({"life": _floats(12), "head": 0, "data": fdata})
 
 	# Decals.
 	var decalGeo := planeMesh(1, 1)
 	decals = {}
 	for kind in ["hole", "scorch", "splat", "goo"]:
 		var mat := decalMaterial(_decalTexture(kind))
-		decals[kind] = {"mesh": _instanced(decalGeo, mat, 96), "head": 0}
+		decals[kind] = _instanced(decalGeo, mat, 96)
+		decals[kind]["head"] = 0
 		decals[kind].mesh.visible = false   # until the first decal of this kind
 
 	# Light pools (additive floor glow) and blob shadows.
@@ -633,7 +636,7 @@ func lateUpdate(_dt = 0.0) -> void:
 			continue
 		var p: Vector3 = DAU.worldPos(h.object)
 		var f: float = col.floorAt(p.x, p.z, p.y + 0.2) if col != null else 0.0
-		if not h.visible or not h.object.is_visible_in_tree() or f == -INF:
+		if not h.visible or not h.object.visible or f == -INF:
 			mm.set_instance_transform(i, ZERO_T)
 			continue
 		var height := maxf(0.0, p.y - f)
@@ -667,9 +670,10 @@ static func quatFromUnitVectors(vFrom: Vector3, vTo: Vector3) -> Quaternion:
 static func compose(p: Vector3, q: Quaternion, s: Vector3) -> Transform3D:
 	return Transform3D(Basis(q) * Basis.from_scale(s), p)
 
-static func _floats(n: int) -> PackedFloat32Array:
-	var a := PackedFloat32Array()
+static func _floats(n: int) -> Array:
+	var a: Array = []
 	a.resize(n)
+	a.fill(0.0)
 	return a
 
 # JS instanced(): all `cap` instances drawn, parked at a zero matrix until used.
@@ -778,7 +782,7 @@ static func _shader(code: String) -> Shader:
 	return s
 
 const _ADD_CODE := """shader_type spatial;
-render_mode blend_add, unshaded, depth_draw_never, %s, %s;
+render_mode blend_add, unshaded, depth_draw_never, %s;
 uniform vec3 tint = vec3(1.0);
 uniform sampler2D map : source_color, hint_default_white, filter_linear_mipmap;
 void fragment() {
@@ -793,7 +797,7 @@ void fragment() {
 static func additiveMaterial(tint: Color, map: Texture2D = null, side := "front", fog := false) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	var cull := "cull_disabled" if side == "double" else ("cull_front" if side == "back" else "cull_back")
-	m.shader = _shader(_ADD_CODE % [cull, "fog_disabled" if not fog else "diffuse_lambert"])
+	m.shader = _shader(_ADD_CODE % [cull + ("" if fog else ", fog_disabled")])
 	m.set_shader_parameter("tint", Vector3(tint.r, tint.g, tint.b))
 	if map != null:
 		m.set_shader_parameter("map", map)

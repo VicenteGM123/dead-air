@@ -53,7 +53,7 @@ GAME_FONTS = {'bungee': 'Bungee.woff', 'titan one': 'TitanOne.woff', 'shrikhand'
               'vt323': 'VT323.woff'}
 
 # Chrome (Linux, device scale 1) text raster settings: grayscale AA, slight hinting, no subpixel positioning.
-TEXT_SUBPIXEL = False
+TEXT_SUBPIXEL = True
 TEXT_HINTING = 'slight'
 
 TAU = math.pi * 2
@@ -238,9 +238,14 @@ def _resolve_family(name, weight, italic):
         return _tf_cache[key], False
     style = skia.FontStyle(int(weight), skia.FontStyle.kNormal_Width,
                            skia.FontStyle.kItalic_Slant if italic else skia.FontStyle.kUpright_Slant)
-    q = {'system-ui': 'sans-serif', 'ui-sans-serif': 'sans-serif', 'ui-serif': 'serif',
-         'ui-monospace': 'monospace', 'cursive': 'sans-serif', 'fantasy': 'sans-serif'}.get(low, name)
+    # Chrome's default generic families (Linux/Windows): sans-serif=Arial, serif=Times New Roman, ...
+    q = {'sans-serif': 'Arial', 'serif': 'Times New Roman', 'system-ui': 'Arial', 'ui-sans-serif': 'Arial',
+         'ui-serif': 'Times New Roman', 'ui-monospace': 'monospace', 'cursive': 'Comic Sans MS',
+         'fantasy': 'Impact'}.get(low, name)
     tf = _fontmgr().matchFamilyStyle(q, style)
+    if tf is None and low in GENERIC:
+        tf = _fontmgr().matchFamilyStyle({'serif': 'serif', 'ui-serif': 'serif', 'monospace': 'monospace',
+                                          'ui-monospace': 'monospace'}.get(low, 'sans-serif'), style)
     _tf_cache[key] = tf
     return tf, False
 
@@ -1466,9 +1471,11 @@ class CanvasRenderingContext2D:
         runs = []
         x = 0.0
         for face, t in fs.runs(text):
-            gids, xs, w = _shape_run(face, t, ls)
-            runs.append((face, gids, [x + v for v in xs]))
-            x += w
+            # Chrome's CachingWordShaper shapes word by word (every space is its own word): no kerning across spaces
+            for word in re.findall(r' |[^ ]+', t):
+                gids, xs, w = _shape_run(face, word, ls)
+                runs.append((face, gids, [x + v for v in xs]))
+                x += w
         return fs, runs, x
 
     def _anchor(self, fs, width):
