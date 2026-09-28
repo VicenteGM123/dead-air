@@ -78,15 +78,6 @@ func _init(w: int = 300, h: int = 150) -> void:
 	_h = maxi(0, h)
 	_state = CtxState.new()
 
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_PREDELETE:
-		if _ver != null:
-			DACanvasGPU.retire(_ver)
-			_ver = null
-		if _proxy.is_valid():
-			RenderingServer.free_rid(_proxy)
-			_proxy = RID()
-
 func getContext(type: String = "2d", attrs = null) -> Context2D:
 	if type != "2d":
 		return null
@@ -147,6 +138,7 @@ func _texture() -> Texture2D:
 		var base := _currentTexRid()
 		_proxy = RenderingServer.texture_proxy_create(base)
 		_proxyTarget = base
+		DACanvasGPU.trackProxy(self, _proxy)
 	t = CanvasTex.new()
 	t.canvas = self
 	t.rid = _proxy

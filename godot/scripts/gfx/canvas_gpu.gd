@@ -35,6 +35,9 @@ static var _retire: Array = []          # RTs to release after the current draw
 static var _pool := {}                  # "w|h|msaa" -> Array[RT]
 static var _dirtyCanvases: Array = []   # canvases whose proxy target must be refreshed at schedule time
 static var _watch: Array = []           # canvases that may bake
+static var _versions: Array = []        # live canvas versions (RT) -> released once their canvas is gone
+static var _proxies: Array = []         # [WeakRef(canvas), proxy RID] -> freed once the canvas is gone
+static var _sweepT := 0
 static var _shaders := {}
 static var _mats := {}                  # variant -> material RID (no mask)
 static var _blank := {}                 # "w|h" -> ImageTexture
@@ -211,6 +214,35 @@ static func addDep(rt: RT, src: RT) -> void:
 	if src.state == 1:
 		src.sealed = true
 
+static func trackProxy(canvas, proxy: RID) -> void:
+	_proxies.append([weakref(canvas), proxy])
+
+static func trackVersion(rt: RT) -> void:
+	if not _versions.has(rt):
+		_versions.append(rt)
+
+# Frees GPU resources of canvases that were dropped (no predelete hook on DACanvas: safe at engine exit).
+static func _sweep() -> void:
+	var keep: Array = []
+	for rt in _versions:
+		if rt.state == 0:
+			continue
+		var alive: bool = rt.owner != null and rt.owner.get_ref() != null
+		if not alive and (rt.state == 3 or rt.state == 1):
+			if rt.state == 1:
+				_recording.erase(rt)
+			release(rt)
+			continue
+		keep.append(rt)
+	_versions = keep
+	var kp: Array = []
+	for e in _proxies:
+		if (e[0] as WeakRef).get_ref() == null:
+			RenderingServer.free_rid(e[1])
+		else:
+			kp.append(e)
+	_proxies = kp
+
 static func markDirty(canvas) -> void:
 	if not _dirtyCanvases.has(canvas):
 		_dirtyCanvases.append(canvas)
@@ -276,6 +308,10 @@ static func _postDraw() -> void:
 			else:
 				release(rt)
 		_retire = keep
+	_sweepT += 1
+	if _sweepT >= 30:
+		_sweepT = 0
+		_sweep()
 	if not _watch.is_empty():
 		var w2: Array = []
 		for c in _watch:
