@@ -4322,3 +4322,580 @@ static func goalThermo(ctx, x: float, top: float, bottom: float, frac: float, wd
 		ctx.moveTo(x - wd / 2 - (5 if (i & 1) else 9), yy)
 		ctx.lineTo(x - wd / 2, yy)
 	ctx.stroke()
+
+static func _reg_decorPosters() -> void:
+	card("poster_spooktacular", {"w": 384, "h": 512}, func(ctx, w, h, t, o):
+		ctx.fillStyle = linear(ctx, 0, 0, 0, h, ["#1B1E4A", "#3A1A5A", "#6B3A6E", "#C2407A", "#E3662B"])
+		ctx.fillRect(0, 0, w, h)
+		starField(ctx, w, h, 60, 13, 0.55)
+		circle(ctx, w * 0.5, h * 0.5, 128)
+		fill(ctx, radial(ctx, w * 0.45, h * 0.46, 10, 130, ["#FFFBEA", C.moon, "#F2D9A8"]))
+		for c in [[0.36, 0.42, 16], [0.62, 0.38, 10], [0.66, 0.56, 20], [0.4, 0.6, 9]]:
+			circle(ctx, w * c[0], h * c[1], c[2])
+			fill(ctx, "rgba(210,180,140,0.35)")
+		for b in [[0.14, 0.34, 26], [0.86, 0.3, 30], [0.2, 0.62, 18], [0.8, 0.66, 22], [0.5, 0.29, 14]]:
+			bat(ctx, w * b[0], h * b[1], b[2], "#2A1640")
+		drawBust(ctx, "baron", w / 2, h * 0.52, 52, {"mood": "grin", "m": 0.55})
+		goalThermo(ctx, w * 0.88, h * 0.33, h * 0.72, 0.97, 18)
+		label(ctx, "$13,000", w * 0.88, h * 0.3, {"fam": FONT.sign, "px": 15, "fill": "#FFE14A", "stroke": C.ink, "lw": 3.5})
+		tuneIn(ctx, w, h, "SAT 11AM – MIDNIGHT", "#5A1E5A", "#1E0A28", "HOSTED BY BARON VON STATIC")
+		label(ctx, "13-HOUR", w / 2, h * 0.066, {"fam": FONT.sign, "px": 24, "fill": "#FFE14A", "stroke": "#1E0A28", "lw": 5, "track": 6})
+		label(ctx, "Spooktacular", w / 2, h * 0.145, {"fam": FONT.groovy, "px": 58, "maxW": w * 0.9, "fill": vgrad(["#FFE9A0", "#FFB347", "#E3662B"]), "stroke": "#1E0A28", "lw": 7, "depth": 6, "depthFill": "#6B1A6E", "rot": -0.04})
+		label(ctx, "TELETHON", w / 2, h * 0.235, {"fam": FONT.sign, "px": 22, "fill": "#FFFFFF", "stroke": "#1E0A28", "lw": 5, "track": 9})
+		posterFinish(ctx, w, h, 29))
+
+	card("poster_hootie", {"w": 384, "h": 512}, func(ctx, w, h, t, o):
+		ctx.fillStyle = linear(ctx, 0, 0, 0, h, ["#6EC8FF", "#BDEBFF", "#E8FAFF"])
+		ctx.fillRect(0, 0, w, h)
+		rays(ctx, w / 2, h * 0.62, h, 22, "rgba(255,255,255,0.28)", 0.05)
+		var rb := ["#FF6B6B", "#FFA94D", "#FFE066", "#69DB7C", "#4DABF7", "#9775FA"]
+		for i in rb.size():
+			ctx.beginPath()
+			ctx.arc(w / 2, h * 0.78, w * 0.62 - i * 18, PI, 0)
+			stroke(ctx, rb[i], 19)
+		cloud(ctx, w * 0.16, h * 0.4, 110, 52, "#FFFFFF", "rgba(90,140,200,0.5)", 2)
+		cloud(ctx, w * 0.86, h * 0.47, 120, 56, "#FFFFFF", "rgba(90,140,200,0.5)", 2)
+		ctx.fillStyle = "#8FD06A"
+		ctx.beginPath()
+		ctx.moveTo(0, h * 0.74)
+		ctx.bezierCurveTo(w * 0.3, h * 0.68, w * 0.6, h * 0.76, w, h * 0.7)
+		ctx.lineTo(w, h)
+		ctx.lineTo(0, h)
+		ctx.fill()
+		var r := rng(31)
+		for i in 12:
+			var fx: float = r.call() * w
+			var fy: float = h * (0.75 + r.call() * 0.08)
+			var fr: float = 6 + r.call() * 3
+			flower(ctx, fx, fy, fr, ["#FFFFFF", "#FFD23A", "#FF8AC8"][i % 3], "#FF8A2A")
+		ellipse(ctx, w / 2, h * 0.79, 70, 11)
+		fill(ctx, "rgba(40,90,40,0.3)")
+		drawHootie(ctx, w / 2, h * 0.6, 92, {"wave": -0.9, "blink": false})
+		for xca in [[0.08, "#FF4F5E", 0.3], [0.9, "#3FA9F5", -0.35]]:
+			ctx.save()
+			ctx.translate(w * xca[0], h * 0.74)
+			ctx.rotate(xca[2])
+			rr(ctx, -9, -70, 18, 78, 3)
+			inked(ctx, xca[1], 2.5)
+			poly(ctx, [-9, -70, 9, -70, 0, -92])
+			inked(ctx, "#F6E7C8", 2.5)
+			poly(ctx, [-3, -85, 3, -85, 0, -92])
+			fill(ctx, xca[1])
+			ctx.fillStyle = "rgba(255,255,255,0.35)"
+			ctx.fillRect(-6, -64, 4, 66)
+			ctx.restore()
+		tuneIn(ctx, w, h, "WEEKDAYS 4PM", "#E0507A", "#5A1030", "FUN FOR THE WHOLE FAMILY!")
+		balloonText(ctx, "HOOTIE'S", w / 2, h * 0.12, 44, 0, 0, w * 0.62)
+		balloonText(ctx, "HULLABALOO", w / 2, h * 0.245, 52, 0, 2.3, w * 0.9)
+		posterFinish(ctx, w, h, 41))
+
+	card("poster_precinct13", {"w": 384, "h": 512}, func(ctx, w, h, t, o):
+		ctx.fillStyle = linear(ctx, 0, 0, 0, h, ["#141638", "#2A2F6B", "#6B3A6E"])
+		ctx.fillRect(0, 0, w, h)
+		starField(ctx, w, h, 40, 22, 0.4)
+		ctx.save()
+		ctx.globalCompositeOperation = "lighter"
+		for xa in [[0.2, -0.3], [0.8, 0.28]]:
+			ctx.save()
+			ctx.translate(w * xa[0], h * 0.85)
+			ctx.rotate(xa[1])
+			poly(ctx, [-8, 0, 8, 0, 60, -h, -60, -h])
+			fill(ctx, linear(ctx, 0, 0, 0, -h, ["rgba(255,240,200,0.32)", "rgba(255,240,200,0)"]))
+			ctx.restore()
+		glowBlob(ctx, 0, h * 0.62, w * 0.6, "#FF3B30", 0.55)
+		glowBlob(ctx, w, h * 0.62, w * 0.6, "#3A7BFF", 0.6)
+		ctx.restore()
+		skyline(ctx, w, h * 0.8, 70, 170, "#2A2358", 15, 0.15, "#8A7AD8")
+		skyline(ctx, w, h * 0.9, 50, 130, "#141030", 18, 0.35)
+		drawBust(ctx, "duke", w / 2, h * 0.47, 56, {"outfit": "leather"})
+		tuneIn(ctx, w, h, "THURSDAYS 9PM", "#23307A", "#0A0E30", "THE TOUGHEST BEAT IN THE TRI-COUNTY")
+		label(ctx, "PRECINCT", w * 0.4, h * 0.1, {"fam": FONT.sign, "px": 52, "maxW": w * 0.68, "fill": vgrad(CHROME), "stroke": "#141040", "lw": 7, "depth": 5, "depthFill": "#5A2A8A", "skew": -0.18})
+		shield(ctx, w * 0.85, h * 0.1, 34)
+		starring(ctx, w / 2, h * 0.215, "DUKE DALTON", "#FFB0A8", "#141040")
+		posterFinish(ctx, w, h, 13))
+
+	card("poster_boogie_down", {"w": 384, "h": 512}, func(ctx, w, h, t, o):
+		ctx.fillStyle = radial(ctx, w / 2, h * 0.45, 10, h * 0.7, ["#FFE3A3", "#FFB36B", "#E3462B", "#6B1A4A"])
+		ctx.fillRect(0, 0, w, h)
+		rays(ctx, w / 2, h * 0.45, h, 26, "rgba(255,79,160,0.4)", 0.04)
+		danceFloor(ctx, w, h, h * 0.7, ["#FF4FA0", "#FFC23A", "#5FE3FF", "#52E04A", "#FF8A2A"], 1)
+		mirrorBall(ctx, w * 0.84, h * 0.3, 24)
+		var r := rng(45)
+		for i in 14:
+			var sx: float = r.call() * w
+			var sy: float = h * (0.25 + r.call() * 0.45)
+			var sr: float = 3 + r.call() * 6
+			sparkle(ctx, sx, sy, sr, 0.9)
+		drawBust(ctx, "roxy", w / 2, h * 0.5, 46, {})
+		tuneIn(ctx, w, h, "SATURDAYS 7PM", "#6B1A4A", "#2A0A1E", "GET DOWN WITH ROXY RIVERS!")
+		label(ctx, "Boogie Down", w / 2, h * 0.1, {"fam": FONT.groovy, "px": 56, "maxW": w * 0.86, "fill": vgrad(["#FFFFFF", "#FFE0F0", "#FF9AD0"]), "stroke": "#6A1A4A", "lw": 7, "depth": 5, "depthFill": "#3A0E2A", "rot": -0.05})
+		label(ctx, "SATURDAY", w / 2, h * 0.2, {"fam": FONT.sign, "px": 26, "fill": "#FFE14A", "stroke": "#6A1A4A", "lw": 5, "track": 8, "rot": -0.05})
+		posterFinish(ctx, w, h, 77))
+
+# ---------------------------------------------------------------------------------------------------------
+# Sponsors: wordless pictogram gag posters, starburst logo cards and neon signs (GDD §10.3, §11)
+# ---------------------------------------------------------------------------------------------------------
+
+const SPONSORS := {
+	"replay_ade": {"name": "Replay-Ade", "sub": "SPORTS DRINK", "tag": "GET BACK IN THE GAME!", "main": "#F4C81E", "second": "#2F5BD3", "deep": "#1B2F7A", "neon": "#FFD23A", "neon2": "#3A7BFF"},
+	"wobble_up": {"name": "Wobble-Up", "sub": "GELATIN", "tag": "IT BOUNCES RIGHT BACK!", "main": "#1FB45A", "second": "#E23B3B", "deep": "#0E4A26", "neon": "#52E04A", "neon2": "#FF5FA2"},
+	"jump_cut": {"name": "Jump Cut", "sub": "COFFEE", "tag": "SKIP THE WAITING!", "main": "#E3662B", "second": "#5A3A22", "deep": "#4A1E0E", "neon": "#FF8A2A", "neon2": "#FFD23A"},
+	"roller_boogie": {"name": "Roller Boogie", "sub": "SKATE WAX", "tag": "NEVER STOP ROLLIN'!", "main": "#FF5FA2", "second": "#6B3A6E", "deep": "#3A1440", "neon": "#FF5FA2", "neon2": "#5FE3FF"},
+	"double_vision": {"name": "Double Vision", "sub": "TOOTHPASTE", "tag": "TWICE THE SMILE!", "main": "#3FB8E8", "second": "#E23B3B", "deep": "#123A7A", "neon": "#5FE3FF", "neon2": "#FF4FA0"},
+}
+
+## 70s starburst: alternating rays around (cx, cy) with a warm centre glow.
+static func starburst(ctx, w: float, h: float, cx: float, cy: float, c1: String, c2: String, n: int = 22) -> void:
+	ctx.fillStyle = c1
+	ctx.fillRect(0, 0, w, h)
+	rays(ctx, cx, cy, Vector2(w, h).length(), n, c2, 0.08)
+	ctx.fillStyle = radial(ctx, cx, cy, 0, maxf(w, h) * 0.6, ["rgba(255,250,230,0.75)", "rgba(255,250,230,0.15)", "rgba(255,250,230,0)"])
+	ctx.fillRect(0, 0, w, h)
+
+## Banner ribbon with folded tails.
+static func ribbon(ctx, cx: float, cy: float, w: float, h: float, col: String) -> void:
+	for s in [-1, 1]:
+		var x0 := cx + s * (w / 2 - h * 0.3)
+		var x1 := cx + s * (w / 2 + h * 0.85)
+		poly(ctx, [x0, cy - h * 0.25, x1, cy - h * 0.25, x1 - s * h * 0.35, cy + h * 0.28, x1, cy + h * 0.8, x0, cy + h * 0.8])
+		inked(ctx, darken(col, 0.3), 3)
+	rr(ctx, cx - w / 2, cy - h / 2, w, h, 4)
+	inked(ctx, linear(ctx, 0, cy - h / 2, 0, cy + h / 2, [lighten(col, 0.15), col]), 3)
+	ctx.fillStyle = "rgba(255,255,255,0.18)"
+	ctx.fillRect(cx - w / 2 + 4, cy - h / 2 + 3, w - 8, h * 0.25)
+
+static func fist(ctx, x: float, y: float, u: float, thumb: bool = false) -> void:
+	if thumb:
+		capsule(ctx, x, y, x + u * 0.1, y - u * 1.15, u * 0.55, C.ink)
+	circle(ctx, x, y, u * 0.62)
+	fill(ctx, C.ink)
+
+static func heart(ctx, x: float, y: float, s: float, col, lw: float) -> void:
+	ctx.beginPath()
+	ctx.moveTo(x, y + s * 0.38)
+	ctx.bezierCurveTo(x - s * 0.95, y - s * 0.22, x - s * 0.38, y - s * 0.88, x, y - s * 0.36)
+	ctx.bezierCurveTo(x + s * 0.38, y - s * 0.88, x + s * 0.95, y - s * 0.22, x, y + s * 0.38)
+	inked(ctx, col, lw)
+
+static func bananaPeel(ctx, x: float, y: float, s: float) -> void:
+	for a in [-2.5, -0.65, -1.55]:
+		ctx.save()
+		ctx.translate(x, y)
+		ctx.rotate(a + PI / 2)
+		ellipse(ctx, 0, -s * 0.45, s * 0.2, s * 0.5)
+		inked(ctx, "#FFE14A", s * 0.08)
+		ctx.restore()
+	ellipse(ctx, x, y, s * 0.32, s * 0.2)
+	inked(ctx, "#F4C81E", s * 0.08)
+	capsule(ctx, x, y - s * 0.1, x + s * 0.1, y - s * 0.5, s * 0.1, "#8A6A2A")
+
+## Quick speed/motion strokes.
+static func motionLines(ctx, x: float, y: float, ln: float, n: int, gap: float, col, lw: float) -> void:
+	ctx.save()
+	ctx.lineCap = "round"
+	ctx.strokeStyle = col
+	ctx.lineWidth = lw
+	ctx.beginPath()
+	for i in n:
+		var yy := y + (i - (n - 1) / 2.0) * gap
+		var l := ln * (0.7 if (i % 2) else 1.0)
+		ctx.moveTo(x, yy)
+		ctx.lineTo(x + l, yy)
+	ctx.stroke()
+	ctx.restore()
+
+static func impactStar(ctx, x: float, y: float, r: float, col) -> void:
+	starPath(ctx, x, y, r, r * 0.5, 8, 0.2)
+	inked(ctx, col, r * 0.1)
+
+static func rewindIcon(ctx, x: float, y: float, s: float, col) -> void:
+	for k in [0, 1]:
+		poly(ctx, [x + s * (0.1 - k * 0.55), y - s * 0.32, x + s * (0.1 - k * 0.55), y + s * 0.32, x - s * (0.38 + k * 0.55), y])
+		inked(ctx, col, s * 0.07)
+
+## Roller wheels under a pictogram foot.
+static func skateFoot(ctx, x: float, y: float, u: float) -> void:
+	rr(ctx, x - u * 0.9, y - u * 0.3, u * 1.8, u * 0.55, u * 0.2)
+	fill(ctx, C.ink)
+	for k in [-0.5, 0.5]:
+		circle(ctx, x + k * u, y + u * 0.45, u * 0.38)
+		inked(ctx, "#FF5FA2", u * 0.15)
+
+static func toothbrush(ctx, x: float, y: float, ln: float, rot: float) -> void:
+	ctx.save()
+	ctx.translate(x, y)
+	ctx.rotate(rot)
+	rr(ctx, -ln * 0.06, -ln * 0.5, ln * 0.12, ln, ln * 0.06)
+	inked(ctx, "#F4F1E8", ln * 0.03)
+	ctx.save()
+	ctx.clip()
+	var cs := [C.red, C.blue, C.red]
+	for i in cs.size():
+		ctx.fillStyle = cs[i]
+		ctx.fillRect(-ln, -ln * 0.2 + i * ln * 0.22, ln * 2, ln * 0.1)
+	ctx.restore()
+	rr(ctx, -ln * 0.08, -ln * 0.62, ln * 0.2, ln * 0.16, ln * 0.03)
+	inked(ctx, "#FFFFFF", ln * 0.025)
+	ctx.restore()
+
+static func stopwatch(ctx, x: float, y: float, r: float, frac: float, col) -> void:
+	rr(ctx, x - r * 0.18, y - r * 1.35, r * 0.36, r * 0.3, r * 0.06)
+	inked(ctx, "#C9CED8", r * 0.08)
+	circle(ctx, x, y, r)
+	inked(ctx, "#C9CED8", r * 0.1)
+	circle(ctx, x, y, r * 0.8)
+	fill(ctx, "#FFFDF2")
+	ctx.beginPath()
+	ctx.moveTo(x, y)
+	ctx.arc(x, y, r * 0.8, -PI / 2, -PI / 2 + frac * TAU)
+	ctx.closePath()
+	fill(ctx, col)
+	ctx.strokeStyle = C.ink
+	ctx.lineWidth = r * 0.06
+	ctx.beginPath()
+	for i in 12:
+		var a := (i / 12.0) * TAU
+		ctx.moveTo(x + cos(a) * r * 0.66, y + sin(a) * r * 0.66)
+		ctx.lineTo(x + cos(a) * r * 0.78, y + sin(a) * r * 0.78)
+	ctx.stroke()
+	capsule(ctx, x, y, x, y - r * 0.62, r * 0.1, C.ink)
+	circle(ctx, x, y, r * 0.1)
+	fill(ctx, C.ink)
+
+## Film-strip sprocket edges for the jump-cut panels.
+static func sprockets(ctx, x: float, y: float, w: float, h: float) -> void:
+	ctx.fillStyle = "#2A1D3A"
+	ctx.fillRect(x, y, 14, h)
+	ctx.fillRect(x + w - 14, y, 14, h)
+	ctx.fillStyle = "#FFF8E8"
+	var yy := y + 6
+	while yy < y + h - 8:
+		rr(ctx, x + 3, yy, 8, 10, 2)
+		ctx.fill()
+		rr(ctx, x + w - 11, yy, 8, 10, 2)
+		ctx.fill()
+		yy += 18
+
+# The four wordless gag panels per sponsor: fn(ctx, cx, cy, pw, ph, S).
+static func _gagReplay0(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	var s := ph * 0.64
+	var j := picto(ctx, cx - pw * 0.06, cy + ph * 0.08, s, {"head": [-0.3, 0.1], "la": [-18, -8], "ra": [58, -150]}, C.ink)
+	ctx.save()
+	ctx.translate(j.handR[0] + j.u * 0.9, j.handR[1] - j.u * 0.6)
+	ctx.rotate(-1.95)
+	_prod_replay_ade(ctx, 0, 0, s * 0.36)
+	ctx.restore()
+	for i in 3:
+		ctx.beginPath()
+		ctx.arc(j.head[0] - j.u * 2.2, j.head[1] - j.u * 0.4, j.u * (0.8 + i * 0.7), 2.4, 3.9)
+		stroke(ctx, C.ink, 2)
+
+static func _gagReplay1(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	var s := ph * 0.58
+	ctx.save()
+	ctx.translate(cx - pw * 0.06, cy - ph * 0.02)
+	ctx.rotate(-1.15)
+	picto(ctx, 0, 0, s, {"la": [-150, -178], "ra": [150, 176], "ll": [42, 70], "rl": [-12, 14]}, C.ink)
+	ctx.restore()
+	bananaPeel(ctx, cx + pw * 0.2, cy + ph * 0.36, ph * 0.13)
+	ctx.beginPath()
+	ctx.arc(cx, cy + ph * 0.1, ph * 0.3, -2.9, -1.4)
+	stroke(ctx, alpha(C.ink, 0.5), 2.5)
+	for st in [[0.28, -0.3, 9], [0.36, -0.14, 6], [-0.3, -0.34, 7]]:
+		starPath(ctx, cx + pw * st[0], cy + ph * st[1], st[2], st[2] * 0.45, 5)
+		inked(ctx, "#FFE14A", 1.5)
+	ctx.fillStyle = alpha(C.ink, 0.25)
+	ctx.fillRect(cx - pw * 0.45, cy + ph * 0.42, pw * 0.9, 3)
+
+static func _gagReplay2(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	ctx.fillStyle = linear(ctx, 0, cy - ph / 2, 0, cy + ph / 2, ["#2A3A9A", "#1B2766"])
+	ctx.fillRect(cx - pw / 2, cy - ph / 2, pw, ph)
+	var r := rng(5)
+	for i in 7:
+		ctx.fillStyle = "rgba(255,255,255,%s)" % _num(0.12 + r.call() * 0.25)
+		var ly: float = cy - ph / 2 + r.call() * ph
+		var lh: float = 2 + r.call() * 4
+		ctx.fillRect(cx - pw / 2, ly, pw, lh)
+	var s := ph * 0.52
+	for e in [[0.24, -1.2, 0.25], [0.04, -0.6, 0.45], [-0.18, 0, 1]]:
+		ctx.save()
+		ctx.globalAlpha = e[2]
+		ctx.translate(cx + pw * e[0], cy + ph * (0.12 - absf(e[1]) * 0.1))
+		ctx.rotate(e[1])
+		picto(ctx, 0, 0, s, {"la": [-120, -150], "ra": [120, 150]}, "#DFF4FF")
+		ctx.restore()
+	rewindIcon(ctx, cx + pw * 0.2, cy - ph * 0.26, ph * 0.24, "#FFE14A")
+
+static func _gagReplay3(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	ctx.save()
+	rays(ctx, cx, cy - ph * 0.05, pw, 16, alpha(S.main, 0.35), 0.1)
+	ctx.restore()
+	var j := picto(ctx, cx, cy + ph * 0.08, ph * 0.64, {"la": [-28, -18], "ra": [48, 172]}, C.ink)
+	fist(ctx, j.handR[0], j.handR[1], j.u, true)
+	for eh in [[j.elbowR, j.handR], [j.elbowL, j.handL]]:
+		var mx := lerpf(eh[0][0], eh[1][0], 0.7)
+		var my := lerpf(eh[0][1], eh[1][1], 0.7)
+		circle(ctx, mx, my, j.u * 0.55)
+		inked(ctx, S.main, 2, S.second)
+	sparkle(ctx, cx + pw * 0.3, cy - ph * 0.3, 11)
+	sparkle(ctx, cx - pw * 0.28, cy - ph * 0.12, 7)
+	ctx.fillStyle = alpha(C.ink, 0.25)
+	ctx.fillRect(cx - pw * 0.42, cy + ph * 0.45, pw * 0.84, 3)
+
+static func _gagWobble0(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	var s := ph * 0.64
+	var j := picto(ctx, cx + pw * 0.04, cy + ph * 0.08, s, {"head": [0.1, 0], "la": [-55, 45], "ra": [58, -152]}, C.ink)
+	_prod_wobble_up(ctx, j.handL[0] - j.u * 0.4, j.handL[1] - s * 0.12, s * 0.3)
+	capsule(ctx, j.handR[0], j.handR[1], j.head[0] + j.u * 0.9, j.head[1] + j.u * 0.8, j.u * 0.35, "#C9CED8", C.ink, 1.5)
+	circle(ctx, j.head[0] + j.u * 1.0, j.head[1] + j.u * 0.8, j.u * 0.45)
+	inked(ctx, "#3FD27A", 1.5)
+
+static func _gagWobble1(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	var hipX := cx + pw * 0.16
+	var s := ph * 0.62
+	var j := picto(ctx, hipX, cy + ph * 0.08, s, {"lean": 18, "la": [-130, -160], "ra": [150, 170], "head": [0.4, 0]}, C.ink)
+	var u: float = j.u
+	var gx: float = j.neck[0] - u * 1.2
+	var gy: float = j.neck[1] + u * 0.8
+	var x0 := cx - pw / 2
+	ctx.beginPath()
+	ctx.moveTo(x0, gy)
+	for i in range(1, 9):
+		ctx.lineTo(lerpf(x0, gx - u * 1.6, i / 9.0), gy + (-u if (i & 1) else u))
+	ctx.lineTo(gx - u * 1.6, gy)
+	stroke(ctx, "#8A90A8", 3)
+	ellipse(ctx, gx - u * 0.6, gy, u * 1.3, u * 1.1)
+	inked(ctx, C.red, 2.5)
+	ellipse(ctx, gx - u * 0.4, gy - u * 0.9, u * 0.5, u * 0.35, 0.4)
+	inked(ctx, C.red, 2)
+	rr(ctx, gx - u * 2.1, gy - u * 0.8, u * 0.6, u * 1.6, u * 0.2)
+	inked(ctx, "#F4F1E8", 2)
+	impactStar(ctx, gx + u * 0.8, gy - u * 0.4, u * 1.6, "#FFE14A")
+
+static func _gagWobble2(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	var s := ph * 0.64
+	var hy := cy + ph * 0.08
+	for da in [[-5, 0.35], [5, 0.35]]:
+		ctx.save()
+		ctx.globalAlpha = da[1]
+		picto(ctx, cx + da[0], hy, s, {"la": [-40, -10], "ra": [40, 10], "lean": da[0] * 0.8}, "#3FD27A")
+		ctx.restore()
+	var j := picto(ctx, cx, hy, s, {"la": [-40, -10], "ra": [40, 10]}, "#0E7A3A")
+	ctx.save()
+	ctx.translate(j.head[0], j.head[1] - j.u * 0.4)
+	ctx.scale(1.1, 1)
+	_prod_wobble_up(ctx, 0, 0, j.u * 3.2, 0.12)
+	ctx.restore()
+	ctx.lineCap = "round"
+	for sd in [-1, 1]:
+		for k in 3:
+			ctx.beginPath()
+			ctx.arc(cx, hy - j.u * 2, j.u * (3.5 + k * 1.2), -0.5 if sd > 0 else PI - 0.5, 0.5 if sd > 0 else PI + 0.5)
+			stroke(ctx, alpha(S.main, 0.8 - k * 0.2), 2.5)
+
+static func _gagWobble3(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	var j := picto(ctx, cx - pw * 0.12, cy + ph * 0.1, ph * 0.6, {"la": [-28, -18], "ra": [48, 172]}, C.ink)
+	fist(ctx, j.handR[0], j.handR[1], j.u, true)
+	_prod_wobble_up(ctx, j.head[0], j.head[1] - j.u * 0.6, j.u * 3.0, 0)
+	heart(ctx, cx + pw * 0.22, cy - ph * 0.28, ph * 0.12, S.second, 2.5)
+	ctx.beginPath()
+	ctx.moveTo(cx + pw * 0.22, cy - ph * 0.16)
+	ctx.lineTo(cx + pw * 0.22, cy - ph * 0.05)
+	stroke(ctx, C.ink, 3)
+	poly(ctx, [cx + pw * 0.22 - 6, cy - ph * 0.07, cx + pw * 0.22 + 6, cy - ph * 0.07, cx + pw * 0.22, cy])
+	fill(ctx, C.ink)
+	heart(ctx, cx + pw * 0.15, cy + ph * 0.12, ph * 0.13, S.second, 2.5)
+	heart(ctx, cx + pw * 0.3, cy + ph * 0.12, ph * 0.13, S.second, 2.5)
+
+static func _gagJump0(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	var s := ph * 0.64
+	var j := picto(ctx, cx - pw * 0.08, cy + ph * 0.08, s, {"head": [-0.2, 0], "la": [-18, -8], "ra": [58, -150]}, C.ink)
+	_prod_jump_cut(ctx, j.handR[0] + j.u * 1.2, j.handR[1] + j.u * 0.2, s * 0.34)
+
+static func _gagJump1(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	sprockets(ctx, cx - pw / 2, cy - ph / 2, pw, ph)
+	picto(ctx, cx, cy + ph * 0.08, ph * 0.62, {"la": [-28, 100], "ra": [28, -100]}, C.ink)
+	ctx.save()
+	ctx.setLineDash([6, 5])
+	ctx.beginPath()
+	ctx.moveTo(cx - pw * 0.4, cy + ph * 0.32)
+	ctx.lineTo(cx + pw * 0.4, cy - ph * 0.3)
+	stroke(ctx, "#FF3B30", 3)
+	ctx.restore()
+	ctx.save()
+	ctx.translate(cx + pw * 0.3, cy - ph * 0.32)
+	ctx.rotate(-0.6)
+	for s in [-1, 1]:
+		capsule(ctx, 0, 0, s * 10, -18, 4, "#C9CED8", C.ink, 1.5)
+		circle(ctx, s * 6, 8, 6)
+		stroke(ctx, C.ink, 3)
+	ctx.restore()
+
+static func _gagJump2(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	sprockets(ctx, cx - pw / 2, cy - ph / 2, pw, ph)
+	var j := picto(ctx, cx - pw * 0.1, cy + ph * 0.08, ph * 0.62, {"la": [55, 88], "ra": [70, 92]}, C.ink)
+	for hnd in [j.handL, j.handR]:
+		capsule(ctx, hnd[0], hnd[1], hnd[0] + j.u * 1.2, hnd[1], j.u * 0.4, C.ink)
+	boltPath(ctx, cx + pw * 0.28, cy - ph * 0.22, ph * 0.26)
+	inked(ctx, "#FFD23A", 2.5)
+	motionLines(ctx, cx + pw * 0.18, cy - ph * 0.02, pw * 0.2, 3, 7, alpha(C.ink, 0.6), 2)
+
+static func _gagJump3(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	stopwatch(ctx, cx - pw * 0.08, cy + ph * 0.06, ph * 0.28, 0.5, S.main)
+	boltPath(ctx, cx + pw * 0.28, cy - ph * 0.12, ph * 0.32)
+	inked(ctx, "#FFD23A", 2.5)
+	for k in [-1, 1]:
+		motionLines(ctx, cx - pw * 0.44, cy + k * ph * 0.1, pw * 0.08, 2, 6, alpha(C.ink, 0.5), 2)
+
+static func _gagRoller0(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	var s := ph * 0.64
+	var j := picto(ctx, cx, cy + ph * 0.08, s, {"la": [-60, 40], "ra": [60, -40]}, C.ink)
+	_prod_roller_boogie(ctx, j.handL[0] - j.u * 0.2, j.handL[1] - j.u * 0.6, s * 0.36)
+	rr(ctx, j.handR[0] - j.u * 0.8, j.handR[1] - j.u * 1.4, j.u * 1.6, j.u * 1.2, j.u * 0.3)
+	inked(ctx, S.main, 2)
+	sparkle(ctx, j.handL[0] - j.u * 1.8, j.handL[1] - j.u * 2.2, 9)
+	sparkle(ctx, j.handL[0] + j.u * 1.4, j.handL[1] - j.u * 2.6, 6)
+
+static func _gagRoller1(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	var j := picto(ctx, cx - pw * 0.36, cy + ph * 0.08, ph * 0.62, {"lean": -28, "la": [40, -30], "ra": [-70, -40], "ll": [-60, -10], "rl": [40, 90]}, C.ink)
+	skateFoot(ctx, j.footL[0], j.footL[1], j.u)
+	skateFoot(ctx, j.footR[0], j.footR[1], j.u)
+	motionLines(ctx, cx - pw * 0.12, cy - ph * 0.05, pw * 0.5, 5, 12, alpha(C.ink, 0.7), 3)
+	for c in [[0.26, 0.38, 12], [0.38, 0.34, 8], [0.16, 0.42, 7]]:
+		cloud(ctx, cx + pw * c[0], cy + ph * c[1], c[2] * 2.4, c[2] * 1.4, "#EDE4D0", alpha(C.ink, 0.5), 1)
+
+static func _gagRoller2(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	ctx.beginPath()
+	for i in 61:
+		var a := i * 0.2
+		var rr0 := ph * 0.05 + i * ph * 0.006
+		ctx.lineTo(cx + cos(a) * rr0 * 1.3, cy + sin(a) * rr0 * 0.5 + ph * 0.3)
+	stroke(ctx, alpha(S.neon2, 0.8), 3)
+	var r := rng(8)
+	for i in 7:
+		var sx: float = cx + (r.call() - 0.5) * pw * 0.8
+		var sy: float = cy + ph * (0.1 + r.call() * 0.3)
+		var sr: float = 4 + r.call() * 5
+		sparkle(ctx, sx, sy, sr)
+	var j := picto(ctx, cx, cy + ph * 0.02, ph * 0.6, {"la": [-100, -95], "ra": [100, 95], "ll": [-4, 0], "rl": [70, 110]}, C.ink)
+	skateFoot(ctx, j.footL[0], j.footL[1], j.u)
+	skateFoot(ctx, j.footR[0], j.footR[1], j.u)
+
+static func _gagRoller3(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	mirrorBall(ctx, cx + pw * 0.3, cy - ph * 0.3, ph * 0.1)
+	ctx.save()
+	ctx.globalCompositeOperation = "multiply"
+	rays(ctx, cx + pw * 0.3, cy - ph * 0.3, pw, 12, alpha(S.main, 0.25), 0.3)
+	ctx.restore()
+	var j := picto(ctx, cx - pw * 0.08, cy + ph * 0.06, ph * 0.6, {"la": [-30, 50], "ra": [158, 172], "ll": [-14, -6], "rl": [14, 6]}, C.ink)
+	capsule(ctx, j.handR[0], j.handR[1], j.handR[0] + j.u * 0.3, j.handR[1] - j.u * 1.1, j.u * 0.4, C.ink)
+	skateFoot(ctx, j.footL[0], j.footL[1], j.u)
+	skateFoot(ctx, j.footR[0], j.footR[1], j.u)
+	ctx.save()
+	ctx.translate(cx - pw * 0.33, cy - ph * 0.04)
+	ctx.beginPath()
+	for i in 41:
+		var a := (i / 40.0) * TAU
+		ctx.lineTo(sin(a) * 18, sin(a * 2) * 8)
+	stroke(ctx, C.ink, 7)
+	stroke(ctx, S.main, 3.5)
+	ctx.restore()
+
+static func _gagDouble0(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	var s := ph * 0.64
+	var j := picto(ctx, cx - pw * 0.04, cy + ph * 0.08, s, {"la": [-18, -8], "ra": [60, -130]}, C.ink)
+	toothbrush(ctx, j.handR[0] - j.u * 0.4, j.handR[1] - j.u * 0.3, s * 0.3, -1.1)
+	for b in [[-1.6, -0.2, 0.5], [-1.9, 0.6, 0.35], [-1.2, 0.9, 0.3]]:
+		circle(ctx, j.head[0] + b[0] * j.u, j.head[1] + b[1] * j.u, b[2] * j.u)
+		inked(ctx, "#FFFFFF", 1.5)
+
+static func _gagDouble1(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	var r := ph * 0.3
+	var hx := cx - pw * 0.04
+	var hy := cy + ph * 0.02
+	circle(ctx, hx, hy, r)
+	fill(ctx, C.ink)
+	ctx.beginPath()
+	ctx.moveTo(hx - r * 0.62, hy + r * 0.08)
+	ctx.quadraticCurveTo(hx, hy + r * 0.3, hx + r * 0.62, hy + r * 0.08)
+	ctx.quadraticCurveTo(hx + r * 0.5, hy + r * 0.7, hx, hy + r * 0.72)
+	ctx.quadraticCurveTo(hx - r * 0.5, hy + r * 0.7, hx - r * 0.62, hy + r * 0.08)
+	fill(ctx, "#FFFFFF")
+	ctx.strokeStyle = C.ink
+	ctx.lineWidth = 2
+	ctx.beginPath()
+	for k in [-0.3, 0.0, 0.3]:
+		ctx.moveTo(hx + k * r, hy + r * 0.2)
+		ctx.lineTo(hx + k * r, hy + r * 0.66)
+	ctx.stroke()
+	for s in [-1, 1]:
+		ctx.beginPath()
+		ctx.arc(hx + s * r * 0.36, hy - r * 0.2, r * 0.16, PI * 1.1, PI * 1.9)
+		stroke(ctx, "#FFFFFF", 4)
+	sparkle(ctx, hx + r * 0.35, hy + r * 0.35, r * 0.5)
+	ctx.lineCap = "round"
+	for a in [-0.9, -0.4, 0.1]:
+		ctx.beginPath()
+		ctx.moveTo(hx + r * 0.9 + cos(a) * r * 0.2, hy + r * 0.3 + sin(a) * r * 0.2)
+		ctx.lineTo(hx + r * 0.9 + cos(a) * r * 0.55, hy + r * 0.3 + sin(a) * r * 0.55)
+		stroke(ctx, C.ink, 3)
+
+static func _gagDouble2(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	ctx.save()
+	ctx.globalCompositeOperation = "multiply"
+	picto(ctx, cx - pw * 0.13, cy + ph * 0.08, ph * 0.62, {"la": [-150, -170], "ra": [40, 20]}, "#3FD6E0")
+	picto(ctx, cx + pw * 0.13, cy + ph * 0.08, ph * 0.62, {"la": [-40, -20], "ra": [150, 170]}, "#D64FD6")
+	ctx.restore()
+	for s in [-1, 1]:
+		ctx.beginPath()
+		ctx.moveTo(cx + s * pw * 0.06, cy - ph * 0.4)
+		ctx.lineTo(cx + s * pw * 0.2, cy - ph * 0.4)
+		stroke(ctx, C.ink, 2.5)
+		poly(ctx, [cx + s * pw * 0.24, cy - ph * 0.4, cx + s * pw * 0.19, cy - ph * 0.44, cx + s * pw * 0.19, cy - ph * 0.36])
+		fill(ctx, C.ink)
+
+static func _gagDouble3(ctx, cx: float, cy: float, pw: float, ph: float, S: Dictionary) -> void:
+	var j := picto(ctx, cx - pw * 0.28, cy + ph * 0.08, ph * 0.6, {"la": [62, 86], "ra": [78, 90]}, C.ink)
+	rr(ctx, j.handR[0] - 2, j.handR[1] - 7, j.u * 2.2, j.u * 1.0, 3)
+	fill(ctx, "#3A4A6B")
+	var gx: float = j.handR[0] + j.u * 2.2
+	var gy: float = j.handR[1] - 3
+	var tx := cx + pw * 0.34
+	capsule(ctx, gx, gy, tx - 14, gy, 3.5, "#FFD23A")
+	ctx.save()
+	ctx.globalCompositeOperation = "multiply"
+	capsule(ctx, gx, gy + 9, tx - 14, gy + 9, 3.5, alpha("#3FD6E0", 0.9))
+	capsule(ctx, gx, gy + 12, tx - 14, gy + 12, 3.5, alpha("#D64FD6", 0.7))
+	ctx.restore()
+	circle(ctx, tx, gy, ph * 0.12)
+	inked(ctx, "#A9C7A4", 2.5)
+	for s in [-1, 1]:
+		ctx.beginPath()
+		ctx.moveTo(tx + s * 8 - 4, gy - 8); ctx.lineTo(tx + s * 8 + 4, gy - 2)
+		ctx.moveTo(tx + s * 8 + 4, gy - 8); ctx.lineTo(tx + s * 8 - 4, gy - 2)
+		stroke(ctx, C.ink, 2)
+	impactStar(ctx, tx - ph * 0.12, gy + 6, 10, "#FFE14A")
+
+static var GAGS := {
+	"replay_ade": [_gagReplay0, _gagReplay1, _gagReplay2, _gagReplay3],
+	"wobble_up": [_gagWobble0, _gagWobble1, _gagWobble2, _gagWobble3],
+	"jump_cut": [_gagJump0, _gagJump1, _gagJump2, _gagJump3],
+	"roller_boogie": [_gagRoller0, _gagRoller1, _gagRoller2, _gagRoller3],
+	"double_vision": [_gagDouble0, _gagDouble1, _gagDouble2, _gagDouble3],
+}
+
+## Comic panel frame for the gag posters.
+static func gagPanel(ctx, x: float, y: float, w: float, h: float, n: int, S: Dictionary, draw: Callable) -> void:
+	ctx.save()
+	rr(ctx, x, y, w, h, 10)
+	fill(ctx, "#FFF8E8")
+	ctx.clip()
+	halftone(ctx, x, y, w, h, alpha(S.main, 0.2), 10, func(u, v): return 0.15 + 0.45 * v)
+	ctx.lineJoin = "round"
+	draw.call(ctx, x + w / 2, y + h / 2, w, h, S)
+	ctx.restore()
+	rr(ctx, x, y, w, h, 10)
+	stroke(ctx, C.ink, 4)
+	circle(ctx, x + 17, y + 17, 12)
+	inked(ctx, S.main, 2.5)
+	label(ctx, str(n), x + 17, y + 18, {"fam": FONT.round, "px": 15, "fill": "#FFFFFF", "stroke": C.ink, "lw": 3})
