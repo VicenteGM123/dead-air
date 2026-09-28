@@ -158,13 +158,18 @@ static func placeholder(id, upgraded, game) -> Node3D:
 	u.leftHand = [0, 0.03, -L * 0.45] if L > 0.5 else [-0.03, -0.02, 0]
 	return g
 
-# Instantiates a runtime GLB of this system (material specs converted through game.mats.fromSpec, node "da" extras
-# parsed into userData). An empty Node3D when the asset has not been built yet.
+# Instantiates a runtime GLB of this system through game.props.loadRuntime (material specs -> game.mats.fromSpec,
+# node "da" extras -> userData); the same conversion done here when props.gd is missing. An empty Node3D when the
+# asset has not been built yet.
 static func _loadRuntime(file: String, game) -> Node3D:
 	var path := ASSET_DIR + file
 	if not ResourceLoader.exists(path):
 		push_warning("[weaponModels] missing runtime asset %s (run blender/build_all.py --only runtime)" % path)
 		return DAU.node3d("placeholder")
+	if game != null and game.props != null and game.props.has_method("loadRuntime"):
+		var n = game.props.loadRuntime(path)
+		if n is Node3D:
+			return n
 	var ps = load(path)
 	if not (ps is PackedScene):
 		return DAU.node3d("placeholder")
