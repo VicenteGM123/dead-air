@@ -342,6 +342,20 @@
   "wrap": "repeat",
   "ns": "k"
  },
+ "k.pebble|#E23B3B|256": {
+  "file": "k_pebble_E23B3B_256_a3e117b3.png",
+  "w": 256,
+  "h": 256,
+  "wrap": "repeat",
+  "ns": "k"
+ },
+ "k.pebble|#E3662B|256": {
+  "file": "k_pebble_E3662B_256_c6f4ed31.png",
+  "w": 256,
+  "h": 256,
+  "wrap": "repeat",
+  "ns": "k"
+ },
  "k.pebble|#EEE8E0|256": {
   "file": "k_pebble_EEE8E0_256_e4dc566a.png",
   "w": 256,
@@ -379,6 +393,20 @@
  },
  "k.weave|#7A2E6E|plain|null||256|2": {
   "file": "k_weave_7A2E6E_plain_null_256_2_03bc1a9a.png",
+  "w": 256,
+  "h": 256,
+  "wrap": "repeat",
+  "ns": "k"
+ },
+ "k.weave|#7A5A3A|cord|null||256|4": {
+  "file": "k_weave_7A5A3A_cord_null_256_4_7bd49881.png",
+  "w": 256,
+  "h": 256,
+  "wrap": "repeat",
+  "ns": "k"
+ },
+ "k.weave|#8A6A4A|cord|null||256|4": {
+  "file": "k_weave_8A6A4A_cord_null_256_4_9b1f1d16.png",
   "w": 256,
   "h": 256,
   "wrap": "repeat",
@@ -754,6 +782,27 @@
   "h": 128,
   "wrap": "clamp",
   "ns": "tx"
+ },
+ "rooms.gm.atlas.v1": {
+  "file": "k_rooms_gm_atlas_v1_de30c886.png",
+  "w": 512,
+  "h": 512,
+  "wrap": "clamp",
+  "ns": "k"
+ },
+ "rooms.gm.leak.v2": {
+  "file": "k_rooms_gm_leak_v2_0f932d46.png",
+  "w": 128,
+  "h": 64,
+  "wrap": "clamp",
+  "ns": "k"
+ },
+ "rooms.gm.mirror.v1": {
+  "file": "k_rooms_gm_mirror_v1_543a3dc5.png",
+  "w": 256,
+  "h": 256,
+  "wrap": "clamp",
+  "ns": "k"
  },
  "rooms.lg.atlas.v1": {
   "file": "k_rooms_lg_atlas_v1_6d2c23a5.png",

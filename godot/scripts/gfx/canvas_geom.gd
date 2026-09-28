@@ -267,7 +267,8 @@ static func sweep(polys: Array, evenodd: bool) -> Array:
 	var xb := PackedFloat64Array()
 	var srt := PackedVector2Array()
 	var guard := 0
-	while yi < ny - 1:
+	var ylast := uys[ny - 1]
+	while ya < ylast - 1e-9:
 		guard += 1
 		if guard > 200000:
 			push_warning("[canvas] sweep guard hit")

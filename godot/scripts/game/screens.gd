@@ -1519,7 +1519,8 @@ func _renderFeed(cam: Camera3D, rt: Dictionary, hdr: Dictionary) -> void:
 	hdr.vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	_grade(hdr, rt, GRADE.feed * _exposure)
 
-# Shows `area` (its root + its doors) for this frame's renders (see the header); null (the insert studio, layer 3
+# Shows `area` (its root + its doors: level.setAreaVisible when the level has it) for this frame's renders (see the
+# header); it runs from the render pre-pass, after level.lateUpdate's culling. null (the insert studio, layer 3
 # only) changes nothing. _restoreVis() runs once the frame has been drawn.
 func _isolate(area) -> void:
 	var lv = game.level
@@ -1534,6 +1535,16 @@ func _isolate(area) -> void:
 	var roots = lv.get("areaRoots")
 	if roots is Dictionary:
 		show.call(roots.get(area))
+	if lv.has_method("setAreaVisible") and roots is Dictionary and roots.has(area):
+		# the level's own switch also shows the door groups of that area (their states were saved just below)
+		var doors0 = lv.get("doors")
+		if doors0 is Dictionary:
+			for d in doors0.values():
+				var dg = d.get("group") if d != null else null
+				if dg is Node3D and not dg.visible and (d.get("areas") is Array and d.areas.has(area)):
+					saved.append(dg)
+					saved.append(false)
+		lv.setAreaVisible(area, true)
 	var areas = lv.get("areas")
 	var ar = areas.get(area) if areas is Dictionary else null
 	var doorIds = ar.get("doors") if ar is Dictionary else null
