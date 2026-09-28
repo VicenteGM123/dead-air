@@ -224,6 +224,7 @@ func _target(fullClear: bool):
 	else:
 		rt = DACanvasGPU.newRT(_w, _h, DACanvasGPU.MSAA, false)
 		rt.owner = weakref(self)
+		DACanvasGPU.trackVersion(rt)
 		if needBlit:
 			if v != null:
 				DACanvasGPU.addDep(rt, v)

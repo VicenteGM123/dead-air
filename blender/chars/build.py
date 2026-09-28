@@ -502,6 +502,25 @@ def build_chars(ids=None, save_blend=False, log=print):
     return out
 
 
+def build(ids=None, save_blend=False, godot=None):
+    """blender/build_all.py `--only chars [--id duke]` entry point."""
+    global OUT, PAT_DIR
+    if godot:
+        OUT = os.path.join(os.path.abspath(godot), 'assets', 'chars')
+        PAT_DIR = os.path.join(OUT, 'patterns')
+        import chars.face as F
+        F.TEX_DIR = os.path.join(OUT, 'tex')
+    ok = True
+    for cid in (ids or IDS):
+        try:
+            build_char(cid, save_blend=save_blend)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            ok = False
+    return ok
+
+
 if __name__ == '__main__':
     argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else sys.argv[1:]
     ids = [a for a in argv if not a.startswith('--')]
