@@ -701,5 +701,5 @@ walk(OUT);
 index.stats = { files: dirFiles, bytes: dirBytes, lastRun: { files: written.length, bytes: totalBytes, seconds: r3((performance.now() - t0) / 1000) } };
 fs.writeFileSync(prevIndexFile, JSON.stringify(index, (k, v) => (v === undefined ? undefined : v), 1));
 console.log(`[audio] ${written.length} files, ${(totalBytes / 1048576).toFixed(1)} MB written this run, `
-  + `${(dirBytes / 1048576).toFixed(1)} MB in godot/assets/audio, ${index.stats.seconds} s`);
+  + `${(dirBytes / 1048576).toFixed(1)} MB (${dirFiles} files) in godot/assets/audio, ${index.stats.lastRun.seconds} s`);
 if (failures.length) { console.warn('[audio] failures:\n  ' + failures.join('\n  ')); process.exitCode = 1; }
