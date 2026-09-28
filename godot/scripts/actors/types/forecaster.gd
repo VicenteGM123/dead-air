@@ -235,12 +235,12 @@ static func boltMesh(geo: Dictionary) -> ArrayMesh:
 	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 	return am
 
-static func boltMaterials() -> void:
+static func boltMaterials(game) -> void:
 	if boltMat != null:
 		return
-	boltMat = SH.basic(Color(2.6, 2.7, 3.2), {"side": "double", "depthWrite": false, "fog": false, "renderOrder": 3})
+	boltMat = SH.basic(game, Color(2.6, 2.7, 3.2), {"side": "double", "depthWrite": false, "fog": false, "renderOrder": 3})
 	boltMat.resource_name = "fcBoltCore"
-	glowMat = SH.basic(Color(0.9, 0.85, 2.2), {"side": "double", "transparent": true, "opacity": 0.55, "additive": true, "depthWrite": false, "fog": false, "renderOrder": 3})
+	glowMat = SH.basic(game, Color(0.9, 0.85, 2.2), {"side": "double", "transparent": true, "opacity": 0.55, "additive": true, "depthWrite": false, "fog": false, "renderOrder": 3})
 	glowMat.resource_name = "fcBoltGlow"
 
 # ------------------------------------------------------------------------------------------------ model
@@ -310,7 +310,7 @@ static func baseModel(game, group: Node3D, rig, animator, baked: bool) -> Dictio
 	m.serial = serial
 	# Per-model FX: storm shell material, shadow disc, bolt meshes, rainbow.
 	m.stormMat = SH.toon(game, "#2C3046", {"transparent": true, "opacity": 0, "rough": 0.9, "rim": 0.5, "rimColor": "#A8B4FF", "keepColor": true, "depthWrite": false, "name": "fcStorm" + str(m.serial)})
-	var discMat := SH.basic(Color(1, 1, 1), {"map": discTexture(), "transparent": true, "depthWrite": false, "fog": false, "renderOrder": 2})
+	var discMat = SH.basic(game, Color(1, 1, 1), {"map": discTexture(), "transparent": true, "depthWrite": false, "fog": false, "renderOrder": 2})
 	discMat.resource_name = "fcShadowDisc"
 	m.disc = MeshInstance3D.new()
 	m.disc.mesh = SH.loadMesh("fc_disc", "fc_disc")
@@ -319,7 +319,7 @@ static func baseModel(game, group: Node3D, rig, animator, baked: bool) -> Dictio
 	m.disc.layers = 1 << Config.LAYERS.ZOMBIES
 	m.disc.visible = false
 	SH.noShadow(m.disc)
-	boltMaterials()
+	boltMaterials(game)
 	m.boltCore = MeshInstance3D.new()
 	m.boltCore.material_override = boltMat
 	m.boltGlow = MeshInstance3D.new()
@@ -329,7 +329,7 @@ static func baseModel(game, group: Node3D, rig, animator, baked: bool) -> Dictio
 		b.visible = false
 		b.extra_cull_margin = 16384.0      # frustumCulled = false
 		SH.noShadow(b)
-	var rbMat := SH.basic(Color(1.1, 1.1, 1.1), {"vertexColors": true, "transparent": true, "opacity": 1.0, "depthWrite": false, "fog": false, "side": "double"})
+	var rbMat = SH.basic(game, Color(1.1, 1.1, 1.1), {"vertexColors": true, "transparent": true, "opacity": 1.0, "depthWrite": false, "fog": false, "side": "double"})
 	m.rainbow = MeshInstance3D.new()
 	m.rainbow.mesh = rainbowGeometry()
 	m.rainbow.material_override = rbMat
@@ -372,8 +372,10 @@ static func setupCloud(game, m: Dictionary, pivot: Node3D) -> void:
 		shell.transform = mesh.transform
 		shell.position = mesh.position - cl.center
 		SH.noShadow(shell)
-		if m.stormMat is BaseMaterial3D:
-			(m.stormMat as BaseMaterial3D).render_priority = 1
+		if m.stormMat != null:      # shell.renderOrder = 1 (the storm material is this model's own)
+			m.stormMat.render_priority = 1
+			if m.stormMat is DAMaterial and m.stormMat.twin != null:
+				m.stormMat.twin.render_priority = 1
 		sg.add_child(shell)
 		pivot.add_child(sg)
 		cl.shellG = sg
@@ -1353,7 +1355,7 @@ func warmup(game) -> Array:
 	disc.visible = true
 	var rb: MeshInstance3D = m.rainbow.duplicate()
 	rb.visible = true
-	boltMaterials()
+	boltMaterials(game)
 	var bolt := MeshInstance3D.new()
 	bolt.mesh = boltMesh(boltGeometry(Vector3(0, 3, 0), Vector3.ZERO))
 	bolt.material_override = boltMat

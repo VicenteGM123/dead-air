@@ -21,8 +21,7 @@ if (mode === 'env') {
   const spec = JSON.parse(fs.readFileSync(a, 'utf8'));
   const base = 'file://' + path.dirname(path.resolve(a)) + '/';
   const r = await p.evaluate(async ([s, base]) => await window.__mref.run(s, base), [spec, base]);
-  await p.waitForTimeout(200);
-  await p.screenshot({ path: b });
-  console.log('shot', JSON.stringify(r), b);
+  fs.writeFileSync(b, Buffer.from(r.png.split(',')[1], 'base64'));
+  console.log('shot', r.w, r.h, b);
 }
 await br.close();

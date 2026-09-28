@@ -78,6 +78,16 @@ static func _extrasDa(n: Object) -> Dictionary:
 		return parsed if parsed is Dictionary else {}
 	return da if da is Dictionary else {}
 
+static func _findHeader(n: Node) -> Dictionary:
+	var da := _extrasDa(n)
+	if da.has("bones"):
+		return da
+	for c in n.get_children():
+		var h := _findHeader(c)
+		if not h.is_empty():
+			return h
+	return {}
+
 static func decoded(id: String) -> Dictionary:
 	var d = geoCache.get(id)
 	if d != null:
@@ -87,7 +97,8 @@ static func decoded(id: String) -> Dictionary:
 		return {}
 	var scene: PackedScene = load(assetPath(id))
 	var inst: Node = scene.instantiate()
-	var header := _extrasDa(inst)
+	# the glTF root node `<id>` (header in extras.da) is the scene root or its child, depending on the importer
+	var header := _findHeader(inst)
 	var body: MeshInstance3D = inst.find_child("body", true, false) as MeshInstance3D
 	d = {"header": header, "scene": scene, "parts": {}, "bindNames": [], "hair": header.get("hair", {})}
 	if body != null:

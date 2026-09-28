@@ -360,6 +360,7 @@ func drop(type = null, pos = null, opts: Dictionary = {}):
 		push_warning("[powerups] drop prop failed drop_" + type)
 		return null
 	group.position = at
+	load("res://scripts/game/sponsors.gd").resolveRefs(group, DAU.ud(group))
 	var P = DAU.ud(group).get("parts", {})
 	if not (P is Dictionary):
 		P = {}

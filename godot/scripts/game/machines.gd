@@ -11,7 +11,9 @@
 #
 # Global uniforms: JS writes game.mats.uniforms.<name>.value. Here _setU() writes the same entry (Dictionary
 # {value} or object with .value) when materials.gd exposes `uniforms`, calls mats.setUniform(name, v) when it has
-# one, and also sets the Godot global shader parameter of that name when the project declares it.
+# one, and also sets the Godot global shader parameter of that name when project.godot declares it
+# ([shader_globals]); _getU() reads the value back (mats first, else the last value written here, else the
+# project default: RenderingServer's global-parameter getters are editor-only).
 extends RefCounted
 
 const PRE_POWER := {"sat": 0.7, "amber": 0.08}
@@ -30,6 +32,7 @@ var signon
 var telly
 var sponsors
 var uplink
+var _uCache := {}          # last value written per global uniform (see _getU)
 
 func _init(g) -> void:
 	game = g
@@ -77,6 +80,7 @@ func _grade(on: bool) -> void:
 
 # game.mats.uniforms[name].value = v (see the header).
 func _setU(name: String, v) -> void:
+	_uCache[name] = v
 	var M = game.mats
 	if M != null:
 		if M.has_method("setUniform"):
@@ -89,5 +93,20 @@ func _setU(name: String, v) -> void:
 					u["value"] = v
 				elif u is Object:
 					u.set("value", v)
-	if RenderingServer.global_shader_parameter_get_list().has(StringName(name)):
+	if ProjectSettings.has_setting("shader_globals/" + name):
 		RenderingServer.global_shader_parameter_set(name, v)
+
+# game.mats.uniforms[name].value (see the header).
+func _getU(name: String):
+	var M = game.mats
+	if M != null:
+		if M.has_method("getUniform"):
+			return M.getUniform(name)
+		var U = M.get("uniforms")
+		if U is Dictionary and U.has(name):
+			var u = U[name]
+			return u.get("value") if (u is Dictionary or u is Object) else u
+	if _uCache.has(name):
+		return _uCache[name]
+	var d = ProjectSettings.get_setting("shader_globals/" + name)
+	return d.get("value") if d is Dictionary else null

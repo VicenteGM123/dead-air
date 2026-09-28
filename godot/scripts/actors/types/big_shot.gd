@@ -340,7 +340,7 @@ static func buildModel(game, baked: bool):
 	m.tallyBase = SH.getColorLin(m.tallyMat) if m.tallyMat != null else null
 	# Lens: glow disc + iris blades (open with the flash wind-up) + a flash sprite.
 	var lens: Node3D = m.lens if m.lens != null else J.head
-	var glowMat := SH.basic(Color(0.05, 0.07, 0.1), {"transparent": true, "opacity": 0.95, "depthWrite": false, "fog": false})
+	var glowMat = SH.basic(game, Color(0.05, 0.07, 0.1), {"transparent": true, "opacity": 0.95, "depthWrite": false, "fog": false})
 	glowMat.resource_name = "bsLensGlow"
 	m.glow = MeshInstance3D.new()
 	m.glow.name = "bsLensGlow"
@@ -360,7 +360,7 @@ static func buildModel(game, baked: bool):
 	m.blades.position.z = -0.016
 	m.blades.rotation.y = PI
 	lens.add_child(m.blades)
-	var flareMat := SH.basic(Color(3, 3, 3), {"map": flareTexture(), "transparent": true, "depthWrite": false, "additive": true, "fog": false, "renderOrder": 5})
+	var flareMat = SH.basic(game, Color(3, 3, 3), {"map": flareTexture(), "transparent": true, "depthWrite": false, "additive": true, "fog": false, "renderOrder": 5})
 	flareMat.resource_name = "bsFlare"
 	m.flare = MeshInstance3D.new()
 	m.flare.name = "bsFlare"
@@ -381,14 +381,14 @@ static func buildModel(game, baked: bool):
 	body.mesh = P.body
 	body.material_override = P.rubber
 	m.plug.add_child(body)
-	var prongMat := SH.basic(SH.hexLin("#FFB23A", 2.6))
+	var prongMat = SH.basic(game, SH.hexLin("#FFB23A", 2.6))
 	prongMat.resource_name = "bsProng"
 	m.prongMat = prongMat
 	var prongs := MeshInstance3D.new()
 	prongs.mesh = P.prong
 	prongs.material_override = prongMat
 	m.plug.add_child(prongs)   # both prongs, one draw
-	var haloMat := SH.basic(SH.hexLin("#FFA030", 1.2), {"map": flareTexture(), "transparent": true, "depthWrite": false, "additive": true, "fog": false})
+	var haloMat = SH.basic(game, SH.hexLin("#FFA030", 1.2), {"map": flareTexture(), "transparent": true, "depthWrite": false, "additive": true, "fog": false})
 	m.halo = MeshInstance3D.new()
 	m.halo.name = "bs_halo"
 	m.halo.mesh = SH.loadMesh("bs_plug", "bs_halo")

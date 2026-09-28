@@ -97,7 +97,7 @@ window.__mref = {
       if (spec.time !== undefined) U.uTime.value = spec.time;
       game.render.frame(dt);
     }
-    return { w: game.renderer.domElement.width, h: game.renderer.domElement.height };
+    return { w: game.renderer.domElement.width, h: game.renderer.domElement.height, png: game.renderer.domElement.toDataURL('image/png') };
   },
   // The RoomEnvironment PMREM atlas of materials.js as raw RGBA half floats (row 0 = GL bottom row).
   bakeEnv() {

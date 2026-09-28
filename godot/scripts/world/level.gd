@@ -80,7 +80,6 @@ var sky: Node3D
 var beacons = null
 var boardSet = null
 var LEVER := Vector3.ZERO
-var NO_CAST := {}
 var _visible := {}
 var _shadowCast := {}
 var _shadowOff := {}
@@ -101,12 +100,6 @@ func _init(g) -> void:
 	root = DAU.node3d("level")
 	var lp: Array = Layout.ANCHORS.sign_on_lever.pos
 	LEVER = Vector3(lp[0], 1.0, lp[2])
-	for s in Surfaces.AREA_STYLE.values():
-		NO_CAST[s.floor] = true
-		if s.get("ceiling"):
-			NO_CAST[s.ceiling] = true
-	for k in ["metal_plate", "trim_steel", "chainlink", "roof_gravel"]:
-		NO_CAST[k] = true
 
 func init() -> void:
 	_buildSteps(false)
@@ -181,7 +174,6 @@ func _buildSteps(async: bool) -> void:
 		Surfaces.applyDa(g, areaRoots[id], surf)
 	Surfaces.applyDa(g, groups.shell, surf)
 	Surfaces.applyDa(g, groups.ext, surf)
-	_casts()
 	var ctx := {"game": g, "level": self, "surf": surf, "root": boardRoot}
 	var fixtures := Architecture.buildFixtures(g, areaRoots)
 	await _step(async)
@@ -252,25 +244,11 @@ func _take(src: Node, name: String, parent: Node) -> Node3D:
 		n = DAU.node3d(name)
 	elif n.get_parent() != null:
 		n.get_parent().remove_child(n)
+		DAU.traverse(n, func(o): o.owner = null)
 	n.rotation_order = EULER_ORDER_XYZ
 	if parent != null and n.get_parent() != parent:
 		parent.add_child(n)
 	return n
-
-# Shadow casting of the batched graybox (batch.build castOf): every batch mesh casts except the NO_CAST surfaces,
-# the exterior group and the ceiling / roof groups. Batch mesh nodes are named batch_<group>_<surfaceKey> and
-# carry "da".surface; other meshes keep their exported castShadow.
-func _casts() -> void:
-	for gname in groups:
-		var grp: Node3D = groups[gname]
-		for c in grp.get_children():
-			if not (c is GeometryInstance3D):
-				continue
-			var da = Surfaces.nodeDa(c)
-			if da == null or not (da.get("surface") is String):
-				continue
-			var cast: bool = not NO_CAST.has(da.surface) and gname != "ext" and not String(gname).contains("#")
-			(c as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if cast else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 # Sign-On switch list: fixtures + their anchors per area, ON AIR boxes per door (by wave arrival time).
 func _buildSwitches(fixtures: Array) -> void:

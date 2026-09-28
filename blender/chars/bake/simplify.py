@@ -198,13 +198,13 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
         # error: sum over distinct source wedges of Q_w evaluated at (pos(v), attr(target wedge))
         pv = Ps[cv]
 
-        def qerr(src, tgt):
-            x = np.concatenate([pv, X[tgt, 3:], np.ones((len(tgt), 1))], 1)
+        def qerr(src, tgt, pvv):
+            x = np.concatenate([pvv, X[tgt, 3:], np.ones((len(tgt), 1))], 1)
             return (Q[src] * x[:, _TRIU[0]] * x[:, _TRIU[1]]).sum(1)
-        err = qerr(su1, tv1)
+        err = qerr(su1, tv1, pv)
         two = hasO & (su2 != su1)
         if two.any():
-            err[two] += qerr(su2[two], tv2[two])
+            err[two] += qerr(su2[two], tv2[two], pv[two])
         err = np.maximum(err, 0)
         # keep the cheaper direction per undirected edge
         ek = np.minimum(cu, cv) * nwv + np.maximum(cu, cv)

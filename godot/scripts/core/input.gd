@@ -67,9 +67,9 @@ const BINDINGS := {
 
 # plain one-button pad actions (aim, sprint and X are handled on their own)
 const PAD_SIMPLE := [
-	["jump", 0], ["melee", 1], ["weaponNext", 3], ["grenade", 5], ["tactical", 4],
-	["fire", 7], ["weapon1", 14], ["weapon2", 15], ["shoulder", 13],
-]  # = BTN.A, BTN.B, BTN.Y, BTN.RB, BTN.LB, BTN.RT, BTN.LEFT, BTN.RIGHT, BTN.DOWN
+	["jump", BTN.A], ["melee", BTN.B], ["weaponNext", BTN.Y], ["grenade", BTN.RB], ["tactical", BTN.LB],
+	["fire", BTN.RT], ["weapon1", BTN.LEFT], ["weapon2", BTN.RIGHT], ["shoulder", BTN.DOWN],
+]
 const NAV_DIRS := ["up", "down", "left", "right"]
 const NAV_DELAY := 0.38     # s before a held direction repeats in menus
 const NAV_REPEAT := 0.11    # s between repeats
@@ -282,9 +282,7 @@ func _defs() -> Variant:
 	if _weaponDefs == null and ResourceLoader.exists("res://scripts/game/weapon_defs.gd"):
 		var s = load("res://scripts/game/weapon_defs.gd")
 		if s != null:
-			var d = s.get("WEAPON_DEFS")
-			if d == null and s.get_script_constant_map().has("WEAPON_DEFS"):
-				d = s.get_script_constant_map().WEAPON_DEFS
+			var d = s.get("WEAPON_DEFS")  # static var of weapon_defs.gd
 			_weaponDefs = d if d is Dictionary else {}
 	return _weaponDefs
 
@@ -624,11 +622,22 @@ func _onEvent(event: InputEvent) -> void:
 		if n < 0:
 			return
 		if mb.pressed:
-			_onMouseDown(n)
+			# the JS listened to mousedown on the canvas only: a press on a UI control (a menu button) is not
+			# the game's; while locked every click is the canvas' (pointer lock targets it)
+			if locked or not _overUi():
+				_onMouseDown(n)
 		else:
 			_onButton("Mouse%d" % n, false)
 	elif event is InputEventMouseMotion:
 		_onMove(event as InputEventMouseMotion)
+
+# The pointer is over a GUI control that takes mouse presses (a DOM element over the canvas in the JS build).
+func _overUi() -> bool:
+	if _hook == null or not _hook.is_inside_tree():
+		return false
+	var vp := _hook.get_viewport()
+	var c: Control = vp.gui_get_hovered_control() if vp != null else null
+	return c != null and c.mouse_filter == Control.MOUSE_FILTER_STOP
 
 # DOM MouseEvent.button of a Godot mouse button (-1: not a button the game knows).
 static func _mouseIndex(b: int) -> int:

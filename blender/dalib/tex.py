@@ -28,13 +28,14 @@ import re
 from .canvas2d import Canvas
 from .rng import mulberry32, hashStr
 from .pal import PAL
-from .mathutils3 import Color, js_str, js_json, js_round, clamp, ceilPowerOfTwo, Vector2
+from .mathutils3 import Color, js_str, js_json, js_round, clamp, ceilPowerOfTwo, Vector2, JSObj
 
 __all__ = ['Texture', 'CardTexture', 'RuntimeTexture', 'tex', 'shade', 'canvasTex', 'plaid', 'stripes',
            'colorBars', 'text', 'woodPanel', 'carpet', 'tiles', 'noise', 'gradient', 'radial', 'poster', 'repeat',
            'staticNoise', 'labelTex', 'stencilTex', 'hazardTex', 'boltSignTex', 'newspaperTex', 'movingPadTex',
            'Textures', 'texture_file', 'OUT_DIR', 'RepeatWrapping', 'ClampToEdgeWrapping', 'MirroredRepeatWrapping',
-           'NearestFilter', 'LinearFilter', 'LinearMipmapLinearFilter', 'SRGBColorSpace', 'getCard', 'cardInfo']
+           'NearestFilter', 'LinearFilter', 'LinearMipmapLinearFilter', 'SRGBColorSpace', 'getCard', 'cardInfo',
+           'cardIds', 'drawTo']
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(_HERE, '..', '..'))
@@ -77,7 +78,7 @@ class Texture:
         self.minFilter = LinearMipmapLinearFilter
         self.generateMipmaps = True
         self.needsUpdate = False
-        self.userData = {}
+        self.userData = JSObj()
         self.uuid = hashlib.sha1(('%s|%s' % (ns, key)).encode()).hexdigest()
 
     def __repr__(self):
@@ -89,7 +90,7 @@ class Texture:
         t.repeat = self.repeat.clone()
         t.offset = self.offset.clone()
         t.center = self.center.clone()
-        t.userData = dict(self.userData)
+        t.userData = JSObj(self.userData)
         return t
 
     def dispose(self):
@@ -128,11 +129,11 @@ class CardTexture:
         self.rotation = 0
         self.wrapS = self.wrapT = ClampToEdgeWrapping
         self.flipY = True
-        self.userData = {}
+        self.userData = JSObj()
         self.image = None
         info = cardInfo(card)
-        if info:
-            self.userData['atlas'] = info.get('atlas')
+        if info and info.get('atlas'):
+            self.userData['atlas'] = _Atlas(info['atlas'])
 
     def clone(self):
         c = CardTexture(self.card, self.cardOpts)
@@ -152,7 +153,41 @@ class RuntimeTexture(Texture):
         return None
 
 
+class _Atlas(dict):
+    """cards.js atlas: { chars, cols, rows, cellW, cellH, uv(ch) -> [u0, v0, u1, v1] } (uv from cards_info.json)."""
+
+    def __getattr__(self, k):
+        return self.get(k)
+
+    def uv(self, ch):
+        u = self.get('uv') or {}
+        if ch in u:
+            return list(u[ch])
+        first = (self.get('chars') or ' ')[0]
+        return list(u.get(first, [0, 0, 1, 1]))
+
+
 _CARD_INFO = None
+CARD_DIRS = [os.path.join(_HERE, 'cards'), os.path.join(REPO, 'godot', 'assets', 'cards')]
+
+
+def drawTo(ctx, card_id, w, h, time=0, opts=None):
+    """cards.js drawTo(ctx, id, w, h, time, opts): draws a pre-rendered card image <CARD_DIRS>/<id>.png scaled to
+    w x h at 0,0. The card painters themselves are Godot runtime code (scripts/gfx/cards.gd): a static texture that
+    embeds a card needs that PNG; without it this raises KeyError (the JS callers that wrap drawTo in try/catch
+    then draw their fallback)."""
+    from .canvas2d import Image
+    for d in CARD_DIRS:
+        p = os.path.join(d, '%s.png' % card_id)
+        if os.path.exists(p):
+            ctx.drawImage(Image(p), 0, 0, w, h)
+            return
+    raise KeyError('card image %s.png not found in %s' % (card_id, CARD_DIRS))
+
+
+def cardIds():
+    cardInfo('')
+    return list(_CARD_INFO.keys())
 
 
 def cardInfo(card_id):
@@ -176,18 +211,6 @@ def getCard(card_id, opts=None):
 # ================================================================================================== files
 _written = {}
 _index = None
-
-
-def _load_index():
-    global _index
-    if _index is None:
-        p = os.path.join(OUT_DIR, 'index.json')
-        try:
-            with open(p, 'r', encoding='utf-8') as f:
-                _index = json.load(f)
-        except Exception:
-            _index = {}
-    return _index
 
 
 IMPORT_FILE = """[remap]
@@ -214,7 +237,7 @@ def texture_file(t, out_dir=None):
     k = (d, fname)
     if k not in _written:
         os.makedirs(d, exist_ok=True)
-        tmp = path + '.tmp'
+        tmp = '%s.%d.tmp' % (path, os.getpid())
         t.image.save_png(tmp)
         with open(tmp, 'rb') as f:
             new = f.read()
@@ -231,21 +254,27 @@ def texture_file(t, out_dir=None):
             with open(imp, 'w') as f:
                 f.write(IMPORT_FILE)
         _written[k] = True
-        if d == OUT_DIR:
-            idx = _load_index()
-            entry = {'file': fname, 'w': t.image.width, 'h': t.image.height,
-                     'wrap': 'repeat' if t.wrapS == RepeatWrapping else 'clamp', 'ns': t.ns}
-            if idx.get(t.key) != entry:
-                idx[t.key] = entry
-                _save_index()
+        entry = {'file': fname, 'w': t.image.width, 'h': t.image.height,
+                 'wrap': 'repeat' if t.wrapS == RepeatWrapping else 'clamp', 'ns': t.ns}
+        _save_index(d, t.key, entry)
     return path, t.res_path()
 
 
-def _save_index():
-    os.makedirs(OUT_DIR, exist_ok=True)
-    p = os.path.join(OUT_DIR, 'index.json')
-    with open(p, 'w', encoding='utf-8') as f:
-        json.dump(dict(sorted(_index.items())), f, indent=1, ensure_ascii=False)
+def _save_index(d, key, entry):
+    """Merges one entry into <d>/index.json (re-read right before writing: several builders may run at once)."""
+    p = os.path.join(d, 'index.json')
+    try:
+        with open(p, 'r', encoding='utf-8') as f:
+            idx = json.load(f)
+    except Exception:
+        idx = {}
+    if idx.get(key) == entry:
+        return
+    idx[key] = entry
+    tmp = '%s.%d.tmp' % (p, os.getpid())
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(dict(sorted(idx.items())), f, indent=1, ensure_ascii=False)
+    os.replace(tmp, p)
 
 
 # ================================================================================================== helpers

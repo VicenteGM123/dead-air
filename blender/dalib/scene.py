@@ -881,8 +881,9 @@ def _uv_transform(tex):
 
 
 class _Builder:
-    def __init__(self, names, texture_file):
+    def __init__(self, names, texture_file, force_names=True):
         import bpy
+        self.force_names = force_names
         self.bpy = bpy
         self.names = names
         self.texture_file = texture_file  # tex -> (abs_path, res_path) or None
@@ -900,8 +901,7 @@ class _Builder:
             return bm
         bpy = self.bpy
         spec = m.spec()
-        base = (m.name or '%s_%s' % (m.kind, m.hex.lstrip('#'))) if m.kind != 'toon' else \
-            ('%s_%s' % (m.name, m.hex.lstrip('#')) if m.name else 'toon_%s' % m.hex.lstrip('#'))
+        base = m.name or '%s_%s' % (m.kind, m.hex.lstrip('#'))
         bname = _safe(base) or 'mat'
         n, i = bname, 1
         while n in bpy.data.materials:
@@ -1062,7 +1062,7 @@ class _Builder:
     def node(self, o, parent_bobj, name, data=None):
         bpy = self.bpy
         ob = bpy.data.objects.new(name, data)
-        if ob.name != name:  # names are unique per scene: keep ours
+        if ob.name != name and self.force_names:  # names are unique per scene: keep ours
             other = bpy.data.objects.get(name)
             if other is not None:
                 other.name = name + '__old'
@@ -1137,19 +1137,32 @@ def root_userdata(root, names):
     return out
 
 
-def to_blender(root, names=None, texture_file=None, root_name=None):
+def to_blender(root, names=None, texture_file=None, root_name=None, force_names=True):
     """Creates Blender objects for the graph under root (in the current scene). Returns the root bpy object.
-    texture_file(tex) -> (abs_png_path, res_path) or None (see dalib/tex.py)."""
+    texture_file(tex) -> (abs_png_path, res_path) or None (see dalib/tex.py). force_names: rename clashing
+    objects already in the file so ours keep their exact names (export into a fresh scene); False when adding
+    to a scene the user is working in (Blender then suffixes .001)."""
     if names is None:
         names = assign_names(root, root_name)
     root.updateMatrixWorld(True)
-    B = _Builder(names, texture_file)
+    B = _Builder(names, texture_file, force_names)
 
     def visit(o, parent_b, is_root):
         name = names[id(o)]
         inst = getattr(o, 'isInstancedMesh', False)
         geo = getattr(o, 'geometry', None)
         data = None
+        mt = getattr(o, 'material', None)
+        if isinstance(mt, Material) and mt.kind == 'screen':
+            # the CRT spec carries the screen group / id the ScreenManager registers it with
+            sc = mt.extra.setdefault('screen', {})
+            if o.userData.screenGroup and 'group' not in sc:
+                sc['group'] = o.userData.screenGroup
+            for s in (root.userData.screens or []):
+                if isinstance(s, dict) and s.get('mesh') is o:
+                    sc.setdefault('group', s.get('group'))
+                    if s.get('id') is not None:
+                        sc['id'] = s.get('id')
         if geo is not None and not inst:
             data = B.mesh_data(geo, o.material if not isinstance(o.material, list) else o.material[0], name)
         ob = B.node(o, parent_b, name, data)

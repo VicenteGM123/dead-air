@@ -51,7 +51,7 @@ from .scene import (Object3D, Group, Mesh, InstancedMesh, Line, LineSegments, Po
                     FrontSide, BackSide, DoubleSide, NoBlending, NormalBlending, AdditiveBlending,
                     SubtractiveBlending, MultiplyBlending, box_from_object)
 from . import tex as _tex
-from .tex import (tex, getCard, cardInfo, Texture, CardTexture, Textures, RepeatWrapping, ClampToEdgeWrapping,
+from .tex import (tex, getCard, cardInfo, cardIds, drawTo, Texture, CardTexture, Textures, RepeatWrapping, ClampToEdgeWrapping,
                   MirroredRepeatWrapping, NearestFilter, LinearFilter, LinearMipmapLinearFilter, SRGBColorSpace)
 from .canvas2d import Canvas
 from .rng import mulberry32
@@ -61,7 +61,8 @@ __all__ = ['registerProp', 'buildProp', 'listProps', 'propMeta', 'cloneProp', 'r
            'listScenes', 'MAT', 'mat', 'glow', 'screen', 'material', 'R', 'box', 'uvBox', 'taper', 'uvRect',
            'uvScale', 'weldNormals', 'cushion', 'roundProfile', 'lathe', 'cyl', 'roundRect', 'extrude', 'tube',
            'roundRectPath', 'leaf', 'leafCluster', 'tint', 'm', 'tex', 'bakeAO', 'aoStats', 'prop', 'finish',
-           'merge', 'stats', 'PAL', 'THREE', 'Game', 'Materials', 'getCard', 'cardInfo', 'document', 'r3']
+           'merge', 'stats', 'PAL', 'THREE', 'Game', 'Materials', 'getCard', 'cardInfo', 'cardIds', 'drawTo',
+           'document', 'r3']
 
 
 # ============================================================================================ THREE shim

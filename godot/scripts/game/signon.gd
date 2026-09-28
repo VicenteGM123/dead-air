@@ -86,8 +86,8 @@ var _ov: Array = []
 var _whiteout := 0.0
 var _timeline: Array = []
 var _anchorId = null
-var _lampMat: StandardMaterial3D = null
-var _jewelMat: StandardMaterial3D = null
+var _lampMat: Material = null
+var _jewelMat: Material = null
 var _console = null
 var _pullFn := Callable()
 var _pullPrev = null
@@ -192,15 +192,9 @@ func _build() -> void:
 		for k in ["lever", "cover"]:
 			if parts.get(k) is Node3D:
 				parts[k].rotation_order = EULER_ORDER_XYZ
-		_lampMat = StandardMaterial3D.new()
-		_lampMat.resource_name = "signon:lamp"
-		_lampMat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		if g.screens != null:
-			_lampMat.albedo_texture = g.screens._cardGet("on_air", {"lit": true})
-		_jewelMat = StandardMaterial3D.new()
-		_jewelMat.resource_name = "signon:jewels"
-		_jewelMat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		_jewelMat.albedo_color = Color("#FFB347")
+		var lampTex = g.screens._cardGet("on_air", {"lit": true}) if g.screens != null else null
+		_lampMat = _basicMat("#ffffff", lampTex, "signon:lamp")
+		_jewelMat = _basicMat("#FFB347", null, "signon:jewels")
 		if parts.get("lamp") != null:
 			_setMat(parts.lamp, _lampMat)
 		if parts.get("jewels") != null:
@@ -308,7 +302,7 @@ func _buildWall(parent: Node3D, island: Node3D) -> void:
 			var m = o.get_active_material(si)
 			if m == null:
 				continue
-			var d = _udGet(m, "daToon")
+			var d = _matUd(m, "daToon")
 			var p = d.get("params") if d is Dictionary else null
 			if not (p is Dictionary) or not (float(p.get("metal", 0.0)) >= 0.6) or p.get("map") == null:
 				continue
@@ -655,14 +649,14 @@ func _pose(tt: float) -> void:
 	elif k >= 0.8:
 		lever.scale = Vector3.ONE
 
+# JS: lampMat.color.setScalar(0.1 + 1.75 level), jewelMat.color.set('#FFB347').multiplyScalar(...) (linear colour
+# scales; the DAMaterial basic shader multiplies uColor by uIntensity, the StandardMaterial3D fallback gets the
+# equivalent sRGB albedo).
 func _lamp(level: float) -> void:
 	if _lampMat != null:
-		var v := 0.1 + 1.75 * level
-		_lampMat.albedo_color = Color(v, v, v).linear_to_srgb()
+		_scaleMat(_lampMat, Color(1, 1, 1), 0.1 + 1.75 * level)
 	if _jewelMat != null:
-		var j := 0.12 + 2.2 * minf(level, 1.2)
-		var c := Color("#FFB347").srgb_to_linear()
-		_jewelMat.albedo_color = Color(c.r * j, c.g * j, c.b * j).linear_to_srgb()
+		_scaleMat(_jewelMat, Color("#FFB347"), 0.12 + 2.2 * minf(level, 1.2))
 	if _anchorId != null and game.lights != null:
 		game.lights.setAnchor(_anchorId, {"intensity": 2.4 * (0.08 + 0.92 * minf(level, 1.3))})
 
@@ -770,6 +764,40 @@ func _nearPlayer(r: float) -> bool:
 	return Vector2(pp.x - origin.x, pp.z - origin.z).length() < r
 
 # ------------------------------------------------------------------------------------------------ helpers (Godot glue)
+# JS new THREE.MeshBasicMaterial({ map, color }): an own copy of game.mats.basic() (a StandardMaterial3D unshaded
+# without materials.gd).
+func _basicMat(color: String, map, name: String) -> Material:
+	var M = game.mats
+	if M != null and M.has_method("basic"):
+		var o := {"name": name}
+		if map != null:
+			o.map = map
+		var b = M.basic(color, o)
+		if b != null:
+			return b.clone() if b.has_method("clone") else b.duplicate()
+	var m := StandardMaterial3D.new()
+	m.resource_name = name
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = Color(color)
+	m.albedo_texture = map
+	return m
+
+# material colour = base colour (sRGB) x k in linear space.
+static func _scaleMat(m: Material, base: Color, k: float) -> void:
+	if "intensity" in m and "color" in m:
+		m.color = base
+		m.intensity = k
+	elif m is BaseMaterial3D:
+		var c := base.srgb_to_linear()
+		m.albedo_color = Color(c.r * k, c.g * k, c.b * k).linear_to_srgb()
+
+# material.userData[key] (DAMaterial keeps userData as a property; other objects as the "userData" meta).
+static func _matUd(m, key: String):
+	var u = m.get("userData") if m is Object else null
+	if u is Dictionary:
+		return u.get(key)
+	return _udGet(m, key)
+
 func _anchor(id: String):
 	var lv = game.level
 	if lv == null:
@@ -815,14 +843,6 @@ func _setU(name: String, v) -> void:
 		game.machines._setU(name, v)
 
 func _getU(name: String):
-	var M = game.mats
-	if M != null:
-		if M.has_method("getUniform"):
-			return M.getUniform(name)
-		var U = M.get("uniforms")
-		if U is Dictionary and U.has(name):
-			var u = U[name]
-			return u.get("value") if (u is Dictionary or u is Object) else u
-	if RenderingServer.global_shader_parameter_get_list().has(StringName(name)):
-		return RenderingServer.global_shader_parameter_get(name)
+	if game.machines != null and game.machines.has_method("_getU"):
+		return game.machines._getU(name)
 	return null

@@ -1018,10 +1018,10 @@ func _start(free_: bool = false) -> bool:
 	_clearGun()
 	_gun = _makeGun(weaponId, bool(X.g(data, "upgraded", false)), dsig)
 	_makeCopies(weaponId, bool(X.g(data, "upgraded", false)), dsig)
-	# the flight into the clamp
-	if _flyer == null:
-		_flyer = DAU.node3d("uplink_flyer")
-	DAU.detach(_flyer)
+	# the flight into the clamp (a fresh carrier per flight: Godot nodes left out of the tree are never collected)
+	if _flyer != null:
+		X.dispose(_flyer)
+	_flyer = DAU.node3d("uplink_flyer")
 	g.scene.add_child(_flyer)
 	_flyer.position = hand
 	_flyer.quaternion = fromQ
@@ -1205,7 +1205,8 @@ func _land() -> void:
 		_gun.position = Vector3.ZERO
 		_gun.quaternion = Quaternion.IDENTITY
 		holder.add_child(_gun)
-	DAU.detach(_flyer)
+	X.dispose(_flyer)
+	_flyer = null
 	_jaw.target = 0.0
 	_jaw.v = -6.0
 	if g.audio != null:
@@ -1640,7 +1641,8 @@ func _toIdle(hard: bool) -> void:
 	if _fly != null:
 		_fly = null
 		if _flyer != null:
-			DAU.detach(_flyer)
+			X.dispose(_flyer)
+			_flyer = null
 	if hard:
 		if _take != null:
 			X.dispose(_take.obj)

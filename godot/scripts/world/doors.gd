@@ -129,6 +129,7 @@ func _load() -> void:
 		pivot = DAU.node3d("pivot")
 	else:
 		pivot.get_parent().remove_child(pivot)
+		DAU.traverse(pivot, func(o): o.owner = null)
 	if inst != null:
 		inst.free()
 	pivot.transform = Transform3D.IDENTITY

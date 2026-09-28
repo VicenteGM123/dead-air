@@ -348,9 +348,11 @@ static func _meshes(root: Node, out: Array, visibleOnly: bool = false) -> Array:
 		_meshes(c, out, visibleOnly)
 	return out
 
+# new THREE.Mesh(geometry, material): no shadow casting unless asked (three's castShadow default is false).
 static func _mi(mesh: Mesh, mat: Material, name: String = "") -> MeshInstance3D:
 	var m := MeshInstance3D.new()
 	m.mesh = mesh
+	m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if mat != null:
 		m.material_override = mat
 	if name != "":

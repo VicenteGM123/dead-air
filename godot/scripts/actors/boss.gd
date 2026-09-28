@@ -1243,7 +1243,7 @@ func _standInBody() -> Dictionary:
 		var n = lib.find_child(src, true, false) if lib != null else null
 		if n is Node3D:
 			var t: Transform3D = n.transform
-			DAU.detach(n)
+			_adopt(n)
 			n.transform = t
 			joints[parent].add_child(n)
 	put.call("standin_torso", "base")
@@ -1256,6 +1256,13 @@ func _standInBody() -> Dictionary:
 	var group := DAU.node3d("char:boss_baron")
 	group.add_child(rootJ)
 	return {"group": group, "rig": {"root": rootJ, "joints": joints}, "skinnedMesh": null, "standIn": true}
+
+# Takes a node out of an instanced GLB scene (parent and owner cleared on the whole branch).
+static func _adopt(n: Node) -> void:
+	DAU.detach(n)
+	var clear := func(o: Node) -> void:
+		o.owner = null
+	DAU.traverse(n, clear)
 
 # Instances a Blender runtime GLB: restores node userData ("da" extras), applies castShadow / visible flags and
 # converts every material through mats.fromSpec (SPEC §5.4/§5.5). Returns the glTF scene root (or null).
@@ -1319,7 +1326,7 @@ func _buildHead() -> Dictionary:
 		if grp == null and lib.get_child_count() > 0:
 			grp = lib.get_child(0) as Node3D
 		if grp != null:
-			DAU.detach(grp)
+			_adopt(grp)
 		lib.queue_free()
 	if grp == null:
 		grp = DAU.node3d("baron_head")
@@ -1545,7 +1552,7 @@ func _buildShimmer() -> void:
 	var fx := _loadRuntime(FX_GLB)
 	var cone = fx.find_child("baron_shimmer_cone", true, false) if fx != null else null
 	if cone is MeshInstance3D:
-		DAU.detach(cone)
+		_adopt(cone)
 		cone.material_override = mat
 		cone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		cone.rotation_order = EULER_ORDER_XYZ

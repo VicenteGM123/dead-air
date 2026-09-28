@@ -83,9 +83,11 @@ def computeSkin(V, I, R, segments, opts=None):
     # group reps by allowed set
     groups = {}
     ul, inv = np.unique(leafU, return_inverse=True)
+    oi = np.argsort(inv, kind='stable')
+    bounds = np.searchsorted(inv[oi], np.arange(len(ul) + 1))
     for li, u in enumerate(ul):
         L = LEAVES.get(int(u)) if u >= 0 else None
-        sel = np.nonzero(inv == li)[0]
+        sel = oi[bounds[li]:bounds[li + 1]]
         al = tuple(allowed(L))
         g = groups.setdefault(al, [[], []])
         g[0].append(sel)
@@ -149,13 +151,17 @@ def computeSkin(V, I, R, segments, opts=None):
     fixed = rigid | ~has
     iters = opts.smooth if opts.smooth is not None else 8
     lam = 0.5
-    A = W
-    starts = start[:-1][has]
+    A = W.astype(np.float32)
+    invdeg = (1.0 / np.maximum(deg, 1)).astype(np.float32)
     for _ in range(int(iters)):
-        S = np.zeros_like(A)
-        S[has] = np.add.reduceat(A[dst], starts, axis=0)
-        mean = S / np.maximum(deg, 1)[:, None]
-        Bf = A * (1 - lam) + mean * lam
+        Bf = np.empty_like(A)
+        for j in range(nb):
+            col = A[:, j]
+            if not col.any():
+                Bf[:, j] = col
+                continue
+            s = np.bincount(src, weights=col[dst], minlength=nw).astype(np.float32)
+            Bf[:, j] = col * (1 - lam) + s * invdeg * lam
         Bf[fixed] = A[fixed]
         A = Bf
 

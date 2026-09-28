@@ -301,9 +301,26 @@ static func toon(game, color: String, opts := {}):
 	return M.toon(color, opts)
 
 # ---- materials
-# THREE.MeshBasicMaterial with a LINEAR colour (new THREE.Color(r, g, b) / Color(hex).multiplyScalar(k)).
-# opts: map, transparent, opacity, additive, depthWrite, depthTest, side ('double'), fog, vertexColors, renderOrder
-static func basic(lin: Color, opts := {}) -> StandardMaterial3D:
+# new THREE.MeshBasicMaterial({...}) with a LINEAR colour (new THREE.Color(r, g, b) / Color(hex).multiplyScalar(k)):
+# a private copy of game.mats.basic(...) (a DAMaterial, cached there: the JS created one per model and mutates it),
+# or an unlit StandardMaterial3D while materials.gd is missing.
+# opts: map, transparent, opacity, additive, depthWrite, side ('double'), fog, vertexColors, renderOrder
+static func basic(game, lin: Color, opts := {}) -> Material:
+	var M = game.mats if game != null else null
+	if M != null and M.has_method("basic"):
+		var o := {}
+		for k in ["map", "transparent", "opacity", "depthWrite", "side", "fog", "vertexColors"]:
+			if opts.has(k):
+				o[k] = opts[k]
+		if opts.get("additive", false):
+			o.blending = "additive"
+		var dm = M.basic("#ffffff", o).clone()
+		dm.color = Color(lin.r, lin.g, lin.b).linear_to_srgb()
+		if opts.has("renderOrder"):
+			dm.render_priority = clampi(int(opts.renderOrder), -128, 127)
+			if dm.twin != null:
+				dm.twin.render_priority = dm.render_priority
+		return dm
 	var m := StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	var a: float = opts.get("opacity", 1.0)
@@ -320,8 +337,6 @@ static func basic(lin: Color, opts := {}) -> StandardMaterial3D:
 		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	if opts.get("depthWrite", true) == false:
 		m.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-	if opts.get("depthTest", true) == false:
-		m.no_depth_test = true
 	if opts.get("side", "front") == "double":
 		m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	if opts.get("fog", true) == false:
@@ -337,33 +352,46 @@ static func hexLin(hex: String, k := 1.0) -> Color:
 	var c := Color(hex).srgb_to_linear()
 	return Color(c.r * k, c.g * k, c.b * k)
 
-# THREE material .color / .emissive (LINEAR colours) of a basic / toon / character material: the zombie registry's
-# accessors (zombie_types.gd: BaseMaterial3D albedo/emission, ShaderMaterial Color uniforms sRGB, vec3 linear).
+# THREE material .color / .emissive (LINEAR colours) and .opacity of a basic / toon / character material:
+# DAMaterial facades (materials.gd: color / emissive are sRGB Colors there), else the zombie registry's accessors
+# (zombie_types.gd: BaseMaterial3D albedo/emission, ShaderMaterial Color uniforms sRGB, vec3 linear).
 static func setColorLin(mat: Material, lin: Color) -> void:
-	if mat != null:
+	if mat == null:
+		return
+	if mat is DAMaterial:
+		var a: float = (mat as DAMaterial).color.a
+		var c := Color(lin.r, lin.g, lin.b).linear_to_srgb()
+		(mat as DAMaterial).color = Color(c.r, c.g, c.b, a)
+	else:
 		ZombieTypes.matSetColor(mat, lin)
 
 static func getColorLin(mat: Material) -> Color:
+	if mat is DAMaterial:
+		return (mat as DAMaterial).color.srgb_to_linear()
 	var c = ZombieTypes.matGetColor(mat) if mat != null else null
 	return c if c is Color else Color(1, 1, 1)
 
 static func setOpacity(mat: Material, a: float) -> void:
 	if mat == null:
 		return
-	if mat is BaseMaterial3D:
+	if mat is DAMaterial:
+		(mat as DAMaterial).opacity = a
+	elif mat is BaseMaterial3D:
 		var c: Color = (mat as BaseMaterial3D).albedo_color
 		c.a = a
 		(mat as BaseMaterial3D).albedo_color = c
 	elif mat is ShaderMaterial:
-		var p := _param(mat, ["opacity", "uOpacity", "alpha"])
+		var p := _param(mat, ["uOpacity", "opacity", "alpha"])
 		if p != "":
 			mat.set_shader_parameter(p, a)
 
 static func getOpacity(mat: Material) -> float:
+	if mat is DAMaterial:
+		return (mat as DAMaterial).opacity
 	if mat is BaseMaterial3D:
 		return (mat as BaseMaterial3D).albedo_color.a
 	if mat is ShaderMaterial:
-		var p := _param(mat, ["opacity", "uOpacity", "alpha"])
+		var p := _param(mat, ["uOpacity", "opacity", "alpha"])
 		if p != "":
 			var v = mat.get_shader_parameter(p)
 			return float(v) if v != null else 1.0
@@ -373,11 +401,16 @@ static func getOpacity(mat: Material) -> float:
 static func setEmissiveLin(mat: Material, lin: Color) -> void:
 	if mat == null:
 		return
+	if mat is DAMaterial:
+		(mat as DAMaterial).emissive = Color(lin.r, lin.g, lin.b).linear_to_srgb()
+		return
 	if mat is BaseMaterial3D:
 		(mat as BaseMaterial3D).emission_enabled = true
 	ZombieTypes.matSetEmissive(mat, lin)
 
 static func getEmissiveLin(mat: Material):
+	if mat is DAMaterial:
+		return (mat as DAMaterial).emissive.srgb_to_linear()
 	return ZombieTypes.matGetEmissive(mat) if mat != null else null
 
 static var _paramCache := {}

@@ -20,7 +20,8 @@
 # Move input comes from input.move() (keyboard digital axes or the gamepad's analog left stick: a light push walks
 # slower, sprint is always full speed); look adds input.lookDelta().snapYaw/snapPitch (pad aim assist) unscaled.
 # Sounds: player:step {foot, sprint, surface} / jump / land / hurt are voiced by audio.gd's event hookups.
-# Renames (SPEC §3.2): History.get -> History.get_ (Object.get).
+# Renames (SPEC §3.2): History.get -> History.get_ (Object.get). The JS module scratch objects `_look` / `_move`
+# (named like the methods) are the members `_lookBuf` / `_moveBuf`.
 extends RefCounted
 
 var P: Dictionary = Config.T.player
@@ -193,8 +194,8 @@ var _faceYaw := 0.0
 var _stepIndex := 0
 var _damage := 0.0
 var _hidden := false
-var _look := {"yaw": 0.0, "pitch": 0.0, "snapYaw": 0.0, "snapPitch": 0.0}
-var _move := {"x": 0.0, "y": 0.0}
+var _lookBuf := {"yaw": 0.0, "pitch": 0.0, "snapYaw": 0.0, "snapPitch": 0.0}  # JS module scratch `_look`
+var _moveBuf := {"x": 0.0, "y": 0.0}  # JS module scratch `_move`
 
 func _init(g) -> void:
 	game = g
@@ -295,8 +296,10 @@ func teleport(x: float, z: float, yaw_ = null) -> void:
 
 func setHero(id) -> void:
 	var g = game
+	var old = null
 	if hero != null and _g(hero, "group") != null and hero.group.get_parent() == model:
-		model.remove_child(hero.group)
+		old = hero.group
+		model.remove_child(old)
 	heroId = id
 	hero = null
 	rig = null
@@ -306,6 +309,7 @@ func setHero(id) -> void:
 		if H != null:
 			hero = H.buildHero(id, g)
 	if hero == null:
+		_freeHero(old)
 		return
 	rig = hero.rig
 	animator = hero.animator
@@ -317,6 +321,13 @@ func setHero(id) -> void:
 	model.add_child(hero.group)
 	if weaponModel != null:
 		setWeaponModel(weaponModel)
+	_freeHero(old)
+
+# The replaced hero model (garbage in the JS): freed at the end of the frame, after anything still wanted (the
+# weapon holder, re-attached above; whatever another system moves during this frame's resets) left it.
+func _freeHero(old) -> void:
+	if old != null and is_instance_valid(old):
+		old.queue_free()
 
 func setWeaponModel(group) -> void:
 	if weaponModel != null and is_instance_valid(weaponModel) and weaponModel.get_parent() != null:
@@ -328,6 +339,8 @@ func setWeaponModel(group) -> void:
 	if game.mats != null and game.mats.has_method("applyHeroFade"):
 		game.mats.applyHeroFade(group)
 	setShadowCasting(group, 0.08)
+	if group.get_parent() != null:
+		group.get_parent().remove_child(group)
 	hero.slots.handR.add_child(group)
 	var m = DAU.byName(group, "muzzle")
 	_muzzle = m as Node3D if m is Node3D else null
@@ -351,7 +364,7 @@ func muzzle(_out = null) -> Vector3:
 		return Vector3(pos.x, pos.y + 1.3, pos.z)
 	if m.is_inside_tree():
 		return m.global_position
-	return pos + Vector3(0.0, 1.3, 0.0)
+	return Rig.worldTransform(m).origin
 
 func hurt(dmg: float, fromPos = null) -> bool:
 	var g = game
@@ -411,27 +424,25 @@ func update(dt: float) -> void:
 	var control := alive and not downed and not controlLocked
 	var override = g.render.get("cameraOverride") if g.render != null else null
 	if control and not _truthy(override) and g.state == "playing":
-		_lookUpdate()
+		_look()
 	if dt > 0.0 and control:
-		_moveUpdate(dt)
+		_move(dt)
 	if dt > 0.0:
 		_vitals(dt)
 	_animate(rdt)
 
-# JS _look()
-func _lookUpdate() -> void:
-	var d: Dictionary = game.input.lookDelta(_look)
+func _look() -> void:
+	var d: Dictionary = game.input.lookDelta(_lookBuf)
 	var k := 0.65 if ads else 1.0
 	# snapYaw / snapPitch: the gamepad aim-assist snap (already an exact angle, not scaled by ADS)
 	yaw = wrapAngle(yaw + float(d.yaw) * k + float(d.get("snapYaw", 0.0)))
 	pitch = clampf(pitch + float(d.pitch) * k + float(d.get("snapPitch", 0.0)), -1.25, 1.1)
 
-# JS _move(dt)
-func _moveUpdate(dt: float) -> void:
+func _move(dt: float) -> void:
 	var g = game
 	var input = g.input
 	# keyboard: digital -1/0/1 axes; gamepad: the analog left stick (magnitude <= 1 scales the speed)
-	var mv = input.move(_move) if input.has_method("move") else null
+	var mv = input.move(_moveBuf) if input.has_method("move") else null
 	var fwdIn: float = float(mv.y) if mv != null else (1.0 if input.down("forward") else 0.0) - (1.0 if input.down("back") else 0.0)
 	var strIn: float = float(mv.x) if mv != null else (1.0 if input.down("right") else 0.0) - (1.0 if input.down("left") else 0.0)
 	var mag := sqrt(fwdIn * fwdIn + strIn * strIn)

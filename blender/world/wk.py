@@ -5,12 +5,12 @@
 #
 #   Group(name) / Mesh(geo, mat)       dalib.scene (THREE.Group / THREE.Mesh)
 #   mesh(geo, mat, pos, rot, scale, cast, receive, name)   geo.mesh() of src/core/geo.js (cast=true by default)
-#   Mats                                mats.toon / glow / basic / glass / variant of src/core/materials.js as
-#                                       dalib.scene.Material specs (SPEC §5.5; glow intensity in opts.intensity)
+#   Mats                                game.mats: dalib.kit.Materials (mats.toon / glow / basic / glass / variant of
+#                                       src/core/materials.js as dalib.scene.Material specs, SPEC §5.5)
 #   tex_from_canvas(canvas, key)        a dalib.tex.Texture for a canvas drawn here (world surfaces, moon)
 #   mergeByMaterial(root)               geo.mergeByMaterial: static meshes merged per (material, castShadow)
 #   geometry(pos, nrm, uv, col, idx)    a BufferGeometry from raw arrays (batch buckets, stars)
-#   export_glb(root, path, name)        fresh scene -> scene.to_blender -> glTF (SPEC §5.3 settings)
+#   export_glb(root, path, name)        dalib.export.export_graph (fresh scene -> glTF, SPEC §5.3 settings)
 
 import json
 import os
@@ -23,6 +23,7 @@ from dalib import three_geo as THREE  # noqa: E402
 from dalib import geo  # noqa: E402,F401  (re-exported: roundedBox, box, cylinder, sphere, torus, plane, tube)
 from dalib import tex as dtex  # noqa: E402
 from dalib.scene import Group, Mesh, Material, FrontSide, BackSide, DoubleSide, AdditiveBlending  # noqa: E402,F401
+from dalib.kit import Materials  # noqa: E402
 from dalib.mathutils3 import Vector3, Matrix4, Quaternion, Euler, Color  # noqa: E402,F401
 
 PI = 3.141592653589793
@@ -84,63 +85,25 @@ def _opts(o):
     return o
 
 
-class Mats:
-    """src/core/materials.js factories as specs. Identical calls return the same Material (the JS caches them)."""
-
-    def __init__(self):
-        self._cache = {}
-
-    def _get(self, kind, color, opts, extra=None):
-        o = _opts(opts)
-        tex = o.get('map')
-        key = json.dumps([kind, color, {k: (('tex', v.key) if getattr(v, 'isTexture', False) else v) for k, v in o.items()},
-                          extra or {}], sort_keys=True, default=str)
-        m = self._cache.get(key)
-        if m is None:
-            fields = {}
-            if o.get('additive'):
-                fields['blending'] = AdditiveBlending
-                fields['transparent'] = True
-                fields['depthWrite'] = False
-            m = Material(kind, color, o, extra=extra, **fields)
-            if tex is not None:
-                m.map = tex
-            self._cache[key] = m
-        return m
+class Mats(Materials):
+    """game.mats of the world build: dalib.kit.Materials (the shared JS-factory shim: toon / glow / basic / glass /
+    variant, cached like the JS) + 'side' given by name + tagged() (extra top-level spec keys: surface, tile)."""
 
     def toon(self, color='#ffffff', opts=None):
-        return self._get('toon', color, opts)
+        return super().toon(color, _opts(opts))
 
     def glow(self, color='#ffffff', intensity=2, opts=None):
-        o = dict(opts or {})
-        o['intensity'] = intensity
-        return self._get('glow', color, o)
+        return super().glow(color, intensity, _opts(opts))
 
     def basic(self, color='#ffffff', opts=None):
-        return self._get('basic', color, opts)
+        return super().basic(color, _opts(opts))
 
     def glass(self, color='#CFE8FF', opts=None):
-        """mats.glass = toon(color, {rough .05, transparent, opacity, rim .6, rimColor #fff, rimPower 2, env 1.2,
-        depthWrite false, keepColor, side (default double), name 'glass'})."""
-        o = opts or {}
-        return self.toon(color, {
-            'rough': 0.05, 'transparent': True, 'opacity': o.get('opacity', 0.22), 'rim': 0.6, 'rimColor': '#ffffff',
-            'rimPower': 2.0, 'env': 1.2, 'depthWrite': False, 'keepColor': o.get('keepColor', True),
-            'side': o.get('side', 'double'), 'name': 'glass',
-        })
-
-    def variant(self, mat, extra):
-        if mat.kind != 'toon':
-            return mat
-        o = dict(mat.opts)
-        o.update(extra)
-        return self._get('toon', mat.hex, o, mat.extra or None)
+        return super().glass(color, _opts(opts))
 
     def tagged(self, mat, **extra):
-        """The same material with extra top-level spec keys (surface, tile)."""
-        e = dict(mat.extra or {})
-        e.update(extra)
-        return self._get(mat.kind, mat.hex, mat.opts, e)
+        mat.extra.update(extra)
+        return mat
 
 
 # ---------------------------------------------------------------------------------------------- merging
@@ -170,7 +133,7 @@ def mergeByMaterial(root, prefix='merged'):
     groups = {}
     order = []
     for o in found:
-        k = (id(o.material), bool(o.castShadow))
+        k = (id(o.material), bool(o.castShadow), bool(o.receiveShadow), o.renderOrder)
         if k not in groups:
             groups[k] = []
             order.append(k)
@@ -180,12 +143,12 @@ def mergeByMaterial(root, prefix='merged'):
         lst = groups[k]
         if len(lst) < 2:
             continue
-        wantColor = any(o.geometry.attributes.get('color') is not None for o in lst)
+        wantColor = bool(lst[0].material.vertexColors)
         geos = []
         for o in lst:
             g = o.geometry.clone()
             for a in list(g.attributes.keys()):
-                if a not in ('position', 'normal', 'uv', 'color'):
+                if a not in ('position', 'normal', 'uv', 'color') or (a == 'color' and not wantColor):
                     g.deleteAttribute(a)
             if g.attributes.get('uv') is None:
                 g.setAttribute('uv', np.zeros((g.attributes.position.count, 2)), 2)
@@ -205,7 +168,8 @@ def mergeByMaterial(root, prefix='merged'):
         mm = Mesh(mg, lst[0].material)
         mm.name = '%s_%d' % (prefix, len(root.children))
         mm.castShadow = k[1]
-        mm.receiveShadow = True
+        mm.receiveShadow = k[2]
+        mm.renderOrder = k[3]
         root.add(mm)
         n += len(lst) - 1
     return n
@@ -217,33 +181,13 @@ def texture_file(t):
 
 
 def export_glb(root, path, root_name=None, save_blend=False):
-    """Builds `root` into a fresh, empty Blender scene and exports it as GLB (SPEC §5.3)."""
-    import bpy
-    from dalib.scene import to_blender, assign_names
-    try:
-        from dalib import export as dexport
-    except Exception:
-        dexport = None
-    if dexport is not None and hasattr(dexport, 'export_graph'):
-        return dexport.export_graph(root, path, root_name=root_name, save_blend=save_blend)
-    bpy.ops.wm.read_factory_settings(use_empty=True)
-    names = assign_names(root, root_name)
-    to_blender(root, names, texture_file, root_name)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    kw = dict(filepath=path, export_format='GLB', export_extras=True, export_yup=True, export_apply=True,
-              export_attributes=True, export_texcoords=True, export_normals=True, export_materials='EXPORT',
-              export_image_format='AUTO', export_cameras=False, export_lights=False)
-    for k, v in (('export_vertex_color', 'ACTIVE'), ('export_all_vertex_colors', True)):
-        kw[k] = v
-    try:
-        bpy.ops.export_scene.gltf(**kw)
-    except TypeError:
-        kw.pop('export_vertex_color', None)
-        kw.pop('export_all_vertex_colors', None)
-        kw['export_colors'] = True
-        bpy.ops.export_scene.gltf(**kw)
+    """Builds `root` into a fresh, empty Blender scene and exports it as GLB (dalib.export.export_graph: SPEC §5.3
+    settings, textures linked to the shared PNGs of godot/assets/textures). save_blend -> blender/out/<name>.blend."""
+    from dalib import export as dexport
+    blend = None
     if save_blend:
-        out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'out')
-        os.makedirs(out, exist_ok=True)
-        bpy.ops.wm.save_as_mainfile(filepath=os.path.join(out, os.path.splitext(os.path.basename(path))[0] + '.blend'))
+        blend = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'out',
+                             'world_' + os.path.splitext(os.path.basename(path))[0] + '.blend')
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    dexport.export_graph(root, path, root_name=root_name, save_blend=blend)
     return path

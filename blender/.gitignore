@@ -1,0 +1,6 @@
+# generated / local
+out/
+_vendor/
+__pycache__/
+*.pyc
+*.blend1

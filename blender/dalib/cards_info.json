@@ -1,0 +1,755 @@
+{
+ "color_bars": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "plain: no station badge"
+ },
+ "test_card": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "variant: sleepy"
+ },
+ "stand_by": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "variant: awake (default sleepy Telly)"
+ },
+ "station_id": {
+  "w": 512,
+  "h": 384,
+  "fps": 12,
+  "alpha": false,
+  "opts": ""
+ },
+ "right_back": {
+  "w": 512,
+  "h": 384,
+  "fps": 12,
+  "alpha": false,
+  "opts": ""
+ },
+ "hullabaloo": {
+  "w": 512,
+  "h": 384,
+  "fps": 12,
+  "alpha": false,
+  "opts": ""
+ },
+ "baron": {
+  "w": 512,
+  "h": 384,
+  "fps": 20,
+  "alpha": false,
+  "opts": "variant: angry | frantic | goodnight (default laughing)"
+ },
+ "signoff_film": {
+  "w": 512,
+  "h": 384,
+  "fps": 15,
+  "alpha": false,
+  "opts": "time = seconds since the film started (loops at 20 s)"
+ },
+ "satellite_super": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": true,
+  "opts": ""
+ },
+ "telly_face": {
+  "w": 384,
+  "h": 288,
+  "fps": 12,
+  "alpha": false,
+  "opts": "expr: idle | sleepy | happy | o_mouth | wink | pout | glare | shiver | zzz | baron_glitch; look: [x, y] gaze -1..1"
+ },
+ "snow": {
+  "w": 512,
+  "h": 384,
+  "fps": 20,
+  "alpha": false,
+  "opts": "channel: OSD number for snow channels (3, 6, 10)"
+ },
+ "show_2": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "osd: false hides the channel number"
+ },
+ "show_4": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "osd: false hides the channel number"
+ },
+ "show_5": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "osd: false hides the channel number"
+ },
+ "show_7": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "osd: false hides the channel number"
+ },
+ "show_8": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "osd: false hides the channel number"
+ },
+ "show_9": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "osd: false hides the channel number"
+ },
+ "show_11": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "osd: false hides the channel number"
+ },
+ "show_12": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "osd: false hides the channel number"
+ },
+ "show_13": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "osd: false hides the channel number"
+ },
+ "promo_skip": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "osd: false hides the channel number"
+ },
+ "promo_roxy": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "osd: false hides the channel number"
+ },
+ "promo_penny": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "osd: false hides the channel number"
+ },
+ "promo_duke": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "osd: false hides the channel number"
+ },
+ "world_space": {
+  "w": 512,
+  "h": 288,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "world_beach": {
+  "w": 512,
+  "h": 288,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "world_volcano": {
+  "w": 512,
+  "h": 288,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "world_underwater": {
+  "w": 512,
+  "h": 288,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "world_desert": {
+  "w": 512,
+  "h": 288,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "world_moon": {
+  "w": 512,
+  "h": 288,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "poster_pump_37": {
+  "w": 384,
+  "h": 512,
+  "fps": 0,
+  "alpha": false,
+  "opts": "winked: true = Duke winks (after the gun is bought)"
+ },
+ "poster_mp7": {
+  "w": 384,
+  "h": 512,
+  "fps": 0,
+  "alpha": false,
+  "opts": "winked: true = Duke winks (after the gun is bought)"
+ },
+ "poster_m16a1": {
+  "w": 384,
+  "h": 512,
+  "fps": 0,
+  "alpha": false,
+  "opts": "winked: true = Duke winks (after the gun is bought)"
+ },
+ "poster_spooktacular": {
+  "w": 384,
+  "h": 512,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "poster_hootie": {
+  "w": 384,
+  "h": 512,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "poster_precinct13": {
+  "w": 384,
+  "h": 512,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "poster_boogie_down": {
+  "w": 384,
+  "h": 512,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "sponsor_poster_replay_ade": {
+  "w": 384,
+  "h": 512,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "sponsor_poster_wobble_up": {
+  "w": 384,
+  "h": 512,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "sponsor_poster_jump_cut": {
+  "w": 384,
+  "h": 512,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "sponsor_poster_roller_boogie": {
+  "w": 384,
+  "h": 512,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "sponsor_poster_double_vision": {
+  "w": 384,
+  "h": 512,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "sponsor_logo_replay_ade": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "sponsor_logo_wobble_up": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "sponsor_logo_jump_cut": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "sponsor_logo_roller_boogie": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "sponsor_logo_double_vision": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "sponsor_sign_replay_ade": {
+  "w": 512,
+  "h": 192,
+  "fps": 0,
+  "alpha": true,
+  "opts": "lit: false = unpowered (dark tubes)"
+ },
+ "sponsor_sign_wobble_up": {
+  "w": 512,
+  "h": 192,
+  "fps": 0,
+  "alpha": true,
+  "opts": "lit: false = unpowered (dark tubes)"
+ },
+ "sponsor_sign_jump_cut": {
+  "w": 512,
+  "h": 192,
+  "fps": 0,
+  "alpha": true,
+  "opts": "lit: false = unpowered (dark tubes)"
+ },
+ "sponsor_sign_roller_boogie": {
+  "w": 512,
+  "h": 192,
+  "fps": 0,
+  "alpha": true,
+  "opts": "lit: false = unpowered (dark tubes)"
+ },
+ "sponsor_sign_double_vision": {
+  "w": 512,
+  "h": 192,
+  "fps": 0,
+  "alpha": true,
+  "opts": "lit: false = unpowered (dark tubes)"
+ },
+ "weather_map": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "bare map: the magnets are separate cards (magnet_*)"
+ },
+ "magnet_sun": {
+  "w": 128,
+  "h": 128,
+  "fps": 0,
+  "alpha": true,
+  "opts": ""
+ },
+ "magnet_cloud": {
+  "w": 128,
+  "h": 128,
+  "fps": 0,
+  "alpha": true,
+  "opts": ""
+ },
+ "magnet_rain": {
+  "w": 128,
+  "h": 128,
+  "fps": 0,
+  "alpha": true,
+  "opts": ""
+ },
+ "magnet_bolt": {
+  "w": 128,
+  "h": 128,
+  "fps": 0,
+  "alpha": true,
+  "opts": ""
+ },
+ "magnet_storm": {
+  "w": 128,
+  "h": 128,
+  "fps": 0,
+  "alpha": true,
+  "opts": ""
+ },
+ "rundown_card_1": {
+  "w": 320,
+  "h": 200,
+  "fps": 0,
+  "alpha": false,
+  "opts": "star: true adds the gold-star sticker (the step is done)"
+ },
+ "rundown_card_2": {
+  "w": 320,
+  "h": 200,
+  "fps": 0,
+  "alpha": false,
+  "opts": "star: true adds the gold-star sticker (the step is done)"
+ },
+ "rundown_card_3": {
+  "w": 320,
+  "h": 200,
+  "fps": 0,
+  "alpha": false,
+  "opts": "star: true adds the gold-star sticker (the step is done)"
+ },
+ "rundown_card_4": {
+  "w": 320,
+  "h": 200,
+  "fps": 0,
+  "alpha": false,
+  "opts": "star: true adds the gold-star sticker (the step is done)"
+ },
+ "rundown_card_5": {
+  "w": 320,
+  "h": 200,
+  "fps": 0,
+  "alpha": false,
+  "opts": "star: true adds the gold-star sticker (the step is done)"
+ },
+ "rundown_card_6": {
+  "w": 320,
+  "h": 200,
+  "fps": 0,
+  "alpha": false,
+  "opts": "star: true adds the gold-star sticker (the step is done)"
+ },
+ "rundown_header": {
+  "w": 512,
+  "h": 128,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "letter_board": {
+  "w": 512,
+  "h": 320,
+  "fps": 0,
+  "alpha": false,
+  "opts": "signOff: true = the fallen SIGN OFF letters are back (after the easter egg)"
+ },
+ "tote_digits": {
+  "w": 512,
+  "h": 504,
+  "fps": 0,
+  "alpha": false,
+  "opts": "atlas: texture.userData.atlas.uv(ch) -> [u0, v0, u1, v1]",
+  "atlas": {
+   "chars": "0123456789$,",
+   "cols": 4,
+   "rows": 3,
+   "cellW": 128,
+   "cellH": 168,
+   "uv": {
+    "0": [
+     0,
+     0.6666666666666667,
+     0.25,
+     1
+    ],
+    "1": [
+     0.25,
+     0.6666666666666667,
+     0.5,
+     1
+    ],
+    "2": [
+     0.5,
+     0.6666666666666667,
+     0.75,
+     1
+    ],
+    "3": [
+     0.75,
+     0.6666666666666667,
+     1,
+     1
+    ],
+    "4": [
+     0,
+     0.33333333333333337,
+     0.25,
+     0.6666666666666667
+    ],
+    "5": [
+     0.25,
+     0.33333333333333337,
+     0.5,
+     0.6666666666666667
+    ],
+    "6": [
+     0.5,
+     0.33333333333333337,
+     0.75,
+     0.6666666666666667
+    ],
+    "7": [
+     0.75,
+     0.33333333333333337,
+     1,
+     0.6666666666666667
+    ],
+    "8": [
+     0,
+     0,
+     0.25,
+     0.33333333333333337
+    ],
+    "9": [
+     0.25,
+     0,
+     0.5,
+     0.33333333333333337
+    ],
+    "$": [
+     0.5,
+     0,
+     0.75,
+     0.33333333333333337
+    ],
+    ",": [
+     0.75,
+     0,
+     1,
+     0.33333333333333337
+    ]
+   }
+  }
+ },
+ "dust_rect": {
+  "w": 512,
+  "h": 256,
+  "fps": 0,
+  "alpha": true,
+  "opts": "rug decal: grey dust with the clean footprint where Telly stood"
+ },
+ "scenery_board_1": {
+  "w": 512,
+  "h": 112,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "scenery_board_2": {
+  "w": 512,
+  "h": 112,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "scenery_board_3": {
+  "w": 512,
+  "h": 112,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "scenery_board_4": {
+  "w": 512,
+  "h": 112,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "scenery_board_5": {
+  "w": 512,
+  "h": 112,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "scenery_board_6": {
+  "w": 512,
+  "h": 112,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "chyron": {
+  "w": 512,
+  "h": 128,
+  "fps": 0,
+  "alpha": true,
+  "opts": "text / sub: optional lines (the HUD may overlay its own DOM text instead)"
+ },
+ "hero_portrait_skip": {
+  "w": 256,
+  "h": 320,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "hero_portrait_roxy": {
+  "w": 256,
+  "h": 320,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "hero_portrait_penny": {
+  "w": 256,
+  "h": 320,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "hero_portrait_duke": {
+  "w": 256,
+  "h": 320,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "portrait_baron": {
+  "w": 256,
+  "h": 320,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "portrait_stormy_stu": {
+  "w": 256,
+  "h": 320,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "magazine_tv_weekly": {
+  "w": 384,
+  "h": 512,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "perpetua_ad": {
+  "w": 384,
+  "h": 512,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "ticket_stub": {
+  "w": 256,
+  "h": 128,
+  "fps": 0,
+  "alpha": true,
+  "opts": ""
+ },
+ "badge_crew": {
+  "w": 256,
+  "h": 160,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "cap_13": {
+  "w": 128,
+  "h": 128,
+  "fps": 0,
+  "alpha": true,
+  "opts": ""
+ },
+ "baron_dressing_room": {
+  "w": 256,
+  "h": 256,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "dressing_room_doors": {
+  "w": 256,
+  "h": 512,
+  "fps": 0,
+  "alpha": false,
+  "opts": "who: skip | roxy | penny | duke | baron (porthole with the painted interior)"
+ },
+ "logo_dead_air": {
+  "w": 512,
+  "h": 256,
+  "fps": 0,
+  "alpha": true,
+  "opts": ""
+ },
+ "flinch": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": false,
+  "opts": "fallback freeze-frame when no feed frame exists"
+ },
+ "sign_see_yourself": {
+  "w": 512,
+  "h": 256,
+  "fps": 0,
+  "alpha": false,
+  "opts": ""
+ },
+ "applause_sign": {
+  "w": 512,
+  "h": 160,
+  "fps": 0,
+  "alpha": false,
+  "opts": "lit: false = dark box"
+ },
+ "on_air": {
+  "w": 256,
+  "h": 96,
+  "fps": 0,
+  "alpha": false,
+  "opts": "lit: false = dark box"
+ },
+ "clock_face": {
+  "w": 256,
+  "h": 256,
+  "fps": 0,
+  "alpha": true,
+  "opts": "hands: false = dial only; time: [h, m, s] (default 11:59:58)"
+ },
+ "reel_label": {
+  "w": 128,
+  "h": 128,
+  "fps": 0,
+  "alpha": true,
+  "opts": "hub label for the quad tape reel"
+ },
+ "crack_overlay": {
+  "w": 512,
+  "h": 384,
+  "fps": 0,
+  "alpha": true,
+  "opts": "transparent cracked-glass overlay (boss screen at 66%)"
+ }
+}

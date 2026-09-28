@@ -335,6 +335,9 @@ func _asset(name: String) -> Node3D:
 		return null
 	var c: Node3D = n.duplicate()
 	c.transform = (n as Node3D).transform
+	var clear := func(o: Node) -> void:
+		o.owner = null
+	DAU.traverse(c, clear)
 	return c
 
 func _convertImported(n: Node) -> void:

@@ -55,6 +55,8 @@
 #   * try/catch around type hooks is gone (a GDScript runtime error aborts only the failing hook); a type build that
 #     fails (no z.group) falls back to a Tuned-In spawn like the JS catch.
 #   * Not ported (SPEC §0.2 plumbing): warmup() (Game.precompile), crowdInfo() / crowd batches, charOpt A/B flags.
+#   * boss.gd's wonder adapter: the JS boss replaced zombies.damage / raycast on the instance during the fight; here
+#     boss.gd sets _damageHook (z, amount, info) -> null | result and _raycastHook (o, d, max, ownHit) -> hit.
 #   * Node names: 'zombie:poppedHead' / 'zombie:stars' / 'zombie:tickets' use '_' (':' is invalid in Godot names).
 #   * Static geometry / canvases: the stun star, the ticket stub quad + its canvas and the ONE TAKE / feed eye
 #     textures are Blender runtime assets (blender/runtime/zombies.py -> res://assets/runtime/zombies/).
@@ -289,11 +291,13 @@ static func _poolMesh(scene: Node, mesh: Mesh, mat: Material, cap: int, name: St
 class StarRings extends RefCounted:
 	var mesh: MultiMeshInstance3D
 	var rings: Array = []
+	var S                       # the manager script (its static helpers)
 
 	func _init(scene: Node) -> void:
+		S = load("res://scripts/actors/zombies.gd")
 		var col: Color = Color(Config.PAL.marqueeGold).srgb_to_linear() * 1.8
 		var mat := ZombieTypes.basicMaterial(Color(col.r, col.g, col.b), null, "front", "zombieStars")
-		mesh = load("res://scripts/actors/zombies.gd")._poolMesh(scene, load("res://scripts/actors/zombies.gd").starMesh(), mat, 96, "zombie_stars")
+		mesh = S._poolMesh(scene, S.starMesh(), mat, 96, "zombie_stars")
 
 	# z: the zombie (its head position) ; life seconds ; n stars
 	func add(z: Dictionary, life: float, n := 3, r := 0.26) -> Dictionary:
@@ -323,9 +327,8 @@ class StarRings extends RefCounted:
 			if ring.t >= ring.life or z.get("head") == null or (z.dead and (grp == null or grp.get_parent() == null)):
 				rings.remove_at(i)
 				continue
-			var a: Vector3 = load("res://scripts/actors/zombies.gd")._worldPos(z.head)
+			var a: Vector3 = S._worldPos(z.head)
 			a.y += (z.headR if z.headR else 0.25) * 0.95
-			var S = load("res://scripts/actors/zombies.gd")
 			var grow: float = S.easeOutBack(ring.t / 0.25) * (1.0 - S.smooth((ring.t - ring.life + 0.25) / 0.25))
 			for s in ring.n:
 				if k >= 96:
@@ -342,9 +345,10 @@ class StarRings extends RefCounted:
 class Tickets extends RefCounted:
 	var mesh: MultiMeshInstance3D
 	var list: Array = []
+	var S                       # the manager script (its static helpers)
 
 	func _init(scene: Node) -> void:
-		var S = load("res://scripts/actors/zombies.gd")
+		S = load("res://scripts/actors/zombies.gd")
 		var quad: Mesh = S._glbMesh(S.TICKET_ASSET)
 		var threeUV := quad != null
 		if quad == null:           # asset not built yet: the same plane as an engine quad (Godot UVs, no flip)
@@ -363,7 +367,6 @@ class Tickets extends RefCounted:
 		list.clear()
 
 	func update(dt: float) -> void:
-		var S = load("res://scripts/actors/zombies.gd")
 		var k := 0
 		var mm := mesh.multimesh
 		for i in range(list.size() - 1, -1, -1):
@@ -411,6 +414,9 @@ var _camPos := Vector3.ZERO
 var _order: Array = []
 var _lureField = null
 var _lastArea = null
+# Boss fight adapters (boss.gd installs them; the JS replaced damage / raycast on the instance): see damage() / raycast().
+var _damageHook := Callable()
+var _raycastHook := Callable()
 
 func _init(g) -> void:
 	game = g
@@ -1440,6 +1446,11 @@ func _lod() -> void:
 # ------------------------------------------------------------------------------------------------ damage
 func damage(z, amount, info: Dictionary = {}) -> bool:
 	var g = game
+	# boss.gd's wonder adapter (the JS wrapped this method while the Baron fight runs): the boss proxy goes to him.
+	if _damageHook.is_valid():
+		var hr = _damageHook.call(z, amount, info)
+		if hr != null:
+			return _t(hr)
 	if z == null or z.dead or z.removed or not (float(amount) > 0.0):
 		return false
 	var frame: int = g.time.frame
@@ -1866,13 +1877,17 @@ func raycast(origin: Vector3, dir: Vector3, maxDist := 80.0):
 			bd = float(h.dist)
 			best = z
 			bestInfo = {"zone": h.get("zone"), "head": _t(h.get("head", false)), "mul": h.get("mul", 1.0)}
-	if best == null:
-		return null
-	best._rayFrame = frame
-	best._rayZone = bestInfo.zone
-	best._rayHead = bestInfo.head
-	best._rayMul = bestInfo.mul
-	return {"z": best, "head": bestInfo.head, "dist": bd, "point": origin + dir * bd, "zone": bestInfo.zone}
+	var res = null
+	if best != null:
+		best._rayFrame = frame
+		best._rayZone = bestInfo.zone
+		best._rayHead = bestInfo.head
+		best._rayMul = bestInfo.mul
+		res = {"z": best, "head": bestInfo.head, "dist": bd, "point": origin + dir * bd, "zone": bestInfo.zone}
+	# boss.gd's wonder adapter (the JS wrapped this method while the Baron fight runs): may return his proxy's hit.
+	if _raycastHook.is_valid():
+		return _raycastHook.call(origin, dir, maxDist, res)
+	return res
 
 func _rayZombie(z: Dictionary, o: Vector3, d: Vector3, maxD: float):
 	if z.hitTest is Callable and z.hitTest.is_valid():

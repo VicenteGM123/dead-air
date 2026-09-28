@@ -394,6 +394,10 @@ static func cloneHero(hero, skip: Array = []) -> Dictionary:
 	var group: Node3D = src.duplicate(0)      # no scripts, signals or groups: a frozen copy
 	var map := {}
 	_parallel(src, group, func(a, b): map[a] = b)
+	# the JS clone runs with every userData emptied (the copies carry none)
+	DAU.traverse(group, func(o):
+		if o.has_meta("userData"):
+			o.remove_meta("userData"))
 	for e in detached:
 		e[1].add_child(e[0])
 		e[1].move_child(e[0], mini(e[2], e[1].get_child_count() - 1))
@@ -630,6 +634,7 @@ func attachCostume(perkId: String, opts: Dictionary = {}) -> bool:
 	if not (prop is Node3D):
 		push_warning("[perks] costume build failed " + perkId)
 		return false
+	load("res://scripts/game/sponsors.gd").resolveRefs(prop, DAU.ud(prop))
 	var parts = DAU.ud(prop).get("parts", {})
 	var pieces := []
 	var slots = _f(hero, "slots")

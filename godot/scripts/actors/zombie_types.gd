@@ -367,15 +367,48 @@ static func applyVeils() -> void:
 		if not is_instance_valid(v):
 			continue
 		if not _baseSave.has(v):
-			_baseSave[v] = {"map": matGetMap(v), "color": matGetColor(v)}
+			_baseSave[v] = _veilSnapshot(v)
 		var base: Dictionary = _baseSave[v]
 		if stars:
-			matSetMap(v, starTex)
+			_veilSetMap(v, starTex)
 			matSetColor(v, Color(1.5, 1.4, 1.15))
 		else:
-			matSetMap(v, base.map)
-			if base.color != null:
-				matSetColor(v, base.color)
+			_veilRestore(v, base)
+
+# The veil material's map / colour state (JS: userData.zVeil = { map, color }). For a ShaderMaterial every parameter
+# the star swap touches is saved (char_material's basic: uColor, uMapMode, mapCL / mapRL, uMapFlip).
+const VEIL_PARAMS := ["uColor", "color", "uMapMode", "mapCL", "mapRL", "mapC", "mapR", "map", "use_map", "uMapFlip", "flip_y"]
+
+static func _veilSnapshot(v) -> Dictionary:
+	if v is ShaderMaterial and not _isDA(v):
+		var out := {}
+		for n in VEIL_PARAMS:
+			if _uniform(v, [n]) != null:
+				out[n] = v.get_shader_parameter(n)
+		return {"params": out}
+	return {"map": matGetMap(v), "color": matGetColor(v)}
+
+static func _veilRestore(v, base: Dictionary) -> void:
+	if base.has("params"):
+		for n in base.params:
+			v.set_shader_parameter(n, base.params[n])
+		return
+	matSetMap(v, base.map)
+	if base.color != null:
+		matSetColor(v, base.color)
+
+# veil.map = starTex (a canvas texture: sampled with three's flipY, clamped).
+static func _veilSetMap(v, t) -> void:
+	if v is ShaderMaterial and not _isDA(v) and _uniform(v, ["uMapMode"]) != null:
+		v.set_shader_parameter("uMapMode", 2 if t != null else 0)
+		for n in ["mapCL", "mapC"]:
+			if _uniform(v, [n]) != null:
+				v.set_shader_parameter(n, t)
+				break
+		if _uniform(v, ["uMapFlip"]) != null:
+			v.set_shader_parameter("uMapFlip", 1.0)
+		return
+	matSetMap(v, t)
 
 static func registerVeil(mat) -> void:
 	if mat == null or veils.has(mat) or matGetColor(mat) == null:
@@ -438,8 +471,8 @@ static func registerTint(mat) -> void:
 # --- material colour access (THREE mat.color / mat.emissive / mat.map; colours handled LINEAR like THREE) -------
 # BaseMaterial3D: albedo_color / emission (sRGB-encoded Colors) and albedo_texture. ShaderMaterial: the first
 # uniform among the names below; a `source_color` (Color-typed) uniform is sRGB-encoded, a vec3 one linear.
-const COLOR_UNIFORMS := ["color", "diffuse", "albedo", "albedo_color", "uColor", "base_color"]
-const EMISSIVE_UNIFORMS := ["emissive", "emission", "uEmissive", "emissive_color"]
+const COLOR_UNIFORMS := ["uColor", "color", "diffuse", "albedo", "albedo_color", "base_color"]
+const EMISSIVE_UNIFORMS := ["uEmissive", "emissive", "emission", "emissive_color"]
 const MAP_UNIFORMS := ["map", "albedo_texture", "texture_albedo", "uMap"]
 
 static func _uniform(mat: ShaderMaterial, names: Array):
@@ -471,7 +504,14 @@ static func _writeColor(mat: ShaderMaterial, u, c: Color) -> void:
 		_:
 			mat.set_shader_parameter(u.name, Vector3(c.r, c.g, c.b))
 
+# DAMaterial (scripts/core/da_material.gd: every materials.gd factory result) exposes the THREE facade
+# color / emissive (sRGB Colors) / map.
+static func _isDA(mat) -> bool:
+	return mat is ShaderMaterial and "kind" in mat and "color" in mat and "emissive" in mat
+
 static func matGetColor(mat):
+	if _isDA(mat):
+		return (mat.color as Color).srgb_to_linear()
 	if mat is BaseMaterial3D:
 		return (mat as BaseMaterial3D).albedo_color.srgb_to_linear()
 	if mat is ShaderMaterial:
@@ -480,7 +520,9 @@ static func matGetColor(mat):
 	return null
 
 static func matSetColor(mat, c: Color) -> void:
-	if mat is BaseMaterial3D:
+	if _isDA(mat):
+		mat.color = Color(c.r, c.g, c.b, (mat.color as Color).a).linear_to_srgb()
+	elif mat is BaseMaterial3D:
 		(mat as BaseMaterial3D).albedo_color = Color(c.r, c.g, c.b, (mat as BaseMaterial3D).albedo_color.a).linear_to_srgb()
 	elif mat is ShaderMaterial:
 		var u = _uniform(mat, COLOR_UNIFORMS)
@@ -488,6 +530,8 @@ static func matSetColor(mat, c: Color) -> void:
 			_writeColor(mat, u, c)
 
 static func matGetEmissive(mat):
+	if _isDA(mat):
+		return (mat.emissive as Color).srgb_to_linear()
 	if mat is BaseMaterial3D:
 		return (mat as BaseMaterial3D).emission.srgb_to_linear() if (mat as BaseMaterial3D).emission_enabled else null
 	if mat is ShaderMaterial:
@@ -496,7 +540,9 @@ static func matGetEmissive(mat):
 	return null
 
 static func matSetEmissive(mat, c: Color) -> void:
-	if mat is BaseMaterial3D:
+	if _isDA(mat):
+		mat.emissive = c.linear_to_srgb()
+	elif mat is BaseMaterial3D:
 		(mat as BaseMaterial3D).emission = c.linear_to_srgb()
 	elif mat is ShaderMaterial:
 		var u = _uniform(mat, EMISSIVE_UNIFORMS)
@@ -504,6 +550,8 @@ static func matSetEmissive(mat, c: Color) -> void:
 			_writeColor(mat, u, c)
 
 static func matGetMap(mat):
+	if _isDA(mat):
+		return mat.map
 	if mat is BaseMaterial3D:
 		return (mat as BaseMaterial3D).albedo_texture
 	if mat is ShaderMaterial:
@@ -512,7 +560,9 @@ static func matGetMap(mat):
 	return null
 
 static func matSetMap(mat, t) -> void:
-	if mat is BaseMaterial3D:
+	if _isDA(mat):
+		mat.map = t
+	elif mat is BaseMaterial3D:
 		(mat as BaseMaterial3D).albedo_texture = t
 	elif mat is ShaderMaterial:
 		var u = _uniform(mat, MAP_UNIFORMS)

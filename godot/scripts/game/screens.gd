@@ -81,14 +81,16 @@
 # GODOT IMPLEMENTATION NOTES (engine plumbing; behaviour as the JS)
 # * Passes: every feed target is a SubViewport sharing game.scene's World3D. An "HDR" target (_target(w, h, 4)) is a
 #   3D SubViewport (MSAA 4x, use_hdr_2d, its own Camera3D; the feed camera's transform / fov / near / far / cull
-#   mask are copied into it before each render) with a copy of the world Environment whose tone mapper is linear
-#   (exposure 1, no glow, no adjustments), so it holds the scene-linear HDR picture. A "picture" target
+#   mask are copied into it before each render) rendering game.scene's World3D with render.envFeed (the world
+#   environment: linear tone mapper at exposure 1, no bloom), so it holds the scene-linear HDR picture; the grade's
+#   exposure is GRADE.feed x the main tone-mapping exposure (JS renderer.toneMappingExposure, 1.05). A "picture" target
 #   (_target(w, h, 0, false)) is a 2D SubViewport whose full-rect ColorRect runs the grade (or flinch) canvas shader on
 #   an HDR target's texture and writes an 8-bit sRGB-encoded picture (like the DACanvas card textures, so the CRT
 #   material treats feeds and cards alike). Targets render with UPDATE_ONCE when a job is issued; HDR targets are
 #   created first so they render before the pictures that read them (Godot renders sibling viewports in activation
-#   order). _prePass() runs at the end of lateUpdate (JS: render.addPrePass); a job's result is committed (swap
-#   chain front, maps, frame counters) on the next frame, once the viewports have rendered.
+#   order). _prePass() runs from render.addPrePass like the JS (at the end of lateUpdate when render has none); a
+#   job's result is committed (swap chain front, maps, frame counters) on the next frame, once the viewports have
+#   rendered.
 # * Godot renders every viewport from one scene state, so what the JS toggled around a feed render cannot differ
 #   between the feed and the main view. _isolate(area) keeps the part that matters: it forces the feed's area root
 #   (+ its doors) visible for the frame the feed renders (the level's portal culling hides areas the player cannot
@@ -96,8 +98,9 @@
 #   (RenderingServer.frame_post_draw). Not ported: hiding the other area roots / building shell / street (a draw-call
 #   saving; walls hide them anyway), moving the sky dome to the feed camera, and uHeroFade = 1 / uFeedSkin = 1
 #   around the render (feedPass stays false here). Instead every feed
-#   camera also carries the FEED_LAYER bit in its cull mask (no node is on that layer), so a shader can tell a feed
-#   render with (CAMERA_VISIBLE_LAYERS & (1u << 19u)) != 0u. The zombie human-skin variants (_variant) use exactly
+#   camera also carries the FEED_LAYER bit (17) in its cull mask (no node is on that layer; render.gd uses bits 18
+#   / 19 as camera flags the same way), so a shader can tell a feed render with (CAMERA_VISIBLE_LAYERS & (1u << 17u))
+#   != 0u. The zombie human-skin variants (_variant) use exactly
 #   that: at zombie:spawn a zombie ShaderMaterial gets a copy of its shader with the JS skin swap applied to ALBEDO
 #   at the end of fragment() on feed cameras only (the material object, and every parameter other systems set on
 #   it, stays the same), and the static-snow eye meshes get a material_overlay that draws the normal eye on feed
@@ -145,7 +148,7 @@ const CAM_PROPS := ["bc_pedestal_camera", "bc_eng_camera"]
 const INSERT := {"pos": Vector3(200, 0, 200), "eye": [0.0, 1.34, 1.62], "look": [0.0, 1.13, 0.0], "fov": 34.0}
 const UP := Vector3(0, 1, 0)
 # Godot only: marker bit of the feed cameras' cull mask (see the header). No node lives on this layer.
-const FEED_LAYER := 19
+const FEED_LAYER := 17
 const KEEP := "__keep__"
 const CANVAS_PATH := "res://scripts/gfx/canvas2d.gd"
 const INSERT_GLB := "res://assets/runtime/screens/insert_studio.glb"
@@ -161,7 +164,7 @@ vec3 da_feed_skin( vec3 daFc ) {
 	return mix( daFc, daFl * vec3( 1.5, 0.9, 0.57 ) * 1.05, daFk );
 }
 """
-const SKIN_CALL := "\n\t{ // DA feed skin (screens.gd)\n\t\tif ( ( CAMERA_VISIBLE_LAYERS & ( 1u << 19u ) ) != 0u ) { ALBEDO = da_feed_skin( ALBEDO ); }\n\t}\n"
+const SKIN_CALL := "\n\t{ // DA feed skin (screens.gd)\n\t\tif ( ( CAMERA_VISIBLE_LAYERS & ( 1u << 17u ) ) != 0u ) { ALBEDO = da_feed_skin( ALBEDO ); }\n\t}\n"
 
 # The zombie eyes on feeds: the normal eye drawn over the static snow, on feed cameras only.
 const EYE_OVERLAY := """
@@ -169,7 +172,7 @@ shader_type spatial;
 render_mode unshaded, cull_back, depth_draw_never;
 uniform sampler2D tEye : source_color, filter_linear;
 void fragment() {
-	if ( ( CAMERA_VISIBLE_LAYERS & ( 1u << 19u ) ) == 0u ) { discard; }
+	if ( ( CAMERA_VISIBLE_LAYERS & ( 1u << 17u ) ) == 0u ) { discard; }
 	ALBEDO = texture( tEye, UV ).rgb;
 }
 """
@@ -384,6 +387,7 @@ var _white: ImageTexture = null
 var _black: ImageTexture = null
 var _flipped := {}               # source Mesh -> the same mesh turned by PI (faceFront)
 var _visSave: Array = []         # [node, visible, ...] forced visible by _isolate until the frame is drawn
+var _unPre = null                # render.addPrePass unsubscribe (null: _prePass runs from lateUpdate)
 var _uniformNames := {}          # Shader -> { uniform name: true }
 
 func _init(g) -> void:
@@ -420,6 +424,9 @@ func init() -> void:
 	_buildFeedCams()
 	_buildInsert()
 	_buildTargets()
+	var r = g.render
+	if r != null and r.has_method("addPrePass"):
+		_unPre = r.addPrePass(func(_r = null): _prePass())
 	var ev = g.events
 	ev.on("round:end", func(p): _onRoundEnd(p))
 	ev.on("round:start", func(p): _onRoundStart(p))
@@ -507,7 +514,8 @@ func lateUpdate(_dt = 0.0) -> void:
 	if insertRoot != null and insertSpin != 0.0:
 		insertRoot.rotation.y += insertSpin * dt
 	_schedule(dt)
-	_prePass()
+	if _unPre == null:
+		_prePass()
 
 # ------------------------------------------------------------------------------------------------ registry
 func register(mesh, groupId = "scr_decor", opts = {}):
@@ -1664,11 +1672,15 @@ func _buildHolder() -> void:
 		_camHolder.world_3d = game.scene.get_world_3d()
 	_holder.add_child(_camHolder)
 
-# A copy of the world's Environment for the feed cameras: same sky / ambient / fog, linear tone mapping at
-# exposure 1 and no glow / adjustments, so the HDR target holds the scene-linear picture the grade expects.
-# Re-synced once a second (other systems change the world environment over time). _exposure = the main
-# tone-mapping exposure (JS renderer.toneMappingExposure).
+# The feed cameras' Environment: render.envFeed (the shared World3D's environment: linear tone mapping at exposure
+# 1, no bloom). Without it, a copy of the world's Environment with those settings (re-synced once a second).
+# _exposure = the main tone-mapping exposure (JS renderer.toneMappingExposure).
 func _feedEnv():
+	var r = game.render
+	var ef = r.get("envFeed") if r != null else null
+	if ef is Environment:
+		_exposure = _toneExposure()
+		return ef
 	var now: float = float(game.time.realNow)
 	if _env != null and now - _envAt < 1.0 and now >= _envAt:
 		return _env
@@ -1682,7 +1694,7 @@ func _feedEnv():
 		_env = null
 		_exposure = 1.0
 		return null
-	_exposure = src.tonemap_exposure
+	_exposure = src.tonemap_exposure * _toneExposure()
 	var env: Environment = src.duplicate()
 	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
 	env.tonemap_exposure = 1.0
@@ -1691,6 +1703,21 @@ func _feedEnv():
 	env.adjustment_enabled = false
 	_env = env
 	return env
+
+# JS renderer.toneMappingExposure (render.js: 1.05; render.gd applies it in its grade shader, uExposure).
+func _toneExposure() -> float:
+	var r = game.render
+	if r == null:
+		return 1.05
+	var te = r.get("toneMappingExposure")
+	if te is float or te is int:
+		return float(te)
+	var gr = r.get("grade")
+	if gr is ShaderMaterial:
+		var v = gr.get_shader_parameter("uExposure")
+		if v is float or v is int:
+			return float(v)
+	return 1.05
 
 static func _drawCalls(t) -> int:
 	if t == null or not is_instance_valid(t.vp):
@@ -2230,9 +2257,13 @@ func _matSetMap(m, tex) -> void:
 	elif m is BaseMaterial3D:
 		m.albedo_texture = tex
 
+# Material uniforms: the DAMaterial facade (mat.uniforms.uX.value, like the JS) first, else shader parameters.
 func _uHas(m, name: String) -> bool:
 	if m == null:
 		return false
+	var F = m.get("uniforms")
+	if F is Dictionary and F.has(name):
+		return true
 	if m is ShaderMaterial:
 		var sh: Shader = m.shader
 		if sh == null:
@@ -2244,31 +2275,33 @@ func _uHas(m, name: String) -> bool:
 				names[u.name] = true
 			_uniformNames[sh] = names
 		return names.has(name)
-	var U = m.get("uniforms")
-	return U is Dictionary and U.has(name)
+	return false
 
 func _uGet(m, name: String):
+	var F = m.get("uniforms")
+	if F is Dictionary and F.has(name):
+		var u = F[name]
+		return u.get("value") if (u is Dictionary or u is Object) else u
 	if m is ShaderMaterial:
 		var v = m.get_shader_parameter(name)
 		if v == null and m.shader != null:
 			v = RenderingServer.shader_get_parameter_default(m.shader.get_rid(), name)
 		return v
-	var U = m.get("uniforms")
-	if U is Dictionary and U.has(name):
-		var u = U[name]
-		return u.get("value") if u is Dictionary else u
 	return null
 
 func _uSet(m, name: String, v) -> void:
+	var F = m.get("uniforms")
+	if F is Dictionary and F.has(name):
+		var u = F[name]
+		if u is Dictionary:
+			u["value"] = v
+			if m is ShaderMaterial:
+				m.set_shader_parameter(name, v)
+		elif u is Object:
+			u.set("value", v)
+		return
 	if m is ShaderMaterial:
 		m.set_shader_parameter(name, v)
-		return
-	var U = m.get("uniforms")
-	if U is Dictionary and U.has(name):
-		if U[name] is Dictionary:
-			U[name]["value"] = v
-		else:
-			U[name] = v
 
 # The CRT shader's local +z is the glass normal (see the header): meshes whose normals face -z are turned by PI
 # (mesh cached per source mesh) and the node turned back by PI, so the world surface and picture are identical.

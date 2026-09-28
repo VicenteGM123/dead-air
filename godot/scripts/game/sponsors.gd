@@ -524,10 +524,12 @@ func _buildSets() -> void:
 		if root == null:
 			continue
 		root.name = "set_" + perkId
+		resolveRefs(root, DAU.ud(root))
 		var camId := "sponsor_camera_eng" if perkId == "replay_ade" else "sponsor_camera_pedestal"
 		var camYaw := _yawTo(fit.camera[0], fit.camera[1], fit.mark[0], fit.mark[1])
 		var camProp: Node3D = g.props.place(parent, camId, {"pos": [fit.camera[0], 0, fit.camera[1]], "rotY": camYaw, "area": a.area, "tag": "sponsor_cam", "colliders": false})
 		camProp.rotation_order = EULER_ORDER_XYZ
+		resolveRefs(camProp, DAU.ud(camProp))
 		# slim collider (the tripod / pedestal core, not its whole footprint: the lobby and green-room lanes stay open)
 		var cr := 0.28 if perkId == "replay_ade" else 0.34
 		_m(_f(lv, "col"), "addBox", [[fit.camera[0] - cr, 0, fit.camera[1] - cr], [fit.camera[0] + cr, 1.8, fit.camera[1] + cr], {"tag": "sponsor_cam"}])
@@ -1132,6 +1134,7 @@ func _ensureGags() -> void:
 			G.gun = gun
 		var sk = _m(g.props, "build", ["costume_skates", {}])
 		if sk is Node3D:
+			resolveRefs(sk, DAU.ud(sk))
 			G.skates = sk
 		for o in G.values():
 			var root = o.grp if o is Dictionary else o
@@ -1675,6 +1678,8 @@ func _asMat(mat):
 			var so := mi.get_surface_override_material(0)
 			return so if so else mi.mesh.surface_get_material(0)
 		return null
+	if mat is Dictionary and mat.has("__material"):
+		mat = mat.__material
 	if mat is Dictionary:
 		var k := JSON.stringify(mat)
 		if _matCache.has(k):
@@ -1699,6 +1704,22 @@ func _swapMat(list, mat) -> void:
 			DAU.traverse(o, func(c):
 				if c is MeshInstance3D:
 					(c as MeshInstance3D).material_override = m)
+
+# {"__node": name} references still left in a prop's userData (props.gd resolves them when it builds the prop; this
+# only makes the runtime helpers independent of that). Returns v with the references replaced by the nodes.
+static func resolveRefs(root: Node, v):
+	if v is Dictionary:
+		if v.size() == 1 and v.has("__node"):
+			var nm := str(v.__node)
+			return root if String(root.name) == nm else root.find_child(nm, true, false)
+		for k in v.keys():
+			v[k] = resolveRefs(root, v[k])
+		return v
+	if v is Array:
+		for i in v.size():
+			v[i] = resolveRefs(root, v[i])
+		return v
+	return v
 
 # Dark set before Sign-On (Replay-Ade is lit from the start): swaps sign / tally / softbox / bulb materials.
 func setSponsorSetPower(set_node: Node3D, on: bool) -> void:
