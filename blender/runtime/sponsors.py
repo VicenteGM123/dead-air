@@ -14,8 +14,8 @@ geometry port (dalib.three_geo). Each asset is one GLB in godot/assets/runtime/s
     gag_gun.glb     fallbackGun   the placeholder revolver (used only when weapons.buildModel is missing)
     whistle.glb     _dropWhistle  the Replay-Ade referee whistle (body, mouth piece, gold cord loop)
 
-Materials are the JS factory specs (SPEC §5.5): toon(g, color, o) = g.mats.toon(color, {keepColor, rough: 0.4, ...o})
--> Material('toon', color, opts); the coffee pot body is g.mats.glass('#FFE8C8', {opacity: 0.35}).
+Materials are the JS factory specs (SPEC §5.5) from the kit's game (K.Game()): toon(g, color, o) =
+g.mats.toon(color, {keepColor, rough: 0.4, ...o}); the coffee pot body is g.mats.glass('#FFE8C8', {opacity: 0.35}).
 The gag meshes cast shadows (sponsors.js _ensureGags sets castShadow = true on every gag mesh).
 
 Run: python3 blender/build_all.py --only runtime   (build_all calls build(save_blend)), or standalone:
@@ -30,30 +30,20 @@ _BLENDER = os.path.dirname(_HERE)
 if _BLENDER not in sys.path:
     sys.path.insert(0, _BLENDER)
 
-from dalib import three_geo as THREE  # noqa: E402
-from dalib.scene import Group, Mesh, Material, DoubleSide  # noqa: E402,F401
+from dalib import kit as K  # noqa: E402
+from dalib.kit import THREE  # noqa: E402
+
+Group = THREE.Group
+Mesh = THREE.Mesh
 
 REPO = os.path.dirname(_BLENDER)
 OUT_DIR = os.path.join(REPO, 'godot', 'assets', 'runtime', 'sponsors')
+BLEND_OUT = os.path.join(_BLENDER, 'out')
 TAU = math.pi * 2
 
 
 # ------------------------------------------------------------------------------------------ materials (g.mats)
-class _Mats:
-    """The two JS material factories the gag builders call (the spec objects the Godot side rebuilds)."""
-
-    def toon(self, color, opts=None):
-        return Material('toon', color, dict(opts or {}))
-
-    def glass(self, color, opts=None):
-        return Material('glass', color, dict(opts or {}), type='MeshPhysicalMaterial', transparent=True)
-
-
-class _Game:
-    def __init__(self):
-        self.mats = _Mats()
-
-
+# `g` is the kit's static game (K.Game()): g.mats.toon / g.mats.glass return the JS factories' material specs.
 def toon(g, color, o=None):
     opts = {'keepColor': True, 'rough': 0.4}
     opts.update(o or {})
@@ -235,50 +225,18 @@ def _gags(g):
     return out
 
 
-def _export_glb(root, name, path, save_blend=False):
-    """Exports one graph as a GLB. Uses the kit's exporter (dalib.export) when present, else the SPEC §5.3 settings
-    directly (fresh empty scene, dalib.scene.to_blender, bpy glTF export)."""
-    try:
-        from dalib import export as EX  # noqa: F401
-    except Exception:
-        EX = None
-    for fn_name in ('export_graph', 'export_root', 'export_object'):
-        fn = getattr(EX, fn_name, None) if EX is not None else None
-        if callable(fn):
-            try:
-                return fn(root, path, name=name, save_blend=save_blend)
-            except TypeError:
-                pass
-    import bpy
-    from dalib import scene as SC
-    bpy.ops.wm.read_factory_settings(use_empty=True)
-    names = SC.assign_names(root, name)
-    SC.to_blender(root, names, None, name)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    kw = dict(filepath=path, export_format='GLB', export_extras=True, export_yup=True, export_apply=True,
-              export_attributes=True, export_texcoords=True, export_normals=True, export_materials='EXPORT',
-              export_image_format='AUTO')
-    try:
-        bpy.ops.export_scene.gltf(**kw, export_vertex_color='ACTIVE', export_all_vertex_colors=True)
-    except TypeError:
-        bpy.ops.export_scene.gltf(**kw)
-    if save_blend:
-        out = os.path.join(_BLENDER, 'out')
-        os.makedirs(out, exist_ok=True)
-        bpy.ops.wm.save_as_mainfile(filepath=os.path.join(out, 'runtime_sponsors_%s.blend' % name))
-    return path
-
-
 def build(save_blend=False, only=None):
     """Builds every sponsors runtime asset into godot/assets/runtime/sponsors/. Returns the written paths."""
-    g = _Game()
+    from dalib import export as EX
+    g = K.Game()
     written = []
     for name, root in _gags(g).items():
         if only and name not in only:
             continue
         root.name = name
         path = os.path.join(OUT_DIR, name + '.glb')
-        _export_glb(root, name, path, save_blend)
+        blend = os.path.join(BLEND_OUT, 'runtime_sponsors_%s.blend' % name) if save_blend else None
+        EX.export_graph(root, path, root_name=name, save_blend=blend)
         written.append(path)
         print('[runtime/sponsors] %s' % path)
     return written

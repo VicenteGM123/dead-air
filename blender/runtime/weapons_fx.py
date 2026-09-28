@@ -109,36 +109,20 @@ def fallbackTele(game):
 
 # ------------------------------------------------------------------------------------------ export
 def _export_glb(root, name, path, save_blend=False):
-    """One graph -> GLB (the kit's dalib.export when present, else SPEC §5.3 settings directly)."""
-    try:
-        from dalib import export as EX  # noqa: F401
-    except Exception:
-        EX = None
-    for fn_name in ('export_graph', 'export_root', 'export_object'):
-        fn = getattr(EX, fn_name, None) if EX is not None else None
-        if callable(fn):
-            try:
-                return fn(root, path, name=name, save_blend=save_blend)
-            except TypeError:
-                pass
-    import bpy
-    from dalib import scene as SC
-    bpy.ops.wm.read_factory_settings(use_empty=True)
-    names = SC.assign_names(root, name)
-    SC.to_blender(root, names, None, name)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    kw = dict(filepath=path, export_format='GLB', export_extras=True, export_yup=True, export_apply=True,
-              export_attributes=True, export_texcoords=True, export_normals=True, export_materials='EXPORT',
-              export_image_format='AUTO')
-    try:
-        bpy.ops.export_scene.gltf(**kw, export_vertex_color='ACTIVE', export_all_vertex_colors=True)
-    except TypeError:
-        bpy.ops.export_scene.gltf(**kw)
-    if save_blend:
-        out = os.path.join(_BLENDER, 'out')
-        os.makedirs(out, exist_ok=True)
-        bpy.ops.wm.save_as_mainfile(filepath=os.path.join(out, 'runtime_weapons_fx_%s.blend' % name))
+    """One graph -> GLB through the kit exporter (dalib.export.export_graph: SPEC §5.3 settings)."""
+    from dalib import export as EX
+    blend = os.path.join(_BLENDER, 'out', 'runtime_weapons_fx_%s.blend' % name) if save_blend else None
+    EX.export_graph(root, path, root_name=name, save_blend=blend)
     return path
+
+
+def _out_dir():
+    """godot/assets/runtime/weapons_fx (follows build_all --godot DIR through dalib.export.GODOT)."""
+    try:
+        from dalib import export as EX
+        return os.path.join(EX.GODOT, 'assets', 'runtime', 'weapons_fx')
+    except Exception:
+        return OUT_DIR
 
 
 def graphs():
@@ -151,16 +135,17 @@ def graphs():
     return out
 
 
-def build(save_blend=False, only=None):
+def build(save_blend=False, only=None, **_kw):
     """Builds every weapons/fx runtime asset into godot/assets/runtime/weapons_fx/. Returns the written paths."""
-    os.makedirs(OUT_DIR, exist_ok=True)
+    out_dir = _out_dir()
+    os.makedirs(out_dir, exist_ok=True)
     written = []
     for name, make in graphs().items():
         if only and name not in only:
             continue
         root = make()
         root.name = name
-        path = os.path.join(OUT_DIR, name + '.glb')
+        path = os.path.join(out_dir, name + '.glb')
         _export_glb(root, name, path, save_blend)
         written.append(path)
         print('[runtime/weapons_fx] %s' % path)

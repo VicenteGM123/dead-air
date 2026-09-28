@@ -2110,3 +2110,495 @@ static func drawBust(ctx, who: String, cx: float, cy: float, s: float, o: Dictio
 		"baron": bustBaron(ctx, o)
 		"stu": bustStu(ctx, o)
 	ctx.restore()
+
+# ---------------------------------------------------------------------------------------------------------
+# Hootie the owl (kids' show host)
+# ---------------------------------------------------------------------------------------------------------
+
+## Hootie at (cx, cy) = body centre, s = body half-height. o: { t, wave, blink }
+static func drawHootie(ctx, cx: float, cy: float, s: float, o: Dictionary = {}) -> void:
+	var t: float = _or(o.get("t"), 0.0)
+	ctx.save()
+	ctx.translate(cx, cy)
+	ctx.scale(s, s)
+	ctx.lineJoin = "round"
+	ctx.lineCap = "round"
+	var brown := "#8A5A3C"
+	var dark := "#5E3A24"
+	var belly := "#E9CFA0"
+	for sx in [-1, 1]:
+		ellipse(ctx, sx * 0.3, 1.02, 0.2, 0.09)
+		inked(ctx, "#F0A032", LW)
+	# wings (right one may wave)
+	var wave: float = _nn(o.get("wave"), 0.0)
+	for sx in [-1, 1]:
+		ctx.save()
+		ctx.translate(sx * 0.72, 0.05)
+		ctx.rotate(sx * (0.25 + (wave if sx > 0 else 0.0)))
+		ellipse(ctx, sx * 0.12, 0.3, 0.26, 0.55)
+		inked(ctx, linear(ctx, 0, -0.2, 0, 0.9, [brown, dark]), LW)
+		ctx.strokeStyle = alpha(darken(dark, 0.3), 0.6)
+		ctx.lineWidth = 0.035
+		for k in 3:
+			ctx.beginPath()
+			ctx.arc(sx * 0.12, 0.45 + k * 0.16, 0.18, 0.4, 2.7)
+			ctx.stroke()
+		ctx.restore()
+	# ear tufts + body
+	for sx in [-1, 1]:
+		poly(ctx, [sx * 0.34, -0.72, sx * 0.72, -1.22, sx * 0.72, -0.55])
+		inked(ctx, dark, LW)
+	ctx.beginPath()
+	ctx.ellipse(0, 0.05, 0.8, 0.98, 0, 0, TAU)
+	inked(ctx, radial(ctx, -0.2, -0.3, 0.1, 1.1, [lighten(brown, 0.15), brown, dark]), LW)
+	ctx.save()
+	ellipse(ctx, 0, 0.42, 0.52, 0.55)
+	inked(ctx, belly, LW * 0.8)
+	ctx.clip()
+	ctx.strokeStyle = alpha("#B88A58", 0.8)
+	ctx.lineWidth = 0.03
+	for j in 5:
+		for i in range(-3, 4):
+			ctx.beginPath()
+			ctx.arc(i * 0.16 + (j & 1) * 0.08, 0.05 + j * 0.16, 0.08, 0.2, PI - 0.2)
+			ctx.stroke()
+	ctx.restore()
+	# facial disc + eyes
+	ctx.beginPath()
+	ctx.moveTo(0, -0.35)
+	ctx.bezierCurveTo(-0.3, -0.75, -0.9, -0.6, -0.72, -0.18)
+	ctx.bezierCurveTo(-0.6, 0.18, -0.2, 0.2, 0, 0.12)
+	ctx.bezierCurveTo(0.2, 0.2, 0.6, 0.18, 0.72, -0.18)
+	ctx.bezierCurveTo(0.9, -0.6, 0.3, -0.75, 0, -0.35)
+	inked(ctx, "#D8B484", LW * 0.8)
+	var blink: bool = o.get("blink") if o.get("blink") != null else fract(t / 3.1) > 0.94
+	for sx in [-1, 1]:
+		var ex := sx * 0.33
+		var ey := -0.26
+		circle(ctx, ex, ey, 0.3)
+		inked(ctx, "#F4B63A", LW)
+		circle(ctx, ex, ey, 0.24)
+		fill(ctx, "#FFFDF6")
+		if blink:
+			ctx.beginPath()
+			ctx.arc(ex, ey - 0.05, 0.2, 0.3, PI - 0.3)
+			stroke(ctx, C.ink, 0.06)
+		else:
+			var px := ex + sin(t * 1.3) * 0.03
+			circle(ctx, px, ey + 0.02, 0.15)
+			fill(ctx, "#1E1428")
+			circle(ctx, px + 0.06, ey - 0.05, 0.05)
+			fill(ctx, "#FFFFFF")
+	poly(ctx, [-0.09, -0.06, 0.09, -0.06, 0, 0.14])
+	inked(ctx, "#F0901E", LW * 0.8)
+	# red bow tie
+	poly(ctx, [0, 0.3, -0.26, 0.18, -0.26, 0.44])
+	inked(ctx, C.red, LW * 0.8)
+	poly(ctx, [0, 0.3, 0.26, 0.18, 0.26, 0.44])
+	inked(ctx, C.red, LW * 0.8)
+	circle(ctx, 0, 0.31, 0.07)
+	inked(ctx, darken(C.red, 0.2), LW * 0.6)
+	for p in [[-0.18, 0.26], [0.18, 0.36], [-0.2, 0.38], [0.16, 0.24]]:
+		circle(ctx, p[0], p[1], 0.025)
+		fill(ctx, "#FFFFFF")
+	ctx.restore()
+
+# ---------------------------------------------------------------------------------------------------------
+# Pictograms (70s Olympic-sign style figures) and marker doodles
+# ---------------------------------------------------------------------------------------------------------
+
+## Stick-figure pictogram. (x, y) = hip, s = figure height. Angles in degrees from straight down
+## (+ = toward +x). p: { lean, head:[dx,dy], la:[upper, lower], ra, ll, rl }. Returns joint positions.
+static func picto(ctx, x: float, y: float, s: float, p: Dictionary, col) -> Dictionary:
+	var u := s / 10
+	var lw := u * 1.25
+	var lean: float = float(_or(p.get("lean"), 0)) * DEG
+	var nx := x + sin(lean) * 3.3 * u
+	var ny := y - cos(lean) * 3.3 * u
+	var seg := func(ax: float, ay: float, a: float, ln: float) -> Array:
+		return [ax + sin(a * DEG) * ln * u, ay + cos(a * DEG) * ln * u]
+	var limb := func(ax: float, ay: float, ang: Array, l1: float, l2: float) -> Array:
+		var m: Array = seg.call(ax, ay, float(ang[0]), l1)
+		return [m, seg.call(m[0], m[1], float(ang[1]), l2)]
+	var la: Array = limb.call(nx, ny, _or(p.get("la"), [-15, -10]), 1.9, 1.8)
+	var ra: Array = limb.call(nx, ny, _or(p.get("ra"), [15, 10]), 1.9, 1.8)
+	var ll: Array = limb.call(x, y, _or(p.get("ll"), [-8, -4]), 2.3, 2.3)
+	var rl: Array = limb.call(x, y, _or(p.get("rl"), [8, 4]), 2.3, 2.3)
+	ctx.save()
+	ctx.lineCap = "round"
+	ctx.lineJoin = "round"
+	ctx.strokeStyle = col
+	ctx.lineWidth = lw
+	ctx.beginPath()
+	ctx.moveTo(x, y); ctx.lineTo(nx, ny)
+	for ab in [la, ra]:
+		ctx.moveTo(nx, ny); ctx.lineTo(ab[0][0], ab[0][1]); ctx.lineTo(ab[1][0], ab[1][1])
+	for ab in [ll, rl]:
+		ctx.moveTo(x, y); ctx.lineTo(ab[0][0], ab[0][1]); ctx.lineTo(ab[1][0], ab[1][1])
+	ctx.stroke()
+	ctx.lineWidth = lw * 1.5
+	ctx.beginPath()
+	ctx.moveTo(x, y)
+	ctx.lineTo(lerpf(x, nx, 0.8), lerpf(y, ny, 0.8))
+	ctx.stroke()
+	var hd: Array = _or(p.get("head"), [0, 0])
+	var hx: float = nx + sin(lean) * 1.45 * u + hd[0] * u
+	var hy: float = ny - cos(lean) * 1.45 * u + hd[1] * u
+	circle(ctx, hx, hy, u * 1.05)
+	fill(ctx, col)
+	ctx.restore()
+	return {"head": [hx, hy], "neck": [nx, ny], "handL": la[1], "handR": ra[1], "elbowL": la[0], "elbowR": ra[0], "footL": ll[1], "footR": rl[1], "hip": [x, y], "u": u}
+
+## Hand-drawn marker helpers: every stroke gets a deterministic wobble and a streaky second pass.
+## Returns { ink(pts, close=false), ring(cx, cy, rx, ry=rx, n=26) -> pts, fillIn(pts, style) } (Callables).
+static func marker(ctx, r: Callable, col, lw: float) -> Dictionary:
+	var jit := lw * 0.35
+	var path := func(pts: Array, close: bool) -> void:
+		ctx.beginPath()
+		var i := 0
+		while i < pts.size():
+			var x: float = pts[i] + (r.call() - 0.5) * jit
+			var y: float = pts[i + 1] + (r.call() - 0.5) * jit
+			if i == 0:
+				ctx.moveTo(x, y)
+			else:
+				ctx.lineTo(x, y)
+			i += 2
+		if close:
+			ctx.closePath()
+	var ink := func(pts: Array, close: bool = false) -> void:
+		ctx.save()
+		ctx.lineCap = "round"
+		ctx.lineJoin = "round"
+		ctx.strokeStyle = col
+		ctx.lineWidth = lw
+		ctx.globalAlpha = 0.92
+		path.call(pts, close)
+		ctx.stroke()
+		ctx.globalAlpha = 0.35
+		ctx.lineWidth = lw * 0.55
+		path.call(pts, close)
+		ctx.stroke()
+		ctx.restore()
+	var ring := func(cx: float, cy: float, rx: float, ry = null, n: int = 26) -> Array:
+		if ry == null:
+			ry = rx
+		var pts := []
+		var a0: float = r.call() * TAU
+		for i in n + 3:
+			var a := a0 + (float(i) / n) * TAU
+			var px: float = cx + cos(a) * rx * (1 + (r.call() - 0.5) * 0.06)
+			var py: float = cy + sin(a) * ry * (1 + (r.call() - 0.5) * 0.06)
+			pts.append(px)
+			pts.append(py)
+		return pts
+	var fillIn := func(pts: Array, style) -> void:
+		ctx.save()
+		ctx.globalAlpha = 0.55
+		ctx.fillStyle = style
+		path.call(pts, true)
+		ctx.fill()
+		ctx.restore()
+	return {"ink": ink, "ring": ring, "fillIn": fillIn}
+
+# ---------------------------------------------------------------------------------------------------------
+# Products and icons
+# ---------------------------------------------------------------------------------------------------------
+
+## Sponsor product illustrations centred at (x, y), height s. (JS PRODUCTS map -> PRODUCTS[id].call(ctx, x, y, s, t))
+static func _prod_replay_ade(ctx, x: float, y: float, s: float, _t: float = 0.0) -> void:
+	var w := s * 0.42
+	var ol := s * 0.02
+	rr(ctx, x - w * 0.24, y - s * 0.5, w * 0.48, s * 0.12, s * 0.02)
+	inked(ctx, C.blue, ol)
+	ctx.beginPath()
+	ctx.moveTo(x - w * 0.2, y - s * 0.38)
+	ctx.lineTo(x + w * 0.2, y - s * 0.38)
+	ctx.quadraticCurveTo(x + w * 0.5, y - s * 0.3, x + w * 0.5, y - s * 0.12)
+	ctx.lineTo(x + w * 0.5, y + s * 0.42)
+	ctx.quadraticCurveTo(x + w * 0.5, y + s * 0.5, x + w * 0.4, y + s * 0.5)
+	ctx.lineTo(x - w * 0.4, y + s * 0.5)
+	ctx.quadraticCurveTo(x - w * 0.5, y + s * 0.5, x - w * 0.5, y + s * 0.42)
+	ctx.lineTo(x - w * 0.5, y - s * 0.12)
+	ctx.quadraticCurveTo(x - w * 0.5, y - s * 0.3, x - w * 0.2, y - s * 0.38)
+	inked(ctx, linear(ctx, x - w / 2, 0, x + w / 2, 0, ["#FFE45A", "#F4C81E", "#E0A816"]), ol)
+	rr(ctx, x - w * 0.5, y - s * 0.02, w, s * 0.3, 0)
+	inked(ctx, C.blue, ol)
+	ctx.fillStyle = "#FFE45A"
+	for k in [-1.0, 0.15]:
+		poly(ctx, [x + k * w * 0.3, y + s * 0.13, x + (k + 0.45) * w * 0.3, y + s * 0.04, x + (k + 0.45) * w * 0.3, y + s * 0.22])
+		ctx.fill()
+	ctx.fillStyle = "rgba(255,255,255,0.45)"
+	rr(ctx, x - w * 0.36, y - s * 0.28, w * 0.1, s * 0.62, w * 0.05)
+	ctx.fill()
+
+static func _prod_wobble_up(ctx, x: float, y: float, s: float, t: float = 0.0) -> void:
+	var w := s * 0.9
+	var ol := s * 0.02
+	var wob := sin(t * 9) * 0.04
+	ellipse(ctx, x, y + s * 0.38, w * 0.62, s * 0.1)
+	inked(ctx, "#F4F1E8", ol)
+	ctx.save()
+	ctx.translate(x, y + s * 0.35)
+	ctx.transform(1, 0, wob, 1, 0, 0)
+	ctx.scale(1 + wob, 1 - wob)
+	ctx.beginPath()
+	ctx.moveTo(-w * 0.5, 0)
+	ctx.bezierCurveTo(-w * 0.52, -s * 0.5, -w * 0.3, -s * 0.72, 0, -s * 0.72)
+	ctx.bezierCurveTo(w * 0.3, -s * 0.72, w * 0.52, -s * 0.5, w * 0.5, 0)
+	ctx.closePath()
+	inked(ctx, linear(ctx, 0, -s * 0.72, 0, 0, ["#7CF29A", "#1FB45A", "#0E7A3A"]), ol)
+	ctx.strokeStyle = "rgba(10,80,40,0.45)"
+	ctx.lineWidth = s * 0.015
+	for k in [-0.32, -0.12, 0.12, 0.32]:
+		ctx.beginPath()
+		ctx.moveTo(k * w, -s * 0.02)
+		ctx.quadraticCurveTo(k * w * 0.95, -s * 0.4, k * w * 0.5, -s * 0.66)
+		ctx.stroke()
+	ellipse(ctx, 0, -s * 0.66, w * 0.14, s * 0.05)
+	inked(ctx, "#0E7A3A", ol * 0.8)
+	ctx.fillStyle = "rgba(255,255,255,0.55)"
+	ellipse(ctx, -w * 0.25, -s * 0.45, w * 0.06, s * 0.14, 0.3)
+	ctx.fill()
+	ctx.restore()
+
+static func _prod_jump_cut(ctx, x: float, y: float, s: float, _t: float = 0.0) -> void:
+	var w := s * 0.62
+	var ol := s * 0.02
+	ctx.beginPath()
+	ctx.arc(x + w * 0.45, y + s * 0.05, s * 0.2, -1.2, 1.2)
+	stroke(ctx, C.ink, s * 0.09)
+	stroke(ctx, C.orange, s * 0.06)
+	ctx.beginPath()
+	ctx.moveTo(x - w * 0.3, y - s * 0.22)
+	ctx.lineTo(x + w * 0.3, y - s * 0.22)
+	ctx.bezierCurveTo(x + w * 0.62, y + s * 0.05, x + w * 0.55, y + s * 0.46, x + w * 0.36, y + s * 0.46)
+	ctx.lineTo(x - w * 0.36, y + s * 0.46)
+	ctx.bezierCurveTo(x - w * 0.55, y + s * 0.46, x - w * 0.62, y + s * 0.05, x - w * 0.3, y - s * 0.22)
+	inked(ctx, "rgba(210,235,255,0.55)", ol)
+	ctx.save()
+	ctx.clip()
+	ctx.fillStyle = linear(ctx, 0, y, 0, y + s * 0.46, ["#8A4A22", "#5A2A12"])
+	ctx.fillRect(x - w, y + s * 0.02, w * 2, s * 0.5)
+	ctx.restore()
+	rr(ctx, x - w * 0.36, y - s * 0.36, w * 0.72, s * 0.16, s * 0.05)
+	inked(ctx, C.orange, ol)
+	circle(ctx, x, y - s * 0.4, s * 0.05)
+	inked(ctx, C.ink, ol * 0.6)
+	poly(ctx, [x + s * 0.02, y + s * 0.08, x - s * 0.1, y + s * 0.26, x - s * 0.01, y + s * 0.26, x - s * 0.05, y + s * 0.42, x + s * 0.1, y + s * 0.2, x + s * 0.01, y + s * 0.2])
+	inked(ctx, "#FFD23A", ol * 0.6)
+	ctx.strokeStyle = "rgba(255,255,255,0.75)"
+	ctx.lineWidth = s * 0.03
+	for k in [-0.12, 0.02, 0.16]:
+		ctx.beginPath()
+		ctx.moveTo(x + k * s, y - s * 0.48)
+		ctx.bezierCurveTo(x + (k - 0.06) * s, y - s * 0.56, x + (k + 0.06) * s, y - s * 0.62, x + k * s, y - s * 0.7)
+		ctx.stroke()
+
+static func _prod_roller_boogie(ctx, x: float, y: float, s: float, _t: float = 0.0) -> void:
+	var ol := s * 0.02
+	ctx.beginPath()
+	ctx.moveTo(x - s * 0.18, y - s * 0.46)
+	ctx.lineTo(x + s * 0.12, y - s * 0.46)
+	ctx.lineTo(x + s * 0.14, y - s * 0.05)
+	ctx.quadraticCurveTo(x + s * 0.42, y - s * 0.02, x + s * 0.44, y + s * 0.14)
+	ctx.lineTo(x + s * 0.44, y + s * 0.2)
+	ctx.lineTo(x - s * 0.3, y + s * 0.2)
+	ctx.lineTo(x - s * 0.3, y - s * 0.02)
+	ctx.quadraticCurveTo(x - s * 0.22, y - s * 0.2, x - s * 0.18, y - s * 0.46)
+	inked(ctx, linear(ctx, 0, y - s * 0.46, 0, y + s * 0.2, ["#FFFFFF", "#EDE4D0"]), ol)
+	ctx.fillStyle = C.red
+	ctx.fillRect(x - s * 0.2, y - s * 0.3, s * 0.34, s * 0.05)
+	ctx.fillRect(x - s * 0.23, y - s * 0.2, s * 0.37, s * 0.05)
+	rr(ctx, x - s * 0.34, y + s * 0.18, s * 0.82, s * 0.07, s * 0.03)
+	inked(ctx, "#D8DCE6", ol)
+	ellipse(ctx, x + s * 0.5, y + s * 0.2, s * 0.06, s * 0.05)
+	inked(ctx, C.pink, ol)
+	var wc := ["#E23B3B", "#F4E03A", "#52D24A", "#3A58E4"]
+	for i in wc.size():
+		circle(ctx, x - s * 0.24 + i * s * 0.22 - 0.0, y + s * 0.33, s * 0.09)
+		inked(ctx, wc[i], ol)
+		circle(ctx, x - s * 0.24 + i * s * 0.22, y + s * 0.33, s * 0.03)
+		fill(ctx, "#F4F1E8")
+
+static func _prod_double_vision(ctx, x: float, y: float, s: float, _t: float = 0.0) -> void:
+	var ol := s * 0.02
+	ctx.save()
+	ctx.translate(x, y)
+	ctx.rotate(-0.35)
+	ctx.beginPath()
+	ctx.moveTo(-s * 0.16, -s * 0.46)
+	ctx.lineTo(s * 0.16, -s * 0.46)
+	ctx.lineTo(s * 0.12, s * 0.3)
+	ctx.lineTo(-s * 0.12, s * 0.3)
+	ctx.closePath()
+	inked(ctx, "#F4F1E8", ol)
+	ctx.save()
+	ctx.clip()
+	var bc := [C.red, "#F4F1E8", C.blue]
+	for i in bc.size():
+		ctx.fillStyle = bc[i]
+		ctx.fillRect(-s * 0.2, -s * 0.34 + i * s * 0.18, s * 0.4, s * 0.1)
+	ctx.restore()
+	ctx.beginPath()
+	ctx.moveTo(-s * 0.16, -s * 0.46)
+	ctx.lineTo(s * 0.16, -s * 0.46)
+	stroke(ctx, C.ink, ol)
+	rr(ctx, -s * 0.07, s * 0.3, s * 0.14, s * 0.1, s * 0.02)
+	inked(ctx, C.red, ol)
+	ctx.restore()
+	ctx.save()
+	ctx.translate(x + s * 0.2, y + s * 0.05)
+	ctx.rotate(0.5)
+	rr(ctx, -s * 0.035, -s * 0.46, s * 0.07, s * 0.62, s * 0.03)
+	inked(ctx, C.cyan, ol)
+	rr(ctx, -s * 0.05, -s * 0.52, s * 0.1, s * 0.16, s * 0.02)
+	inked(ctx, "#FFFFFF", ol * 0.8)
+	ctx.fillStyle = C.magenta
+	for i in 4:
+		ctx.fillRect(-s * 0.04 + i * s * 0.02, -s * 0.52, s * 0.012, s * 0.14)
+	ctx.restore()
+
+static var PRODUCTS := {
+	"replay_ade": _prod_replay_ade,
+	"wobble_up": _prod_wobble_up,
+	"jump_cut": _prod_jump_cut,
+	"roller_boogie": _prod_roller_boogie,
+	"double_vision": _prod_double_vision,
+}
+
+static func sunIcon(ctx, x: float, y: float, r: float, face: bool = true, rot: float = 0.0) -> void:
+	ctx.save()
+	ctx.translate(x, y)
+	ctx.rotate(rot)
+	starPath(ctx, 0, 0, r, r * 0.72, 12, 0)
+	inked(ctx, "#FFB020", r * 0.08)
+	circle(ctx, 0, 0, r * 0.62)
+	inked(ctx, radial(ctx, -r * 0.2, -r * 0.2, 0, r * 0.7, ["#FFF3A0", "#FFD23A", "#F4B020"]), r * 0.07)
+	ctx.restore()
+	if face:
+		for s in [-1, 1]:
+			circle(ctx, x + s * r * 0.2, y - r * 0.08, r * 0.07)
+			fill(ctx, C.ink)
+		ctx.beginPath()
+		ctx.arc(x, y + r * 0.02, r * 0.26, 0.4, PI - 0.4)
+		stroke(ctx, C.ink, r * 0.07)
+
+static func boltPath(ctx, x: float, y: float, s: float) -> void:
+	poly(ctx, [x + s * 0.1, y - s * 0.5, x - s * 0.3, y + s * 0.06, x - s * 0.02, y + s * 0.06, x - s * 0.14, y + s * 0.5, x + s * 0.3, y - s * 0.1, x + s * 0.02, y - s * 0.1, x + s * 0.16, y - s * 0.5])
+
+static func towerIcon(ctx, x: float, y: float, h: float, col = null) -> void:
+	if col == null:
+		col = C.red
+	var w := h * 0.36
+	ctx.save()
+	ctx.lineJoin = "round"
+	ctx.lineCap = "round"
+	ctx.strokeStyle = col
+	ctx.lineWidth = maxf(1.5, h * 0.06)
+	ctx.beginPath()
+	ctx.moveTo(x - w / 2, y)
+	ctx.lineTo(x, y - h)
+	ctx.lineTo(x + w / 2, y)
+	for k in range(1, 5):
+		var yy := y - (h * k) / 5
+		var hw := (w / 2) * (1 - k / 5.0)
+		ctx.moveTo(x - hw, yy)
+		ctx.lineTo(x + hw, yy)
+		if k < 4:
+			ctx.lineTo(x - (w / 2) * (1 - (k + 1) / 5.0), y - (h * (k + 1)) / 5)
+	ctx.stroke()
+	for rr0 in [0.18, 0.3]:
+		ctx.beginPath()
+		ctx.arc(x, y - h, h * rr0, -2.4, -0.74)
+		ctx.stroke()
+	circle(ctx, x, y - h, h * 0.06)
+	fill(ctx, col)
+	ctx.restore()
+
+# ---------------------------------------------------------------------------------------------------------
+# Broadcast sources (4:3 TV cards)
+# ---------------------------------------------------------------------------------------------------------
+
+## Green on-screen channel number, top-right.
+static func osd(ctx, w: float, h: float, txt: String, px = null) -> void:
+	if px == null:
+		px = h * 0.17
+	ctx.save()
+	setFont(ctx, px, FONT.osd)
+	ctx.textAlign = "right"
+	ctx.textBaseline = "top"
+	var x := w * 0.955
+	var y := h * 0.035
+	ctx.fillStyle = "rgba(8,24,12,0.7)"
+	ctx.fillText(txt, x + px * 0.06, y + px * 0.06)
+	ctx.shadowColor = "rgba(92,255,110,0.85)"
+	ctx.shadowBlur = px * 0.25
+	ctx.fillStyle = C.osd
+	ctx.fillText(txt, x, y)
+	ctx.shadowBlur = 0
+	ctx.fillStyle = "rgba(220,255,225,0.55)"
+	ctx.fillText(txt, x, y - px * 0.02)
+	ctx.restore()
+
+## Streaky TV snow frame k (256x192, generated with ImageData, cached).
+static func snowFrame(k: int) -> DACanvas:
+	return layer("snow:%d" % k, 256, 192, func(g, w, h):
+		var W := int(w)
+		var H := int(h)
+		var img: Dictionary = g.createImageData(W, H)
+		var d: PackedByteArray = img.data
+		var r := Rng.Mulberry32.new(k * 7919 + 3)
+		for y in H:
+			var gain := 0.7 + r.next() * 0.5 + (0.6 if r.next() < 0.03 else 0.0)
+			for x in W:
+				var a1 := r.next()
+				var a2 := r.next()
+				var a3 := r.next()
+				var v := minf(255.0, (a1 * a2 * 1.3 + a3 * 0.45) * 255.0 * gain)
+				var i := (y * W + x) * 4
+				d[i] = clampi(int(jround(v * 0.94 + 10)), 0, 255)
+				d[i + 1] = clampi(int(jround(v * 0.96 + 8)), 0, 255)
+				d[i + 2] = clampi(int(jround(minf(255.0, v + 22))), 0, 255)
+				d[i + 3] = 255
+		img.data = d
+		g.putImageData(img, 0, 0))
+
+static func drawSnow(ctx, w: float, h: float, k: int) -> void:
+	ctx.save()
+	ctx.imageSmoothingEnabled = false
+	ctx.drawImage(snowFrame(k % 6), 0, 0, w, h)
+	ctx.restore()
+	vignette(ctx, w, h, 0.35, "20,14,36", 0.5)
+
+static func drawBars(ctx, w: float, h: float, o: Dictionary = {}) -> void:
+	var top := jround(h * 0.66)
+	var mid := jround(h * 0.08)
+	var bw := w / 7
+	for i in BARS.size():
+		var c: String = BARS[i]
+		ctx.fillStyle = linear(ctx, 0, 0, 0, top, [lighten(c, 0.12), c, c, darken(c, 0.08)])
+		ctx.fillRect(floorf(i * bw), 0, ceilf(bw) + 1, top)
+	var dark := "#241C38"
+	var row2 := [BARS[6], dark, BARS[4], dark, BARS[2], dark, BARS[0]]
+	for i in row2.size():
+		ctx.fillStyle = row2[i]
+		ctx.fillRect(floorf(i * bw), top, ceilf(bw) + 1, mid)
+	var y2 := top + mid
+	var segs := [["#1F3F7A", 1.25], ["#F4F1E8", 1.25], ["#4E2C80", 1.25], [dark, 1.25], ["#1A1428", 1.0 / 3], [dark, 1.0 / 3], ["#3A3252", 1.0 / 3], [dark, 1.0]]
+	var x := 0.0
+	for sg in segs:
+		ctx.fillStyle = sg[0]
+		ctx.fillRect(floorf(x), y2, ceilf(sg[1] * bw) + 1, h - y2)
+		x += sg[1] * bw
+	# painted-card touches: soft seams, gloss, pillow vignette
+	ctx.fillStyle = "rgba(30,20,50,0.12)"
+	for i in range(1, 7):
+		ctx.fillRect(jround(i * bw) - 1, 0, 2, top)
+	ctx.fillStyle = linear(ctx, 0, 0, 0, top * 0.35, ["rgba(255,255,255,0.22)", "rgba(255,255,255,0)"])
+	ctx.fillRect(0, 0, w, top * 0.35)
+	ctx.fillStyle = linear(ctx, 0, top - h * 0.05, 0, top, ["rgba(30,20,50,0)", "rgba(30,20,50,0.18)"])
+	ctx.fillRect(0, top - h * 0.05, w, h * 0.05)
+	if not o.get("plain"):
+		badge13(ctx, w - bw * 0.62, y2 + (h - y2) / 2, (h - y2) * 0.3, {"ol": 1.5})
+	vignette(ctx, w, h, 0.28, "28,16,46", 0.55)

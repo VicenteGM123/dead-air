@@ -698,8 +698,7 @@ class Material:
             return dict(base=(c.r, c.g, c.b), alpha=self.opacity if self.transparent else 1.0, rough=1.0,
                         metal=0.0, emission=(c.r, c.g, c.b), strength=float(o.get('intensity', 1)))
         if self.kind == 'screen':
-            return dict(base=(0.02, 0.03, 0.025), alpha=1.0, rough=0.1, metal=0.0, emission=(0.2, 0.3, 0.25),
-                        strength=0.5)
+            return dict(base=(0.02, 0.03, 0.025), alpha=1.0, rough=0.1, metal=0.0, emission=(0, 0, 0), strength=0.0)
         c = self.color
         em = self.emissive
         return dict(base=(c.r, c.g, c.b), alpha=float(self.opacity) if self.transparent else 1.0,

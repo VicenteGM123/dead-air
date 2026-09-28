@@ -332,88 +332,89 @@ void vertex() {
 	vcol = COLOR;
 	vpos = VERTEX;
 }
-vec4 ramp(float t) {
-	return texture(TEXTURE, vec2(clamp(t, 0.0, 1.0) * (255.0 / 256.0) + 0.5 / 256.0, 0.5));
+vec4 ramp(sampler2D tex, float t) {
+	return texture(tex, vec2(clamp(t, 0.0, 1.0) * (255.0 / 256.0) + 0.5 / 256.0, 0.5));
 }
-vec4 paint(vec2 uv) {
-	int k = int(pk.x + 0.5);
+vec4 paint(sampler2D tex, vec2 uv, vec4 col, vec4 k4, vec4 A, vec4 B, mat4 cm, vec4 cmo) {
+	int k = int(k4.x + 0.5);
 	vec4 c;
 	if (k == 0) {
-		c = vcol;
+		c = col;
 	} else if (k == 1) {
-		c = texture(TEXTURE, uv);
-		if (pk.y > 0.5) { c.rgb = c.a > 0.0 ? c.rgb / c.a : vec3(0.0); }
-		c.a *= vcol.a;
+		c = texture(tex, uv);
+		if (k4.y > 0.5) { c.rgb = c.a > 0.0 ? c.rgb / c.a : vec3(0.0); }
+		c.a *= col.a;
 	} else if (k == 2) {
-		vec2 cd = pb.xy - pa.xy;
-		vec2 pd = uv - pa.xy;
-		float dr = pb.z - pa.z;
-		float A = dot(cd, cd) - dr * dr;
-		float B = dot(pd, cd) + pa.z * dr;
-		float C = dot(pd, pd) - pa.z * pa.z;
+		vec2 cd = B.xy - A.xy;
+		vec2 pd = uv - A.xy;
+		float dr = B.z - A.z;
+		float qa = dot(cd, cd) - dr * dr;
+		float qb = dot(pd, cd) + A.z * dr;
+		float qc = dot(pd, pd) - A.z * A.z;
 		float w = 0.0;
 		bool ok = false;
-		if (abs(A) < 1e-9 * max(1.0, dot(cd, cd) + dr * dr)) {
-			if (abs(B) > 1e-12) {
-				float t = C / (2.0 * B);
-				if (pa.z + t * dr >= 0.0) { w = t; ok = true; }
+		if (abs(qa) < 1e-9 * max(1.0, dot(cd, cd) + dr * dr)) {
+			if (abs(qb) > 1e-12) {
+				float t = qc / (2.0 * qb);
+				if (A.z + t * dr >= 0.0) { w = t; ok = true; }
 			}
 		} else {
-			float D = B * B - A * C;
+			float D = qb * qb - qa * qc;
 			if (D >= 0.0) {
-				float s = sqrt(D);
-				float t1 = (B + s) / A;
-				float t2 = (B - s) / A;
+				float sq = sqrt(D);
+				float t1 = (qb + sq) / qa;
+				float t2 = (qb - sq) / qa;
 				float hi = max(t1, t2);
 				float lo = min(t1, t2);
-				if (pa.z + hi * dr >= 0.0) { w = hi; ok = true; }
-				else if (pa.z + lo * dr >= 0.0) { w = lo; ok = true; }
+				if (A.z + hi * dr >= 0.0) { w = hi; ok = true; }
+				else if (A.z + lo * dr >= 0.0) { w = lo; ok = true; }
 			}
 		}
-		c = ok ? ramp(w) : vec4(0.0);
-		c.a *= vcol.a;
+		c = ok ? ramp(tex, w) : vec4(0.0);
+		c.a *= col.a;
 	} else if (k == 3) {
-		vec2 d = uv - pa.xy;
-		float ang = atan(d.y, d.x) - pa.z;
-		c = ramp(fract(ang / 6.283185307179586));
-		c.a *= vcol.a;
+		vec2 d = uv - A.xy;
+		float ang = atan(d.y, d.x) - A.z;
+		c = ramp(tex, fract(ang / 6.283185307179586));
+		c.a *= col.a;
 	} else if (k == 4) {
-		int rb = int(pk.w + 0.5);
+		int rb = int(k4.w + 0.5);
 		bool rx = (rb & 1) != 0;
 		bool ry = (rb & 2) != 0;
 		if ((!rx && (uv.x < 0.0 || uv.x > 1.0)) || (!ry && (uv.y < 0.0 || uv.y > 1.0))) {
 			c = vec4(0.0);
 		} else {
 			vec2 f = vec2(rx ? fract(uv.x) : uv.x, ry ? fract(uv.y) : uv.y);
-			c = textureGrad(TEXTURE, f, dFdx(uv), dFdy(uv));
-			if (pk.y > 0.5) { c.rgb = c.a > 0.0 ? c.rgb / c.a : vec3(0.0); }
+			c = textureGrad(tex, f, dFdx(uv), dFdy(uv));
+			if (k4.y > 0.5) { c.rgb = c.a > 0.0 ? c.rgb / c.a : vec3(0.0); }
 		}
-		c.a *= vcol.a;
+		c.a *= col.a;
 	} else if (k == 5) {
 		if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return vec4(0.0);
-		return texture(TEXTURE, uv) * vcol.a;
+		return texture(tex, uv) * col.a;
 	} else {
 		if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return vec4(0.0);
-		float a = texture(TEXTURE, uv).a * vcol.a;
-		return vec4(vcol.rgb * a, a);
+		float a = texture(tex, uv).a * col.a;
+		return vec4(col.rgb * a, a);
 	}
-	c = clamp(vec4(dot(m0, c), dot(m1, c), dot(m2, c), dot(m3, c)) + mo, 0.0, 1.0);
+	c = clamp(cm * c + cmo, 0.0, 1.0);
 	return vec4(c.rgb * c.a, c.a);
 }
-float coverage() {
-	float cx = clamp(min(vpos.x + 0.5, rc.z) - max(vpos.x - 0.5, rc.x), 0.0, 1.0);
-	float cy = clamp(min(vpos.y + 0.5, rc.w) - max(vpos.y - 0.5, rc.y), 0.0, 1.0);
+float coverage(vec2 p, vec4 r) {
+	float cx = clamp(min(p.x + 0.5, r.z) - max(p.x - 0.5, r.x), 0.0, 1.0);
+	float cy = clamp(min(p.y + 0.5, r.w) - max(p.y - 0.5, r.y), 0.0, 1.0);
 	float cov = cx * cy;
 	if (clip_box.z > 0.0) {
-		vec2 u = (vpos - clip_box.xy) / clip_box.zw;
+		vec2 u = (p - clip_box.xy) / clip_box.zw;
 		cov *= (u.x < 0.0 || u.y < 0.0 || u.x > 1.0 || u.y > 1.0) ? 0.0 : texture(clip_mask, u).a;
 	}
 	return cov;
 }
 %s
 void fragment() {
-	vec4 s = paint(UV);
-	float cov = coverage();
+	mat4 cm = transpose(mat4(m0, m1, m2, m3));
+	vec4 s = paint(TEXTURE, UV, vcol, pk, pa, pb, cm, mo);
+	float cov = coverage(vpos, rc);
 %s
 }
 """

@@ -199,8 +199,13 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
         pv = Ps[cv]
 
         def qerr(src, tgt, pvv):
-            x = np.concatenate([pvv, X[tgt, 3:], np.ones((len(tgt), 1))], 1)
-            return (Q[src] * x[:, _TRIU[0]] * x[:, _TRIU[1]]).sum(1)
+            out = np.empty(len(src))
+            CH = 100000
+            for s0 in range(0, len(src), CH):
+                s1 = min(len(src), s0 + CH)
+                x = np.concatenate([pvv[s0:s1], X[tgt[s0:s1], 3:], np.ones((s1 - s0, 1))], 1)
+                out[s0:s1] = np.einsum('ij,ij->i', Q[src[s0:s1]], x[:, _TRIU[0]] * x[:, _TRIU[1]])
+            return out
         err = qerr(su1, tv1, pv)
         two = hasO & (su2 != su1)
         if two.any():

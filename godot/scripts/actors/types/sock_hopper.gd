@@ -63,10 +63,10 @@ static var R: Dictionary = Config.T.rounds
 var id := "sock_hopper"
 var height := 0.75
 var radius := 0.26
-var dmg = S.dmg
+var dmg = Config.T.zombies.sock.dmg
 var range := 1.0
 var windup := CROUCH
-var cd = S.cd
+var cd = Config.T.zombies.sock.cd
 var spawnMode := "both"
 
 # ------------------------------------------------------------------------------------------------ math helpers
