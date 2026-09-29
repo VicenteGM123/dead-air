@@ -20,6 +20,7 @@ _W = np.where(_TRIU[0] == _TRIU[1], 1.0, 2.0)
 
 
 _DEBUG = False
+_NORMALIZE = False   # meshopt-style weight-normalized error (tested: same distribution, error limit binds)
 _DBGSTATE = []
 
 
@@ -222,7 +223,9 @@ def simplify(indices, positions, attrs, weights, target_index_count, target_erro
         if two.any():
             err[two] += qerr(su2[two], tv2[two], pv[two])
             wsum[two] += Wq[su2[two]]
-        err = np.maximum(err, 0) / np.maximum(wsum, 1e-30)
+        err = np.maximum(err, 0)
+        if _NORMALIZE:
+            err = err / np.maximum(wsum, 1e-30)
         # ---------------- validity on the pre-pass mesh: error limit, link condition, flips. The claims below keep
         # every accepted collapse's one-ring untouched by the others of the pass, so these tests stay exact; testing
         # them up front (instead of after the greedy selection) lets the selection skip invalid collapses without
