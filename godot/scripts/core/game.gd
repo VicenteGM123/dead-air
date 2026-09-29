@@ -137,6 +137,7 @@ func _init() -> void:
 	seed_value = int(params.seed) if params.has("seed") and (params.seed is int or params.seed is float) else randi() % 2147483648
 	_rng = Rng.mulberry32(seed_value)
 	events = preload("res://scripts/core/events.gd").new()
+	DACards.install(self)   # game.cards: the broadcast-card namespace (scripts/gfx/cards.gd)
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS

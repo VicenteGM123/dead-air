@@ -617,14 +617,14 @@ static func invalidateAll() -> void:
 ## Namespace form of the API (see header). JS `cards.get` -> get_.
 class Namespace:
 	extends RefCounted
-	var _get: Callable
+	var _getF: Callable
 	var _animated: Callable
 	var _drawTo: Callable
 	var _ids: Callable
 	var _info: Callable
 	var _inv: Callable
 	func get_(id: String, opts: Dictionary = {}) -> Texture2D:
-		return _get.call(id, opts)
+		return _getF.call(id, opts)
 	func animated(id: String, opts: Dictionary = {}):
 		return _animated.call(id, opts)
 	func drawTo(ctx, id: String, w: float, h: float, time: float = 0.0, opts: Dictionary = {}) -> void:
@@ -635,10 +635,25 @@ class Namespace:
 		return _info.call(id)
 	func invalidateAll() -> void:
 		_inv.call()
+	# JS-style aliases (callers probe these with has_method)
+	func getCard(id: String, opts: Dictionary = {}) -> Texture2D:
+		return _getF.call(id, opts)
+	func getAnimated(id: String, opts: Dictionary = {}):
+		return _animated.call(id, opts)
+	func cardIds() -> Array:
+		return _ids.call()
+	func cardInfo(id: String):
+		return _info.call(id)
+	# cards.get(id) (the JS namespace's `get`, default opts): Object.get(id) lands here for a registered card id.
+	func _get(property: StringName):
+		var id := String(property)
+		if _info.is_valid() and not id.begins_with("_") and _info.call(id) != null:
+			return _getF.call(id, {})
+		return null
 
 static func _makeNamespace() -> Namespace:
 	var n := Namespace.new()
-	n._get = getCard
+	n._getF = getCard
 	n._animated = getAnimated
 	n._drawTo = drawTo
 	n._ids = cardIds
