@@ -121,7 +121,9 @@ static func storeGet(key: String):
 	var cf := ConfigFile.new()
 	if cf.load(CFG) != OK:
 		return null
-	var v = cf.get_value(CFG_SECTION, key, null)
+	if not cf.has_section_key(CFG_SECTION, key):
+		return null   # get_value with a null default logs an error for a missing key
+	var v = cf.get_value(CFG_SECTION, key)
 	return str(v) if v != null else null
 
 static func storeSet(key: String, v: String) -> void:

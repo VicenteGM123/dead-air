@@ -386,5 +386,12 @@
 {"id": "mc_tape_cart", "opts": {}, "key": "mc_tape_cart__000"},
 {"id": "mc_tape_stack", "opts": {"n": 4, "seed": 2}, "key": "mc_tape_stack__000"},
 {"id": "mc_tape_stack", "opts": {"n": 2, "seed": 5}, "key": "mc_tape_stack__001"},
-{"id": "mc_meter_panel", "opts": {}, "key": "mc_meter_panel__000"}
+{"id": "mc_meter_panel", "opts": {}, "key": "mc_meter_panel__000"},
+{"id": "telly", "opts": {"card": null, "pose": "hidden", "legs": 0, "channel": 7}, "key": "telly__375"},
+{"id": "telly_lamp", "opts": {}, "key": "telly_lamp__376"},
+{"id": "lamp_lava", "opts": {}, "key": "lamp_lava__377"},
+{"id": "plant_rubber", "opts": {}, "key": "plant_rubber__378"},
+{"id": "bookshelf", "opts": {}, "key": "bookshelf__379"},
+{"id": "frame_picture", "opts": {"card": "poster_precinct13", "style": "walnut"}, "key": "frame_picture__380"},
+{"id": "frame_picture", "opts": {"card": "poster_boogie_down", "style": "gold"}, "key": "frame_picture__381"}
 ]

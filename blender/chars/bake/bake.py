@@ -16,6 +16,7 @@ from .mesher import surfaceNets
 from .attrib import sampleMesh, cutBorders, patternCoords
 from .skin import computeSkin
 from .simplify import simplify
+from . import meshopt
 from .finish import makeRegionTrees, shadeVertices, triWeights, morphTarget, projectStitches, stitchChunks
 
 VERSION = 4
@@ -64,7 +65,11 @@ def bakeTree(sd, d, o):
     attrs = np.concatenate([V.nrm, V.col], 1)
     target = min(len(I) * 3, int(math.floor(o.tris)) * 3)
     w = (d.bake or {}).get('simplifyWeights') or [0.35, 0.35, 0.35, 0.6, 0.6, 0.6]
-    simp, err = simplify(I, V.pos, attrs, w, target, o.error if o.error is not None else 0.05, log=None)
+    e0 = o.error if o.error is not None else 0.05
+    if meshopt.available():     # the real meshoptimizer (same library version as the JS bake: identical output)
+        simp, err = meshopt.simplify_with_attributes(I, V.pos, attrs, w, target, e0, o.flags)
+    else:
+        simp, err = simplify(I, V.pos, attrs, w, target, e0, log=None)
     keep, index = np.unique(simp.reshape(-1), return_inverse=True)
     # JS order: vertices in first-use order of the simplified index buffer
     flat = simp.reshape(-1)
@@ -120,7 +125,8 @@ def bakeChar(d, log=print, voxel=None, tris=None, quick=False):
     log('  scene: %d ms' % ((time.time() - T0) * 1000))
     R, sd, partSds, segments = scene.R, scene.sd, scene.partSds, scene.segments
     aoTrees = makeRegionTrees(scene.aoRoot, 0.08, B.get('aoReach', 0.16))
-    body = bakeTree(sd, d, O(voxel=voxel, tris=tris, log=log, skin=O(R=R, segments=segments), aoTrees=aoTrees))
+    body = bakeTree(sd, d, O(voxel=voxel, tris=tris, log=log, skin=O(R=R, segments=segments), aoTrees=aoTrees,
+                         flags=(d.bake or {}).get('flags')))
     # Morph targets (expressions): vertices mostly bound to the morph bone.
     morphs = []
     morphData = {}

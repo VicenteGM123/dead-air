@@ -442,50 +442,53 @@ void vertex() {
 	vcol = COLOR;
 	vpos = VERTEX;
 }
-vec4 ramp(sampler2D tex, float t) {
-	return texture(tex, vec2(clamp(t, 0.0, 1.0) * (255.0 / 256.0) + 0.5 / 256.0, 0.5));
+// The paint source is sampled in fragment(): Godot 4.7 cannot pass the TEXTURE built-in to a user function
+// ("!actions.custom_samplers.has(...tex_builtin)" compile error), so paint() takes the sample `tx` instead.
+// rampT: gradient parameter (x) and validity (y) of kinds 2 (radial) and 3 (conic).
+vec2 rampT(int k, vec2 uv, vec4 A, vec4 B) {
+	if (k == 3) {
+		vec2 d = uv - A.xy;
+		float ang = atan(d.y, d.x) - A.z;
+		return vec2(fract(ang / 6.283185307179586), 1.0);
+	}
+	vec2 cd = B.xy - A.xy;
+	vec2 pd = uv - A.xy;
+	float dr = B.z - A.z;
+	float qa = dot(cd, cd) - dr * dr;
+	float qb = dot(pd, cd) + A.z * dr;
+	float qc = dot(pd, pd) - A.z * A.z;
+	float w = 0.0;
+	bool ok = false;
+	if (abs(qa) < 1e-9 * max(1.0, dot(cd, cd) + dr * dr)) {
+		if (abs(qb) > 1e-12) {
+			float t = qc / (2.0 * qb);
+			if (A.z + t * dr >= 0.0) { w = t; ok = true; }
+		}
+	} else {
+		float D = qb * qb - qa * qc;
+		if (D >= 0.0) {
+			float sq = sqrt(D);
+			float t1 = (qb + sq) / qa;
+			float t2 = (qb - sq) / qa;
+			float hi = max(t1, t2);
+			float lo = min(t1, t2);
+			if (A.z + hi * dr >= 0.0) { w = hi; ok = true; }
+			else if (A.z + lo * dr >= 0.0) { w = lo; ok = true; }
+		}
+	}
+	return vec2(w, ok ? 1.0 : 0.0);
 }
-vec4 paint(sampler2D tex, vec2 uv, vec4 col, vec4 k4, vec4 A, vec4 B, mat4 cm, vec4 cmo) {
+vec4 paint(vec4 tx, vec2 uv, vec4 col, vec4 k4, mat4 cm, vec4 cmo) {
 	int k = int(k4.x + 0.5);
 	vec4 c;
 	if (k == 0) {
 		c = col;
 	} else if (k == 1) {
-		c = texture(tex, uv);
+		c = tx;
 		if (k4.y > 0.5) { c.rgb = c.a > 0.0 ? c.rgb / c.a : vec3(0.0); }
 		c.a *= col.a;
-	} else if (k == 2) {
-		vec2 cd = B.xy - A.xy;
-		vec2 pd = uv - A.xy;
-		float dr = B.z - A.z;
-		float qa = dot(cd, cd) - dr * dr;
-		float qb = dot(pd, cd) + A.z * dr;
-		float qc = dot(pd, pd) - A.z * A.z;
-		float w = 0.0;
-		bool ok = false;
-		if (abs(qa) < 1e-9 * max(1.0, dot(cd, cd) + dr * dr)) {
-			if (abs(qb) > 1e-12) {
-				float t = qc / (2.0 * qb);
-				if (A.z + t * dr >= 0.0) { w = t; ok = true; }
-			}
-		} else {
-			float D = qb * qb - qa * qc;
-			if (D >= 0.0) {
-				float sq = sqrt(D);
-				float t1 = (qb + sq) / qa;
-				float t2 = (qb - sq) / qa;
-				float hi = max(t1, t2);
-				float lo = min(t1, t2);
-				if (A.z + hi * dr >= 0.0) { w = hi; ok = true; }
-				else if (A.z + lo * dr >= 0.0) { w = lo; ok = true; }
-			}
-		}
-		c = ok ? ramp(tex, w) : vec4(0.0);
-		c.a *= col.a;
-	} else if (k == 3) {
-		vec2 d = uv - A.xy;
-		float ang = atan(d.y, d.x) - A.z;
-		c = ramp(tex, fract(ang / 6.283185307179586));
+	} else if (k == 2 || k == 3) {
+		c = tx;
 		c.a *= col.a;
 	} else if (k == 4) {
 		int rb = int(k4.w + 0.5);
@@ -494,17 +497,16 @@ vec4 paint(sampler2D tex, vec2 uv, vec4 col, vec4 k4, vec4 A, vec4 B, mat4 cm, v
 		if ((!rx && (uv.x < 0.0 || uv.x > 1.0)) || (!ry && (uv.y < 0.0 || uv.y > 1.0))) {
 			c = vec4(0.0);
 		} else {
-			vec2 f = vec2(rx ? fract(uv.x) : uv.x, ry ? fract(uv.y) : uv.y);
-			c = textureGrad(tex, f, dFdx(uv), dFdy(uv));
+			c = tx;
 			if (k4.y > 0.5) { c.rgb = c.a > 0.0 ? c.rgb / c.a : vec3(0.0); }
 		}
 		c.a *= col.a;
 	} else if (k == 5) {
 		if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return vec4(0.0);
-		return texture(tex, uv) * col.a;
+		return tx * col.a;
 	} else {
 		if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return vec4(0.0);
-		float a = texture(tex, uv).a * col.a;
+		float a = tx.a * col.a;
 		return vec4(col.rgb * a, a);
 	}
 	c = clamp(cm * c + cmo, 0.0, 1.0);
@@ -523,7 +525,19 @@ float coverage(vec2 p, vec4 r) {
 %s
 void fragment() {
 	mat4 cm = transpose(mat4(m0, m1, m2, m3));
-	vec4 s = paint(TEXTURE, UV, vcol, pk, pa, pb, cm, mo);
+	int pkind = int(pk.x + 0.5);
+	vec4 tx = vec4(0.0);
+	if (pkind == 2 || pkind == 3) {
+		vec2 rt = rampT(pkind, UV, pa, pb);
+		tx = rt.y > 0.5 ? texture(TEXTURE, vec2(clamp(rt.x, 0.0, 1.0) * (255.0 / 256.0) + 0.5 / 256.0, 0.5)) : vec4(0.0);
+	} else if (pkind == 4) {
+		int rb = int(pk.w + 0.5);
+		vec2 f = vec2((rb & 1) != 0 ? fract(UV.x) : UV.x, (rb & 2) != 0 ? fract(UV.y) : UV.y);
+		tx = textureGrad(TEXTURE, f, dFdx(UV), dFdy(UV));
+	} else if (pkind != 0) {
+		tx = texture(TEXTURE, UV);
+	}
+	vec4 s = paint(tx, UV, vcol, pk, cm, mo);
 	float cov = coverage(vpos, rc);
 %s
 }

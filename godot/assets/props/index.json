@@ -352,6 +352,20 @@
     "style": "gold",
     "h": 0.62
    }
+  },
+  {
+   "key": "frame_picture__380",
+   "opts": {
+    "card": "poster_precinct13",
+    "style": "walnut"
+   }
+  },
+  {
+   "key": "frame_picture__381",
+   "opts": {
+    "card": "poster_boogie_down",
+    "style": "gold"
+   }
   }
  ],
  "clock_sunburst": [
@@ -378,6 +392,10 @@
    "opts": {
     "seed": 4
    }
+  },
+  {
+   "key": "plant_rubber__378",
+   "opts": {}
   }
  ],
  "letter_board": [
@@ -770,6 +788,10 @@
    "opts": {
     "seed": 9
    }
+  },
+  {
+   "key": "bookshelf__379",
+   "opts": {}
   }
  ],
  "weather_map": [
@@ -855,6 +877,10 @@
    "opts": {
     "color": "#FF5FA2"
    }
+  },
+  {
+   "key": "lamp_lava__377",
+   "opts": {}
   }
  ],
  "macrame_hanger": [
@@ -2033,6 +2059,10 @@
     "anchorId": "telly_lamp_telly_home_studio_b",
     "level": 1
    }
+  },
+  {
+   "key": "telly_lamp__376",
+   "opts": {}
   }
  ],
  "telly_cord": [
@@ -2049,6 +2079,15 @@
     "expr": "zzz",
     "channel": 13,
     "pose": "hidden"
+   }
+  },
+  {
+   "key": "telly__375",
+   "opts": {
+    "card": null,
+    "pose": "hidden",
+    "legs": 0,
+    "channel": 7
    }
   }
  ],

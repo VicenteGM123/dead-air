@@ -335,6 +335,15 @@ func victory() -> void:
 func hitStop(seconds: float) -> void:
 	_hitStop = maxf(_hitStop, seconds)
 
+# Exit: break the systems' reference cycles and static caches and free the off-tree Node pools so the engine quits
+# fast and without leak reports (scripts/core/teardown.gd).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		var st: Dictionary = preload("res://scripts/core/teardown.gd").run(self)
+		print_verbose("[game] teardown: %d objects scrubbed, %d orphan nodes freed" % [st.objects, st.orphans])
+		if inst == self:
+			inst = null
+
 func _process(delta: float) -> void:
 	if not _booted:
 		return
