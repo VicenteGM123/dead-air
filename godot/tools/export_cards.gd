@@ -22,6 +22,11 @@ func _init() -> void:
 		if k > 0:
 			args[a.substr(0, k)] = a.substr(k + 1)
 	outDir = args.get("out", ProjectSettings.globalize_path("res://").path_join("../blender/dalib/cards").simplify_path())
+	if DisplayServer.get_name() == "headless" or RenderingServer.get_current_rendering_method() == "dummy":
+		push_error("[export_cards] needs a rendering device: run without --headless (use xvfb-run on a display-less Linux box)")
+		quit(1)
+		done = true
+		return
 	DirAccess.make_dir_recursive_absolute(outDir)
 	ids = DACards.cardIds()
 	if args.has("only"):

@@ -20,7 +20,7 @@ _W = np.where(_TRIU[0] == _TRIU[1], 1.0, 2.0)
 
 
 _DEBUG = False
-_NORMALIZE = False   # meshopt-style weight-normalized error (tested: same distribution, error limit binds)
+_NORMALIZE = True    # meshopt: error = quadric / accumulated weight (mean squared distance, unit cube)
 _DBGSTATE = []
 
 

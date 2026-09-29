@@ -42,6 +42,8 @@ static var _watch: Array = []           # canvases that may bake
 static var _versions: Array = []        # live canvas versions (RT) -> released once their canvas is gone
 static var _proxies: Array = []         # [WeakRef(canvas), proxy RID] -> freed once the canvas is gone
 static var _sweepT := 0
+static var _all := {}                   # every RT that owns RS resources (freed by shutdown())
+static var _shut := false
 static var _shaders := {}
 static var _mats := {}                  # variant -> material RID (no mask)
 static var _blank := {}                 # "w|h" -> ImageTexture
@@ -78,6 +80,7 @@ class RT:
 	var owner = null          # WeakRef to the DACanvas (versions)
 	var gen := 0              # bumped on release
 	var frameRendered := -1
+	var relFrame := -1
 	var hasContent := false
 	var keep: Array = []      # objects (textures, source canvases) that must live until this RT rendered
 	var opMats: Array = []    # per-op materials (reused when the RT is recorded again)
@@ -94,12 +97,50 @@ class RT:
 	var bTex: RID
 
 # ------------------------------------------------------------------------------------------------ lifecycle
+static var _inDrawNow := false
+
 static func _hook() -> void:
 	if _hooked:
 		return
 	_hooked = true
 	RenderingServer.frame_pre_draw.connect(_preDraw)
 	RenderingServer.frame_post_draw.connect(_postDraw)
+	_hookExit()
+
+static var _exitHooked := false
+static func _hookExit() -> void:
+	if _exitHooked:
+		return
+	var ml = Engine.get_main_loop()   # null while a -s SceneTree script runs _init
+	if ml is SceneTree and (ml as SceneTree).root != null:
+		(ml as SceneTree).root.tree_exiting.connect(shutdown)
+		_exitHooked = true
+
+# Frees every RS resource of the backend (viewports, canvases, items, materials, proxies). Connected to the root
+# viewport's tree_exiting, so the engine exits without leak reports; canvases must not be drawn afterwards.
+static func shutdown() -> void:
+	if _shut:
+		return
+	_shut = true
+	for rt in _all.keys():
+		_freeRT(rt)
+	_all.clear()
+	_pool.clear()
+	_recording = []
+	_submitted = []
+	_retire = []
+	_versions = []
+	_watch = []
+	_dirtyCanvases = []
+	for e in _proxies:
+		RenderingServer.free_rid(e[1])
+	_proxies = []
+	for v in _mats.values():
+		RenderingServer.free_rid(v)
+	_mats.clear()
+	_shaders.clear()
+	_blank.clear()
+	_white = null
 
 static func mainViewport() -> RID:
 	var ml = Engine.get_main_loop()
@@ -114,9 +155,10 @@ static func newRT(w: int, h: int, msaa: int, aux: bool, origin: Vector2 = Vector
 	var key := "%d|%d|%d" % [w, h, msaa]
 	var rt: RT = null
 	var list: Array = _pool.get(key, [])
-	if not list.is_empty():
+	# an RT released during the current frame's post-draw is not reused before the next frame: Godot 4.7 does not
+	# redraw a viewport that already rendered in this frame when force_draw is nested in frame_post_draw
+	if not list.is_empty() and (list[list.size() - 1] as RT).relFrame < frame:
 		rt = list.pop_back()
-		RenderingServer.viewport_set_active(rt.vp, true)
 	else:
 		rt = RT.new()
 		rt.w = w
@@ -134,6 +176,7 @@ static func newRT(w: int, h: int, msaa: int, aux: bool, origin: Vector2 = Vector
 		RenderingServer.viewport_attach_canvas(rt.vp, rt.cv)
 		RenderingServer.viewport_set_active(rt.vp, true)
 		rt.tex = RenderingServer.viewport_get_texture(rt.vp)
+		_all[rt] = true
 		stats.rts += 1
 	RenderingServer.viewport_set_update_mode(rt.vp, RenderingServer.VIEWPORT_UPDATE_DISABLED)
 	rt.aux = aux
@@ -188,13 +231,14 @@ static func release(rt: RT) -> void:
 	var key := "%d|%d|%d" % [rt.w, rt.h, rt.msaa]
 	var list: Array = _pool.get(key, [])
 	if list.size() < POOL_MAX:
-		RenderingServer.viewport_set_active(rt.vp, false)
-		list.append(rt)
+		rt.relFrame = frame
+		list.push_front(rt)
 		_pool[key] = list
 	else:
 		_freeRT(rt)
 
 static func _freeRT(rt: RT) -> void:
+	_all.erase(rt)
 	for it in rt.items:
 		RenderingServer.free_rid(it)
 	rt.items = []
@@ -261,6 +305,9 @@ static func watch(canvas) -> void:
 
 # ------------------------------------------------------------------------------------------------ frame hooks
 static func _preDraw() -> void:
+	if _shut:
+		return
+	_hookExit()
 	if _recording.is_empty() and _dirtyCanvases.is_empty():
 		return
 	for c in _dirtyCanvases:
@@ -274,7 +321,7 @@ static func _preDraw() -> void:
 	var seen := {}
 	for rt in rec:
 		_visit(rt, seen, order)
-	var main := mainViewport()
+	var main := RID() if _inDrawNow else mainViewport()
 	for i in order.size():
 		var rt: RT = order[i]
 		var parent: RID = (order[i + 1] as RT).vp if i + 1 < order.size() else main
@@ -300,6 +347,8 @@ static func _visit(rt: RT, seen: Dictionary, order: Array) -> void:
 		order.append(rt)
 
 static func _postDraw() -> void:
+	if _shut:
+		return
 	frame += 1
 	for rt in _submitted:
 		if rt.state == 2:
@@ -328,12 +377,14 @@ static func _postDraw() -> void:
 
 # Renders everything pending right now (synchronous; used by getImageData/toImage on GPU canvases).
 static func drawNow() -> void:
-	if _recording.is_empty() and _submitted.is_empty():
-		return
+	if _shut or _inDrawNow or (_recording.is_empty() and _submitted.is_empty()):
+		return   # (nested call from a frame_post_draw handler run by our own force_draw: content stays pending)
 	var main := mainViewport()
 	if main.is_valid():
 		RenderingServer.viewport_set_active(main, false)
+	_inDrawNow = true
 	RenderingServer.force_draw(false, 0.0)
+	_inDrawNow = false
 	if main.is_valid():
 		RenderingServer.viewport_set_active(main, true)
 
