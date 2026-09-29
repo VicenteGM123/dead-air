@@ -32,15 +32,12 @@ uniform sampler2D mapCL : source_color, filter_linear_mipmap_anisotropic, repeat
 uniform sampler2D mapRN : source_color, filter_nearest, repeat_enable;
 uniform sampler2D mapCN : source_color, filter_nearest, repeat_disable;
 
-// fragment -> light
+// fragment -> light (packed: Godot / GPUs allow few varyings)
 varying vec3 vDiff;
 varying vec3 vSpecB;
-varying float vRough;
 varying vec3 vMsComp;
 varying vec3 vHemiK;
-varying float vFogKeep;
-varying float vCcKeep;
-varying float vCcRough;
+varying vec4 vRFC;           // roughness, fog keep factor, clearcoat keep factor, clearcoat roughness
 
 vec4 daMapSample(vec2 uv) {
 	vec2 st = vec2(uv.x, uMapFlip > 0.5 ? 1.0 - uv.y : uv.y);
@@ -112,16 +109,14 @@ void fragment() {
 	outgoing += uRimColor * rim * uRimStrength * uRimAmbient * 1.5;
 
 	float fogK = daFogF(viewZ, CAMERA_VISIBLE_LAYERS) * uFogK;
-	vFogKeep = 1.0 - fogK;
-	EMISSION = outgoing * vFogKeep + daFogColor * fogK;
+	float fogKeep = 1.0 - fogK;
+	EMISSION = outgoing * fogKeep + daFogColor * fogK;
 
 	vDiff = diffC;
 	vSpecB = specB;
-	vRough = rough;
 	vMsComp = msComp;
 	vHemiK = 1.0 - ssD - msD;
-	vCcKeep = ccKeep;
-	vCcRough = ccR;
+	vRFC = vec4(rough, fogKeep, ccKeep, ccR);
 
 	ALBEDO = vec3(0.0);
 	METALLIC = 0.0;
@@ -133,6 +128,10 @@ void fragment() {
 }
 
 void light() {
+	float vRough = vRFC.x;
+	float vFogKeep = vRFC.y;
+	float vCcKeep = vRFC.z;
+	float vCcRough = vRFC.w;
 	vec3 c;
 	if (daIsHemi(SPECULAR_AMOUNT)) {
 		vec3 irr = LIGHT_COLOR * DA_RECIPROCAL_PI * (0.5 + 0.5 * dot(NORMAL, LIGHT));

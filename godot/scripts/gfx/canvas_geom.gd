@@ -153,6 +153,18 @@ static func triangulate(pts: PackedVector2Array, starts: PackedInt32Array, eveno
 		else:
 			var poly := pts.slice(a, b)
 			var tri := Geometry2D.triangulate_polygon(poly)
+			# turning number +-1 does not guarantee a simple polygon (e.g. arc + reverse arc in one subpath):
+			# ear clipping of a simple polygon covers exactly its area, otherwise use the winding sweep
+			if not tri.is_empty():
+				var ta := 0.0
+				var ti := 0
+				while ti < tri.size():
+					var p0 := poly[tri[ti]]
+					ta += absf((poly[tri[ti + 1]] - p0).cross(poly[tri[ti + 2]] - p0))
+					ti += 3
+				var pa := absf(signedArea(poly)) * 2.0
+				if absf(ta - pa) > 1e-3 * pa + 1e-6:
+					tri = PackedInt32Array()
 			if tri.is_empty():
 				var sw := sweep([poly], false)
 				_appendTris(outP, outI, sw[0], sw[1])

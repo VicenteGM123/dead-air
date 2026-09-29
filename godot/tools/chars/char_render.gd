@@ -72,6 +72,8 @@ func _ready() -> void:
 			mat.uniforms.uBulge.value = float(ob.bulge)
 		scene.add_child(mi)
 	_addChars(spec)
+	if spec.get("feedCamera", false):
+		camera.cull_mask |= 1 << 17
 	camera.cull_mask |= 1 << Config.LAYERS.ZOMBIES
 	var dt := 1.0 / 30.0
 	for i in int(spec.get("frames", 45)):
@@ -180,6 +182,28 @@ func _addChars(spec: Dictionary) -> void:
 		if ov.has("envMapIntensity"): bm.set_shader_parameter("uEnv", float(ov.envMapIntensity))
 		for k in ["uIBLDiffuse", "uRimStrength", "uAOAmount", "uDebug"]:
 			if ov.has(k): bm.set_shader_parameter(k, ov[k])
+		if ch.get("feed", false):
+			_feedVariant(c)
 		c.group.position = DAU.v3(ch.get("pos", [0, 0, 0]))
 		c.group.rotation.y = float(ch.get("rotY", 0.0))
 		scene.add_child(c.group)
+
+# screens.gd feed "human skin" variant of the body material (same injection as screens.gd _skinShader), so the
+# variant shader is compiled and drawn too (the camera sees feed bit 17 when the spec sets "feedCamera").
+func _feedVariant(c) -> void:
+	var S = load("res://scripts/game/screens.gd")
+	var m: ShaderMaterial = c.skinnedMesh.material_override
+	var code: String = m.shader.code
+	var fi := code.find("void fragment()")
+	var at := code.find(S.SKIN_AT, fi)
+	if at < 0:
+		push_error("feed variant: injection point missing")
+		return
+	var ls := code.rfind("\n", at) + 1
+	var sh := Shader.new()
+	sh.code = code.substr(0, fi) + S.SKIN_SWAP + "\n" + code.substr(fi, ls - fi) + S.SKIN_DIFFUSE + code.substr(ls)
+	var v: ShaderMaterial = m.duplicate()
+	v.shader = sh
+	DAU.traverse(c.group, func(o):
+		if o is MeshInstance3D and o.material_override == m:
+			o.material_override = v)

@@ -107,6 +107,7 @@ def studioMats(game):
         velvet=K.mat(game, 'fabric', '#ffffff', {'map': K.tex.weave('#B81E3A', {'pattern': 'cord', 'scale': 3})}),
         glow=basicV(1),          # vertex-colored HDR glow (candles, baked bulbs, fairy lights)
         glowDim=basicV(0.3),
+        glow19=basicV(1, {'name': 'sa_glow19'}),   # M.glow for the x1.9 pumpkin faces (see pumpkin())
         beam=beamMaterial('sa_beam'),
     )
     _MATS[id(game)] = m
@@ -312,8 +313,10 @@ def pumpkin(game, r=0.24, seed=1):
     face.add(K.m(tg(K.extrude(mouth, 0.01, {'bevel': 0.003}), glowC), M.glow, {'pos': [0, r * 0.62, -r * 0.9], 'scale': r / 0.24}))
     for o in face.children:
         o.userData.noAO = True
-        o.material = M.glow
-        o.geometry = K.tint(o.geometry.clone(), THREE.Color(1.9, 1.9, 1.9))
+        # JS: o.material = M.glow; geometry tinted x1.9 (HDR candle glow). glTF COLOR_0 is normalized (clamped to
+        # 1), so the x1.9 travels as the material's intensity instead: 'sa_glow19' = M.glow, studio_a.gd sets its
+        # uIntensity to 1.9 (same colour in the end: vertex colour x 1.9).
+        o.material = M.glow19
     for o in list(face.children):
         g.add(o)
     g.userData.colliders = []
@@ -1576,7 +1579,9 @@ def fairyLights(game):
             pts.extend(sp[1:] if s else sp)
         wire.add(K.m(tg(K.tube(pts, 0.005, {'seg': len(pts) * 2, 'radial': 3}), '#2A4A2A'), M.lac, {'cast': False}))
         for f in sampleAlong(pts, 0.26):
-            c = THREE.Color(cols[n % len(cols)]).multiplyScalar(2.2)
+            # JS: Color(cols[n]).multiplyScalar(2.2); glTF COLOR_0 is normalized (clamped to 1), so the x2.2 travels
+            # as the material intensity (studio_b.gd: sb_fairy_0 / _1 uIntensity 2.2)
+            c = THREE.Color(cols[n % len(cols)])
             geo = THREE.IcosahedronGeometry(0.032, 1)
             geo.translate(f.p.x, f.p.y - 0.035, f.p.z)
             K.tint(geo, c)

@@ -1033,6 +1033,18 @@
    "opts": {}
   }
  ],
+ "yd_film_cans": [
+  {
+   "key": "yd_film_cans__135",
+   "opts": {
+    "seed": 3
+   }
+  },
+  {
+   "key": "yd_film_cans__191",
+   "opts": {}
+  }
+ ],
  "bc_cable_coil": [
   {
    "key": "bc_cable_coil__136",
@@ -1296,15 +1308,48 @@
    "opts": {}
   }
  ],
+ "yd_tower": [
+  {
+   "key": "yd_tower__180",
+   "opts": {}
+  }
+ ],
  "kill_switch_cage": [
   {
    "key": "kill_switch_cage__181",
    "opts": {}
   }
  ],
+ "yd_hut": [
+  {
+   "key": "yd_hut__182",
+   "opts": {
+    "camYaw": -0.7730531115532239,
+    "camTilt": -0.05
+   }
+  }
+ ],
  "hut_tubes": [
   {
    "key": "hut_tubes__183",
+   "opts": {}
+  }
+ ],
+ "yd_news_van": [
+  {
+   "key": "yd_news_van__184",
+   "opts": {}
+  }
+ ],
+ "yd_sodium_post": [
+  {
+   "key": "yd_sodium_post__185",
+   "opts": {}
+  }
+ ],
+ "yd_neon_wztv": [
+  {
+   "key": "yd_neon_wztv__186",
    "opts": {}
   }
  ],
@@ -1318,6 +1363,74 @@
   {
    "key": "yard_service_panel__188",
    "opts": {}
+  }
+ ],
+ "yd_drum_group": [
+  {
+   "key": "yd_drum_group__189",
+   "opts": {
+    "set": "a"
+   }
+  }
+ ],
+ "yd_crate_stack": [
+  {
+   "key": "yd_crate_stack__190",
+   "opts": {}
+  }
+ ],
+ "yd_oil_drum": [
+  {
+   "key": "yd_oil_drum__192",
+   "opts": {
+    "color": "red",
+    "seed": 3
+   }
+  },
+  {
+   "key": "yd_oil_drum__193",
+   "opts": {
+    "color": "yellow",
+    "tipped": true,
+    "seed": 4
+   }
+  },
+  {
+   "key": "yd_oil_drum__194",
+   "opts": {
+    "color": "green",
+    "seed": 5
+   }
+  },
+  {
+   "key": "yd_oil_drum__195",
+   "opts": {
+    "color": "blue",
+    "seed": 9
+   }
+  }
+ ],
+ "yd_crate": [
+  {
+   "key": "yd_crate__196",
+   "opts": {
+    "size": "md",
+    "seed": 11
+   }
+  },
+  {
+   "key": "yd_crate__197",
+   "opts": {
+    "size": "md",
+    "seed": 7
+   }
+  },
+  {
+   "key": "yd_crate__198",
+   "opts": {
+    "size": "sm",
+    "seed": 8
+   }
   }
  ],
  "yard_lawn_chair": [
@@ -1336,6 +1449,194 @@
   {
    "key": "yard_cone__201",
    "opts": {}
+  }
+ ],
+ "yd_puddle": [
+  {
+   "key": "yd_puddle__202",
+   "opts": {
+    "size": 1.3,
+    "seed": 122
+   }
+  },
+  {
+   "key": "yd_puddle__203",
+   "opts": {
+    "size": 1,
+    "seed": 144
+   }
+  },
+  {
+   "key": "yd_puddle__204",
+   "opts": {
+    "size": 0.9,
+    "seed": 133
+   }
+  },
+  {
+   "key": "yd_puddle__205",
+   "opts": {
+    "size": 0.7,
+    "seed": 116
+   }
+  }
+ ],
+ "yd_gravel_patch": [
+  {
+   "key": "yd_gravel_patch__206",
+   "opts": {
+    "size": 1.2,
+    "seed": -61
+   }
+  },
+  {
+   "key": "yd_gravel_patch__207",
+   "opts": {
+    "size": 1,
+    "seed": -65
+   }
+  },
+  {
+   "key": "yd_gravel_patch__208",
+   "opts": {
+    "size": 1.4,
+    "seed": -39
+   }
+  },
+  {
+   "key": "yd_gravel_patch__209",
+   "opts": {
+    "size": 1,
+    "seed": -79
+   }
+  },
+  {
+   "key": "yd_gravel_patch__210",
+   "opts": {
+    "size": 0.9,
+    "seed": -80
+   }
+  },
+  {
+   "key": "yd_gravel_patch__211",
+   "opts": {
+    "size": 1.1,
+    "seed": -48
+   }
+  },
+  {
+   "key": "yd_gravel_patch__212",
+   "opts": {
+    "size": 1,
+    "seed": -90
+   }
+  }
+ ],
+ "yd_stones": [
+  {
+   "key": "yd_stones__213",
+   "opts": {
+    "seed": 289,
+    "count": 7
+   }
+  },
+  {
+   "key": "yd_stones__214",
+   "opts": {
+    "seed": 319,
+    "count": 7
+   }
+  },
+  {
+   "key": "yd_stones__215",
+   "opts": {
+    "seed": 317,
+    "count": 7
+   }
+  },
+  {
+   "key": "yd_stones__216",
+   "opts": {
+    "seed": 263,
+    "count": 7
+   }
+  },
+  {
+   "key": "yd_stones__217",
+   "opts": {
+    "seed": 334,
+    "count": 7
+   }
+  },
+  {
+   "key": "yd_stones__218",
+   "opts": {
+    "seed": 240,
+    "count": 7
+   }
+  },
+  {
+   "key": "yd_stones__219",
+   "opts": {
+    "seed": 303,
+    "count": 7
+   }
+  }
+ ],
+ "yd_weeds": [
+  {
+   "key": "yd_weeds__220",
+   "opts": {
+    "seed": 332
+   }
+  },
+  {
+   "key": "yd_weeds__221",
+   "opts": {
+    "seed": 498
+   }
+  },
+  {
+   "key": "yd_weeds__222",
+   "opts": {
+    "seed": 549
+   }
+  },
+  {
+   "key": "yd_weeds__223",
+   "opts": {
+    "seed": 429
+   }
+  },
+  {
+   "key": "yd_weeds__224",
+   "opts": {
+    "seed": 488
+   }
+  },
+  {
+   "key": "yd_weeds__225",
+   "opts": {
+    "seed": 435
+   }
+  },
+  {
+   "key": "yd_weeds__226",
+   "opts": {
+    "seed": 519
+   }
+  },
+  {
+   "key": "yd_weeds__227",
+   "opts": {
+    "seed": 347
+   }
+  },
+  {
+   "key": "yd_weeds__228",
+   "opts": {
+    "seed": 426
+   }
   }
  ],
  "yard_sign": [
@@ -1363,6 +1664,60 @@
     "kind": "gate",
     "w": 0.5
    }
+  }
+ ],
+ "sky_billboard": [
+  {
+   "key": "sky_billboard__233",
+   "opts": {
+    "ad": "wztv"
+   }
+  },
+  {
+   "key": "sky_billboard__235",
+   "opts": {
+    "ad": "roller_boogie",
+    "fog": false
+   }
+  },
+  {
+   "key": "sky_billboard__237",
+   "opts": {
+    "ad": "double_vision",
+    "fog": false
+   }
+  }
+ ],
+ "sky_skyline": [
+  {
+   "key": "sky_skyline__234",
+   "opts": {
+    "seed": 5,
+    "w": 100,
+    "ad": "roller_boogie"
+   }
+  },
+  {
+   "key": "sky_skyline__236",
+   "opts": {
+    "seed": 9,
+    "w": 90,
+    "ad": "double_vision"
+   }
+  }
+ ],
+ "st_car_70s": [
+  {
+   "key": "st_car_70s__238",
+   "opts": {
+    "color": "#E8A92E"
+   }
+  }
+ ],
+ "st_hydrant": [
+  {
+   "key": "st_hydrant__239",
+   "opts": {}
   }
  ],
  "yard_utility_pole": [
@@ -2085,6 +2440,12 @@
    }
   }
  ],
+ "st_mailbox": [
+  {
+   "key": "st_mailbox__315",
+   "opts": {}
+  }
+ ],
  "bc_console_corner": [
   {
    "key": "bc_console_corner__316",
@@ -2220,6 +2581,60 @@
  "sponsor_speaker": [
   {
    "key": "sponsor_speaker__338",
+   "opts": {}
+  }
+ ],
+ "yd_fence": [
+  {
+   "key": "yd_fence__339",
+   "opts": {}
+  }
+ ],
+ "yd_fence_post": [
+  {
+   "key": "yd_fence_post__340",
+   "opts": {}
+  }
+ ],
+ "yd_fence_gate": [
+  {
+   "key": "yd_fence_gate__341",
+   "opts": {}
+  }
+ ],
+ "sky_building": [
+  {
+   "key": "sky_building__342",
+   "opts": {}
+  }
+ ],
+ "sky_water_tower": [
+  {
+   "key": "sky_water_tower__343",
+   "opts": {}
+  }
+ ],
+ "sky_moon": [
+  {
+   "key": "sky_moon__344",
+   "opts": {}
+  }
+ ],
+ "st_sidewalk": [
+  {
+   "key": "st_sidewalk__345",
+   "opts": {}
+  }
+ ],
+ "st_street_lamp": [
+  {
+   "key": "st_street_lamp__346",
+   "opts": {}
+  }
+ ],
+ "st_motel_sign": [
+  {
+   "key": "st_motel_sign__347",
    "opts": {}
   }
  ],

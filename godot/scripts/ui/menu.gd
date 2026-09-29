@@ -156,7 +156,14 @@ uniform sampler2D tPicL : filter_linear, repeat_enable;
 uniform sampler2D tPicS : source_color, filter_linear, repeat_enable;
 uniform float uPicLin = 0.0;
 uniform sampler2D tUI : source_color, filter_linear, repeat_enable;
-uniform float uTime, uSnow, uRoll, uJitter, uPic, uUI, uBright, uSeam;
+uniform float uTime;
+uniform float uSnow;
+uniform float uRoll;
+uniform float uJitter;
+uniform float uPic;
+uniform float uUI;
+uniform float uBright;
+uniform float uSeam;
 float h12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 vec4 tex(sampler2D s, vec2 uv) { return texture(s, vec2(uv.x, 1.0 - uv.y)); }
 void fragment() {
@@ -1242,6 +1249,8 @@ func _use3D(on: bool, camera = null) -> void:
 		var cam: Camera3D = camera if camera is Camera3D else R.camera
 		if cam != R.camera:
 			_fullColor(cam)
+			if cam.environment == null:
+				cam.environment = R.env   # the room's background (THREE scene.background of this scene)
 		cam.current = true
 		R.tvVp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 		R.active = true
@@ -1470,7 +1479,8 @@ func _buildRoom() -> void:
 func _makeEnv(bg: String, glow: bool) -> Environment:
 	var r = game.render
 	if r and r.has_method("makeEnvironment"):
-		return r.makeEnvironment(Color(bg), glow)
+		# render.gd's settings for other worlds (the bloom is render's UnrealBloom chain over the whole view)
+		return r.makeEnvironment(Color(bg))
 	var e := Environment.new()
 	e.background_mode = Environment.BG_COLOR
 	e.background_color = Color(bg)
