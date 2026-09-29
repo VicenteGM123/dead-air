@@ -188,8 +188,8 @@ def compare(ref, ours, verbose=False):
     for x in ud[:60]:
         lines.append('    ' + x)
     # materials
-    rs = sorted(mat_sig(m) for m in ref['materials'])
-    osg = sorted(mat_sig(m) for m in ours['materials'])
+    rs = sorted((mat_sig(m) for m in ref['materials']), key=repr)
+    osg = sorted((mat_sig(m) for m in ours['materials']), key=repr)
     miss = [s for s in rs if s not in osg]
     extra = [s for s in osg if s not in rs]
     lines.append('materials  ref %d  ours %d%s' % (len(rs), len(osg), '' if not (miss or extra) else '  (differences)'))

@@ -608,6 +608,32 @@
    }
   }
  ],
+ "nm_desk_lamp": [
+  {
+   "key": "nm_desk_lamp__048",
+   "opts": {
+    "color": "#E3662B"
+   }
+  },
+  {
+   "key": "nm_desk_lamp__056",
+   "opts": {
+    "color": "#2E8C8C"
+   }
+  },
+  {
+   "key": "nm_desk_lamp__057",
+   "opts": {
+    "color": "#D9A520"
+   }
+  },
+  {
+   "key": "nm_desk_lamp__058",
+   "opts": {
+    "color": "#8C9A3A"
+   }
+  }
+ ],
  "desk_reporter": [
   {
    "key": "desk_reporter__049",
@@ -667,6 +693,12 @@
    }
   }
  ],
+ "nm_teletype": [
+  {
+   "key": "nm_teletype__061",
+   "opts": {}
+  }
+ ],
  "filing_cabinet": [
   {
    "key": "filing_cabinet__062",
@@ -717,6 +749,12 @@
  "water_cooler": [
   {
    "key": "water_cooler__066",
+   "opts": {}
+  }
+ ],
+ "nm_coffee_cart": [
+  {
+   "key": "nm_coffee_cart__067",
    "opts": {}
   }
  ],
@@ -2682,6 +2720,92 @@
  "sample_side_table": [
   {
    "key": "sample_side_table__350",
+   "opts": {}
+  }
+ ],
+ "mc_laff_o_matic": [
+  {
+   "key": "mc_laff_o_matic__000",
+   "opts": {}
+  }
+ ],
+ "mc_switcher": [
+  {
+   "key": "mc_switcher__000",
+   "opts": {}
+  }
+ ],
+ "mc_scope_cart": [
+  {
+   "key": "mc_scope_cart__000",
+   "opts": {}
+  }
+ ],
+ "mc_tape_shelf": [
+  {
+   "key": "mc_tape_shelf__000",
+   "opts": {}
+  }
+ ],
+ "mc_cable_tray": [
+  {
+   "key": "mc_cable_tray__000",
+   "opts": {
+    "L": 11.2,
+    "rod": 0.36
+   }
+  },
+  {
+   "key": "mc_cable_tray__001",
+   "opts": {
+    "L": 7.2,
+    "rod": 0.36
+   }
+  }
+ ],
+ "mc_picture_light": [
+  {
+   "key": "mc_picture_light__000",
+   "opts": {}
+  }
+ ],
+ "mc_extinguisher": [
+  {
+   "key": "mc_extinguisher__000",
+   "opts": {}
+  }
+ ],
+ "mc_floor_fan": [
+  {
+   "key": "mc_floor_fan__000",
+   "opts": {}
+  }
+ ],
+ "mc_tape_cart": [
+  {
+   "key": "mc_tape_cart__000",
+   "opts": {}
+  }
+ ],
+ "mc_tape_stack": [
+  {
+   "key": "mc_tape_stack__000",
+   "opts": {
+    "n": 4,
+    "seed": 2
+   }
+  },
+  {
+   "key": "mc_tape_stack__001",
+   "opts": {
+    "n": 2,
+    "seed": 5
+   }
+  }
+ ],
+ "mc_meter_panel": [
+  {
+   "key": "mc_meter_panel__000",
    "opts": {}
   }
  ]

@@ -131,6 +131,8 @@ def attachMaterial(o):
     opts = {k: v for k, v in o.items() if k != 'color'}
     if 'side' in opts and isinstance(opts['side'], str):
         opts['side'] = {'front': 0, 'back': 1, 'double': 2}[opts['side']]
+    if tex is not None:
+        opts['map'] = tex        # Material.spec() takes the map from opts -> da map/mapFile/mapWrap/flipY
     m = SG.Material('attach', color if isinstance(color, str) else '#' + T3.Color(color).getHexString(), opts,
                     type='MeshPhysicalMaterial' if o.get('physical') else 'MeshStandardMaterial', map=tex,
                     transparent=bool(o.get('transparent')), opacity=nz(o.get('opacity'), 1),
@@ -155,6 +157,8 @@ def basicMaterial(o):
             o['color'] = hexv
     else:
         hexv = col
+    if tex is not None:
+        o['map'] = tex
     m = SG.Material('basic', hexv if isinstance(hexv, str) else '#ffffff', o, type='MeshBasicMaterial', map=tex,
                     transparent=bool(o.get('transparent')), opacity=nz(o.get('opacity'), 1),
                     depthWrite=nz(o.get('depthWrite'), True), toneMapped=nz(o.get('toneMapped'), True),

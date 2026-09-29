@@ -15,6 +15,7 @@ godot/assets/runtime/rooms_newsroom_mc/master_control.glb  root 'master_control_
                               rooms/master_control.gd draws it)
     mc_vtr2_tape              VTR #2's threaded tape bands (VTR-local coordinates, hidden: the room script moves it
                               under the VTR)
+    mc_wall_steel             hidden carrier of the monitor wall's dark brushed-steel material (swap target)
     merged_*                  everything static (signs, the Perpetua ad + tape clips + the floor copy, decals, the
                               tipped mug, papers, the cable looms from the trays, the anti-static floor mats, the LED
                               strip bars)
@@ -264,6 +265,15 @@ def buildMasterControl(game):
     def add(m):
         root.add(m)
         return m
+
+    # ------------------------------------------------------------------------------------ the 4 x 3 monitor wall
+    # the wall's bright brushed aluminium is swapped for this darker steel by the room script (JS: wall.traverse
+    # material === bright -> steel); a hidden carrier mesh exports the material.
+    steel = K.mat(game, 'metal', '#ffffff', {'map': K.tex.brushed('#707B8E'), 'env': 0.22, 'rim': 0.16})
+    carrier = add(K.m(K.box(0.01, 0.01, 0.01, 0), steel, {'pos': [31.4, -1, WALL.n + 0.26], 'cast': False}))
+    carrier.name = 'mc_wall_steel'
+    carrier.visible = False
+    carrier.userData.noMerge = True
 
     # ------------------------------------------------------------------------------------ west wall: patch bays
     add(K.m(qf(0.24, 0.24, MA.cell('nosmoke')), MA.mat, {'pos': [WALL.w + 0.005, 2.5, -9.75], 'rot': [0, -HP, 0]}))

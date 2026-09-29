@@ -209,6 +209,13 @@
   "wrap": "repeat",
   "ns": "dc"
  },
+ "k.brushed|#707B8E|256": {
+  "file": "k_brushed_707B8E_256_463a2f63.png",
+  "w": 256,
+  "h": 256,
+  "wrap": "repeat",
+  "ns": "k"
+ },
  "k.brushed|#9EA4AE|256": {
   "file": "k_brushed_9EA4AE_256_ba434479.png",
   "w": 256,
@@ -269,6 +276,13 @@
   "file": "k_label_TELLY_AWARDS_sub_WZTV_CHANNEL_13_EXCELLE_071354a4.png",
   "w": 512,
   "h": 128,
+  "wrap": "clamp",
+  "ns": "k"
+ },
+ "k.label|TRANSMITTER|{\"sub\":\"REMOTE CONTROL · 50 KW\",\"bg\":\"#2A2231\",\"fg\":\"#E8B84A\",\"w\":256,\"h\":64}": {
+  "file": "k_label_TRANSMITTER_sub_REMOTE_CONTROL_50_KW_bg__595932ed.png",
+  "w": 256,
+  "h": 64,
   "wrap": "clamp",
   "ns": "k"
  },
@@ -853,6 +867,13 @@
   "wrap": "clamp",
   "ns": "k"
  },
+ "nm_decals_v1": {
+  "file": "k_nm_decals_v1_a54768fa.png",
+  "w": 512,
+  "h": 512,
+  "wrap": "clamp",
+  "ns": "k"
+ },
  "nm_globe_map": {
   "file": "k_nm_globe_map_3de4c1b9.png",
   "w": 512,
@@ -864,6 +885,20 @@
   "file": "k_nm_skyline_v1_13c16103.png",
   "w": 1024,
   "h": 768,
+  "wrap": "clamp",
+  "ns": "k"
+ },
+ "nm_slats_6": {
+  "file": "k_nm_slats_6_eef34bd9.png",
+  "w": 64,
+  "h": 256,
+  "wrap": "clamp",
+  "ns": "k"
+ },
+ "nm_wash": {
+  "file": "k_nm_wash_5805e518.png",
+  "w": 128,
+  "h": 128,
   "wrap": "clamp",
   "ns": "k"
  },
@@ -1178,6 +1213,34 @@
  "rooms.lg.moonslats": {
   "file": "k_rooms_lg_moonslats_b035da24.png",
   "w": 256,
+  "h": 256,
+  "wrap": "clamp",
+  "ns": "k"
+ },
+ "rooms.mc.atlas.v1": {
+  "file": "k_rooms_mc_atlas_v1_ca4308bc.png",
+  "w": 512,
+  "h": 512,
+  "wrap": "clamp",
+  "ns": "k"
+ },
+ "rooms.mc.floormat.v1": {
+  "file": "k_rooms_mc_floormat_v1_a20fb03f.png",
+  "w": 128,
+  "h": 128,
+  "wrap": "repeat",
+  "ns": "k"
+ },
+ "rooms.mc.meterface.v1": {
+  "file": "k_rooms_mc_meterface_v1_3d5ab230.png",
+  "w": 128,
+  "h": 128,
+  "wrap": "clamp",
+  "ns": "k"
+ },
+ "rooms.mc.scopes.v1": {
+  "file": "k_rooms_mc_scopes_v1_2e83c782.png",
+  "w": 512,
   "h": 256,
   "wrap": "clamp",
   "ns": "k"

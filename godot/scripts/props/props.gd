@@ -19,6 +19,8 @@
 #   loadRuntime(path) -> Node3D, prepare(root) -> root   the same conversion for other Blender GLBs
 #                                        (godot/assets/runtime/...): materials + userData + node flags.
 # Aliases with the JS names: buildProp(id, opts), placeProp(parent, id, o).
+# userData values {"__node": name} -> that Node3D, {"__material": spec} -> mats.fromSpec(spec) (JS Material refs, e.g.
+# bc_on_air lampMats).
 # Node flags from "da": castShadow -> cast_shadow, visible:false, layers (three layer mask = VisualInstance3D
 # layers), rotationOrder (default XYZ on every node, like three), instanceColor (InstancedMesh children:
 # per-instance shader parameter "instanceColor"), renderOrder / receiveShadow kept in DAU.ud.
@@ -149,6 +151,11 @@ func _instantiate(path: String) -> Node3D:
 				push_error("[props] missing asset %s" % path)
 			return null
 		ps = load(path)
+		if ps == null:
+			if not _warned.has(path):
+				_warned[path] = true
+				push_error("[props] cannot load %s" % path)
+			return null
 		_scenes[path] = ps
 	var wrap := ps.instantiate()
 	var root: Node3D
@@ -254,6 +261,8 @@ func _resolve(v, byName: Dictionary, top := false):
 	if v is Dictionary:
 		if v.size() == 1 and v.has("__node"):
 			return _node(byName, str(v.__node))
+		if v.size() == 1 and v.has("__material"):
+			return game.mats.fromSpec(v.__material, null) if game.mats != null else null
 		var o := {}
 		for k in v:
 			if top and k == "parts" and v[k] is Dictionary:
