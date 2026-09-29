@@ -16,6 +16,7 @@
 extends RefCounted
 
 const SCRIPT_VAR := PROPERTY_USAGE_SCRIPT_VARIABLE
+static var DBG := false
 
 static func run(game: Node) -> Dictionary:
 	var st := {"objects": 0, "orphans": 0}
@@ -60,11 +61,13 @@ static func run(game: Node) -> Dictionary:
 				if seen.has(id):
 					continue
 				seen[id] = true
-				if seen.size() % 20000 == 0:
+				DBG = false
+				if DBG:
 					print("[teardown] dbg obj ", o, " ", o.get_script().resource_path if o.get_script() else "")
 				_object(o, stack, st)
 	# free the Nodes that are not in the tree: model / effect pools, prop prototypes, detached rooms
 	var ids: Array = ClassDB.class_call_static("Node", "get_orphan_node_ids")
+	print("[teardown] dbg loop done steps=%d seen=%d orphans=%d" % [steps, seen.size(), ids.size()])
 	for nid in ids:
 		var n = instance_from_id(nid)
 		if n == null or not is_instance_valid(n) or not (n is Node):
@@ -74,7 +77,10 @@ static func run(game: Node) -> Dictionary:
 		# only game content (3D nodes, canvas items, viewports and plain nodes the scripts made)
 		if not (n is Node3D or n is CanvasItem or n is Viewport or n is CanvasLayer or n.get_script() != null or n.get_class() == "Node"):
 			continue
+		var tt := Time.get_ticks_msec()
+		print("[teardown] dbg free ", n, " children=", n.get_child_count(true), " script=", n.get_script().resource_path if n.get_script() else "")
 		n.free()
+		print("[teardown] dbg   freed in ", Time.get_ticks_msec() - tt)
 		st.orphans += 1
 	st.objects = seen.size()
 	return st
@@ -109,6 +115,7 @@ static func _take(o: Object, p: Dictionary, stack: Array) -> void:
 	# accessor properties (get:/set: blocks) are computed from other vars: never evaluate them here
 	if o.has_method("@%s_getter" % p.name) or o.has_method("@%s_setter" % p.name):
 		return
+	if DBG: print("  take ", p.name)
 	var v = o.get(p.name)
 	match typeof(v):
 		TYPE_ARRAY, TYPE_DICTIONARY:
