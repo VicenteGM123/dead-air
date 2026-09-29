@@ -2361,6 +2361,7 @@ func _buildBunny() -> Node3D:
 	if inner != null and inner != b:
 		# re-root so bunny.children[0] is the body group, like the JS
 		DAU.detach(inner)
+		inner.owner = null   # the GLB scene root owned it (avoids the inconsistent-owner warning)
 		root.add_child(inner)
 		b.free()
 	else:
