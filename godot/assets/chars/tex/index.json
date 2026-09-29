@@ -1,9 +1,93 @@
 {
+ "card|patch|0.08|0.038|WZTV|||#F4F1E8": {
+  "file": "ch_card_patch_0_08_0_038_WZTV_F4F1E8_20f9fefe.png",
+  "w": 512,
+  "h": 243,
+  "wrap": "clamp",
+  "ns": "ch"
+ },
+ "card|ticketStub|0.085|0.047||||": {
+  "file": "ch_card_ticketStub_0_085_0_047_01538167.png",
+  "w": 512,
+  "h": 283,
+  "wrap": "clamp",
+  "ns": "ch"
+ },
+ "card|ticketStub|0.08|0.044||||": {
+  "file": "ch_card_ticketStub_0_08_0_044_f0b7e856.png",
+  "w": 512,
+  "h": 282,
+  "wrap": "clamp",
+  "ns": "ch"
+ },
+ "card|ticketStub|0.1|0.055||||": {
+  "file": "ch_card_ticketStub_0_1_0_055_fdb01443.png",
+  "w": 512,
+  "h": 282,
+  "wrap": "clamp",
+  "ns": "ch"
+ },
+ "eye|{\"x\":0.045,\"y\":0.07,\"z\":-0.08,\"r\":0.034,\"iris\":\"#1E1622\",\"irisSize\":0.5,\"pupilSize\":0.7,\"sclera\":\"#FBF6EE\",\"lid\":\"#F4F1E8\",\"lash\":\"#2A1A14\",\"lidOpen\":0.8,\"lowerLid\":0.1,\"tilt\":0}": {
+  "file": "ch_eye_x_0_045_y_0_07_z_0_08_r_0_034_iris_1E1622_ir_ae63ed3d.png",
+  "w": 512,
+  "h": 256,
+  "wrap": "clamp",
+  "ns": "ch"
+ },
  "eye|{\"x\":0.066,\"y\":0.25,\"z\":-0.14,\"r\":0.046,\"iris\":\"#6A3C1C\",\"irisSize\":0.6,\"pupilSize\":0.46,\"sclera\":\"#FBF6EE\",\"lid\":\"#F3B590\",\"lash\":\"#2A1A14\",\"lidOpen\":1.0,\"lowerLid\":0.6,\"tilt\":0,\"lidScale\":1.04,\"yaw\":0.07,\"glint\":1.1}": {
   "file": "ch_eye_x_0_066_y_0_25_z_0_14_r_0_046_iris_6A3C1C_ir_10c936a1.png",
   "w": 512,
   "h": 256,
   "wrap": "clamp",
+  "ns": "ch"
+ },
+ "eye|{\"x\":0.06784000000000001,\"y\":0.24168000000000003,\"z\":-0.13568000000000002,\"r\":0.0477,\"iris\":\"#9A5626\",\"irisSize\":0.66,\"pupilSize\":0.44,\"sclera\":\"#FBF6EE\",\"lid\":\"#F0B08E\",\"lash\":\"#1E120E\",\"lidOpen\":1.0,\"lowerLid\":0.62,\"tilt\":0.03,\"lidScale\":1.04,\"yaw\":0.07,\"glint\":1.15}": {
+  "file": "ch_eye_x_0_06784000000000001_y_0_24168000000000003__b43b3ecf.png",
+  "w": 512,
+  "h": 256,
+  "wrap": "clamp",
+  "ns": "ch"
+ },
+ "eye|{\"x\":0.06784000000000001,\"y\":0.24168000000000003,\"z\":-0.13568000000000002,\"r\":0.048760000000000005,\"iris\":\"#8A4A22\",\"irisSize\":0.64,\"pupilSize\":0.44,\"sclera\":\"#FBF6EE\",\"lid\":\"#8E5637\",\"lash\":\"#160D0A\",\"lidOpen\":0.98,\"lowerLid\":0.62,\"tilt\":0.05,\"lidScale\":1.04,\"yaw\":0.07,\"glint\":1.15}": {
+  "file": "ch_eye_x_0_06784000000000001_y_0_24168000000000003__1ef0f002.png",
+  "w": 512,
+  "h": 256,
+  "wrap": "clamp",
+  "ns": "ch"
+ },
+ "eye|{\"x\":0.0693,\"y\":0.25520000000000004,\"z\":-0.14300000000000002,\"r\":0.0484,\"iris\":\"#8A4E24\",\"irisSize\":0.64,\"pupilSize\":0.44,\"sclera\":\"#FBF6EE\",\"lid\":\"#F2B792\",\"lash\":\"#2A1A14\",\"lidOpen\":1.0,\"lowerLid\":0.6,\"tilt\":0,\"lidScale\":1.04,\"yaw\":0.07,\"glint\":1.15}": {
+  "file": "ch_eye_x_0_0693_y_0_25520000000000004_z_0_143000000_a9e7f7c0.png",
+  "w": 512,
+  "h": 256,
+  "wrap": "clamp",
+  "ns": "ch"
+ },
+ "skip|capBadge": {
+  "file": "ch_skip_capBadge_4ffc3f49.png",
+  "w": 256,
+  "h": 256,
+  "wrap": "clamp",
+  "ns": "ch"
+ },
+ "skip|crewBadge": {
+  "file": "ch_skip_crewBadge_49191f1b.png",
+  "w": 256,
+  "h": 384,
+  "wrap": "clamp",
+  "ns": "ch"
+ },
+ "zombieEyeVeil": {
+  "file": "ch_zombieEyeVeil_35c8dd70.png",
+  "w": 128,
+  "h": 128,
+  "wrap": "clamp",
+  "ns": "ch"
+ },
+ "zombieStaticEye": {
+  "file": "ch_zombieStaticEye_9b44f5d4.png",
+  "w": 32,
+  "h": 32,
+  "wrap": "repeat",
   "ns": "ch"
  }
 }

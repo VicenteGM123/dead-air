@@ -235,6 +235,22 @@ static func anyOverlap(pts: PackedVector2Array, starts: PackedInt32Array) -> boo
 # ---------------------------------------------------------------------------------------------------- sweep
 # Trapezoid decomposition of polygons under the nonzero (or evenodd) rule. Handles holes, overlaps and
 # self-intersections. Returns [points, indices] (non-overlapping triangles).
+# Union of (possibly overlapping) triangles as non-overlapping triangles (every triangle oriented the same way,
+# nonzero sweep). Used for small transparent geometry instead of an offscreen union layer.
+static func unionTris(P: PackedVector2Array, I: PackedInt32Array) -> Array:
+	var polys: Array = []
+	var i := 0
+	while i + 2 < I.size():
+		var a := P[I[i]]
+		var b := P[I[i + 1]]
+		var c := P[I[i + 2]]
+		i += 3
+		var cr := (b - a).cross(c - a)
+		if absf(cr) < 1e-9:
+			continue
+		polys.append(PackedVector2Array([a, b, c]) if cr > 0.0 else PackedVector2Array([a, c, b]))
+	return sweep(polys, false)
+
 static func sweep(polys: Array, evenodd: bool) -> Array:
 	var ex0 := PackedFloat64Array()
 	var ey0 := PackedFloat64Array()

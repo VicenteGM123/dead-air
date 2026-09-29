@@ -1429,9 +1429,19 @@ func _coversCanvas(P: PackedVector2Array, I: PackedInt32Array, box: Rect2) -> bo
 # Writes triangles into rt with the right blend path.
 # Writes triangles with the right blend path. layer = rt is an aux layer: union semantics (blend disabled), no
 # clip / composite op. Otherwise rt is ignored and the canvas' current version is used (an op may fork it).
+const UNION_MAX := 160   # triangles
+
 func _emit(rt, P: PackedVector2Array, I: PackedInt32Array, paint: Paint, alpha: float, op: int, clip: Clip, overlap: bool, box: Rect2, layer: bool = false) -> void:
 	if not layer:
 		rt = _target(false)
+		# small overlapping transparent geometry: exact union on the CPU (cheaper than an offscreen layer)
+		if overlap and I.size() <= UNION_MAX * 3 and paint.kind != 5 and not (paint.opaque and alpha >= 1.0 and (op == 0 or op == 6)):
+			var U := DACanvasGeom.unionTris(P, I)
+			P = U[0]
+			I = U[1]
+			overlap = false
+			if I.is_empty():
+				return
 	var filt := RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_LINEAR if paint.smooth else RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_NEAREST
 	if paint.kind == 5 or paint.kind == 6:
 		filt = RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_LINEAR
