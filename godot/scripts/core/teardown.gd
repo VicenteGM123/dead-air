@@ -26,7 +26,14 @@ static func run(game: Node) -> Dictionary:
 		var path: String = g.get("path", "")
 		if path.ends_with(".gd") and ResourceLoader.has_cached(path):
 			stack.append(load(path))
+	var steps := 0
 	while not stack.is_empty():
+		steps += 1
+		if steps % 200000 == 0:
+			print("[teardown] dbg steps=%d stack=%d seen=%d top=%s" % [steps, stack.size(), seen.size(), type_string(typeof(stack[-1]))])
+		if steps > 20000000:
+			push_warning("[teardown] gave up after %d steps" % steps)
+			break
 		var v = stack.pop_back()
 		match typeof(v):
 			TYPE_ARRAY:
@@ -53,6 +60,8 @@ static func run(game: Node) -> Dictionary:
 				if seen.has(id):
 					continue
 				seen[id] = true
+				if seen.size() % 20000 == 0:
+					print("[teardown] dbg obj ", o, " ", o.get_script().resource_path if o.get_script() else "")
 				_object(o, stack, st)
 	# free the Nodes that are not in the tree: model / effect pools, prop prototypes, detached rooms
 	var ids: Array = ClassDB.class_call_static("Node", "get_orphan_node_ids")
@@ -97,6 +106,9 @@ static func _object(o: Object, stack: Array, st: Dictionary) -> void:
 
 # Queues a script var's value and releases it (containers are emptied when popped; Objects / Callables nulled).
 static func _take(o: Object, p: Dictionary, stack: Array) -> void:
+	# accessor properties (get:/set: blocks) are computed from other vars: never evaluate them here
+	if o.has_method("@%s_getter" % p.name) or o.has_method("@%s_setter" % p.name):
+		return
 	var v = o.get(p.name)
 	match typeof(v):
 		TYPE_ARRAY, TYPE_DICTIONARY:
@@ -119,5 +131,6 @@ static func _disconnectSingletons() -> void:
 		for sig in obj.get_signal_list():
 			for c in obj.get_signal_connection_list(sig.name):
 				var cb: Callable = c.callable
-				if cb.is_custom() or (cb.get_object() != null and cb.get_object().get_script() != null):
+				var tgt = cb.get_object()
+				if tgt != null and tgt.get_script() != null:
 					obj.disconnect(sig.name, cb)

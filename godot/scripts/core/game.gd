@@ -339,8 +339,9 @@ func hitStop(seconds: float) -> void:
 # fast and without leak reports (scripts/core/teardown.gd).
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:
+		var t0 := Time.get_ticks_msec()
 		var st: Dictionary = preload("res://scripts/core/teardown.gd").run(self)
-		print_verbose("[game] teardown: %d objects scrubbed, %d orphan nodes freed" % [st.objects, st.orphans])
+		print("[game] teardown: %d objects scrubbed, %d orphan nodes freed in %d ms" % [st.objects, st.orphans, Time.get_ticks_msec() - t0])
 		if inst == self:
 			inst = null
 

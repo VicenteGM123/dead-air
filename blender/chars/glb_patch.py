@@ -3,6 +3,7 @@ our per-vertex channels / morph normals exactly, so after export the body and pa
 the bake arrays. Each Blender vertex carries its original index in the UV map `vid` (exported as TEXCOORD_0).
 
     patch_glb(path, meshes)   meshes: {gltf mesh name: O(data=per-vertex dict, morphs=[(name, dp, dn)])}
+meshes[name].index (optional): the bake triangle list (original vertex ids), written as the primitive's indices.
 per-vertex dict keys: NORMAL (n,3) f32, COLOR_0 (n,4) f32, TEXCOORD_0..7 (n,2) f32 (indexed by ORIGINAL vertex).
 """
 import json
@@ -174,6 +175,17 @@ def patch_glb(path, meshes):
                 k = 'TEXCOORD_%d' % c
                 newat[k] = W.add(D[k][ids].astype(np.float32), 'VEC2')
             p['attributes'] = newat
+            if spec.get('index') is not None and len(m['primitives']) == 1:
+                # the exact bake triangle list (JS order): Blender merges duplicate faces (meshopt leaves back-to-back
+                # twin triangles where a thin sheet collapsed: collars, lapels, hair tips), which opened holes.
+                # Any exported copy of an original vertex carries the same data (all channels come from `ids`).
+                inv = np.full(int(ids.max()) + 1 if len(ids) else 0, -1, np.int64)
+                inv[ids[::-1]] = np.arange(len(ids))[::-1]
+                bi = np.asarray(spec['index'], np.int64).reshape(-1)
+                if bi.size and bi.max() < len(inv) and (inv[bi] >= 0).all():
+                    p['indices'] = W.add(inv[bi].astype(np.uint32), 'SCALAR', target=34963)
+                else:
+                    print('[glb_patch] %s: bake index not representable, keeping the exported one' % m.get('name'))
             if spec.get('morphs'):
                 targets = []
                 for (name, dp, dn) in spec['morphs']:

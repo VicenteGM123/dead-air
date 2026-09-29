@@ -482,7 +482,7 @@ func _grantGrenades() -> void:
 	if w == null:
 		return
 	if w.has_method("addGrenades"):
-		w.addGrenades(n, "round")
+		w.addGrenades(n)   # JS passes (n, 'round'); weapons.addGrenades(n) takes one argument
 	else:
 		var gv = w.get("grenades")
 		if gv is int or gv is float:

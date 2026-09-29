@@ -471,9 +471,9 @@ def export_glb(d, res, path, log=print):
         export_rest_position_armature=True, export_def_bones=False, use_selection=False,
         export_tangents=False)
     meshes = {'body': dict(data=vertex_channels(res.body, res.morphs, res.header.morphs),
-                           morphs=morph_arrays(res.body, res.morphs, res.header.morphs))}
+                           morphs=morph_arrays(res.body, res.morphs, res.header.morphs), index=res.body.index)}
     for name, pm in res.parts.items():
-        meshes['part_' + name] = dict(data=vertex_channels(pm), morphs=None)
+        meshes['part_' + name] = dict(data=vertex_channels(pm), morphs=None, index=pm.index)
     done = patch_glb(path, meshes)
     imp = path + '.import'
     old = open(imp).read() if os.path.exists(imp) else None
