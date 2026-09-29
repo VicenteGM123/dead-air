@@ -1134,7 +1134,7 @@ func setPrompt(obj) -> void:
 	if key != P.key:
 		P.key = key
 		changed = true
-	var plug := bool(obj.get("plug", false))
+	var plug := _tb(obj.get("plug"))
 	var c = obj.get("cost")
 	var cost := -1
 	if not plug and (c is int or c is float) and is_finite(float(c)) and float(c) > 0.0:
@@ -1142,14 +1142,14 @@ func setPrompt(obj) -> void:
 	if cost != P.cost:
 		P.cost = cost
 		changed = true
-	var denied: bool = cost >= 0 and bool(obj.get("denied", false))
+	var denied: bool = cost >= 0 and _tb(obj.get("denied"))
 	if denied != P.denied:
 		P.denied = denied
 		changed = true
 	if plug != P.plug:
 		P.plug = plug
 		changed = true
-	var hold := bool(obj.get("hold", false))
+	var hold := _tb(obj.get("hold"))
 	if hold != P.hold:
 		P.hold = hold
 		changed = true
@@ -2226,3 +2226,15 @@ func _drawFlash(ci: Control) -> void:
 	drawText(ci, f, -tw / 2.0, baselineAt(f, 104.0, 0.0), _flash.text, 104.0, col, 0.0,
 		[[0.0, 6.0, 0.0, "#B5472A"], [0.0, 12.0, 18.0, "rgba(0,0,0,.5)"]])
 	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
+
+# JS truthiness for prompt fields (interact passes hold: null when an item has no hold; bool(null) is invalid in GDScript).
+static func _tb(v) -> bool:
+	if v == null:
+		return false
+	if v is bool:
+		return v
+	if v is int or v is float:
+		return v != 0 and not is_nan(float(v))
+	if v is String or v is StringName:
+		return v != ""
+	return true
