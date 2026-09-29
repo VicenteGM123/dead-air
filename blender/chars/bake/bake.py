@@ -94,13 +94,19 @@ def bakeTree(sd, d, o):
         # (body + parts): its gradient there is the part's, often pointing into the head, with AO 0, and the big
         # triangles around it show a notch (duke's forehead). The JS bake shades the same way but its mesh has no
         # such vertex; those few vertices are shaded against the body alone instead (they are hidden by the part).
+        # Only ISOLATED ones (no covered neighbour): whole regions under a part (roxy's afro) are shaded like the JS.
         dA = rt.dist(pos, rt.bids(pos))
         bt = makeRegionTrees(root, 0.08, B.get('aoReach', 0.16))
-        cov = np.nonzero(dA < bt.dist(pos, bt.bids(pos)) - 1e-4)[0]
+        covered = dA < bt.dist(pos, bt.bids(pos)) - 1e-4
+        tri = np.asarray(index).reshape(-1, 3)
+        nbCov = np.zeros(n, np.int64)
+        for a, b_ in ((0, 1), (1, 2), (2, 0), (1, 0), (2, 1), (0, 2)):
+            np.add.at(nbCov, tri[:, a], covered[tri[:, b_]].astype(np.int64))
+        cov = np.nonzero(covered & (nbCov == 0))[0]
         if len(cov):
             s2 = shadeVertices(pos[cov], bt, shOpts)
             sh.nrm[cov], sh.ao[cov], sh.cav[cov] = s2.nrm, s2.ao, s2.cav
-            log('  shade: %d body vertices under rigid parts shaded against the body' % len(cov))
+            log('  shade: %d isolated body vertices under rigid parts shaded against the body' % len(cov))
     frameIds = V.frame[keep]
     pw = triWeights(sh.nrm, frameIds, sd.frames)
     log('  shade (normals/AO/cavity): %d ms' % ((time.time() - t) * 1000))
@@ -180,7 +186,7 @@ def bakeChar(d, log=print, voxel=None, tris=None, quick=False):
         stitches=[[*s.a, *s.b, s.t0, s.width, s.dash, s.duty, s.color, s.mats] for s in stitches],
         stitchChunks=stitchChunks(stitches),
         stats=O(tris=body.stats.tris + sum(p.tris for p in parts.values()), bodyTris=body.stats.tris, verts=body.n,
-                rawTris=body.stats.rawTris, voxel=voxel, bakeMs=int((time.time() - T0) * 1000), stitchSegs=len(stitches)),
+                rawTris=body.stats.rawTris, voxel=voxel, bakeMs=0, stitchSegs=len(stitches)),  # bakeMs 0: deterministic GLB bytes (time is logged below)
     )
     log('%s: done in %.1f s -> %d tris (%d verts)' % (d.id, time.time() - T0, header.stats.tris, body.n))
     return O(header=header, body=body, parts=partMeshes, morphs=morphData, scene=scene)

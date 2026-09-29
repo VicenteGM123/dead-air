@@ -595,7 +595,8 @@ func fromSpec(spec, importedMaterial = null) -> Material:
 			tex = importedMaterial.albedo_texture
 		elif spec.get("mapFile") != null and ResourceLoader.exists(str(spec.mapFile)):
 			tex = load(str(spec.mapFile))
-		elif not _warned.has("map:%s" % spec.get("map")):
+		elif not spec.get("runtime", false) and not _warned.has("map:%s" % spec.get("map")):
+			# (runtime: true = a texture the room / system script makes and assigns at runtime: not an error)
 			_warned["map:%s" % spec.get("map")] = true
 			push_warning("[materials] fromSpec: texture '%s' not found" % spec.get("map"))
 	var ckey := ""

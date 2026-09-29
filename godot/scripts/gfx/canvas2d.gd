@@ -164,7 +164,14 @@ func _currentTexRid() -> RID:
 
 # Called at frame_pre_draw for dirty canvases: (re)records the straight-alpha display copy of a transparent canvas.
 func _prepareDisplay() -> void:
-	if _cpu or opaque or _ver == null or _ver.state != 1 or not _ver.hasContent:
+	if _cpu or opaque or _ver == null or _ver.state != 1:
+		return
+	if not _ver.hasContent:
+		# cleared with nothing drawn since (clearRect of the whole canvas): the new version is fully transparent, so
+		# show it directly instead of the stale display copy of the previous content
+		if _disp != null:
+			DACanvasGPU.retire(_disp)
+			_disp = null
 		return
 	var old = _disp
 	_disp = DACanvasGPU.display(_ver, _disp)
