@@ -8,6 +8,13 @@ salvaron, porque *quien hace un programa nunca lo ve*.
 Es un juego de zombis por rondas en tercera persona, con estética de dibujo animado setentero (cámara al hombro
 estilo *Plants vs. Zombies: Garden Warfare*). Todo está hecho con código, en Three.js, y funciona en el navegador.
 
+## Versión Godot + Blender
+
+El juego también está migrado tal cual a **Godot 4.7** (`godot/`, todo el código en GDScript) con todos los
+assets 3D generados por código en **Blender** (`blender/`, scripts de Python que exportan a `godot/assets/`).
+Para jugarla: abre `godot/project.godot` en Godot 4.7 y pulsa F5. Detalles en `godot/README.md`,
+`blender/README.md` y `tools/audio/README.md`.
+
 ## Cómo jugar
 
 **Jugar online:** https://vicentegm123.github.io/dead-air/
