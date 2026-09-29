@@ -1432,6 +1432,18 @@ def ensureColors(root):
     root.traverse(f)
 
 
+def blackColors(o):
+    """three: a vertexColors material on a geometry without a colour attribute reads (0,0,0) (see ensureColors)."""
+    if not getattr(o, 'isMesh', False) or o.material is None or not o.material.vertexColors:
+        return
+    g = o.geometry
+    if g is None or g.attributes.color is not None:
+        return
+    c = g.clone()
+    c.setAttribute('color', THREE.BufferAttribute(np.zeros((c.attributes.position.count, 3)), 3))
+    o.geometry = c
+
+
 # ============================================================================================ the rooms
 def _named(m, name):
     m.name = name
@@ -1482,6 +1494,11 @@ def lobbyAssets(game):
         _named(moonSlats(game, root, [x, 0, WALL.s], 0, {'w': 1.7, 'd': 2.7, 'shear': 0.28 if x < 0 else -0.28}), 'moon_slats_%d' % n)
         n += 1
     _named(moonSlats(game, root, [WALL.w, 0, 0], -PI / 2, {'w': 1.7, 'd': 2.4, 'shear': 0.22, 'pre': 0.4, 'post': 0.22}), 'moon_slats_%d' % n)
+    # lobby.js does not run ensureColors: the meshes the level's static merge leaves alone (noMerge letters, the
+    # single glass lettering and cable meshes) keep a vertexColors material on a geometry without colours, which
+    # three draws with black vertex colours (staticopt vcMode 2); the merged floor papers get white.
+    for nm in ['glass_announce', 'camera_cable'] + ['letter_%d' % i for i in range(7)]:
+        blackColors(next(o for o in root.children if o.name == nm))
     ensureColors(root)
     out['lobby_dressing'] = root
     return out

@@ -81,6 +81,13 @@ static func bbox(p: PackedVector2Array, a: int = 0, b: int = -1) -> Rect2:
 		b = p.size()
 	if b <= a:
 		return Rect2()
+	if b - a > 48:
+		# native hull first: the GDScript loop then only visits the (few) hull points
+		p = Geometry2D.convex_hull(p.slice(a, b) if a > 0 or b < p.size() else p)
+		a = 0
+		b = p.size()
+		if b == 0:
+			return Rect2()
 	var mn := p[a]
 	var mx := p[a]
 	for i in range(a + 1, b):

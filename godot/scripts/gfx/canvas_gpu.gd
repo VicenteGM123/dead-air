@@ -29,7 +29,8 @@ class_name DACanvasGPU
 extends RefCounted
 
 static var MSAA: int = RenderingServer.VIEWPORT_MSAA_4X   # MSAA of canvas versions (4X; 8X looks closer to Chrome)
-static var POOL_MAX := 3                                  # idle RTs kept per size
+static var POOL_MAX := 12                                 # idle RTs kept per size (evicted after POOL_AGE frames)
+static var POOL_AGE := 300
 
 static var frame := 0                   # incremented at every frame_post_draw
 static var _hooked := false
@@ -147,6 +148,15 @@ static func mainViewport() -> RID:
 	if ml is SceneTree and (ml as SceneTree).root != null:
 		return (ml as SceneTree).root.get_viewport_rid()
 	return RID()
+
+# Size classes of auxiliary layers (so layers of similar size share pooled viewports: creating a viewport costs
+# far more than drawing a few transparent pixels).
+static func bucket(s: Vector2i) -> Vector2i:
+	return Vector2i(_bucket1(s.x), _bucket1(s.y))
+
+static func _bucket1(n: int) -> int:
+	var q := 16 if n <= 64 else (32 if n <= 256 else 64)
+	return mini(4096, (n + q - 1) / q * q)
 
 static func newRT(w: int, h: int, msaa: int, aux: bool, origin: Vector2 = Vector2.ZERO) -> RT:
 	_hook()
@@ -287,6 +297,12 @@ static func _sweep() -> void:
 			continue
 		keep.append(rt)
 	_versions = keep
+	for key in _pool.keys():
+		var list: Array = _pool[key]
+		while not list.is_empty() and frame - (list[list.size() - 1] as RT).relFrame > POOL_AGE:
+			_freeRT(list.pop_back())
+		if list.is_empty():
+			_pool.erase(key)
 	var kp: Array = []
 	for e in _proxies:
 		if (e[0] as WeakRef).get_ref() == null:

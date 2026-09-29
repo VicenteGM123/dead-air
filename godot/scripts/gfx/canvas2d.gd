@@ -1479,6 +1479,7 @@ func _emit(rt, P: PackedVector2Array, I: PackedInt32Array, paint: Paint, alpha: 
 			return
 		var Li := Rect2i(Vector2i(int(floor(lr.position.x)), int(floor(lr.position.y))), Vector2i.ZERO)
 		Li.size = (Vector2i(int(ceil(lr.end.x)), int(ceil(lr.end.y))) - Li.position).clamp(Vector2i.ONE, Vector2i(4096, 4096))
+		Li.size = DACanvasGPU.bucket(Li.size)
 		var lay = DACanvasGPU.newRT(Li.size.x, Li.size.y, DACanvasGPU.MSAA, true, Vector2(Li.position))
 		DACanvasGPU.retire(lay)
 		_emit(lay, P, I, paint, alpha, 0, null, true, box, true)
@@ -1541,7 +1542,7 @@ func _gpuLayered(rt, st: St, P: PackedVector2Array, I: PackedInt32Array, paint: 
 		return
 	var Li := Rect2i(Vector2i(int(floor(L.position.x)), int(floor(L.position.y))), Vector2i.ZERO)
 	Li.size = Vector2i(int(ceil(L.end.x)), int(ceil(L.end.y))) - Li.position
-	Li.size = Li.size.clamp(Vector2i.ONE, Vector2i(4096, 4096))
+	Li.size = DACanvasGPU.bucket(Li.size.clamp(Vector2i.ONE, Vector2i(4096, 4096)))
 	var layer = DACanvasGPU.newRT(Li.size.x, Li.size.y, DACanvasGPU.MSAA, true, Vector2(Li.position))
 	DACanvasGPU.retire(layer)
 	_emit(layer, P, I, paint, st.globalAlpha, 0, null, overlap, box, true)
@@ -1709,19 +1710,22 @@ func _text(st: St, text: String, x: float, y: float, maxWidth, isStroke: bool) -
 	if isStroke:
 		var lwRef := st.lineWidth / k
 		var g := DACanvasText.strokeGeo(sh, spRef, lwRef, _capI(st), _joinI(st), st.miterLimit)
-		var Pd := T * (g[0] as PackedVector2Array)
 		if (g[1] as PackedInt32Array).is_empty():
 			return
 		var paint := _paint(st.strokeColor, st)
 		if paint == null:
 			return
-		var tri := DACanvasGeom.fanAll(Pd, g[1])
-		_gpuOp(st, tri[0], tri[1], paint, true, DACanvasGeom.bbox(Pd))
+		if g.size() < 4:   # cached with the geometry: fan indices and REF-space bounds
+			g.append(DACanvasGeom.fanAll(g[0], g[1])[1])
+			g.append(DACanvasGeom.bbox(g[0]))
+		_gpuOp(st, T * (g[0] as PackedVector2Array), g[2], paint, true, _xfBox(T, g[3]))
 	else:
 		var m := DACanvasText.fillMesh(sh, spRef)
-		var Pf := T * (m[0] as PackedVector2Array)
-		if Pf.is_empty():
+		if (m[0] as PackedVector2Array).is_empty():
 			return
+		if m.size() < 3:
+			m.append(DACanvasGeom.bbox(m[0]))
+		var Pf := T * (m[0] as PackedVector2Array)
 		var paintF := _paint(st.fillColor, st)
 		if paintF == null:
 			return
@@ -1737,7 +1741,17 @@ func _text(st: St, text: String, x: float, y: float, maxWidth, isStroke: bool) -
 				I2.append(base + t)
 			_gpuOp(st, P2, I2, paintF, true, DACanvasGeom.bbox(P2))
 			return
-		_gpuOp(st, Pf, m[1], paintF, false, DACanvasGeom.bbox(Pf))
+		_gpuOp(st, Pf, m[1], paintF, false, _xfBox(T, m[2]))
+
+# Bounds of a transformed rect (conservative for the transformed contents).
+static func _xfBox(T: Transform2D, r: Rect2) -> Rect2:
+	var q := T * PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)])
+	var mn := q[0]
+	var mx := q[0]
+	for v in q:
+		mn = mn.min(v)
+		mx = mx.max(v)
+	return Rect2(mn, mx - mn)
 
 static func _capI(st: St) -> int:
 	return 0 if st.lineCap == "butt" else (1 if st.lineCap == "round" else 2)
