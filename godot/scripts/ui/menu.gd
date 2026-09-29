@@ -3168,6 +3168,9 @@ func _controlsLayout() -> Dictionary:
 		kW = maxf(kW, kw)
 		pW = maxf(pW, pw + 16.0)
 		rows.append({"kw": kw, "pw": pw})
+	# the grid's auto columns also fit their header cells (KEYBOARD · MOUSE / XBOX CONTROLLER, Bungee 14, .14em)
+	kW = maxf(kW, _tw("sign", 14, "KEYBOARD · MOUSE", 14.0 * 0.14))
+	pW = maxf(pW, _tw("sign", 14, "XBOX CONTROLLER", 14.0 * 0.14))
 	var hdH := _lh(_fonts.sign, 14) + 2.0
 	var c1W := W - 40.0 - kW - pW
 	var out := {"x0": x0, "c1W": c1W, "kW": kW, "pW": pW, "hdY": y, "hdH": hdH, "rows": [], "seps": []}

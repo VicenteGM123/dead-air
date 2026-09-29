@@ -130,10 +130,12 @@ var _statFrames := 0
 var _statMs := 0.0
 var _pausedFrom := "playing"
 var _booted := false
+var _profOn := false
 
 func _init() -> void:
 	inst = self
 	params = _parseParams()
+	_profOn = params.has("prof")
 	seed_value = int(params.seed) if params.has("seed") and (params.seed is int or params.seed is float) else randi() % 2147483648
 	_rng = Rng.mulberry32(seed_value)
 	events = preload("res://scripts/core/events.gd").new()
@@ -341,7 +343,7 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:
 		var t0 := Time.get_ticks_msec()
 		var st: Dictionary = preload("res://scripts/core/teardown.gd").run(self)
-		print("[game] teardown: %d objects scrubbed, %d orphan nodes freed in %d ms" % [st.objects, st.orphans, Time.get_ticks_msec() - t0])
+		print_verbose("[game] teardown: %d objects scrubbed, %d orphan nodes freed in %d ms" % [st.objects, st.orphans, Time.get_ticks_msec() - t0])
 		if inst == self:
 			inst = null
 
@@ -384,6 +386,9 @@ func _tick(delta: float) -> void:
 	if _call("render", "frame", realDt):
 		ready_flag = true
 	_updateStats(realDt, (Time.get_ticks_usec() - t0) / 1000.0)
+	if _profOn:
+		_prof["_tick"] = _prof.get("_tick", 0.0) + float(Time.get_ticks_usec() - t0)
+		_profReport(realDt)
 
 func _updateStats(realDt: float, ms: float) -> void:
 	_statT += realDt
@@ -400,11 +405,47 @@ func _updateStats(realDt: float, ms: float) -> void:
 	_statFrames = 0
 	_statMs = 0.0
 
+# QA param prof=<s> (Godot-only): accumulates the wall time of every system call and prints, every <s> seconds
+# (default 5) of real time, fps / frame time / draw calls / zombies and the costliest system calls in ms per frame.
+var _prof := {}
+var _profT := 0.0
+var _profFrames := 0
+
+func _profReport(realDt: float) -> void:
+	_profT += realDt
+	_profFrames += 1
+	var every := float(params.prof) if float(params.prof) >= 1.0 else 5.0
+	if _profT < every:
+		return
+	var rows: Array = []
+	for k in _prof:
+		rows.append([k, _prof[k] / 1000.0 / _profFrames])
+	rows.sort_custom(func(a, b): return a[1] > b[1])
+	var parts: PackedStringArray = []
+	for r in rows.slice(0, 14):
+		parts.append("%s %.2f" % [r[0], r[1]])
+	print("[prof] t=%.0f fps=%d frameMs=%.2f scriptMs=%.2f draws=%d tris=%d zombies=%d | %s" % [time.realNow, stats.fps,
+		1000.0 * _profT / _profFrames, _prof.get("_tick", 0.0) / 1000.0 / _profFrames, stats.drawCalls, stats.triangles,
+		stats.zombies, ", ".join(parts)])
+	_prof.clear()
+	_profT = 0.0
+	_profFrames = 0
+
 # Calls system[method](arg) if it exists. Returns true when the method exists and was called.
 func _call(name: String, method: String, arg = null) -> bool:
 	var sys = get(name)
 	if sys == null or not (sys is Object) or not sys.has_method(method):
 		return false
+	if _profOn:
+		var t0 := Time.get_ticks_usec()
+		_callRaw(sys, method, arg)
+		var k := name + "." + method
+		_prof[k] = _prof.get(k, 0.0) + float(Time.get_ticks_usec() - t0)
+		return true
+	_callRaw(sys, method, arg)
+	return true
+
+func _callRaw(sys, method: String, arg) -> void:
 	if arg == null:
 		if sys.get_method_argument_count(method) > 0:
 			sys.call(method, null)
@@ -412,4 +453,3 @@ func _call(name: String, method: String, arg = null) -> bool:
 			sys.call(method)
 	else:
 		sys.call(method, arg)
-	return true

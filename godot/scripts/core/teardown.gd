@@ -16,12 +16,13 @@
 extends RefCounted
 
 const SCRIPT_VAR := PROPERTY_USAGE_SCRIPT_VARIABLE
-static var DBG := false
+const MAX_STEPS := 20000000
 
 static func run(game: Node) -> Dictionary:
 	var st := {"objects": 0, "orphans": 0}
 	_disconnectSingletons()
 	var seen := {}
+	var vars := {}      # Script -> PackedStringArray of its plain script vars (accessor properties excluded)
 	var stack: Array = [game]
 	for g in ProjectSettings.get_global_class_list():
 		var path: String = g.get("path", "")
@@ -30,9 +31,7 @@ static func run(game: Node) -> Dictionary:
 	var steps := 0
 	while not stack.is_empty():
 		steps += 1
-		if steps % 200000 == 0:
-			print("[teardown] dbg steps=%d stack=%d seen=%d top=%s" % [steps, stack.size(), seen.size(), type_string(typeof(stack[-1]))])
-		if steps > 20000000:
+		if steps > MAX_STEPS:
 			push_warning("[teardown] gave up after %d steps" % steps)
 			break
 		var v = stack.pop_back()
@@ -41,17 +40,29 @@ static func run(game: Node) -> Dictionary:
 				var a: Array = v
 				if a.is_read_only() or a.is_empty():
 					continue
-				if a.is_typed() and a.get_typed_builtin() != TYPE_OBJECT and a.get_typed_builtin() != TYPE_ARRAY \
-						and a.get_typed_builtin() != TYPE_DICTIONARY and a.get_typed_builtin() != TYPE_CALLABLE:
+				var tb := a.get_typed_builtin()
+				if a.is_typed() and tb != TYPE_OBJECT and tb != TYPE_ARRAY and tb != TYPE_DICTIONARY and tb != TYPE_CALLABLE:
 					continue
-				stack.append_array(a)
+				if a.is_typed():
+					stack.append_array(a)
+				else:
+					for e in a:
+						var te := typeof(e)
+						if te >= TYPE_OBJECT and te <= TYPE_ARRAY:   # Object, Callable, Signal, Dictionary, Array
+							stack.append(e)
 				a.clear()
 			TYPE_DICTIONARY:
 				var d: Dictionary = v
 				if d.is_read_only() or d.is_empty():
 					continue
-				stack.append_array(d.keys())
-				stack.append_array(d.values())
+				for k in d:
+					var tk := typeof(k)
+					if tk >= TYPE_OBJECT and tk <= TYPE_ARRAY:
+						stack.append(k)
+					var e = d[k]
+					var te := typeof(e)
+					if te >= TYPE_OBJECT and te <= TYPE_ARRAY:
+						stack.append(e)
 				d.clear()
 			TYPE_OBJECT:
 				if not is_instance_valid(v):
@@ -61,36 +72,32 @@ static func run(game: Node) -> Dictionary:
 				if seen.has(id):
 					continue
 				seen[id] = true
-				DBG = false
-				if DBG:
-					print("[teardown] dbg obj ", o, " ", o.get_script().resource_path if o.get_script() else "")
-				_object(o, stack, st)
-	# free the Nodes that are not in the tree: model / effect pools, prop prototypes, detached rooms
-	var ids: Array = ClassDB.class_call_static("Node", "get_orphan_node_ids")
-	print("[teardown] dbg loop done steps=%d seen=%d orphans=%d" % [steps, seen.size(), ids.size()])
-	for nid in ids:
+				_object(o, stack, vars)
+	_freeOrphans(game, st)
+	st.objects = seen.size()
+	return st
+
+# Frees the Nodes that are not in the tree: model / effect pools, prop prototypes, detached rooms. The root Window
+# and the Game's ancestors are skipped: the engine is deleting them right now (the Game is deleted as a child).
+static func _freeOrphans(game: Node, st: Dictionary) -> void:
+	for nid in ClassDB.class_call_static("Node", "get_orphan_node_ids"):
 		var n = instance_from_id(nid)
 		if n == null or not is_instance_valid(n) or not (n is Node):
 			continue
-		if n.get_parent() != null or n.is_inside_tree() or n == game:
+		if n.get_parent() != null or n.is_inside_tree() or n == game or n is Window or n.is_ancestor_of(game):
 			continue
 		# only game content (3D nodes, canvas items, viewports and plain nodes the scripts made)
 		if not (n is Node3D or n is CanvasItem or n is Viewport or n is CanvasLayer or n.get_script() != null or n.get_class() == "Node"):
 			continue
-		var tt := Time.get_ticks_msec()
-		print("[teardown] dbg free ", n, " children=", n.get_child_count(true), " script=", n.get_script().resource_path if n.get_script() else "")
 		n.free()
-		print("[teardown] dbg   freed in ", Time.get_ticks_msec() - tt)
 		st.orphans += 1
-	st.objects = seen.size()
-	return st
 
-static func _object(o: Object, stack: Array, st: Dictionary) -> void:
+static func _object(o: Object, stack: Array, vars: Dictionary) -> void:
 	if o is GDScript:
 		var sc: GDScript = o
-		for p in sc.get_property_list():
+		for p in sc.get_property_list():       # static vars
 			if p.usage & SCRIPT_VAR:
-				_take(sc, p, stack)
+				_take(sc, p.name, stack)
 		for c in sc.get_script_constant_map().values():
 			if c is GDScript:
 				stack.append(c)
@@ -106,31 +113,47 @@ static func _object(o: Object, stack: Array, st: Dictionary) -> void:
 	if s == null:
 		return
 	stack.append(s)
-	for p in o.get_property_list():
-		if p.usage & SCRIPT_VAR:
-			_take(o, p, stack)
+	var names = vars.get(s)
+	if names == null:
+		names = _scriptVars(s)
+		vars[s] = names
+	for n in names:
+		_take(o, n, stack)
 
-# Queues a script var's value and releases it (containers are emptied when popped; Objects / Callables nulled).
-static func _take(o: Object, p: Dictionary, stack: Array) -> void:
-	# accessor properties (get:/set: blocks) are computed from other vars: never evaluate them here
-	if o.has_method("@%s_getter" % p.name) or o.has_method("@%s_setter" % p.name):
+# Plain member vars of a script (with its base scripts). Accessor properties (get:/set: blocks) are skipped: they
+# are computed from other vars and must not run here.
+static func _scriptVars(s: Script) -> PackedStringArray:
+	var methods := {}
+	var sc: Script = s
+	while sc != null:
+		for m in sc.get_script_method_list():
+			methods[m.name] = true
+		sc = sc.get_base_script()
+	var out := PackedStringArray()
+	for p in s.get_script_property_list():
+		if p.usage & SCRIPT_VAR and not methods.has("@%s_getter" % p.name) and not methods.has("@%s_setter" % p.name):
+			out.append(p.name)
+	return out
+
+# Queues a var's value and releases it (containers are emptied when popped; Objects / Callables nulled).
+static func _take(o: Object, name: String, stack: Array) -> void:
+	if o is GDScript and (o.has_method("@%s_getter" % name) or o.has_method("@%s_setter" % name)):
 		return
-	if DBG: print("  take ", p.name)
-	var v = o.get(p.name)
+	var v = o.get(name)
 	match typeof(v):
 		TYPE_ARRAY, TYPE_DICTIONARY:
 			stack.append(v)
 		TYPE_OBJECT:
 			if v != null:
 				stack.append(v)
-				o.set(p.name, null)
+				o.set(name, null)
 		TYPE_CALLABLE:
 			var c: Callable = v
 			if c.is_valid():
 				var t = c.get_object()
 				if t != null:
 					stack.append(t)
-				o.set(p.name, Callable())
+				o.set(name, Callable())
 
 # Script callables connected to engine singletons (lambdas keep their captures alive).
 static func _disconnectSingletons() -> void:

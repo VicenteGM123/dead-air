@@ -1168,7 +1168,7 @@ func _buildKid(room) -> void:
 	if anim != null:
 		_sp(anim, "override", Callable(self, "_kidPose"))
 
-func _kidPose(rig) -> void:
+func _kidPose(rig, _dt = 0.0) -> void:   # rig.gd calls override(rig, dt)
 	var Jn = _gp(rig, "joints")
 	if not (Jn is Dictionary):
 		return
@@ -1450,7 +1450,7 @@ func _buildPortrait():
 	vp.add_child(scene)
 	var env: Environment
 	if R != null and R.has_method("makeEnvironment"):
-		env = R.makeEnvironment(Color("#1A1226"), true)
+		env = R.makeEnvironment(Color("#1A1226"))
 	else:
 		env = Environment.new()
 		env.background_mode = Environment.BG_COLOR

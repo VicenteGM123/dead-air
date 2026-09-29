@@ -286,3 +286,22 @@ save_blend)` (para world/runtime/chars: grafo → escena nueva → GLB con textu
 `build(ids=None|[...], save_blend=bool, godot=<ruta del proyecto Godot>)`. Esos módulos usan la misma librería:
 `dalib.export.export_graph()` (o `scene.to_blender` + `export.export_glb` + `export.link_textures`) y
 `dalib.tex.texture_file`.
+
+## Proyecto Godot: primera apertura y exportación
+
+* **Primera apertura.** `godot --path godot --headless --import` (o abrir `godot/project.godot` en el editor)
+  importa todos los assets (~1 min; `.godot/` está ignorado por git). Los `.import` del repo que escriben los
+  builders (`dalib/tex.py`, `chars/build.py`, `chars/patterns.py`, `runtime/telly.py`) son mínimos a propósito
+  (PNG sin pérdida, sin LOD ni compresión de vértices en los personajes): Godot los completa con `uid`/`dest_files`
+  al importar. Los GLB/PNG/OGG sin `.import` se importan con los valores por defecto. Godot 4.4+ crea además un
+  `<script>.gd.uid` junto a cada script la primera vez que abre el editor.
+* **Exportar.** `export_presets.cfg` está ignorado por git: se crea en *Proyecto → Exportar*. Con el filtro por
+  defecto (*Exportar todos los recursos*) los `.json` que el juego lee con `FileAccess`
+  (`assets/props/index.json`, `assets/textures/index.json`, `data/layout.json`, el índice de audio…) SÍ entran en
+  el paquete: Godot 4 reconoce `.json` como recurso (comprobado con `--export-pack`). Aun así conviene poner en
+  *Recursos → Filtros para exportar archivos no-recurso* `*.json, assets/chars/patterns/*.png`: el segundo
+  patrón incluye los PNG originales de los patrones de personaje, que `char_material.gd` lee byte a byte (sin él
+  cae al PNG importado, que puede alterar el RGB bajo alfa 0).
+* **Salida limpia.** Al cerrar, `scripts/core/teardown.gd` (llamado desde `game.gd`) rompe los ciclos de
+  referencias entre sistemas, vacía las cachés `static var` y libera los nodos fuera del árbol (pools), para que
+  Godot salga rápido y sin avisos de fugas.

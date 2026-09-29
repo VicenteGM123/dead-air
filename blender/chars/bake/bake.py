@@ -86,8 +86,21 @@ def bakeTree(sd, d, o):
     pos = V.pos[keep].astype(np.float32).astype(float)
     B = d.bake or {}
     rt = o.aoTrees
-    sh = shadeVertices(pos, rt, O(aoStrength=B.get('aoStrength', 1), aoReach=B.get('aoReach', 0.16),
-                                 cavScale=B.get('cavScale', 0.005), cavGain=B.get('cavGain', 0.008)))
+    shOpts = O(aoStrength=B.get('aoStrength', 1), aoReach=B.get('aoReach', 0.16),
+               cavScale=B.get('cavScale', 0.005), cavGain=B.get('cavGain', 0.008))
+    sh = shadeVertices(pos, rt, shOpts)
+    if o.skin:
+        # A body vertex that the simplifier happened to leave UNDER a rigid part (brow, ...) sits inside the AO scene
+        # (body + parts): its gradient there is the part's, often pointing into the head, with AO 0, and the big
+        # triangles around it show a notch (duke's forehead). The JS bake shades the same way but its mesh has no
+        # such vertex; those few vertices are shaded against the body alone instead (they are hidden by the part).
+        dA = rt.dist(pos, rt.bids(pos))
+        bt = makeRegionTrees(root, 0.08, B.get('aoReach', 0.16))
+        cov = np.nonzero(dA < bt.dist(pos, bt.bids(pos)) - 1e-4)[0]
+        if len(cov):
+            s2 = shadeVertices(pos[cov], bt, shOpts)
+            sh.nrm[cov], sh.ao[cov], sh.cav[cov] = s2.nrm, s2.ao, s2.cav
+            log('  shade: %d body vertices under rigid parts shaded against the body' % len(cov))
     frameIds = V.frame[keep]
     pw = triWeights(sh.nrm, frameIds, sd.frames)
     log('  shade (normals/AO/cavity): %d ms' % ((time.time() - t) * 1000))
