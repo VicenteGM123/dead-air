@@ -447,6 +447,13 @@
   "wrap": "repeat",
   "ns": "k"
  },
+ "k.weave|#B7BEC8|plain|null||256|3": {
+  "file": "k_weave_B7BEC8_plain_null_256_3_7efebc70.png",
+  "w": 256,
+  "h": 256,
+  "wrap": "repeat",
+  "ns": "k"
+ },
  "k.weave|#B81E3A|cord|null||256|3": {
   "file": "k_weave_B81E3A_cord_null_256_3_79483a7a.png",
   "w": 256,
@@ -838,6 +845,27 @@
   "h": 320,
   "wrap": "clamp",
   "ns": "dc"
+ },
+ "nm_atlas_v1": {
+  "file": "k_nm_atlas_v1_9158a412.png",
+  "w": 1024,
+  "h": 1024,
+  "wrap": "clamp",
+  "ns": "k"
+ },
+ "nm_globe_map": {
+  "file": "k_nm_globe_map_3de4c1b9.png",
+  "w": 512,
+  "h": 256,
+  "wrap": "repeat",
+  "ns": "k"
+ },
+ "nm_skyline_v1": {
+  "file": "k_nm_skyline_v1_13c16103.png",
+  "w": 1024,
+  "h": 768,
+  "wrap": "clamp",
+  "ns": "k"
  },
  "out_atlas|crate_stencils": {
   "file": "k_out_atlas_crate_stencils_828872df.png",

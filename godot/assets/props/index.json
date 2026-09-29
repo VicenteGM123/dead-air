@@ -418,6 +418,12 @@
    "opts": {}
   }
  ],
+ "nm_globe": [
+  {
+   "key": "nm_globe__038",
+   "opts": {}
+  }
+ ],
  "bc_grid_batten": [
   {
    "key": "bc_grid_batten__039",
@@ -520,6 +526,15 @@
    }
   }
  ],
+ "nm_skyline": [
+  {
+   "key": "nm_skyline__041",
+   "opts": {
+    "w": 4.2,
+    "h": 3.2
+   }
+  }
+ ],
  "clock_wall": [
   {
    "key": "clock_wall__042",
@@ -568,6 +583,20 @@
    "opts": {
     "size": 0.5,
     "bezel": "#2A2231"
+   }
+  }
+ ],
+ "nm_desk_bare": [
+  {
+   "key": "nm_desk_bare__045",
+   "opts": {}
+  }
+ ],
+ "nm_typewriter": [
+  {
+   "key": "nm_typewriter__046",
+   "opts": {
+    "color": "#E3662B"
    }
   }
  ],
