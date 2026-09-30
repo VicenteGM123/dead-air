@@ -317,7 +317,9 @@ def buildMasterControl(game):
     add(K.m(tc(K.lathe([[0, 0], [0.036, 0], [0.04, 0.09], [0.036, 0.09], [0.032, 0.008], [0, 0.008]], {'seg': 14}), PAL.wztvBlue), mt.lacquer, {'pos': [30.55, 0.04, -6.85], 'rot': [HP, 0.4, 0]}))
     for cell, x, z, r in [['page', 27.7, -6.6, 0.4], ['wire', 25.4, -6.0, -0.7], ['sched', 32.3, -8.9, 1.1], ['page', 24.6, -10.4, 2.2]]:
         add(K.m(quad(0.22, 0.28, NA.cell(cell)), NA.mat, {'pos': [x, 0.006, z], 'rot': [-HP, 0, r], 'cast': False}))
-    add(K.m(quad(1.6, 1.6, NA.dcell('scuff')), NA.decal, {'pos': [26.8, 0.004, -5.0], 'rot': [-HP, 0, 0.2], 'cast': False}))
+    # JS: y 0.004 + the decal's polygonOffset draws it over the 6 mm metal plate strip it lies on (no polygonOffset
+    # in the Godot toon materials): 2 mm above the plate instead.
+    add(K.m(quad(1.6, 1.6, NA.dcell('scuff')), NA.decal, {'pos': [26.8, 0.008, -5.0], 'rot': [-HP, 0, 0.2], 'cast': False}))
     add(K.m(quad(1.2, 1.2, NA.dcell('tapeX')), NA.decal, {'pos': [29.0, 0.004, -11.3], 'rot': [-HP, 0, 0.1], 'cast': False}))
 
     # ------------------------------------------------------------------------------------ overhead cable trays
