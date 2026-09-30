@@ -15,7 +15,12 @@ extends Node
 const PRIORITY := 100000
 
 var _pending: Array = []
-var _watch := {}   # instance id -> {node: WeakRef, mat: last material_override, surf: [surface indices]}
+# Watched nodes as parallel arrays (a per-frame loop over ~550-600 nodes: no dictionary / WeakRef work per node).
+var _watch := {}           # instance id -> true (membership)
+var _nodes: Array = []     # MeshInstance3D (freed nodes drop out: is_instance_id_valid on _ids)
+var _ids: Array = []       # their instance ids
+var _mats: Array = []      # last seen material_override
+var _surfs: Array = []     # surface indices without a COLOR stream built non-toon
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -35,22 +40,36 @@ func _process(_dt: float) -> void:
 		for n in p:
 			if is_instance_valid(n) and not _watch.has(n.get_instance_id()):
 				_consider(n)
-	for id in _watch.keys():
-		var w: Dictionary = _watch[id]
-		var n = w.node.get_ref()
-		if n == null or not is_instance_valid(n):
-			_watch.erase(id)
-			continue
-		var m = n.material_override
-		if m == w.mat:
-			continue
-		if n.has_meta("vcolor_white"):
-			_watch.erase(id)
-			continue
-		w.mat = m
-		if isVColor(m):
-			_convert(n, w.surf)
-			_watch.erase(id)
+	var i := _nodes.size() - 1
+	while i >= 0:
+		if not is_instance_id_valid(_ids[i]):
+			_drop(i)
+		else:
+			var n: MeshInstance3D = _nodes[i]   # typed: direct property access
+			var m: Material = n.material_override
+			if m != _mats[i]:
+				if n.has_meta("vcolor_white"):
+					_drop(i)
+				else:
+					_mats[i] = m
+					if isVColor(m):
+						_convert(n, _surfs[i])
+						_drop(i)
+		i -= 1
+
+# Swap-remove watched entry i.
+func _drop(i: int) -> void:
+	_watch.erase(_ids[i])
+	var last := _nodes.size() - 1
+	if i != last:
+		_nodes[i] = _nodes[last]
+		_ids[i] = _ids[last]
+		_mats[i] = _mats[last]
+		_surfs[i] = _surfs[last]
+	_nodes.resize(last)
+	_ids.resize(last)
+	_mats.resize(last)
+	_surfs.resize(last)
 
 func _consider(mi: MeshInstance3D) -> void:
 	var src := mi.mesh as ArrayMesh
@@ -71,7 +90,12 @@ func _consider(mi: MeshInstance3D) -> void:
 	if isVColor(m):
 		_convert(mi, surf)
 		return
-	_watch[mi.get_instance_id()] = {"node": weakref(mi), "mat": m, "surf": surf}
+	var id := mi.get_instance_id()
+	_watch[id] = true
+	_nodes.append(mi)
+	_ids.append(id)
+	_mats.append(m)
+	_surfs.append(surf)
 
 # A toon (daToon) material: kit.finish turned it into a vertexColors variant and gave the geometry colors.
 static func isToon(m) -> bool:
