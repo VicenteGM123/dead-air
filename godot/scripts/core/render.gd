@@ -37,7 +37,8 @@
 # materials), CAM_NOFOG / CAM_FULLCOLOR (camera cull_mask flag bits read by the shaders: other worlds' cameras set
 # them), makeEnvironment(bg) (the same settings for other worlds: menu, ending), bloomStrength (current UnrealBloom
 # strength), QA params screenshot=/abs/path.png + shotafter=<s> (saves the window image after s seconds of wall
-# time, then quits) and quitafter=<s>.
+# time, then quits; + shotframes=<n>: also wait until n frames were rendered, since the first frames take seconds of
+# shader compilation and time-driven state such as the power=1 Sign-On switches needs ~2 s of frames) and quitafter=<s>.
 # Not ported (engine plumbing, SPEC §0.2): WebGLRenderer/EffectComposer setup, NaN guard, program sort, two-pass
 # twins, skipHiddenRoots, the shadow-map render hook of staticopt.js.
 extends RefCounted
@@ -287,6 +288,7 @@ func init() -> void:
 	if p.has("screenshot"):
 		_shotPath = str(p.screenshot)
 		_shotAfter = float(p.get("shotafter", 6.0))
+		_shotFrames = int(p.get("shotframes", 0))
 	if p.has("quitafter"):
 		_quitAfter = float(p.quitafter)
 
@@ -563,9 +565,12 @@ func _dynamicResolution(dt: float) -> void:
 		setPixelRatio(pixelRatio + 0.1)
 
 # ---- QA helpers (SPEC §2): screenshot=/abs/path.png shotafter=<s>, quitafter=<s> (wall-clock seconds)
+var _shotFrames := 0
+var _qaFrames := 0
 func _qa() -> void:
 	var t := (Time.get_ticks_msec() - _t0) / 1000.0
-	if _shotPath != "" and not _shotDone and t >= _shotAfter:
+	_qaFrames += 1
+	if _shotPath != "" and not _shotDone and t >= _shotAfter and _qaFrames >= _shotFrames:
 		_shotDone = true
 		RenderingServer.frame_post_draw.connect(_saveShot, CONNECT_ONE_SHOT)
 	if _quitAfter >= 0.0 and t >= _quitAfter and not (_shotPath != "" and not _shotDone):
