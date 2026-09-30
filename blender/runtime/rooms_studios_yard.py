@@ -257,6 +257,21 @@ def _named(g, name):
     return g
 
 
+def _blackColors(o):
+    """The yard meshes the JS level merge leaves alone (the only mesh of their material: the posters, the hose coil,
+    the crew cable) keep a vertexColors material on a geometry without colours, which WebGL draws with its
+    disabled-attribute constant (0, 0, 0): black vertex colours (the merged ones get white)."""
+    if not getattr(o, 'isMesh', False) or o.material is None or not o.material.vertexColors:
+        return o
+    g = o.geometry
+    if g is None or g.attributes.color is not None:
+        return o
+    c = g.clone()
+    c.setAttribute('color', THREE.BufferAttribute(np.zeros((c.attributes.position.count, 3)), 3))
+    o.geometry = c
+    return o
+
+
 def _loose(name, *objs):
     g = THREE.Group()
     g.name = name
@@ -1852,7 +1867,7 @@ def buildYard(game):
         tex = K.getCard(card)
         m = K.mat(game, 'paint', '#ffffff', {'map': tex, 'rough': 0.7})
         h = w * 4 / 3
-        posters.add(K.m(THREE.PlaneGeometry(w, h).rotateY(PI / 2), m, {'pos': [WX + 0.012, y, z], 'rot': [tilt, 0, 0]}))
+        posters.add(_blackColors(K.m(THREE.PlaneGeometry(w, h).rotateY(PI / 2), m, {'pos': [WX + 0.012, y, z], 'rot': [tilt, 0, 0]})))
     poster('poster_spooktacular', -13.55, 1.55, 0.72, 0.03)
     poster('poster_boogie_down', -6.1, 1.35, 0.5, -0.04)
     root.add(posters)
@@ -1864,7 +1879,7 @@ def buildYard(game):
     for i in range(41):
         a = (i / 40) * TAU * 2.6
         coil.append([WX + 0.28 + math.cos(a) * 0.2, 0.05 + i * 0.0035, -5.95 + math.sin(a) * 0.2])
-    hose.add(K.m(K.tube([[WX + 0.1, 0.6, -6.0], [WX + 0.2, 0.35, -6.0]] + coil, 0.018, {'seg': 120, 'radial': 5}), rub))
+    hose.add(_blackColors(K.m(K.tube([[WX + 0.1, 0.6, -6.0], [WX + 0.2, 0.35, -6.0]] + coil, 0.018, {'seg': 120, 'radial': 5}), rub)))
     root.add(hose)
 
     # ---- ground detail: the stones / weeds rotations draw from the room stream first (same order as yard.js)
@@ -1903,7 +1918,7 @@ def buildYard(game):
         tr.add(K.m(K.tube(pts, 0.03, {'seg': 36, 'radial': 6}), rubT))
     # crew cable: van rear -> hut door, snaking over the gravel
     snake = [[45.7, 0.03, -3.0], [46.2, 0.02, -4.4], [45.4, 0.02, -5.0], [43.9, 0.02, -4.97], [42.8, 0.02, -4.93], [41.8, 0.02, -4.95], [40.4, 0.02, -4.9], [40.1, 0.02, -4.3], [39.98, 0.02, -3.8], [39.8, 0.13, -3.5]]
-    tr.add(K.m(K.tube(snake, 0.022, {'seg': 60, 'radial': 5}), K.mat(game, 'rubber', '#E3662B', {'rough': 0.6})))
+    tr.add(_blackColors(K.m(K.tube(snake, 0.022, {'seg': 60, 'radial': 5}), K.mat(game, 'rubber', '#E3662B', {'rough': 0.6}))))
     root.add(tr)
 
     # ---- beyond the fence: utility wires between the poles (yard_utility_pole userData.wires, placed as yard.gd

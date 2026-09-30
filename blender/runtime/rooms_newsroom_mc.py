@@ -66,6 +66,19 @@ def _layoutArea(areaId):
     return {'id': areaId}
 
 
+def _blackColors(o):
+    """three: a vertexColors material on a geometry without a colour attribute reads (0,0,0) (see _ensureColors)."""
+    if not getattr(o, 'isMesh', False) or o.material is None or not o.material.vertexColors:
+        return o
+    g = o.geometry
+    if g is None or g.attributes.color is not None:
+        return o
+    c = g.clone()
+    c.setAttribute('color', THREE.BufferAttribute(np.zeros((c.attributes.position.count, 3)), 3))
+    o.geometry = c
+    return o
+
+
 def _ensureColors(root):
     """master_control.js ensureColors (and what the JS level merge does for the newsroom meshes): meshes whose
     material wants vertex colours get a white colour attribute."""
@@ -156,7 +169,9 @@ def buildNewsroom(game):
 
     # ------------------------------------------------------------------------------ south wall + camera
     sheet('promo', 20.6, 2.35, 3.83, 0.8, 0.8, 0, 0).rotation.set(0, PI, 0)
-    add(K.m(ribbon([[16.9, 0.02, 2.5], [16.6, 0.012, 2.9], [16.1, 0.012, 3.1], [15.8, 0.012, 3.7]], 0.04, {'seg': 16}), K.mat(game, 'rubber', '#2A2230'), {'cast': False}))
+    # the only mesh of its material: the JS level merge leaves it alone, so its vertexColors material reads the missing
+    # colour attribute as (0, 0, 0) (WebGL's disabled-attribute constant): black, not the white of _ensureColors
+    _blackColors(add(K.m(ribbon([[16.9, 0.02, 2.5], [16.6, 0.012, 2.9], [16.1, 0.012, 3.1], [15.8, 0.012, 3.7]], 0.04, {'seg': 16}), K.mat(game, 'rubber', '#2A2230'), {'cast': False})))
 
     # ------------------------------------------------------------------------------ moonlight slats (B4/B5)
     slatMat = additive(slatTex(6), '#9FB6FF', 0.5)

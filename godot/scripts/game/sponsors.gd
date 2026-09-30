@@ -56,6 +56,7 @@ extends RefCounted
 
 const PerksLib = preload("res://scripts/game/perks.gd")
 const Commercial = preload("res://scripts/ui/commercial.gd")
+const VColorParity = preload("res://scripts/core/vcolor_parity.gd")
 
 const RUNTIME_DIR := "res://assets/runtime/sponsors/"
 
@@ -481,7 +482,7 @@ func init() -> void:
 					h.value = 1.0
 			# (the JS uniform object is read at draw time; the Godot global is uploaded by materials.gd before this
 			# pre-pass, so it is written here too for this frame's draw)
-			if RenderingServer.global_shader_parameter_get_list().has(&"uHeroFade"):
+			if ProjectSettings.has_setting("shader_globals/uHeroFade"):  # (global_shader_parameter_get_list is editor-only)
 				RenderingServer.global_shader_parameter_set(&"uHeroFade", 1.0)
 			var pl = game.player
 			var m = _f(pl, "model")
@@ -1711,31 +1712,11 @@ func _swapMat(list, mat) -> void:
 				if c is MeshInstance3D:
 					_setMat(c as MeshInstance3D, m))
 
-# WebGL parity: these parts are built lit (glow, no vertex colors), so kit.finish never gave their geometry a color
-# attribute; the unpowered materials swapped in here are vertexColors toon materials, and a MeshStandardMaterial
-# program with no color buffer reads the disabled attribute's constant (0, 0, 0, 1): the JS draws the dark sign /
-# tally / softboxes / bulbs black (diffuse x 0; rim, emissive and fog still apply). Godot feeds a missing COLOR as
-# white, so the mesh (a per-node copy) gets the black color stream the JS draw reads.
+# WebGL parity (scripts/core/vcolor_parity.gd): these parts are built lit (glow, no vertex colors), and the unpowered
+# vertexColors materials swapped in here read the missing color attribute as black in the JS.
 func _setMat(mi: MeshInstance3D, m: Material) -> void:
 	mi.material_override = m
-	var vc = m.get_shader_parameter("uVColor") if m is ShaderMaterial else null
-	if not ((vc is float or vc is int) and vc > 0.5):
-		return
-	var src := mi.mesh as ArrayMesh
-	if src == null or src.get_surface_count() == 0 or (src.surface_get_format(0) & Mesh.ARRAY_FORMAT_COLOR):
-		return
-	var out := ArrayMesh.new()
-	for s in src.get_surface_count():
-		var arr := src.surface_get_arrays(s)
-		var n: int = (arr[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
-		var col := PackedColorArray()
-		col.resize(n)
-		col.fill(Color(0, 0, 0, 1))
-		arr[Mesh.ARRAY_COLOR] = col
-		out.add_surface_from_arrays(src.surface_get_primitive_type(s), arr)
-		out.surface_set_material(s, src.surface_get_material(s))
-		out.surface_set_name(s, src.surface_get_name(s))
-	mi.mesh = out
+	VColorParity.apply(mi)
 
 # {"__node": name} references still left in a prop's userData (props.gd resolves them when it builds the prop; this
 # only makes the runtime helpers independent of that). Returns v with the references replaced by the nodes.

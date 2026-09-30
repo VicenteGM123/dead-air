@@ -441,6 +441,7 @@ class RoomKit extends Node:
 			if m == null or not is_instance_valid(m):
 				continue
 			(m as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			m.set_meta("vcolor_white", true)  # the JS merge fills a missing color attribute with white (vcolor_parity.gd)
 			list.append(m)
 		if list.is_empty():
 			return null

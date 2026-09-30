@@ -143,6 +143,7 @@ func _init() -> void:
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(preload("res://scripts/core/vcolor_parity.gd").new())  # WebGL: vertexColors on colorless geometry reads black
 	for entry in SYSTEMS:
 		_make(entry[0], entry[1])
 		if entry[0] == "render" and render != null:
