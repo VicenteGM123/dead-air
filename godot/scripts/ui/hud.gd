@@ -760,9 +760,7 @@ static func _silhouette(inner: String, hexc: String) -> String:
 	var re := RegEx.new()
 	re.compile('(fill|stroke)="(?!none)[^"]*"')
 	var s := re.sub(inner, '$1="%s"' % hexc, true)
-	var re2 := RegEx.new()
-	re2.compile('(fill|stroke|stop)-opacity="[^"]*"')
-	s = re2.sub(s, '$1-opacity="1"', true)
+	# the paints' own opacities stay: a CSS drop-shadow follows the rendered alpha (translucent glass casts a faint shadow)
 	return s.replace('fill="url(#', 'data-x="').replace('filter="url(#fg)"', "")
 
 # ------------------------------------------------------------------------------------------------ CRT + shine shaders
@@ -964,6 +962,8 @@ func _build() -> void:
 	el = {"xh": xh, "pr": pr, "pops": pops, "tote": toteBox, "toteRow": toteRow, "ammo": ammo, "eq": eq, "dial": dial,
 		"chy": chy, "chyBar": chyBar, "shine": shine, "chyTop": chyTop, "pu": pu, "rb": rb, "fl": fl, "tear": tear, "crt": crt}
 	tote = FlipBoard.new(toteRow, 6, {})
+	for c in tote.cards:   # .tote align-items:center (the 40 px cards sit centred in the 52 px board, not stretched to it)
+		(c.el as Control).size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	magDrums = Roller.new(ammo, 3, {"cls": "mag", "x": 15.0, "y": 8.0})
 	resDrums = Roller.new(ammo, 3, {"cls": "res", "x": 139.0, "y": 15.0})
 	for i in int(Config.T.player.grenadesMax):
@@ -1966,17 +1966,15 @@ func _drawPops(ci: Control) -> void:
 		var s := 1.0
 		var o := 1.0
 		var E := func(x: float) -> float: return cubicBezier(0.2, 0.9, 0.3, 1.0, x)
+		# CSS eases each property between ITS OWN keyframes: transform 0% -> 18% -> 100% (65% sets only opacity),
+		# opacity 0% -> 18% -> 65% -> 100%
 		if t < 0.18:
 			var q: float = E.call(t / 0.18)
 			ty = lerpf(8.0, -6.0, q); s = lerpf(0.6, 1.12, q); o = lerpf(0.0, 1.0, q)
-		elif t < 0.65:
-			var q2: float = E.call((t - 0.18) / 0.47)
-			ty = lerpf(-6.0, -6.0 + (-58.0 + 6.0) * (0.47 / 0.82), q2); s = lerpf(1.12, 1.12 + (0.95 - 1.12) * (0.47 / 0.82), q2); o = 1.0
 		else:
-			var ty65 := -6.0 + (-58.0 + 6.0) * (0.47 / 0.82)
-			var s65 := 1.12 + (0.95 - 1.12) * (0.47 / 0.82)
-			var q3: float = E.call((t - 0.65) / 0.35)
-			ty = lerpf(ty65, -58.0, q3); s = lerpf(s65, 0.95, q3); o = lerpf(1.0, 0.0, q3)
+			var q2: float = E.call((t - 0.18) / 0.82)
+			ty = lerpf(-6.0, -58.0, q2); s = lerpf(1.12, 0.95, q2)
+			o = 1.0 if t < 0.65 else lerpf(1.0, 0.0, E.call((t - 0.65) / 0.35))
 		var txt: String = p.text
 		var tw := textWidth(f, txt, 30.0)
 		var lh := f.get_ascent(30) + f.get_descent(30)
