@@ -408,14 +408,18 @@ func _updateStats(realDt: float, ms: float) -> void:
 # QA param prof=<s> (Godot-only): accumulates the wall time of every system call and prints, every <s> seconds
 # (default 5) of real time, fps / frame time / draw calls / zombies and the costliest system calls in ms per frame.
 var _prof := {}
-var _profT := 0.0
+var _profWall0 := 0
 var _profFrames := 0
 
-func _profReport(realDt: float) -> void:
-	_profT += realDt
+func _profReport(_realDt: float) -> void:
+	# wall-clock frame time (time.realDt is clamped to MAX_DT, so it cannot measure slow frames)
+	var now := Time.get_ticks_usec()
+	if _profWall0 == 0:
+		_profWall0 = now
 	_profFrames += 1
+	var wall := float(now - _profWall0) / 1e6
 	var every := float(params.prof) if float(params.prof) >= 1.0 else 5.0
-	if _profT < every:
+	if wall < every:
 		return
 	var rows: Array = []
 	for k in _prof:
@@ -424,11 +428,11 @@ func _profReport(realDt: float) -> void:
 	var parts: PackedStringArray = []
 	for r in rows.slice(0, 14):
 		parts.append("%s %.2f" % [r[0], r[1]])
-	print("[prof] t=%.0f fps=%d frameMs=%.2f scriptMs=%.2f draws=%d tris=%d zombies=%d | %s" % [time.realNow, stats.fps,
-		1000.0 * _profT / _profFrames, _prof.get("_tick", 0.0) / 1000.0 / _profFrames, stats.drawCalls, stats.triangles,
-		stats.zombies, ", ".join(parts)])
+	print("[prof] t=%.0f fps=%.2f frameMs=%.2f scriptMs=%.2f draws=%d tris=%d zombies=%d | %s" % [Time.get_ticks_msec() / 1000.0,
+		_profFrames / wall, 1000.0 * wall / _profFrames, _prof.get("_tick", 0.0) / 1000.0 / _profFrames, stats.drawCalls,
+		stats.triangles, stats.zombies, ", ".join(parts)])
 	_prof.clear()
-	_profT = 0.0
+	_profWall0 = now
 	_profFrames = 0
 
 # Calls system[method](arg) if it exists. Returns true when the method exists and was called.

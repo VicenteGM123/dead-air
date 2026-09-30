@@ -140,7 +140,9 @@ func _texture() -> Texture2D:
 		return t
 	if not _proxy.is_valid():
 		var base := _currentTexRid()
-		_proxy = RenderingServer.texture_proxy_create(base)
+		# created on DACanvasGPU.proxyBase(), then retargeted: see DACanvasGPU.proxyBase (shared CanvasTexture bug)
+		_proxy = RenderingServer.texture_proxy_create(DACanvasGPU.proxyBase())
+		RenderingServer.texture_proxy_update(_proxy, base)
 		_proxyTarget = base
 		DACanvasGPU.trackProxy(self, _proxy)
 	t = CanvasTex.new()

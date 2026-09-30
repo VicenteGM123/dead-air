@@ -123,8 +123,33 @@ static func shutdown() -> void:
 	if _shut:
 		return
 	_shut = true
-	for rt in _all.keys():
-		_freeRT(rt)
+	# Order matters (freeing a viewport whose texture still backs a proxy, or a parent viewport before its
+	# children, corrupted the heap at exit in real renders): proxies first, then every RT's items and materials,
+	# then detach all viewports from their parents, then canvases, then viewports.
+	for e in _proxies:
+		_freeProxy(e[1])
+	_proxies = []
+	var rts: Array = _all.keys()
+	for rt in rts:
+		for it in rt.items:
+			RenderingServer.free_rid(it)
+		rt.items = []
+		for m in rt.opMats:
+			RenderingServer.free_rid(m)
+		rt.opMats = []
+		rt.opShader = []
+		if rt.maskMat.is_valid():
+			RenderingServer.free_rid(rt.maskMat)
+			rt.maskMat = RID()
+	for rt in rts:
+		RenderingServer.viewport_set_active(rt.vp, false)
+		RenderingServer.viewport_set_parent_viewport(rt.vp, RID())
+	for rt in rts:
+		RenderingServer.viewport_remove_canvas(rt.vp, rt.cv)
+		RenderingServer.free_rid(rt.cv)
+	for rt in rts:
+		RenderingServer.free_rid(rt.vp)
+	stats.rts = 0
 	_all.clear()
 	_pool.clear()
 	_recording = []
@@ -133,12 +158,12 @@ static func shutdown() -> void:
 	_versions = []
 	_watch = []
 	_dirtyCanvases = []
-	for e in _proxies:
-		RenderingServer.free_rid(e[1])
-	_proxies = []
 	for v in _mats.values():
 		RenderingServer.free_rid(v)
 	_mats.clear()
+	if _proxyNull.is_valid():
+		RenderingServer.free_rid(_proxyNull)
+		_proxyNull = RID()
 	_shaders.clear()
 	_blank.clear()
 	_white = null
@@ -306,10 +331,26 @@ static func _sweep() -> void:
 	var kp: Array = []
 	for e in _proxies:
 		if (e[0] as WeakRef).get_ref() == null:
-			RenderingServer.free_rid(e[1])
+			_freeProxy(e[1])
 		else:
 			kp.append(e)
 	_proxies = kp
+
+# Godot 4.7 bug (RD TextureStorage::texture_proxy_initialize copies the whole Texture struct of its base, including
+# the base's lazily created CanvasTexture pointer, and texture_proxy_update keeps the proxy's pointer): a proxy created
+# on a viewport texture that was already drawn in 2D shares that CanvasTexture with it, and freeing both deletes it
+# twice ("double free or corruption", seen at exit in real renders and when evicted versions are freed). Proxies are
+# therefore created on proxyBase() (a private texture never drawn in 2D, so no CanvasTexture) and then pointed at
+# their real target with texture_proxy_update, which keeps the proxy's own (null) pointer.
+static var _proxyNull := RID()
+static func proxyBase() -> RID:
+	if not _proxyNull.is_valid():
+		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		_proxyNull = RenderingServer.texture_2d_create(img)
+	return _proxyNull
+
+static func _freeProxy(proxy: RID) -> void:
+	RenderingServer.free_rid(proxy)
 
 static func markDirty(canvas) -> void:
 	if not _dirtyCanvases.has(canvas):
