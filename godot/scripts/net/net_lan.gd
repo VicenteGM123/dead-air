@@ -2,9 +2,10 @@
 # Beacon (host): a UDP broadcast every BEACON_EVERY s to 255.255.255.255:<lanPort> (and to 127.0.0.1, so games on
 #   the same machine see each other) carrying JSON {g: 'deadair', v: version, n: name, p: players, m: max, port}.
 # Listener (net.discover(true)): a PacketPeerUDP bound to <lanPort> (any address); every beacon updates `list`
-#   (one entry per ip:port): [{ip, name, players, max, port, version, seen}] (seen = wall-clock s of the last
-#   beacon); entries not heard for EXPIRE s are dropped. Beacons of another protocol version are listed too (version
-#   field) so the menu can grey them out.
+#   (one entry per ip:port; a game on this machine, heard both by broadcast and on 127.0.0.1, is listed once with its
+#   LAN address): [{ip, name, players, max, port, version, seen}] (seen = wall-clock s of the last beacon); entries
+#   not heard for EXPIRE s are dropped. Beacons of another protocol version are listed too (version field) so the
+#   menu can grey them out.
 # API: startBeacon(port) -> bool, stopBeacon(), beacon(info) (net.update calls it, rate-limited), listen(on, port) ->
 #   bool, listening, error ('' | 'bind' | 'send'), poll(now) -> bool (true when `list` changed), close().
 # The sockets are non-blocking; nothing here allocates per frame unless a packet arrives.
@@ -101,6 +102,14 @@ func poll(now: float) -> bool:
 			var players := clampi(int(d.get("p", 1)) if (d.get("p") is float or d.get("p") is int) else 1, 0, 16)
 			var mx := clampi(int(d.get("m", 4)) if (d.get("m") is float or d.get("m") is int) else 4, 1, 16)
 			var ver := str(d.get("v", ""))
+			# a game on this machine is heard twice (broadcast + the 127.0.0.1 copy): keep one entry, the LAN address
+			if entry == null:
+				for e in list:
+					if e.port == port and e.name == name and e.version == ver and (ip.begins_with("127.") or str(e.ip).begins_with("127.")):
+						entry = e
+						if not ip.begins_with("127."):
+							e.ip = ip
+						break
 			if entry == null:
 				list.append({"ip": ip, "name": name, "players": players, "max": mx, "port": port, "version": ver, "seen": now})
 				changed = true

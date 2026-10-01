@@ -58,11 +58,34 @@
 #   canvases (TV overlay, title logo, sunrise, stand-by cards) are DACanvas (scripts/gfx/canvas2d.gd).
 #   localStorage -> ConfigFile user://deadair.cfg (section "", the JS keys). setTimeout -> timers ticked by update().
 # Not ported (SPEC §0.2): renderer.compileAsync / game.warmSteps shader warm-up of the sets.
+#
+# MP (online co-op, MP_SPEC §0 §3.4 §3.5; the screens live in menu_front.gd and menu_lobby.gd, helpers of this object):
+#   MAIN MENU (mode 'main', menu_front.gd): the title's any key now opens it (camera pose 'main': the TV on the left,
+#     still showing the logo; the pause card's walnut pills on the right): SINGLE PLAYER (-> showSelect(), the dial
+#     exactly as before) / MULTIPLAYER (TV GUIDE cards: host, join with the LAN listings and an address keypad, the
+#     player name) / OPTIONS / CONTROLS (the pause menu's own cards) / QUIT (asks once, powers the set off, quits).
+#     Esc on the dial now returns to the main menu (it returned to the title).
+#   LOBBY (menu_lobby.gd): the same dial while _lobby != null (null in solo: every solo path is unchanged). Each player
+#     tunes locally; a channel whose hero another player claimed shows ON AIR: <NAME> on the chyron and denies the
+#     tune-in; tuning in = net.setHero + net.setReady(true); Esc un-readies, Esc again leaves (net.leave) to the
+#     MULTIPLAYER card. A TV GUIDE roster card lists the players (channel, name, hero, ON AIR = ready, ping) and, for
+#     the host, the addresses to share (LAN + UPnP). Host START (Enter / Start / click) -> net.startGame(); the lobby
+#     phase 'starting' shows a 3-2-1 film leader on every TV, then every peer does the dive and the game starts.
+#   PAUSE in an MP game (net.inGame; game.mpPaused, the world keeps running): the same card with RESUME / OPTIONS /
+#     CONTROLS / LEAVE GAME (armed twice like QUIT, then net.leave() -> the main menu).
+#   SIGNAL LOST (mode 'lost'): the session ended under us (host left, connection lost): static, CRT collapse, then the
+#     stand-by card family with snow + SIGNAL LOST; any key -> the main menu (or the MULTIPLAYER card from a lobby).
+#   MP GAME OVER / RESULTS: the same cards; the right panel lists each player (name, kills, points) under the team
+#     round; any key -> back to the lobby (same session). Solo keeps today's flow.
+#   API added: showMain(screen = 'main' | 'mp'), showLobby(), showSignalLost(reason), mpStart(heroId) -> bool (mp-core
+#   hook: the lobby plays the dive, then starts the game), mode values 'main' | 'lost'.
 extends RefCounted
 
 const HudScript = preload("res://scripts/ui/hud.gd")
 const FontsScript = preload("res://scripts/ui/fonts.gd")
 const Menu_ = preload("res://scripts/ui/menu.gd")   # self: inner classes reach the static helpers through it
+const FrontScript = preload("res://scripts/ui/menu_front.gd")   # MP: main menu + MULTIPLAYER cards
+const LobbyScript = preload("res://scripts/ui/menu_lobby.gd")   # MP: lobby on the dial, SIGNAL LOST / results glue
 
 # ------------------------------------------------------------------------------------------------ constants
 const REF_W := 1920.0
@@ -374,6 +397,11 @@ var _css := {
 }
 var _pauseCanvas = null
 var _overCanvas = null
+# MP
+var _front = null               # menu_front.gd: MAIN menu + MULTIPLAYER cards (mode 'main')
+var _lobbyMod = null            # menu_lobby.gd
+var _lobby = null               # == _lobbyMod while the dial is the MP lobby; null in solo
+var _camDur := 1.25             # camera blend duration of _camGo()
 
 func _init(g) -> void:
 	game = g
@@ -399,6 +427,8 @@ func _init(g) -> void:
 	FontsScript.loadFonts()
 	_fonts = {"hud": FontsScript.family(FontsScript.FONTS.hud), "tape": FontsScript.family(FontsScript.FONTS.tape),
 		"logo": FontsScript.family(FontsScript.FONTS.logo), "sign": FontsScript.family(FontsScript.FONTS.sign)}
+	_front = FrontScript.new(self)
+	_lobbyMod = LobbyScript.new(self)
 	_buildDom()
 	_resize()
 
@@ -421,6 +451,10 @@ func init() -> void:
 	game.add_child(_hook)
 	game.events.on("state", func(p): _onState(p if p else {}))
 	game.events.on("input:device", func(_p): _refreshGlyphs())
+	# MP: the session's events (scripts/net, mp-core) drive the front cards, the lobby and SIGNAL LOST
+	for ev in ["net:lobby", "net:peer", "net:status", "net:lan", "net:upnp", "net:hero"]:
+		var evn: String = ev
+		game.events.on(evn, func(p): _onNet(evn, p))
 
 # ------------------------------------------------------------------------------------------- gamepad
 # input.gd calls this for every pad press while a menu shows (see the header). Returns true when it was used.
@@ -428,9 +462,13 @@ func padButton(btn: String) -> bool:
 	var m = mode
 	if not m or m == "tunein":
 		return false
-	var key := func(code: String) -> void: _onKey({"code": code, "repeat": false, "shiftKey": false, "stop": false})
-	if m == "title" or m == "over" or m == "results":
+	var key := func(code: String) -> void: _onKey({"code": code, "repeat": false, "shiftKey": false, "stop": false, "char": ""})
+	if m == "title" or m == "over" or m == "results" or m == "lost":
 		key.call("Enter")   # any button
+		return true
+	if m == "main":
+		return _front.pad(btn)
+	if m == "select" and _lobby != null and _lobby.pad(btn):
 		return true
 	if m == "select":
 		var code = "ArrowLeft" if btn == "lb" else ("ArrowRight" if btn == "rb" else ("Enter" if btn == "start" else PAD_MENU.get(btn)))
@@ -461,8 +499,10 @@ func _refreshGlyphs() -> void:
 	if mode == "select":
 		_hits = _hits.filter(func(h): return not ["arrowL", "arrowR", "dymo"].has(h.id))
 		_selectHits()
-	if mode == "pause" and _pause.sub == "controls":
+	if (mode == "pause" and _pause.sub == "controls") or (mode == "main" and _front.screen == "controls"):
 		_renderPause()
+	elif mode == "main":
+		_front._hitsFor()
 	_redraw()
 
 func reset() -> void:
@@ -470,6 +510,8 @@ func reset() -> void:
 	hideAll()
 
 func hideAll() -> void:
+	if mode == "main":
+		_front.leaveScreen()
 	mode = null
 	_use3D(false)
 	for k in pn:
@@ -517,8 +559,68 @@ func showTitle() -> void:
 	_redraw()
 
 func showSelect() -> void:
+	_lobby = null
+	_showDial()
+
+# MP: the dial as the lobby of the current session (menu_lobby.gd; HOST GAME / a successful join / back from results).
+func showLobby() -> void:
+	_lobby = _lobbyMod
+	_showDial()
+	pn.lobby.visible = true
+	_lobby.enter()
+
+# MAIN menu (menu_front.gd); screen 'mp' opens straight on the MULTIPLAYER card (leaving a lobby).
+func showMain(screen: String = "main") -> void:
 	var g = game
-	var fromTitle: bool = mode == "title"
+	var from = mode
+	hideAll()
+	_lobby = null
+	_session = false
+	if _mpSession():
+		_net().leave()   # the main menu is outside any session
+	if g.state != "menu":
+		g.setState("menu")
+	mode = "main"
+	_t = 0.0
+	_ensureRoom()
+	_use3D(true)
+	_resetPost()
+	_css.bg.on = false
+	_css.bg.black = false
+	_tvMode("title")
+	_camGo("main" if screen == "main" else "card", 1.25)
+	pn.front.visible = true
+	root.mouse_filter = Control.MOUSE_FILTER_STOP
+	if g.audio and g.audio.has_method("music"):
+		g.audio.music("title")
+	_front.enter(screen, from)
+	_redraw()
+
+# mp-core hook (net:start on every peer): true when the lobby takes over the start (the dive into the screen, then
+# _startGame() starts the game itself); false when no lobby shows (test boots auto-start), the caller starts it.
+func mpStart(heroId) -> bool:
+	if _lobby == null or (mode != "select" and mode != "tunein"):
+		return false
+	return _lobby.goLive(heroId)
+
+# Camera: blend from wherever it is now (the room's last pose) to a named pose over dur seconds.
+func _camGo(to: String, dur: float = 1.25) -> void:
+	var R = _room
+	if R == null:
+		return
+	if R.get("cur") is Dictionary:
+		R.poses["cur"] = (R.cur as Dictionary).duplicate()
+		_camFrom = "cur"
+	else:
+		_camFrom = _camTo
+	_camTo = to
+	_camBlend = 0.0
+	_camDur = dur
+
+func _showDial() -> void:
+	var g = game
+	var from = mode
+	var fromTitle: bool = from == "title" or from == "main"
 	hideAll()
 	if g.state != "menu":
 		g.setState("menu")
@@ -527,9 +629,13 @@ func showSelect() -> void:
 	_ensureRoom()
 	_use3D(true)
 	_resetPost()
-	_camFrom = "title" if fromTitle else "select"
-	_camTo = "select"
-	_camBlend = 0.0 if fromTitle else 1.0
+	if from == "main" or (_lobby != null and from != "select"):
+		_camGo("select", 1.25)   # from the main menu's pose (or back from a game: out of the screen)
+		fromTitle = true
+	else:
+		_camFrom = "title" if fromTitle else "select"
+		_camTo = "select"
+		_camBlend = 0.0 if fromTitle else 1.0
 	pn.select.visible = true
 	root.mouse_filter = Control.MOUSE_FILTER_STOP
 	_later(0.7 if fromTitle else 0.15, func():
@@ -544,11 +650,20 @@ func showSelect() -> void:
 func tune(dir: int) -> void:
 	if mode != "select" or _camBlend < 0.35:
 		return
+	if _lobby != null and not _lobby.canTune():
+		return
 	_tuneTo((_chIdx + (-1 if dir < 0 else 1) + CHANNELS.size()) % CHANNELS.size(), false, dir)
 
 func tuneIn() -> void:
 	if mode != "select" or _camBlend < 0.6:
 		return
+	if _lobby != null:
+		_lobby.tuneIn()   # MP: claim the hero + READY (the dive comes with the host's start)
+		return
+	_dive()
+
+# The tune-in transition: the camera dives into the screen, white flash, then _startGame().
+func _dive() -> void:
 	mode = "tunein"
 	_t = 0.0
 	_css.selttl.on.set_(0.0)
@@ -593,6 +708,7 @@ func showGameOver(summary = {}) -> void:
 	_t = 0.0
 	_over = {"summary": {"round": int(summary.get("round", 0)), "kills": int(summary.get("kills", 0)), "points": int(summary.get("points", 0))},
 		"phase": "drain", "title": null, "onDone": null, "results": false}
+	_mpOver(summary)
 	_play("sting_gameover")
 
 func showVictory(summary = {}) -> void:
@@ -629,7 +745,143 @@ func showResults(summary = {}, opts = {}) -> void:
 	_t = 0.0
 	_over = {"summary": {"round": int(summary.get("round", 0)), "kills": int(summary.get("kills", 0)), "points": int(summary.get("points", 0))},
 		"phase": "card", "title": title, "onDone": onDone, "results": true}
+	_mpOver(summary)
 	_showOverCard()
+
+# -------------------------------------------------------------------------------------------- MP (sessions)
+# net:status values that end a session under us (net.leave() reports 'left': our own choice, never SIGNAL LOST)
+const LOST_STATUS := ["lost", "rejected", "failed"]
+const LOST_TEXT := {"host_left": "THE HOST ENDED THE BROADCAST", "lost": "THE CONNECTION WAS LOST", "disconnected": "THE CONNECTION WAS LOST",
+	"timeout": "THE SIGNAL TIMED OUT", "kicked": "THE HOST TOOK YOU OFF THE AIR"}
+var _session := false           # we were in an MP lobby / game (a disconnect status then means SIGNAL LOST)
+
+func _net():
+	return game.get("net")
+
+# An MP session exists (lobby or game).
+func _mpSession() -> bool:
+	var n = _net()
+	return n != null and n.get("active") == true
+
+# An MP game runs (pause card items, game over flow).
+func _mpGame() -> bool:
+	var n = _net()
+	return n != null and n.get("active") == true and n.get("inGame") == true
+
+# game.events net:* (mp-core) -> the front cards, the lobby, SIGNAL LOST.
+func _onNet(ev: String, p) -> void:
+	var d: Dictionary = p if p is Dictionary else {}
+	if mode == "main":
+		_front.onNet(ev, p)   # connecting / LAN listings / a join attempt that failed
+		return
+	if ev == "net:status":
+		var st := str(d.get("status", ""))
+		if LOST_STATUS.has(st) and _session and mode != "lost":
+			var why := str(d.get("reason", ""))
+			showSignalLost(why if LOST_TEXT.has(why) else st)
+		return
+	if _lobby != null:
+		_lobby.onNet(ev, p)
+
+# LEAVE GAME (MP pause) / leaving a lobby: our own disconnect, never a SIGNAL LOST.
+func _leaveSession(screen: String = "main") -> void:
+	var n = _net()
+	_session = false
+	if game.get("mpPaused") == true:
+		game.set("mpPaused", false)
+	if n != null and n.has_method("leave"):
+		n.leave()
+	hideAll()
+	game.setState("menu")
+	showMain(screen)
+
+# SIGNAL LOST (mode 'lost'): the session ended under us. In a game: the picture tears into static and collapses, then
+# the stand-by card family with snow + SIGNAL LOST; from a lobby the card comes at once. Any key -> the main menu
+# (the MULTIPLAYER card when it cut a lobby).
+func showSignalLost(reason: String = "") -> void:
+	var g = game
+	var fromLobby := _lobby != null
+	var inGame: bool = mode == null or mode == "pause" or g.state == "playing" or g.state == "down" or g.state == "paused"
+	_session = false
+	if g.get("mpPaused") == true:
+		g.set("mpPaused", false)
+	hideAll()
+	_lobby = null
+	if g.hud and g.hud.has_method("hide"):
+		g.hud.hide()
+	var inp = g.input
+	if inp and inp.has_method("exitLock"):
+		inp.exitLock()
+	if g.state != "menu":
+		g.setState("menu")   # the world stops behind the static
+	mode = "lost"
+	_t = 0.0
+	var txt: String = LOST_TEXT.get(reason, reason.to_upper().replace("_", " ") if reason != "" else "THE CONNECTION WAS LOST")
+	_over = {"summary": {"round": 0, "kills": 0, "points": 0}, "phase": "static" if inGame and not fromLobby else "black", "title": "Signal Lost",
+		"onDone": null, "results": false, "lost": true, "why": txt, "fromLobby": fromLobby, "mp": false}
+	_play("uplink_lost")
+	if not inGame or fromLobby:
+		_t = GAMEOVER.card - 0.35   # straight to the card after a beat of black
+
+# MP game over / results: the card lists every player and any key returns to the lobby (_overGo).
+func _mpOver(summary: Dictionary) -> void:
+	if not _mpSession():
+		return
+	_over.mp = true
+	_over.players = _mpPlayers(summary)
+	if game.get("mpPaused") == true:
+		game.set("mpPaused", false)   # the pause card (if it was up) is gone
+
+# Host: the MP game is over (the game-over card is up / a results card was dismissed): net.endGame() -> every peer back
+# to the lobby phase (inGame false, ready flags cleared, state 'menu'). Clients wait for it in their lobby.
+func _mpEndGame(reason: String) -> void:
+	var n = _net()
+	if n != null and n.get("isHost") == true and n.get("inGame") == true and n.has_method("endGame"):
+		n.endGame(reason)
+
+# Rows of the MP results card: [{id, name, hero, kills, points, me}], best score first. From the host's summary
+# (net.teamSummary(): players = [{id, name, hero, color, kills, points, downs, revives}], or {id: row}) or else
+# net.peers + economy.statsOf(id).
+func _mpPlayers(summary: Dictionary) -> Array:
+	var n = _net()
+	var peers = n.get("peers") if n != null else null
+	var me = n.get("localId") if n != null else 1
+	var rows: Array = []
+	var src = summary.get("players", summary.get("team"))
+	if src is Dictionary:
+		for id in src:
+			var r: Dictionary = (src[id] as Dictionary).duplicate() if src[id] is Dictionary else {}
+			r.id = int(id)
+			rows.append(r)
+	elif src is Array:
+		for r in src:
+			if r is Dictionary:
+				rows.append((r as Dictionary).duplicate())
+	elif peers is Dictionary:
+		var eco = game.economy
+		for id in peers:
+			var pi = peers[id]
+			var st = eco.statsOf(int(id)) if eco != null and eco.has_method("statsOf") else null
+			if not (st is Dictionary):
+				st = pi if pi is Dictionary else {}
+			rows.append({"id": int(id), "name": pi.get("name") if pi is Dictionary else null, "hero": pi.get("hero") if pi is Dictionary else null,
+				"kills": st.get("kills", 0), "points": st.get("points", 0)})
+	for r in rows:
+		var id := int(r.get("id", 0))
+		var pi = peers.get(id) if peers is Dictionary else null
+		if r.get("name") == null:
+			r.name = pi.get("name", "PLAYER %d" % id) if pi is Dictionary else ("PLAYER %d" % id)
+		if r.get("hero") == null and pi is Dictionary:
+			r.hero = pi.get("hero")
+		r.me = id == int(me) if me != null else false
+		if r.me and r.get("kills") == null:
+			r.kills = summary.get("kills", 0)
+		if r.me and r.get("points") == null:
+			r.points = summary.get("points", 0)
+		r.kills = int(r.get("kills", 0) if r.get("kills") != null else 0)
+		r.points = int(r.get("points", 0) if r.get("points") != null else 0)
+	rows.sort_custom(func(a, b): return a.points > b.points)
+	return rows.slice(0, 4)
 
 # Ending hook: the character-select room, drawn through the normal pipeline while activated.
 func getLivingRoom():
@@ -708,7 +960,7 @@ func _buildDom() -> void:
 	flash.modulate.a = 0.0
 	root.add_child(flash)
 	# panels
-	for n in ["title", "select", "pause", "over"]:
+	for n in ["title", "select", "pause", "over", "front", "lobby"]:
 		var p := HudScript.DrawCtl.new(Callable(), "pn-" + n)
 		p.size = Vector2(REF_W, REF_H)
 		p.visible = false
@@ -718,6 +970,8 @@ func _buildDom() -> void:
 	pn.select.draw_fn = _drawSelect
 	pn.pause.draw_fn = _drawPause
 	pn.over.draw_fn = _drawOver
+	pn.front.draw_fn = _drawFront   # MP: main menu + cards
+	pn.lobby.draw_fn = _drawLobby   # MP: roster + countdown over the dial
 	# the over card's split-flap board (a flex row inside .ovpan .board)
 	var boardRow := HBoxContainer.new()
 	boardRow.name = "board"
@@ -733,6 +987,13 @@ func _buildDom() -> void:
 	var vp: Viewport = game.get_viewport()
 	if vp:
 		vp.size_changed.connect(_resize)
+
+func _drawFront(ci: Control) -> void:
+	_front.draw(ci)
+
+func _drawLobby(ci: Control) -> void:
+	if _lobby != null:
+		_lobby.draw(ci)
 
 func _resize() -> void:
 	var vp: Viewport = game.get_viewport() if game and game.is_inside_tree() else null
@@ -852,6 +1113,8 @@ func _applyOptions() -> void:
 func _onState(p: Dictionary) -> void:
 	# A run started from anywhere (debug, test harness): no menu surface may stay up.
 	if (p.get("to") == "playing" or p.get("to") == "down") and mode and mode != "tunein":
+		if mode == "pause" and _mpGame():
+			return   # MP pause is an overlay over a running world: the local player going down keeps it up
 		hideAll()
 
 # Engine events -> the JS listeners. Returns true when the event must stop here (stopImmediatePropagation).
@@ -863,7 +1126,8 @@ func _onEvent(event: InputEvent) -> bool:
 		var code := _domCode(k)
 		if code == "":
 			return false
-		var e := {"code": code, "repeat": k.echo, "shiftKey": k.shift_pressed, "stop": false}
+		var e := {"code": code, "repeat": k.echo, "shiftKey": k.shift_pressed, "stop": false,
+			"char": String.chr(k.unicode) if k.unicode >= 32 else ""}   # typed text (the MP name / address cards)
 		_onKey(e)
 		return e.stop
 	if event is InputEventMouseButton:
@@ -905,7 +1169,11 @@ func _onKey(e: Dictionary) -> void:
 		if c.begins_with("Shift") or c.begins_with("Control") or c.begins_with("Alt") or c.begins_with("Meta") or c.begins_with("Escape") or c.begins_with("Tab") or _t < 0.35 or game.loaded == false:
 			return
 		_titleGo()
+	elif m == "main":
+		_front.key(e)
 	elif m == "select":
+		if _lobby != null and _lobby.key(e):
+			return   # MP lobby: Esc un-readies / leaves, Enter starts (host), the dial is locked while counting down
 		if c == "KeyA" or c == "ArrowLeft":
 			tune(-1)
 			_arrowHit("l")
@@ -916,10 +1184,10 @@ func _onKey(e: Dictionary) -> void:
 			tuneIn()
 		elif c == "Escape":
 			_play("ui_menu_clack", {"vol": 0.7})
-			showTitle()
+			showMain()
 	elif m == "pause":
 		_pauseKey(e)
-	elif m == "over" or m == "results":
+	elif m == "over" or m == "results" or m == "lost":
 		if c.begins_with("Shift") or c.begins_with("Control") or c.begins_with("Alt") or c.begins_with("Meta") or c.begins_with("Tab"):
 			return
 		if c == "Escape":
@@ -946,7 +1214,7 @@ func _onMouseDown(button: int, pos: Vector2) -> bool:
 		if _t >= 0.35 and game.loaded != false:
 			_titleGo()
 		return true
-	if m == "over" or m == "results":
+	if m == "over" or m == "results" or m == "lost":
 		_overGo()
 		return true
 	var h = _hitAt(pos)
@@ -960,7 +1228,7 @@ func _onMouseDown(button: int, pos: Vector2) -> bool:
 			_dialPunch = 1.0
 		elif hit == "screen":
 			tuneIn()
-	return h != null or m == "select" or m == "pause"
+	return h != null or m == "select" or m == "pause" or m == "main"
 
 func _onMouseUp(button: int, pos: Vector2) -> void:
 	var h = _hitAt(pos)
@@ -980,10 +1248,12 @@ func _onMouseMove(pos: Vector2) -> void:
 		var ov: String = h.get("id", "") if h else ""
 		_css.arrowL.s.set_(0.88 if (_press and _press.get("id") == "arrowL" and ov == "arrowL") else (1.1 if ov == "arrowL" else 1.0))
 		_css.arrowR.s.set_(0.88 if (_press and _press.get("id") == "arrowR" and ov == "arrowR") else (1.1 if ov == "arrowR" else 1.0))
-	elif mode == "pause":
+	elif mode == "pause" or mode == "main":
 		var h2 = _hitAt(pos)
 		if h2 and h2.get("enter") is Callable:
 			h2.enter.call()
+		if mode == "main":
+			_setCursor("pointer" if h2 else "")
 	if _drag:
 		_dragTo(pos)
 
@@ -1005,13 +1275,29 @@ func _titleGo() -> void:
 	if mode != "title":
 		return
 	_play("ui_menu_clack")
-	showSelect()
+	showMain()
 
 func _overGo() -> void:
 	var O = _over
-	if O == null or O.phase != "card" or _t < GAMEOVER.lock:
+	if O == null or O.phase != "card" or _t < (1.0 if O.get("lost") else GAMEOVER.lock):
 		return
 	_play("ui_menu_clack")
+	if O.get("lost"):
+		# SIGNAL LOST -> the main menu (the MULTIPLAYER card when it cut a lobby)
+		_over = null
+		hideAll()
+		_resetPost()
+		showMain("mp" if O.get("fromLobby") else "main")
+		return
+	if O.get("mp") and _mpSession():
+		# MP game over / results -> back to the lobby of the same session (the host sends everyone there)
+		_mpEndGame("results")
+		_over = null
+		hideAll()
+		_resetPost()
+		game.setState("menu")
+		showLobby()
+		return
 	if O.onDone is Callable and O.onDone.is_valid():
 		var fn: Callable = O.onDone
 		hideAll()
@@ -1046,17 +1332,21 @@ func update(dt: float) -> void:
 		if m == "tunein" and _t > 0.3:
 			_startGame()
 		return
-	if m == "title" or m == "select" or m == "tunein":
+	if m == "title" or m == "select" or m == "tunein" or m == "main":
 		_updateRoom(dt)
 	if m == "title":
 		_updateTitle(dt)
+	elif m == "main":
+		_front.update(dt)
 	elif m == "select":
 		_updateSelect(dt)
+		if _lobby != null and mode == "select":
+			_lobby.update(dt)
 	elif m == "tunein":
 		_updateTuneIn(dt)
 	elif m == "pause":
 		_updatePause(dt)
-	elif m == "over" or m == "results":
+	elif m == "over" or m == "results" or m == "lost":
 		_updateOver(dt)
 
 # CSS transitions / animations of the DOM surfaces.
@@ -1229,7 +1519,12 @@ func _startGame() -> void:
 	hideAll()
 	_css.flash.set_(1.0, true)
 	_camBlend = 1.0
-	g.newGame(hero)
+	if _lobby != null:
+		var L = _lobby
+		_lobby = null           # the dial is no longer the lobby (in-game net events are not the lobby's)
+		L.startNow(hero)        # MP: the session's start (seed set by mp-core), same newGame(hero)
+	else:
+		g.newGame(hero)
 	# transition 'opacity .6s cubic-bezier(.2,.7,.3,1) .12s' (a real-time transition, not the world clock)
 	_css.flash.set_(0.0)
 
@@ -1474,6 +1769,9 @@ func _buildRoom() -> void:
 		"select": {"pos": Vector3(-0.06, 1.02, -0.95), "target": Vector3(-0.1, 0.9, 1.5), "fov": 38.0},
 		"screen": {"pos": Vector3(sw.x, sw.y, sw.z - 0.34), "target": sw, "fov": 44.0},
 		"review": {"pos": Vector3(sw.x, sw.y, sw.z - 1.25), "target": sw, "fov": 34.0},
+		# MP: the main menu (the TV on the left, the pills on the right) and its cards (the TV a little further left)
+		"main": {"pos": Vector3(0.1, 1.3, -1.3), "target": Vector3(-0.55, 1.0, 1.45), "fov": 42.0},
+		"card": {"pos": Vector3(0.0, 1.3, -1.3), "target": Vector3(-0.75, 1.0, 1.45), "fov": 42.0},
 	}
 	scene.add_child(cam)
 
@@ -1626,6 +1924,12 @@ func _updateRoom(dt: float) -> void:
 	var vsz := _viewSize()
 	var aspect := vsz.x / maxf(1.0, vsz.y)
 	var fov := lerp_(A.fov, B.fov, k)
+	if R.get("cur") is Dictionary:   # where the camera is now (MP: _camGo blends start here)
+		R.cur.pos = p
+		R.cur.target = v
+		R.cur.fov = fov
+	else:
+		R.cur = {"pos": p, "target": v, "fov": fov}
 	# keep the TV framed on narrow screens (fit the horizontal field instead)
 	if aspect < 1.6:
 		fov = rad_to_deg(2.0 * atan(tan(deg_to_rad(fov) / 2.0) * 1.6 / aspect))
@@ -2027,6 +2331,15 @@ func _drawUI(t: float) -> void:
 	var cp := clamp_((t - 0.38) / 0.42, 0.0, 1.0)
 	var chyX := -1.0 if t < 0.38 else 1.0 - easeOutBack(cp, 1.3)
 	var key := "%d|%s|%s" % [_chIdx, String.num(osd, 2), String.num(chyX, 3)]
+	var claim := ""
+	var LD := {}
+	if _lobby != null:
+		# MP: the claim tab (ON AIR: <NAME>) and the countdown's film leader are part of the picture
+		claim = _lobby.claimText(C.hero)
+		LD = _lobby.leader()
+		key += "|%s|%s|%d" % [claim, String.num(LD.get("frac", -1.0), 2), LD.get("n", 0)]
+		if claim != "":
+			key += "|%d" % (int(game.time.realNow * 2.0) % 2)
 	if key == TV.uiKey:
 		return
 	TV.uiKey = key
@@ -2091,9 +2404,78 @@ func _drawUI(t: float) -> void:
 		x.font = "17px " + FontsScript.FONTS.sign
 		x.fillStyle = "#FFD27A"
 		x.fillText(C.role, 76, y0 + 76)
+		if claim != "":
+			_drawClaimTab(x, 24.0, y0 - 52.0, claim)
 		x.restore()
+	if not LD.is_empty():
+		_drawLeader(x, W, H, int(LD.n), float(LD.frac))
 	if TV.ui.has_method("redraw"):
 		TV.ui.redraw()
+
+# MP: the red ON AIR tab over the chyron of a claimed channel (a blinking tally light + the claimant's name).
+func _drawClaimTab(x, px: float, py: float, s: String) -> void:
+	x.font = "22px " + FontsScript.FONTS.sign
+	var tw: float = x.measureText(s).width
+	var w := tw + 62.0
+	x.fillStyle = "rgba(20,8,4,.4)"
+	_rr(x, px + 5, py + 5, w, 42, 12)
+	x.fill()
+	var gr = x.createLinearGradient(0, py, 0, py + 42)
+	gr.addColorStop(0, "#FF5A48")
+	gr.addColorStop(1, "#B0102A")
+	x.fillStyle = gr
+	_rr(x, px, py, w, 42, 12)
+	x.fill()
+	x.lineWidth = 3
+	x.strokeStyle = "#FFF4E8"
+	_rr(x, px, py, w, 42, 12)
+	x.stroke()
+	var on: bool = int(game.time.realNow * 2.0) % 2 == 0
+	x.beginPath()
+	x.arc(px + 24, py + 21, 8, 0, TAU)
+	x.fillStyle = "#FFF4E8" if on else "rgba(255,244,232,.35)"
+	x.fill()
+	x.textAlign = "left"
+	x.textBaseline = "middle"
+	x.fillStyle = "#FFF4E8"
+	x.fillText(s, px + 42, py + 22)
+
+# MP: the 3-2-1 film leader over the picture (rings, crosshair, the sweeping hand, the number).
+func _drawLeader(x, W: float, H: float, n: int, frac: float) -> void:
+	var cx := W / 2.0
+	var cy := H / 2.0
+	var R := H * 0.36
+	x.fillStyle = "rgba(26,20,14,.66)"
+	x.fillRect(0, 0, W, H)
+	x.beginPath()
+	x.moveTo(cx, cy)
+	x.arc(cx, cy, R * 1.9, -PI / 2.0, -PI / 2.0 + TAU * clamp_(frac, 0.0, 1.0))
+	x.closePath()
+	x.fillStyle = "rgba(255,244,214,.20)"
+	x.fill()
+	x.strokeStyle = "rgba(244,241,232,.9)"
+	x.lineWidth = 3
+	x.beginPath()
+	x.moveTo(0, cy)
+	x.lineTo(W, cy)
+	x.moveTo(cx, 0)
+	x.lineTo(cx, H)
+	x.stroke()
+	x.lineWidth = 7
+	x.beginPath()
+	x.arc(cx, cy, R, 0, TAU)
+	x.stroke()
+	x.lineWidth = 3
+	x.beginPath()
+	x.arc(cx, cy, R * 0.8, 0, TAU)
+	x.stroke()
+	x.font = "190px " + FontsScript.FONTS.hud
+	x.textAlign = "center"
+	x.textBaseline = "middle"
+	x.fillStyle = "rgba(20,10,4,.6)"
+	x.fillText(str(n), cx + 5, cy + 13)
+	x.fillStyle = "#F4F1E8"
+	x.fillText(str(n), cx, cy + 8)
 
 func _rr(x, px: float, py: float, w: float, h: float, r: float) -> void:
 	x.beginPath()
@@ -2393,6 +2775,14 @@ func _goldBadge(hero: Dictionary) -> void:
 
 # -------------------------------------------------------------------------------------------- pause
 func _pauseItems() -> Array:
+	if _mpGame():
+		# MP: the world keeps running behind the card; leaving ends our part of the session
+		return [
+			{"ch": 2, "label": "RESUME", "act": func(): game.resume()},
+			{"ch": 4, "label": "OPTIONS", "act": func(): _pauseSub("options")},
+			{"ch": 5, "label": "CONTROLS", "act": func(): _pauseSub("controls")},
+			{"ch": 7, "label": "LEAVE GAME", "warn": "LEAVE? SURE", "act": func(): _quit()},
+		]
 	return [
 		{"ch": 2, "label": "RESUME", "act": func(): game.resume()},
 		{"ch": 4, "label": "OPTIONS", "act": func(): _pauseSub("options")},
@@ -2411,11 +2801,17 @@ func _quit() -> void:
 	var inp = game.input
 	if inp and inp.has_method("exitLock"):
 		inp.exitLock()
+	if _mpGame():
+		_leaveSession()
+		return
 	hideAll()
 	game.setState("menu")
 	showTitle()
 
 func _pauseSub(sub: String) -> void:
+	if sub == "main" and mode == "main":
+		_front.backFromCard()   # the main menu's Options / Controls card: back to its pills
+		return
 	var P := _pause
 	P.sub = sub
 	P.osel = 0
@@ -2625,7 +3021,29 @@ func _updateOver(dt: float) -> void:
 	if O == null:
 		return
 	var t := _t
-	if O.phase == "drain":
+	if O.phase == "static":
+		# SIGNAL LOST: the picture tears into static and rolls, then collapses
+		var ks := clamp_(t / 0.45, 0.0, 1.0)
+		if post is Dictionary:
+			post.static = ks * 0.9
+			post.roll = ks * 0.35
+			post.saturation = 1.0 - ks * 0.6
+			post.whiteout = 0.0
+		if t >= 0.45:
+			O.phase = "lcollapse"
+	elif O.phase == "lcollapse":
+		var kc := clamp_((t - 0.45) / 0.5, 0.0, 1.0)
+		if post is Dictionary:
+			post.collapse = easeIn(kc) * 0.55 + kc * 0.45
+			post.static = 0.9 * (1.0 - kc)
+			post.roll = 0.35 * (1.0 - kc)
+		if kc >= 1.0:
+			O.phase = "black"
+			if post is Dictionary:
+				post.collapse = 1.0
+			_css.bg.on = true
+			_css.bg.black = true
+	elif O.phase == "drain":
 		# the picture drains and the vertical hold slips while the tape stops
 		var k := clamp_(t / GAMEOVER.drain, 0.0, 1.0)
 		if post is Dictionary:
@@ -2649,12 +3067,20 @@ func _updateOver(dt: float) -> void:
 			_css.bg.on = true
 			_css.bg.black = true
 	elif O.phase == "black":
-		if t >= GAMEOVER.card:
+		if t >= (1.5 if O.get("lost") else GAMEOVER.card):
 			_showOverCard()
 			_t = 0.0
 	elif O.phase == "card":
 		_board.update(dt)
 		_cardT += dt
+		if O.get("lost"):
+			if _cardT > 0.05:
+				_cardT = 0.0
+				_drawLostCard(_overCanvas, g.time.realNow)
+			if _t > 1.0 and not _css.anykey.on:
+				_css.anykey.on = true
+				_css.anykey.t = 0.0
+			return
 		if _cardT > 0.125:
 			_cardT = 0.0
 			_drawCard(_overCanvas, "stand_by", g.time.realNow, not O.results)
@@ -2691,6 +3117,13 @@ func _showOverCard() -> void:
 	_css.ovHdr = str(O.title) if O.title else ""
 	_css.sk = "0"
 	_css.sp = "0"
+	(dom.board as Control).visible = not O.get("lost", false)
+	if O.get("mp") and not O.results:
+		_mpEndGame("gameover")   # MP game over: the host takes the session back to the lobby behind the card
+	if O.get("lost"):
+		_drawLostCard(_overCanvas, game.time.realNow)
+		_redraw()
+		return
 	_drawCard(_overCanvas, "stand_by", 0.0, not O.results)
 	var r := int(clamp_(float(O.summary.round), 0.0, 999.0))
 	var n := 3 if r > 99 else 2
@@ -2790,16 +3223,32 @@ func _drawTitle(ci: Control) -> void:
 func _selbarLayout() -> Dictionary:
 	var pad := _padMode()
 	var ls := 36.0 * 0.08
-	var kcText := "A" if pad else "E"
-	var kcW := 46.0 if pad else maxf(46.0, 16.0 + _tw("hud", 28, kcText, ls))
-	var w1 := _tw("hud", 36, "CHANNEL", ls)
-	var w2 := _tw("hud", 36, "TUNE IN", ls)
-	var dw := ceilf(20.0 + w1 + 16.0 + kcW + 16.0 + w2 + 30.0)
+	# CHANNEL [E] TUNE IN; the MP lobby swaps the words (TAKEN BY <NAME>, START THE SHOW, ...)
+	var D: Dictionary = _lobby.dymo() if _lobby != null else {"w1": "CHANNEL", "kc": "A" if pad else "E", "w2": "TUNE IN"}
+	var t1: String = D.w1
+	var t2: String = D.w2
+	var kcText: String = D.kc
+	var kcPad: bool = pad and kcText.length() == 1   # a round Xbox button (a key name like ESC stays a key cap)
+	var kcW := 0.0 if kcText == "" else (46.0 if kcPad else maxf(46.0, 16.0 + _tw("hud", 28, kcText, ls)))
+	var w1 := _tw("hud", 36, t1, ls)
+	var w2 := _tw("hud", 36, t2, ls)
+	var dw: float
+	if t1 != "" and kcText != "" and t2 != "":
+		dw = ceilf(20.0 + w1 + 16.0 + kcW + 16.0 + w2 + 30.0)
+	else:
+		var sum := 0.0
+		var nparts := 0
+		for pw in [w1 if t1 != "" else -1.0, kcW if kcText != "" else -1.0, w2 if t2 != "" else -1.0]:
+			if pw >= 0.0:
+				sum += pw
+				nparts += 1
+		dw = ceilf(20.0 + sum + 16.0 * maxf(0.0, nparts - 1.0) + 30.0)
 	var total := 84.0 + 26.0 + dw + 26.0 + 84.0
 	var x0 := (REF_W - total) / 2.0
 	var y0 := REF_H - 44.0 - 84.0
 	return {"arrowL": Rect2(x0, y0, 84, 84), "dymo": Rect2(x0 + 84 + 26, y0 + 10, dw, 64), "arrowR": Rect2(x0 + 84 + 26 + dw + 26, y0, 84, 84),
-		"kcW": kcW, "kcText": kcText, "w1": w1, "w2": w2, "ls": ls, "pad": pad}
+		"kcW": kcW, "kcText": kcText, "w1": w1, "w2": w2, "ls": ls, "pad": pad, "t1": t1, "t2": t2, "kcPad": kcPad,
+		"kcCol": XB_COL.get(kcText.to_lower(), "#7EDB5A") if kcPad else "#F2F0EA"}
 
 func _selectHits() -> void:
 	var L := _selbarLayout()
@@ -2840,25 +3289,32 @@ func _drawSelect(ci: Control) -> void:
 	if _css.dymo.go >= 0.0:
 		var p: float = _css.dymo.go / 0.28
 		th = lerpf(1.0, 1.12, HudScript.cubicBezier(0.3, 1.8, 0.5, 1.0, p / 0.4)) if p < 0.4 else lerpf(1.12, 1.0, HudScript.cubicBezier(0.3, 1.8, 0.5, 1.0, (p - 0.4) / 0.6))
-	ci.draw_set_transform(d.get_center(), deg_to_rad(-1.5), Vector2(th, th))
+	var shake := 0.0
+	if _lobby != null and _lobby.deny > 0.0:
+		shake = sin(_lobby.deny * 70.0) * 7.0 * (_lobby.deny / 0.3)   # MP: a denied tune-in rattles the label
+	ci.draw_set_transform(d.get_center() + Vector2(shake, 0.0), deg_to_rad(-1.5), Vector2(th, th))
 	var dw := d.size.x
 	var dt := _svgTex("dymo%d" % int(dw), func(): return HudScript.svgTexture(_dymoSvg(dw, 64.0)))
 	if dt:
 		ci.draw_texture_rect(dt, Rect2(-dw / 2.0 - 14, -32 - 10, dw + 28, 64 + 30), false, Color(1, 1, 1, a2))
 	var emb := [[0.0, -1.0, 0.0, "rgba(0,0,0,.9)"], [0.0, 1.0, 0.0, "rgba(255,255,255,.35)"], [0.0, 2.0, 3.0, "rgba(0,0,0,.5)"]]
 	var x := -dw / 2.0 + 20.0
-	_txt(ci, "hud", 36, x, 0.0, "CHANNEL", "#F2F0EA", L.ls, emb, a2)
-	x += L.w1 + 16.0
-	var kw: float = L.kcW
-	var kt := _svgTex("dymoKc%s%d" % [L.pad, int(kw)], func(): return HudScript.svgTexture(HudScript.cssBoxSvg(kw, 46, {"r": 23 if L.pad else 10,
-		"bg": {"rad": [0.42, 0.34], "stops": [["#34343C", 0.0], ["#18181D", 0.7]]} if L.pad else null,
-		"insets": [[0, 0, 0, 3, "rgba(242,240,234,.9)"], [0, 3, 0, 3, "rgba(0,0,0,.35)"]]})[0]))
-	if kt:
-		ci.draw_texture_rect(kt, Rect2(x - 2, -23 - 2, kw + 4, 46 + 4), false, Color(1, 1, 1, a2))
-	var ktw := _tw("hud", 28, L.kcText, L.ls)
-	_txt(ci, "hud", 28, x + (kw - ktw) / 2.0, 0.0, L.kcText, "#7EDB5A" if L.pad else "#F2F0EA", L.ls, emb, a2)
-	x += kw + 16.0
-	_txt(ci, "hud", 36, x, 0.0, "TUNE IN", "#F2F0EA", L.ls, emb, a2)
+	if L.t1 != "":
+		_txt(ci, "hud", 36, x, 0.0, L.t1, "#F2F0EA", L.ls, emb, a2)
+		x += L.w1 + 16.0
+	if L.kcText != "":
+		var kw: float = L.kcW
+		var kp: bool = L.kcPad
+		var kt := _svgTex("dymoKc%s%d" % [kp, int(kw)], func(): return HudScript.svgTexture(HudScript.cssBoxSvg(kw, 46, {"r": 23 if kp else 10,
+			"bg": {"rad": [0.42, 0.34], "stops": [["#34343C", 0.0], ["#18181D", 0.7]]} if kp else null,
+			"insets": [[0, 0, 0, 3, "rgba(242,240,234,.9)"], [0, 3, 0, 3, "rgba(0,0,0,.35)"]]})[0]))
+		if kt:
+			ci.draw_texture_rect(kt, Rect2(x - 2, -23 - 2, kw + 4, 46 + 4), false, Color(1, 1, 1, a2))
+		var ktw := _tw("hud", 28, L.kcText, L.ls)
+		_txt(ci, "hud", 28, x + (kw - ktw) / 2.0, 0.0, L.kcText, L.kcCol, L.ls, emb, a2)
+		x += kw + 16.0
+	if L.t2 != "":
+		_txt(ci, "hud", 36, x, 0.0, L.t2, "#F2F0EA", L.ls, emb, a2)
 	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
 
 func _dymoSvg(w: float, h: float) -> String:
@@ -3007,38 +3463,39 @@ func _drawPause(ci: Control) -> void:
 		var items := _pauseItems()
 		for i in items.size():
 			var it: Dictionary = items[i]
-			var sel: bool = i == P.sel
-			var quit: bool = it.label == "QUIT" and P.quitArm > 0.0
-			var y := 250.0 + i * (104.0 + 22.0)
-			var bg: Dictionary = {"lin": 180, "stops": [["rgba(90,58,34,.92)", 0.0], ["rgba(58,34,20,.92)", 1.0]]}
-			if sel:
-				bg = {"lin": 180, "stops": [["#F59A48", 0.0], ["#D9602B", 0.55], ["#A8401E", 1.0]]}
-			if quit:
-				bg = {"lin": 180, "stops": [["#E8483A", 0.0], ["#A82018", 1.0]]}
-			# .pitem.sel: translateX(26px) rotate(-1deg) (origin: centre)
-			var cx := 1120.0 + 320.0 + (26.0 if sel else 0.0)
-			var cy := y + 52.0
-			ci.draw_set_transform(Vector2(cx, cy), deg_to_rad(-1.0) if sel else 0.0, Vector2.ONE)
-			_paintBox(ci, "pitem%s%s" % [sel, quit], -320, -52, 640, 104, {"r": 52, "bg": bg,
-				"shadows": [[0, 0, 0, 4, "#2E1A0C"], [0, 8, 16, 0, "rgba(0,0,0,.45)"]], "insets": [[0, 3, 0, 0, "rgba(255,210,160,.18)"]]})
-			# .chn 76x76 at padding-left 18
-			var chIns: Array = [[0, 0, 0, 7, "#E23B3B"]]
-			var chSh: Array = [[0, 3, 0, 0, "rgba(0,0,0,.35)"]]
-			if sel:
-				chSh = [[0, 0, 18, 4, "rgba(255,210,90,.75)"]]
-			_paintBox(ci, "chn%s" % sel, -320 + 18, -38, 76, 76, {"r": 38, "bg": "#F4F1E8", "insets": chIns, "shadows": chSh})
-			var chs := str(it.ch)
-			_txt(ci, "hud", 40, -320 + 18 + 38 - _tw("hud", 40, chs) / 2.0, 0.0, chs, "#2F5BD3")
-			var label: String = "QUIT? SURE" if quit else it.label
-			var col := "#FFFBEA" if (sel or quit) else "#F6E7C8"
-			var shc := "#6A2410" if sel else "#2A140A"
-			_txt(ci, "hud", 50, -320 + 18 + 76 + 22, 0.0, label, col, 50.0 * 0.08, [[0.0, 3.0, 0.0, shc]])
-			ci.draw_set_transform_matrix(Transform2D.IDENTITY)
+			var quit: bool = (it.label == "QUIT" or it.label == "LEAVE GAME") and P.quitArm > 0.0
+			_drawPill(ci, 1120.0, 250.0 + i * (104.0 + 22.0), str(it.ch), it.get("warn", "QUIT? SURE") if quit else it.label, i == P.sel, quit)
 		return
 	if P.sub == "controls":
 		_drawControls(ci)
 		return
 	_drawOptions(ci)
+
+# One walnut channel pill (.pitem) at its resting top-left (x, y), 640 x 104: the channel badge (.chn) and the label.
+# sel: highlighted (orange, translateX(26px) rotate(-1deg)); warn: armed (red). alpha: the main menu's slide-in.
+func _drawPill(ci: Control, x: float, y: float, ch: String, label: String, sel: bool, warn: bool, alpha: float = 1.0) -> void:
+	var bg: Dictionary = {"lin": 180, "stops": [["rgba(90,58,34,.92)", 0.0], ["rgba(58,34,20,.92)", 1.0]]}
+	if sel:
+		bg = {"lin": 180, "stops": [["#F59A48", 0.0], ["#D9602B", 0.55], ["#A8401E", 1.0]]}
+	if warn:
+		bg = {"lin": 180, "stops": [["#E8483A", 0.0], ["#A82018", 1.0]]}
+	# .pitem.sel: translateX(26px) rotate(-1deg) (origin: centre)
+	var cx := x + 320.0 + (26.0 if sel else 0.0)
+	var cy := y + 52.0
+	ci.draw_set_transform(Vector2(cx, cy), deg_to_rad(-1.0) if sel else 0.0, Vector2.ONE)
+	_paintBox(ci, "pitem%s%s" % [sel, warn], -320, -52, 640, 104, {"r": 52, "bg": bg,
+		"shadows": [[0, 0, 0, 4, "#2E1A0C"], [0, 8, 16, 0, "rgba(0,0,0,.45)"]], "insets": [[0, 3, 0, 0, "rgba(255,210,160,.18)"]]}, alpha)
+	# .chn 76x76 at padding-left 18
+	var chIns: Array = [[0, 0, 0, 7, "#E23B3B"]]
+	var chSh: Array = [[0, 3, 0, 0, "rgba(0,0,0,.35)"]]
+	if sel:
+		chSh = [[0, 0, 18, 4, "rgba(255,210,90,.75)"]]
+	_paintBox(ci, "chn%s" % sel, -320 + 18, -38, 76, 76, {"r": 38, "bg": "#F4F1E8", "insets": chIns, "shadows": chSh}, alpha)
+	_txt(ci, "hud", 40, -320 + 18 + 38 - _tw("hud", 40, ch) / 2.0, 0.0, ch, "#2F5BD3", 0.0, [], alpha)
+	var col := "#FFFBEA" if (sel or warn) else "#F6E7C8"
+	var shc := "#6A2410" if sel else "#2A140A"
+	_txt(ci, "hud", 50, -320 + 18 + 76 + 22, 0.0, label, col, 50.0 * 0.08, [[0.0, 3.0, 0.0, shc]], alpha)
+	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
 
 # .gpanel (left 1000, top 110, width 820, padding 24 34 26) and its h2 (Shrikhand 52 + the blue tag).
 func _gpanel(ci: Control, h: float, title: String, tag: String) -> float:
@@ -3301,9 +3758,19 @@ func _drawPadGlyph(ci: Control, g: String, x: float, cy: float) -> float:
 # ---- game over / results
 func _drawOver(ci: Control) -> void:
 	_drawTvbox(ci, "tvOver", 110, 160, 800, 600, 200.0, _overCanvas)
+	var O = _over
+	if O != null and O.get("lost"):
+		_drawLostPanel(ci)
+		return
+	var mp: bool = O != null and O.get("mp") == true
 	# .ovpan (left 1180, top 210, width 640, column, centred)
 	var cx := 1180.0 + 320.0
 	var y := 210.0
+	if mp:
+		# MP: the player table makes the column taller; keep it centred on the TV (centre y 494)
+		var nr: int = (O.players as Array).size()
+		var hh := (100.0 if _css.ovHdr != "" else 0.0) + 72.0 + 274.0 + 34.0 + nr * 54.0 + 24.0 + 40.0
+		y = maxf(70.0, 494.0 - hh / 2.0)
 	var hdr: String = _css.ovHdr
 	if hdr != "":
 		var lh := _lh(_fonts.logo, 64)
@@ -3324,6 +3791,14 @@ func _drawOver(ci: Control) -> void:
 	row.position = Vector2(cx - bw / 2.0 + 26.0, y + 22.0)
 	row.size = Vector2(bw - 52.0, 196.0)
 	y += bh + 34.0
+	if mp:
+		y = _drawMpRows(ci, y, O.players)
+		var A2: Dictionary = _css.anykey
+		if A2.on:
+			var als2 := 30.0 * 0.26
+			var alh2 := _lh(_fonts.hud, 30)
+			_txt(ci, "hud", 30, cx - _tw("hud", 30, A2.text, als2) / 2.0, y + alh2 / 2.0, A2.text, "#FFF4DC", als2, [[0.0, 3.0, 0.0, "#5A2210"]], _mnpress(A2.t))
+		return
 	# .stats: KILLS<span>n</span> POINTS<span>n</span> (gap 44; spans VT323 46, margin-left 12)
 	var sls := 34.0 * 0.12
 	var vls := 46.0 * 0.04
@@ -3348,3 +3823,95 @@ func _drawOver(ci: Control) -> void:
 		var als := 30.0 * 0.26
 		var alh := _lh(_fonts.hud, 30)
 		_txt(ci, "hud", 30, cx - _tw("hud", 30, A.text, als) / 2.0, y + alh / 2.0, A.text, "#FFF4DC", als, [[0.0, 3.0, 0.0, "#5A2210"]], _mnpress(A.t))
+
+# MP results table under the team round: channel badge + hero colour pip + name, kills and points counting up
+# (the solo KILLS / POINTS stats, one row per player; ours in gold). Returns the y below it.
+func _drawMpRows(ci: Control, y: float, rows: Array) -> float:
+	var x0 := 1180.0
+	var kR := 1600.0   # right edge of the kills column
+	var pR := 1810.0   # right edge of the points column
+	var hls := 16.0 * 0.14
+	_txt(ci, "sign", 16, kR - _tw("sign", 16, "KILLS", hls), y + 12.0, "KILLS", "#FFC23A", hls, [[0.0, 2.0, 0.0, "#6A2410"]])
+	_txt(ci, "sign", 16, pR - _tw("sign", 16, "POINTS", hls), y + 12.0, "POINTS", "#FFC23A", hls, [[0.0, 2.0, 0.0, "#6A2410"]])
+	y += 34.0
+	var e := easeOut(clamp_((_t - 0.35) / 1.1, 0.0, 1.0))
+	for i in rows.size():
+		var r: Dictionary = rows[i]
+		var cy := y + 24.0
+		if r.get("me"):
+			_paintBox(ci, "mpRowMe", x0 - 6.0, y, 646.0, 48.0, {"r": 24, "bg": "rgba(255,194,58,.12)", "shadows": [[0, 0, 0, 2, "rgba(255,194,58,.45)"]]})
+		var ci2 := _chanIndex(r.get("hero"))
+		var chs := str(CHANNELS[ci2].ch) if ci2 >= 0 else "?"
+		_paintBox(ci, "mpChn", x0 + 4.0, cy - 20.0, 40.0, 40.0, {"r": 20, "bg": "#F4F1E8", "insets": [[0, 0, 0, 4, "#E23B3B"]], "shadows": [[0, 2, 0, 0, "rgba(0,0,0,.35)"]]})
+		_txt(ci, "hud", 22, x0 + 24.0 - _tw("hud", 22, chs) / 2.0, cy, chs, "#2F5BD3")
+		var glow: String = CHANNELS[ci2].glow if ci2 >= 0 else "#F6E7C8"
+		_paintBox(ci, "mpPip%s" % glow, x0 + 56.0, cy - 6.0, 12.0, 12.0, {"r": 6, "bg": glow, "shadows": [[0, 0, 8, 1, glow]]})
+		var nm: String = str(r.get("name", "?")).to_upper()
+		_txt(ci, "hud", 30, x0 + 80.0, cy, nm, "#FFE08A" if r.get("me") else "#F6E7C8", 30.0 * 0.06, [[0.0, 3.0, 0.0, "#2A140A"]])
+		var k := str(int(floorf(float(r.get("kills", 0)) * e + 0.5)))
+		var pts := _thousands(int(floorf(float(r.get("points", 0)) * e + 0.5)))
+		_txt(ci, "tape", 44, kR - _tw("tape", 44, k), cy, k, "#FFE08A", 0.0, [[0.0, 3.0, 0.0, "#2A140A"]])
+		_txt(ci, "tape", 44, pR - _tw("tape", 44, pts), cy, pts, "#FFE08A", 0.0, [[0.0, 3.0, 0.0, "#2A140A"]])
+		y += 54.0
+	return y + 24.0
+
+# SIGNAL LOST: the right column (Shrikhand header, the reason, the classic apology, PRESS ANY KEY).
+func _drawLostPanel(ci: Control) -> void:
+	var O = _over
+	var cx := 1180.0 + 320.0
+	var y := 300.0
+	var hdr := "Signal Lost"
+	var lh := _lh(_fonts.logo, 76)
+	ci.draw_set_transform(Vector2(cx, y + lh / 2.0), deg_to_rad(-2.0), Vector2.ONE)
+	_txt(ci, "logo", 76, -_tw("logo", 76, hdr) / 2.0, 0.0, hdr, "#FFE9B8", 0.0, [[0.0, 5.0, 0.0, "#8A2E14"], [0.0, 10.0, 18.0, "rgba(0,0,0,.5)"]])
+	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
+	y += lh + 26.0
+	var why: String = str(O.get("why", ""))
+	var wls := 26.0 * 0.12
+	var wlh := _lh(_fonts.sign, 26)
+	_txt(ci, "sign", 26, cx - _tw("sign", 26, why, wls) / 2.0, y + wlh / 2.0, why, "#FFC23A", wls, [[0.0, 3.0, 0.0, "#6A2410"]])
+	y += wlh + 22.0
+	var note := "PLEASE DO NOT ADJUST YOUR SET"
+	var nls := 26.0 * 0.08
+	var nlh := _lh(_fonts.hud, 26)
+	_txt(ci, "hud", 26, cx - _tw("hud", 26, note, nls) / 2.0, y + nlh / 2.0, note, "#F6E7C8", nls, [[0.0, 3.0, 0.0, "#2A140A"]])
+	y += nlh + 70.0
+	var A: Dictionary = _css.anykey
+	if A.on:
+		var als := 30.0 * 0.26
+		var alh := _lh(_fonts.hud, 30)
+		_txt(ci, "hud", 30, cx - _tw("hud", 30, A.text, als) / 2.0, y + alh / 2.0, A.text, "#FFF4DC", als, [[0.0, 3.0, 0.0, "#5A2210"]], _mnpress(A.t))
+
+# The SIGNAL LOST picture: the snow source with the stand-by card's banner, red, reading SIGNAL LOST.
+func _drawLostCard(cv, time: float) -> void:
+	if cv == null:
+		return
+	var x = cv.getContext("2d")
+	var w: float = cv.width
+	var h: float = cv.height
+	if _cardsCall("ids", []) != null:
+		_cardsCall("drawTo", [x, "snow", w, h, time, {}])
+	else:
+		x.fillStyle = "#1E1830"
+		x.fillRect(0, 0, w, h)
+	var bw: float = w * 0.84
+	var bh: float = h * 0.2
+	var bx: float = (w - bw) / 2.0
+	var by: float = h * 0.4
+	x.save()
+	x.shadowColor = "rgba(20,10,40,0.6)"
+	x.shadowBlur = 16
+	x.shadowOffsetY = 5
+	DACards.rr(x, bx, by, bw, bh, bh * 0.28)
+	DACards.fill(x, DACards.linear(x, 0, by, 0, by + bh, ["#E8483A", "#A82018"]))
+	x.restore()
+	DACards.rr(x, bx, by, bw, bh, bh * 0.28)
+	DACards.stroke(x, "#F4F1E8", 4)
+	DACards.rr(x, bx + 7, by + 7, bw - 14, bh - 14, bh * 0.2)
+	DACards.stroke(x, DACards.alpha("#F4E03A", 0.9), 2)
+	DACards.label(x, "SIGNAL LOST", w / 2.0, by + bh * 0.47, {
+		"fam": DACards.FONT.groovy, "px": bh * 0.62, "maxW": bw * 0.88, "fill": DACards.vgrad(["#FFFBEA", "#FFE28A"]),
+		"stroke": DACards.C.ink, "lw": bh * 0.07, "depth": 4, "depthFill": "#6A1410", "dx": 0.6, "dy": 1,
+	})
+	if cv.has_method("redraw"):
+		cv.redraw()
