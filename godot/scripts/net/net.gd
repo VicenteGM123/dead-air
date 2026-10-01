@@ -112,7 +112,7 @@ const SEND_RATE := 30.0             # player state stream (Hz)
 const PING_EVERY := 1.0
 const PINGS_EVERY := 2.0
 const HELLO_TIMEOUT := 10.0
-const WELCOME_TIMEOUT := 12.0
+const WELCOME_TIMEOUT := 30.0           # wall clock: a client compiling shaders can stall for seconds
 const REJECT_GRACE := 1.5           # s a rejected peer keeps its connection (the reject message flushes), then dropped
 const CLOSE_GRACE := 0.6            # s a closed transport is still polled (bye / disconnect packets go out)
 const COUNTDOWN := 3.0              # lobby 'starting' phase before the start message
@@ -161,6 +161,7 @@ var _rejecting := {}           # host: id -> time after which the rejected peer 
 var _closing: Array = []       # [[ENetMultiplayerPeer, closeAt]]
 var _joinInfo := {}            # client: {name, hero} for the hello
 var _connectT := 0.0
+var _connectFrames := 0
 var _welcomed := false
 var _loadedSent := false
 var _byeReason := ""
@@ -387,7 +388,9 @@ func _hostTick(dt: float, now: float) -> void:
 
 func _clientTick(now: float) -> void:
 	if not _welcomed:
-		if now - _connectT > WELCOME_TIMEOUT:
+		# wall time AND polled frames: a client stalled by a long frame (shader compilation) must not give up early
+		_connectFrames += 1
+		if now - _connectT > WELCOME_TIMEOUT and _connectFrames > 120:
 			_endSession("failed", "timeout")
 		return
 	if game.loaded and not _loadedSent:
@@ -457,6 +460,7 @@ func join(ip: String, port_: int = DEFAULT_PORT, opts: Dictionary = {}) -> bool:
 	_loadedSent = false
 	_byeReason = ""
 	_connectT = _now()
+	_connectFrames = 0
 	_joinInfo = {"name": _cleanName(opts.get("name"), "PLAYER"), "hero": opts.get("hero")}
 	peers.clear()
 	_phase = ""
