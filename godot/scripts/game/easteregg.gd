@@ -574,10 +574,8 @@ func _onPlayerLost(id: int) -> void:
 		_net().everyone("egg", "drop", [ids])
 	if tapeCarrier == id and step == 4 and _track == null:
 		var t = game.telly
-		if _has(t, "tapeReset"):
-			_oc(t, "tapeReset")
-		elif _has(t, "rearmTape"):
-			_oc(t, "rearmTape")
+		if _has(t, "rearmTape"):
+			_oc(t, "rearmTape")     # mp-machines: replicated (old reel freed, the tape pull armed again)
 		else:
 			_oc(t, "setMood", ["purple"])
 			_oc(t, "forceTapePull")
@@ -1369,7 +1367,6 @@ func net_reqBar(color) -> void:
 
 func net_reqPuppet(id) -> void:
 	var p = puppets.get(str(id))
-	print("[egg] reqPuppet %s from %d state=%s ok=%s" % [str(id), int(_net().sender), str(p.state) if p != null else "-", str(_hostOk())])
 	if not _hostOk() or p == null or p.state != "ghost":
 		return
 	_net().everyone("egg", "puppet", [p.id])
@@ -1379,7 +1376,6 @@ func net_reqPickup(id) -> void:
 	if not _hostOk() or p == null or p.state != "ground":
 		return
 	var pl = _pl(int(_net().sender))
-	print("[egg] reqPickup %s from %d pl=%s alive=%s down=%s off=%s" % [str(id), int(_net().sender), str(pl), str(_g(pl, "alive")), str(_g(pl, "downed")), str(_g(pl, "offAir"))])
 	if pl == null or not _g(pl, "alive", false) or _g(pl, "downed", false) or _g(pl, "offAir", false):
 		return
 	_net().everyone("egg", "pickup", [p.id, int(_net().sender)])

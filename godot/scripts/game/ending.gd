@@ -2121,12 +2121,17 @@ func _wrapTelly() -> void:
 			if ou is Callable and ou.is_valid():
 				ou.call()
 			return
+		if _mp():
+			# MP: telly.pull spends the 13 itself and turns it into the host request; the host rolls rollTelly(exclude)
+			var owned := []
+			for s in _gp(game.weapons, "slots", []):
+				if _gp(s, "id"):
+					owned.append(str(_gp(s, "id")))
+			_fc(telly, "pull", [{"morning": true, "cost": TELLY_MORNING_COST, "exclude": owned}])
+			return
 		if not _fc(game.economy, "spend", [TELLY_MORNING_COST, "telly"]):
 			return
-		if _mp():
-			_fc(telly, "pull", [{"free": true, "forced": _rollTelly(), "cost": TELLY_MORNING_COST, "morning": true}])
-		else:
-			_fc(telly, "pull", [{"free": true, "forced": _rollTelly()}])
+		_fc(telly, "pull", [{"free": true, "forced": _rollTelly()}])
 	_sp(it, "prompt", pr)
 	_sp(it, "use", use)
 	_sp(telly, "morning", true)
@@ -2145,6 +2150,23 @@ func _rollTelly() -> String:
 		else:
 			ex = id != "tiny_tele" and bool(_fc(g.weapons, "has", [id]))
 		if ex:
+			continue
+		pool.append([id, W[id]])
+		total += W[id]
+	var x := randf() * total
+	for e in pool:
+		x -= e[1]
+		if x < 0.0:
+			return e[0]
+	return pool[pool.size() - 1][0] if pool.size() else "revolver_38"
+
+# MP host (mp-machines' morning pull): the forced Morning Show item for a requester owning `owned` (weapon ids).
+func rollTelly(owned = []) -> String:
+	var W: Dictionary = Config.T.telly.weights
+	var pool := []
+	var total := 0.0
+	for id in W:
+		if id != "tiny_tele" and owned is Array and owned.has(id):
 			continue
 		pool.append([id, W[id]])
 		total += W[id]
