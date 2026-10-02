@@ -65,6 +65,25 @@
 #   * Renames (SPEC §3.2): none of this module's own names collide. Calls into other systems' `set`/`get` methods
 #     go through _invoke(), which prefers the renamed `set_`/`get_` (and accepts Dictionaries of Callables).
 #   * Locals holding the game are named `gm` (the member `g` is the Telly prop, as in the JS).
+#
+# MP (design/mp-machines.md, RECONCILE R9/R10): Telly is host-authoritative; every peer runs the same pull timeline
+#   from the host's resolved values. pull(opts) on any peer = the user's side: spend the cost locally (950, 13 for a
+#   Morning Show pull {morning:true}, 0 free), then telly.net_pull(cost, owned ids, teles, forced, morning) to the
+#   host; the host checks canPull (else telly.net_deny(cost) -> economy.refund), rolls with the USER's exclusions
+#   (morning: game.ending.rollTelly(owned); `forced` honoured only with the host's test=1), runs it and sends
+#   telly.net_spin(by, id, outcome, item, ch, startCh, cameo, cost, pulls, pullsHere). Decision points stay on the
+#   host and clients hold until they arrive: telly.net_land(id, outcome, item, ch) (a late bump can still change the
+#   landing), net_took(id) / net_timeout(id) (offer window + MP_GRACE; an orphaned pull ends after 1 s), net_dest(id,
+#   home) (sign-off destination, game.rand). Hits: weapons runs shootable onHit on the host with info.by; the host's
+#   rule tree broadcasts net_tink(point), net_smack(by, "hey"|"bop"|"catch"), net_bump(by, id, fromCh, ch, outcome,
+#   item, extra) (a client whose weapons still calls onHit locally forwards melee with net_hit(melee, point)). The take
+#   is a request (take() -> net_take(id), only the user, prompt hidden for others); the weapon / EE reel go to the
+#   user only (weapons.give on its own peer, the reel on the user's hero.slots.back everywhere, tapeHolder = by); the
+#   sign-off coin flies to the user and only the user's peer refunds (economy.refund). Knockback / camera shakes only
+#   on the hitter's peer. Events carry `by` in MP (telly_result, telly_take, telly_bump). Pull / pity / move counters
+#   are per team. rearmTape() (host API, replicated net_rearm) re-arms the EE tape pull; netHome(id) applies the
+#   host's start home (machines.net_sync); onPeerGone(id, why) (machines dispatch: left / down / offair) orphans that
+#   user's pull. debugFreezeAt never touches time.scale in MP.
 extends RefCounted
 
 const TELLY_HOMES := ["telly_home_green", "telly_home_newsroom", "telly_home_studio_a", "telly_home_studio_b"]

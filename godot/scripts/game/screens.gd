@@ -72,6 +72,13 @@
 #   feedPass, stats { passA, passB, sat, flinch, maxPerFrame, feedDraws, redraws, tickMs }, feedCams, groups, byId,
 #   overrides,
 #   timeScale (debug/tests: 0 holds every CRT effect, feed pan and override timer on one frame).
+# MP (design/mp-machines.md, RECONCILE R9): no shared state and no messages — every screen is local presentation of
+#   the replicated power flag (machines.powerOn), the replicated events below (round:start / round:end {next},
+#   powerup:grab, machine:boss_start, egg:complete, game:victory, game:over, zombie:spawn of client puppets, power:on)
+#   and the local camera / local player's area (game.player rides along with the spectated teammate while off-air,
+#   so the program feed follows the view). Owners call override / telegraph / setSource / zoomFeed / speaker /
+#   setInsert locally on every peer from their own replicated actions (zombies' screen entries call telegraph on
+#   clients too); nothing here is replicated generically. round:end in MP reads payload.next.special.
 # Automatic overrides (only while powered): round:end -> right_back for the intermission (hullabaloo when the next
 # round is Hullabaloo Hour: rounds.nextSpecial / isHullabaloo(n) / specialFor(n)), round:start {special:
 # 'hullabaloo'} -> hullabaloo for that round, powerup:grab {type:'please_stand_by'} -> stand_by 8 s. Always:
@@ -2117,7 +2124,10 @@ func _onRoundEnd(p) -> void:
 	if not _powered():
 		return
 	var rnd: int = int(p.get("round", 0)) if p is Dictionary and p.get("round") else 0
-	var hull := _nextIsHullabaloo(rnd)
+	var nx = p.get("next") if p is Dictionary else null
+	var n = game.get("net")
+	# MP: a client's rounds mirror may lag; the host's round:end payload carries the next round's special
+	var hull := _same(nx.get("special"), "hullabaloo") if n != null and n.inGame and nx is Dictionary else _nextIsHullabaloo(rnd)
 	var R: Dictionary = Config.T.rounds
 	if _auto.inter != null:
 		_auto.inter.cancel()

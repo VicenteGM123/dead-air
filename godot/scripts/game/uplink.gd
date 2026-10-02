@@ -59,6 +59,19 @@
 # * satellitePos(out) returns the Vector3 (value types). warmup() (shader precompile) is not ported.
 # * Node names cannot contain ':' in Godot: 'uplink_gun:<id>' is the node "uplink_gun_<id>".
 # * Renames (§3.2): the field `signal` (a GDScript keyword) is `signal_`; event payload keys stay "signal".
+#
+# MP (design/mp-machines.md, RECONCILE R9/R10): host-authoritative; every peer plays the same sequence.
+#   Crank: the cranking peer runs the hold locally and reports uplink.net_crank(holding, align) (edges + 10 Hz); the
+#   host arbitrates crankUser (a second cranker gets net_crankBusy(user)), relays net_crankState(user, align) (edges +
+#   5 Hz; others extrapolate +1 s/s); a hit cranker halves locally and sends net_penalty(align) -> net_penaltyFx(by,
+#   align); the completed hold sends net_lock() -> everyone net_aligned() -> _lock() on every peer.
+#   Upgrade: the user pays, its weapon leaves the hands (takeCurrent) and it sends net_insert(weaponId, upgraded,
+#   prevSignal, cost, hand, yaw); the host (idle + aligned, else net_deny(...) = weapon back + economy.refund) rolls
+#   the signal (game.rand) and runs everyone net_start(by, id, weaponId, upgraded, prevSignal, signal, reroll, hand,
+#   yaw, satT). Ready end: the take is a request (net_take(id), only the user; prompt hidden for others) -> everyone
+#   net_took(id) (weapons.give on the user's peer only); the host loses it at collect + MP_GRACE (net_lost(id)).
+#   Boss start / the user downed: net_handback(by, weaponId, signal); the user off-air or gone: lost. Events carry
+#   `by`. Chyron for the user and for peers near the clamp.
 extends RefCounted
 
 const TAU := PI * 2.0

@@ -718,6 +718,74 @@ func applySignal(z, sig, opts = null) -> bool:
 	game.events.emit("wonder:signal", {"z": z, "signal": s, "weaponId": weaponId, "splash": splash})
 	return true
 
+# ------------------------------------------------------------------------------------------ MP messages
+# Thin handlers (scripts/game/wonder_net.gd does the work; args validated there). Requests from clients are only
+# honoured on the host; visual broadcasts only on clients.
+func net_zap(up, ids, _origin = null, _dir = null) -> void:
+	if mp != null:
+		mp.onZap(up, ids)
+
+func net_fx(kind, args) -> void:
+	if mp != null:
+		mp.onFx(kind, args)
+
+func net_signal(sig, ids, gen = 1) -> void:
+	if mp != null:
+		mp.onSignal(sig, ids, gen)
+
+func net_boomRec(on, up = false) -> void:
+	if mp != null:
+		mp.onBoomRec(on, up)
+
+func net_boomRecFx(by, on, up = false) -> void:
+	if mp != null:
+		mp.onBoomRecFx(by, on, up)
+
+func net_boomPlay(up, ch, origin, dir, mic) -> void:
+	if mp != null:
+		mp.onBoomPlay(up, ch, origin, dir, mic)
+
+func net_boomFx(by, up, ch, origin, dir, mic) -> void:
+	if mp != null:
+		mp.onBoomFx(by, up, ch, origin, dir, mic)
+
+func net_splash(sid, pos, normal, direct, up) -> void:
+	if mp != null:
+		mp.onSplash(sid, pos, normal, direct, up)
+
+func net_splashFx(by, sid, pos, normal, direct, up) -> void:
+	if mp != null:
+		mp.onSplashFx(by, sid, pos, normal, direct, up)
+
+func net_tele(lid, origin, vel) -> void:
+	if mp != null:
+		mp.onTele(lid, origin, vel)
+
+func net_teleSpawn(tid, by, lid, origin, vel) -> void:
+	if mp != null:
+		mp.onTeleSpawn(tid, by, lid, origin, vel)
+
+func net_teleLand(tid, pos, yaw) -> void:
+	if mp != null:
+		mp.onTeleLand(tid, pos, yaw)
+
+func net_teleSeat(tid, zid, seat, stand, dur) -> void:
+	if mp != null:
+		mp.onTeleSeat(tid, zid, seat, stand, dur)
+
+func net_teleBoom(tid) -> void:
+	if mp != null:
+		mp.onTeleBoom(tid)
+
+# Observer visuals from the wfx stream (weapons_net.gd).
+func remoteZap(rp, up: bool, mz: Vector3, end: Vector3, pts: Array) -> void:
+	if mp != null:
+		mp.remoteZap(rp, up, mz, end, pts)
+
+func remoteBlob(by: int, sid: int, up: bool, from: Vector3, vel: Vector3) -> void:
+	if mp != null:
+		mp.remoteBlob(by, sid, up, from, vel)
+
 # ------------------------------------------------------------------------------------------ helpers
 func _state(id) -> Dictionary:
 	if not _st.has(id):
@@ -1866,12 +1934,20 @@ func _zap(ctx, up: bool, def) -> void:
 	if first == null:
 		_fx("burst", [end, {"shape": "static", "count": 8, "size": 0.06, "life": 0.4}])
 	var delay := 0.07
+	if mp != null:
+		mp.zapOut(up, muzzle, end, victims, ctx)   # observers' trails (+ the host request on a client)
 	for i in victims.size():
 		var z = victims[i]
-		_claimed[_zk(z)] = true
+		if _au:
+			_claimed[_zk(z)] = true
 		if i > 0:
 			_ringTrail(_chest(victims[i - 1]), _chest(z), cols, delay - 0.06, 5, 0.1)
-		_later(delay, func(): _zapHit(z, up, def))
+		if _au:
+			if mp == null:
+				_later(delay, func(): _zapHit(z, up, def))
+			else:
+				var by = _byCtx
+				_later(delay, func(): _asBy(by, func(): _zapHit(z, up, def)))
 		delay += 0.075
 	_lastZap = {"t": float(g.time.now), "first": _nz(_g(first, "id"), true) if first != null else null, "victims": victims.size(), "round": _round()}
 	_recoil(0.018, "zapper")
@@ -1890,22 +1966,29 @@ func _zapHit(z, up: bool, def) -> void:
 	var killUpTo := int(_nz(_g(def, "killUpTo"), Z.killUpToUp if up else Z.killUpTo))
 	var instant := _round() <= killUpTo
 	var dmg := float(_nz(_g(def, "dmg"), Z.dmgUp if up else Z.dmg))
+	var ex := {"upgraded": up, "point": point}
+	var gag0 := ""
+	var pulse = _g(def, "stunPulse")
+	if not _t(pulse):
+		pulse = {"r": Z.pulseR, "s": Z.pulseStun} if up else null
+	if mp != null:
+		gag0 = GAGS[int(floor(randf() * GAGS.size()))]
+		ex.wfx = ["gag", gag0, up, float(pulse.r) if pulse != null else 0.0]   # replayed by corpseFx on clients
 	var P = _doom(z, func():
 		if instant:
-			return _kill(z, "zapper", "zapper", {"upgraded": up, "point": point})
-		return _damage(z, dmg, "zapper", "zapper", {"upgraded": up, "point": point}))
+			return _kill(z, "zapper", "zapper", ex)
+		return _damage(z, dmg, "zapper", "zapper", ex))
 	if P != null:
-		var gag: String = GAGS[int(floor(randf() * GAGS.size()))]
+		var gag: String = gag0 if mp != null else GAGS[int(floor(randf() * GAGS.size()))]
 		_gag(z, gag, up, P)
-		var pulse = _g(def, "stunPulse")
-		if not _t(pulse):
-			pulse = {"r": Z.pulseR, "s": Z.pulseStun} if up else null
 		if pulse != null:
 			_stunPulse(z.pos, float(pulse.r), float(pulse.s), z)
 	else:
 		_stun(z, float(_nz(_g(def, "stun"), Z.stun)))
 		_akick(z, 1.0)
 		_flashLive(z)
+		if mp != null:
+			mp.fxOut("live", [_g(z, "id")])
 
 # The zombie closest to the aim ray inside the cone (half-angle): the angle is measured to the nearest point of
 # its body axis (feet to head), so aiming at the head, the chest or just past the shoulder all count. A direct
@@ -2005,6 +2088,59 @@ func _stunPulse(pos: Vector3, r: float, s: float, except) -> void:
 	_floorRing(pos, r, "#7FE7FF", 0.4, false, 0.75)
 	_floorRing(pos, r * 0.7, "#FF5FA2", 0.3, false, 0.6)
 	_stunRadius(pos, r, s, except)
+
+# Runs fn as peer `by` (MP host resolving someone's action: zombies.damage info.by, net.sender for credit).
+func _asBy(by, fn: Callable):
+	if mp == null or by == null:
+		return fn.call()
+	var prev = _byCtx
+	_byCtx = by
+	var r = mp.withSender(int(by), fn)
+	_byCtx = prev
+	return r
+
+# The keyed world _keyed would roll (MP: picked before the kill so it travels in info.wfx).
+func _pickWorld(up: bool, def) -> String:
+	var worlds: Array = (WORLDS + WORLDS_UP) if up else WORLDS
+	var dw = _g(def, "worlds")
+	if dw is Array:
+		var fromDef: Array = []
+		for w in dw:
+			var s := str(w)
+			if s.begins_with("world_"):
+				s = s.substr(6)
+			if res.foot.has(s):
+				fromDef.append(s)
+		if not fromDef.is_empty():
+			worlds = fromDef
+	return worlds[int(floor(randf() * worlds.size()))]
+
+# MP (mp-zombies calls it on clients for a replicated kill carrying info.wfx, before the puppet goes): clone the body
+# and play the wonder death the host chose. Idempotent: skipped when a local corpse already plays for z.
+func corpseFx(z, wfx, by = null) -> void:
+	if z == null or not (wfx is Array) or wfx.is_empty() or _hidden.has(_zk(z)):
+		return
+	var P = _corpse(z)
+	if P == null:
+		return
+	var actor = mp.actorOf(by) if mp != null else null
+	match str(wfx[0]):
+		"gag":
+			_gag(z, str(wfx[1]) if wfx.size() > 1 and GAGS.has(str(wfx[1])) else "cartoon", wfx.size() > 2 and wfx[2] == true, P, actor)
+			if wfx.size() > 3 and (wfx[3] is float or wfx[3] is int) and float(wfx[3]) > 0.0:
+				_floorRing(z.pos, float(wfx[3]), "#7FE7FF", 0.4, false, 0.75)
+				_floorRing(z.pos, float(wfx[3]) * 0.7, "#FF5FA2", 0.3, false, 0.6)
+		"key":
+			var wd := str(wfx[1]) if wfx.size() > 1 else ""
+			_keyed(z, wfx.size() > 2 and wfx[2] == true, wd if res.foot.has(wd) else null, P)
+		"tumble":
+			var d: Vector3 = wfx[1] if wfx.size() > 1 and wfx[1] is Vector3 else _away(z.pos, actor)
+			_tumble(z, d, int(wfx[2]) if wfx.size() > 2 and (wfx[2] is int or wfx[2] is float) else 0, P)
+		"suck":
+			_suckIn(z, wfx[1] if wfx.size() > 1 and wfx[1] is Vector3 else z.pos + Vector3(0, 0.25, 0), P)
+		_:
+			P.dispose()
+			_unhide(z)
 
 func _later(delay: float, fn: Callable) -> void:
 	var st := {"t": 0.0}
@@ -2156,8 +2292,8 @@ func _updateActors(dt: float) -> void:
 	A.resize(n)
 
 # Away-from-player direction on the floor plane.
-func _away(pos: Vector3) -> Vector3:
-	var p = game.player
+func _away(pos: Vector3, actor = null) -> Vector3:
+	var p = actor if actor != null else game.player
 	var out := Vector3(pos.x - (p.pos.x if p != null else 0.0), 0, pos.z - (p.pos.z if p != null else 0.0))
 	if out.length_squared() < 1e-4:
 		out = Vector3(0, 0, 1)
@@ -2165,13 +2301,13 @@ func _away(pos: Vector3) -> Vector3:
 
 # ------------------------------------------------------------------------------------------ channel gags
 # The victim flashes 2 frames of static and 2 of color bars, then one of the five channel gags (GDD §9.4).
-func _gag(z, gag: String, up: bool = false, pre = null) -> void:
+func _gag(z, gag: String, up: bool = false, pre = null, actor = null) -> void:
 	var P = pre if pre is Corpse else _corpse(z)
 	if P == null:
 		return
 	var R := res
 	var pos: Vector3 = P.pivot.position
-	var away := _away(pos)
+	var away := _away(pos, actor if actor != null else (mp.actorOf(_byCtx) if mp != null else null))
 	var INTRO := 0.1
 	var intro := func(t: float):
 		if t < 0.05:
@@ -2523,6 +2659,8 @@ func _boomFire(ctx, st: Dictionary, slot) -> bool:
 	_recLoop = null
 	if g.audio != null and g.audio.has_method("loop"):
 		_recLoop = g.audio.loop("wpn_boom_record", {})
+	if mp != null:
+		mp.boomRecOut(true, st.up)
 	return false
 
 func _updateRecording(dt: float, st: Dictionary) -> void:
@@ -2541,8 +2679,8 @@ func _updateRecording(dt: float, st: Dictionary) -> void:
 		count += float(_nz(_g(RC, "bossCounts"), B.bossCount)) if _isBoss(z) else 1.0
 	var rate := (float(_nz(_g(RC, "chargeBase"), B.base)) + float(_nz(_g(RC, "chargePerZombie"), B.per)) * count) * float(_nz(_g(RC, "rate"), 2 if st.get("up") else 1))
 	charge = minf(float(_nz(_g(RC, "chargeMax"), B.max)), charge + rate * dt)
-	# slow everyone in the cone to 35 %; restore the ones that left
-	for z in zs:
+	# slow everyone in the cone to 35 %; restore the ones that left (MP client: the host slows its own copy of the cone)
+	for z in (zs if _au else []):
 		_slow(z, "rec", float(_nz(_g(RC, "slow"), B.slow)))
 	for k in _status.keys():
 		var s = _status.get(k)
@@ -2557,9 +2695,9 @@ func _updateRecording(dt: float, st: Dictionary) -> void:
 	if st.rec >= maxT:
 		_playback(ctx, st)
 
-func _inCone(origin: Vector3, dir: Vector3, range: float, half: float) -> Array:
+func _inCone(origin: Vector3, dir: Vector3, range: float, half: float, actor = null) -> Array:
 	var out: Array = []
-	var p = game.player
+	var p = actor if actor != null else game.player
 	var eye: Vector3 = p.pos if p != null else origin
 	if p != null:
 		eye.y += 1.3
@@ -2596,6 +2734,8 @@ func _squiggle(z) -> void:
 	it.base = lin(["#7FE7FF", "#FF5FA2", "#FFE14D", "#9CFF57"][int(floor(randf() * 4))], 1.25)
 
 func _stopRecording(keep: bool) -> void:
+	if mp != null and recording and not keep:
+		mp.boomRecOut(false, false)
 	if _recLoop != null:
 		_hcall(_recLoop, "stop", [0.08])
 		_recLoop = null
@@ -2619,7 +2759,21 @@ func _playback(ctx, st: Dictionary) -> void:
 	st.playT = clamp01(ch0 / 10.0)
 	charge = 0.0
 	var origin: Vector3 = ctx.origin
-	var fwd := Vector3(ctx.dir.x, 0, ctx.dir.z)
+	var cones := _boomCones(ctx.dir, ch0, up)
+	if mp != null:
+		mp.boomPlayOut(up, ch0, origin, ctx.dir, _micTip)
+	_playCones(origin, ctx.dir, cones, up, ctx.get("def"), _micTip, null, _au)
+	_play("wpn_boom_playback", {"upgraded": up})
+	if up:
+		_play("wpn_upgraded_sparkle")
+	_recoil(0.035, "boom_mic")
+	_sys("cam", "shake", [0.18 + ch0 * 0.02, 0.35])
+	_fx("flashLight", [_micTip, "#FF5FA2", 5 + ch0, 0.15])
+	_emit("weapon:fire", {"weaponId": "boom_mic", "upgraded": up})
+
+# Boom Mic playback cones: [[dir, charge]] (QUADRAPHONIC adds back / left / right at half charge).
+func _boomCones(aimDir: Vector3, ch0: float, up: bool) -> Array:
+	var fwd := Vector3(aimDir.x, 0, aimDir.z)
 	if fwd.length_squared() < 1e-4:
 		fwd = Vector3(0, 0, -1)
 	fwd = fwd.normalized()
@@ -2630,7 +2784,12 @@ func _playback(ctx, st: Dictionary) -> void:
 		var right := -left
 		for d in [back, left, right]:
 			cones.append([d, ch0 / 2.0])
-	var def = ctx.get("def")
+	return cones
+
+# Shockwaves along every cone; resolve (solo / MP host): the victims (tumble kills, knock-backs, boss damage).
+# actor: the recording player (cone eye; MP host resolving a client's playback), null = the local player.
+func _playCones(origin: Vector3, aimDir: Vector3, cones: Array, up: bool, def, mic: Vector3, actor, resolve: bool) -> void:
+	var B: Dictionary = G.boom
 	var killUpTo := int(_nz(_g(def, "killUpTo"), B.killUpToUp if up else B.killUpTo))
 	var PB = _g(def, "playback", {})
 	var done := {}
@@ -2639,9 +2798,11 @@ func _playback(ctx, st: Dictionary) -> void:
 		var dir: Vector3 = cones[ci][0]
 		var ch: float = cones[ci][1]
 		var full := ci == 0
-		var aim: Vector3 = ctx.dir if full else dir
-		_shockwave(_micTip, dir, ch, full)
-		var list := _inCone(origin, aim, B.range, (B.cone / 2.0) * DEG)
+		var aim: Vector3 = aimDir if full else dir
+		_shockwave(mic, dir, ch, full)
+		if not resolve:
+			continue
+		var list := _inCone(origin, aim, B.range, (B.cone / 2.0) * DEG, actor)
 		for z in list:
 			var k = _zk(z)
 			if done.has(k):
@@ -2653,30 +2814,33 @@ func _playback(ctx, st: Dictionary) -> void:
 			if ch >= float(_nz(_g(PB, "killCharge"), B.killAt)):
 				var instant := _round() <= killUpTo
 				var dmg := float(_nz(_g(PB, "dmgAfter"), B.late)) * (ch / 10.0)
+				var bx := {"upgraded": up, "dir": dir}
+				if mp != null:
+					bx.wfx = ["tumble", dir, victims]
 				var P = _doom(z, func():
 					if instant:
-						return _kill(z, "boom_mic", "boom_mic", {"upgraded": up, "dir": dir})
-					return _damage(z, dmg, "boom_mic", "boom_mic", {"upgraded": up, "dir": dir}))
+						return _kill(z, "boom_mic", "boom_mic", bx)
+					return _damage(z, dmg, "boom_mic", "boom_mic", bx))
 				if P != null:
 					_tumble(z, dir, victims, P)
 					victims += 1
 				else:
 					_knock(z, dir, float(_nz(_g(PB, "knock"), B.knock)) * 0.5, float(_nz(_g(PB, "stun"), B.weakStun)))
+					if mp != null:
+						mp.fxOut("knock", [_g(z, "id")])
 			else:
 				var weak := float(_nz(_g(PB, "weakDmg"), B.weak))
-				var P2 = _doom(z, func(): return _damage(z, weak, "boom_mic", "boom_mic", {"upgraded": up, "dir": dir}))
+				var wx := {"upgraded": up, "dir": dir}
+				if mp != null:
+					wx.wfx = ["tumble", dir, victims]
+				var P2 = _doom(z, func(): return _damage(z, weak, "boom_mic", "boom_mic", wx))
 				if P2 != null:
 					_tumble(z, dir, victims, P2)
 					victims += 1
 				else:
 					_knock(z, dir, float(_nz(_g(PB, "knock"), B.knock)), float(_nz(_g(PB, "stun"), B.weakStun)))
-	_play("wpn_boom_playback", {"upgraded": up})
-	if up:
-		_play("wpn_upgraded_sparkle")
-	_recoil(0.035, "boom_mic")
-	_sys("cam", "shake", [0.18 + ch0 * 0.02, 0.35])
-	_fx("flashLight", [_micTip, "#FF5FA2", 5 + ch0, 0.15])
-	_emit("weapon:fire", {"weaponId": "boom_mic", "upgraded": up})
+					if mp != null:
+						mp.fxOut("knock", [_g(z, "id")])
 
 # Translucent sound rings expanding along a 50° cone.
 func _shockwave(from: Vector3, dir: Vector3, ch: float, full: bool) -> void:
@@ -2807,6 +2971,8 @@ func _launchBlob(ctx, up: bool, def) -> void:
 	g.scene.add_child(mesh)
 	_blobs.append({"pos": from, "vel": vel, "t": 0.0, "up": up, "def": def, "mesh": mesh, "bounces": int(_nz(_g(B, "bounces"), 1 if up else 0)), "r": r, "grav": grav,
 		"life": float(_nz(_g(B, "life"), C.fuse)), "trail": 0.0, "seed": randf() * 10.0, "squash": 0.0})
+	if mp != null:
+		mp.blobLaunched(_blobs[-1], from, vel, up)
 	var P: Dictionary = Config.PAL
 	_fx("burst", [from, {"shape": "goo", "count": 6, "dir": vel.normalized(), "cone": 0.5, "speed": 4, "size": 0.07, "colors": [P.greenScreen, "#9CFF57"] if up else [P.chromaBlue, "#4F86FF"]}])
 
@@ -2900,9 +3066,13 @@ func _updateBlobs(dt: float) -> void:
 		if burst != null:
 			_drop(b.mesh)
 			_blobs.remove_at(i)
-			_splash(burst, normal, b.up, b.def, direct)
+			if mp == null:
+				_splash(burst, normal, b.up, b.def, direct)
+			elif not b.get("remote", false):
+				mp.blobBurst(b, burst, normal, direct)   # MP: host resolves (own blob here, a client's on request)
 
-func _splash(pos: Vector3, normal, up: bool, def, direct) -> void:
+# resolve false (MP client's own blob / an observer replaying the host's splash): visuals + a visual-only puddle.
+func _splash(pos: Vector3, normal, up: bool, def, direct, resolve := true) -> void:
 	var C: Dictionary = G.chroma
 	var P: Dictionary = Config.PAL
 	var r := float(_or(_g(_g(def, "splash"), "r"), C.splashUp if up else C.splash))
@@ -2918,6 +3088,10 @@ func _splash(pos: Vector3, normal, up: bool, def, direct) -> void:
 	var f = _splashFloor(pos, r)
 	var onFloor: bool = f != null and pos.y - f < 2.6
 	_floorRing(Vector3(pos.x, f, pos.z) if onFloor else pos, r, cols[0], 0.35, true, 0.8)
+	if not resolve or not _au:
+		if onFloor:
+			_spawnPuddle(Vector3(pos.x, f, pos.z), up, def, false)
+		return
 	if direct != null and _isBoss(direct):
 		_damage(direct, float(_nz(_g(def, "bossDmg"), C.boss)), "chroma_key", "chroma_key", {"upgraded": up})
 	var eye: Vector3 = pos + (normal if normal is Vector3 else UP) * 0.3
@@ -2983,16 +3157,22 @@ func _keyZombie(z, up: bool, def, splash: bool = false) -> bool:
 	var killUpTo := int(_nz(_g(def, "killUpTo"), C.killUpToUp if up else C.killUpTo))
 	var instant := _round() <= killUpTo
 	var extra := {"upgraded": up, "splash": splash}
+	var world0 = null
+	if mp != null:
+		world0 = _pickWorld(up, def)
+		extra.wfx = ["key", world0, up]
 	var dmg := float(_nz(_g(def, "dmg"), C.late))
 	var P = _doom(z, func():
 		if instant:
 			return _kill(z, "chroma_key", "chroma_key", extra)
 		return _damage(z, dmg, "chroma_key", "chroma_key", extra))
 	if P != null:
-		_keyed(z, up, null, P, def)
+		_keyed(z, up, world0, P, def)
 	else:
 		_claimed.erase(_zk(z))
 		_flashLive(z)
+		if mp != null:
+			mp.fxOut("live", [_g(z, "id")])
 	return P != null
 
 # Flat chroma color (0.3 s) -> a zombie-shaped window onto stock footage (0.8 s) -> swirls into a point (0.4 s).
@@ -3086,7 +3266,7 @@ static func _project(cam: Camera3D, p: Vector3) -> Vector3:
 		return Vector3.ZERO
 	return Vector3(clip.x / clip.w, clip.y / clip.w, clip.z / clip.w)
 
-func _spawnPuddle(pos: Vector3, up: bool, def = null) -> void:
+func _spawnPuddle(pos: Vector3, up: bool, def = null, keys := true) -> void:
 	var g = game
 	var C: Dictionary = G.chroma
 	var R := res
@@ -3111,7 +3291,9 @@ func _spawnPuddle(pos: Vector3, up: bool, def = null) -> void:
 	g.scene.add_child(mesh)
 	var pool = _sys("fx", "lightPool", [pos, r * 1.2, P.greenScreen if up else P.chromaBlue, 0.0])
 	_puddles.append({"pos": pos, "r": r, "t": 0.0, "dur": float(_nz(_g(PD, "life"), C.puddleTUp if up else C.puddleT)),
-		"keys": int(_nz(_g(PD, "keys"), C.puddleNUp if up else C.puddleN)), "up": up, "def": def, "mesh": mesh, "pool": pool, "bub": 0.0})
+		"keys": int(_nz(_g(PD, "keys"), C.puddleNUp if up else C.puddleN)) if keys else 0, "up": up, "def": def, "mesh": mesh, "pool": pool, "bub": 0.0})
+	if mp != null:
+		_puddles[-1].by = _byCtx if _byCtx != null else mp.localId()
 
 func _disposePuddle(p) -> void:
 	_drop(p.mesh)
@@ -3137,7 +3319,7 @@ func _updatePuddles(dt: float) -> void:
 			var bp := Vector3(p.pos.x + cos(a) * rr, p.pos.y + 0.05, p.pos.z + sin(a) * rr)
 			_fx("burst", [bp, {"shape": "goo", "count": 1, "speed": 1.2, "size": 0.05, "life": 0.35, "gravity": 6, "dir": UP, "cone": 0.2,
 				"colors": [P.greenScreen, "#E4FFD8"] if p.up else [P.chromaBlue, "#BFD4FF"]}])
-		if p.keys > 0 and p.t < p.dur - 0.3:
+		if p.keys > 0 and p.t < p.dur - 0.3 and _au:
 			for z in _zombies().duplicate():
 				if p.keys <= 0:
 					break
@@ -3147,7 +3329,7 @@ func _updatePuddles(dt: float) -> void:
 				var dz: float = z.pos.z - p.pos.z
 				if dx * dx + dz * dz > pow(p.r * 0.92, 2.0) or absf(z.pos.y - p.pos.y) > 0.8:
 					continue
-				if _keyZombie(z, p.up, p.def):
+				if (_keyZombie(z, p.up, p.def) if mp == null else _asBy(p.get("by"), func(): return _keyZombie(z, p.up, p.def))):
 					p.keys -= 1
 		if p.t >= p.dur:
 			_disposePuddle(p)
@@ -3238,6 +3420,8 @@ func _spawnTele(ctx = null):
 	}
 	teles.append(tele)
 	_play("tele_throw", {"pos": root.position})
+	if mp != null and not mp.teleSpawned(tele, ctx):
+		return tele   # MP: the host spawning another player's tele (no local player recoil)
 	var an = _g(p, "anim")
 	if an != null:
 		_sset(an, "recoil", 1.0)
@@ -3342,8 +3526,10 @@ func _teleFly(t: Dictionary, dt: float) -> void:
 			t.t = 0.0
 			t.vel = Vector3.ZERO
 			t.floor = f
-			var p = g.player
+			var p = g.player if mp == null else mp.actorOf(t.get("by"))
 			t.yaw = atan2(p.pos.x - t.pos.x, p.pos.z - t.pos.z) + PI if p != null else 0.0   # screen (-z) toward the thrower
+			if mp != null:
+				mp.teleLanded(t)
 			t.q0 = t.spin.quaternion
 			t.q1 = qAxis(UP, t.yaw)
 			_play("telly_clonk", {"pos": t.pos, "vol": 1, "rate": 0.85})
@@ -3374,7 +3560,8 @@ func _teleLand(t: Dictionary, dt: float) -> void:
 		t.live = 0.0
 		_setScreenMap(t.screenMat, _screenTex)
 		var TT := _teleDef()
-		_sys("zombies", "setLure", [t.pos, float(_nz(t.get("lure"), _nz(TT.lure, 15)))])
+		if _au and t.get("auth", true):
+			_sys("zombies", "setLure", [t.pos, float(_nz(t.get("lure"), _nz(TT.lure, 15)))])
 		_lureTele = t
 		t.loop = null
 		if g.audio != null and g.audio.has_method("loop"):
@@ -3400,10 +3587,18 @@ func _teleLive(t: Dictionary, dt: float) -> void:
 	var U = _g(t.screenMat, "uniforms")
 	if U is Dictionary and U.get("uBright") != null:
 		U.uBright.value = 1.1 + (0.8 if (late > 0.0 and sin(t.live * 40.0) > 0.4) else 0.0)
+	if not t.get("auth", true):
+		if t.live >= fuse + 2.0:   # MP copy: the host's teleBoom never came (left / lost): implode visually
+			t.state = "implode"
+			t.t = 0.0
+			_teleBoom(t)
+		return
 	_seatZombies(t, dt)
 	if t.live >= fuse:
 		t.state = "implode"
 		t.t = 0.0
+		if mp != null:
+			mp.teleBoomOut(t)
 		_teleBoom(t)
 
 # Zombies that reach the tele sit cross-legged in a semicircle (r 2.2 m) facing it, mesmerized. Seats must be
@@ -3432,6 +3627,8 @@ func _seatZombies(t: Dictionary, _dt: float) -> void:
 			"dur": minf(1.6, maxf(0.3, walk / 1.7)) if seat != null else 0.0, "yaw0": float(_or(_g(z, "yaw"), 0.0)), "plopped": false}
 		s.t = 0.0
 		_applyPose(z)
+		if mp != null:
+			mp.teleSeatOut(t, z, s.seat)
 
 func _findSeat(t: Dictionary, z):
 	var TT := _teleDef()
@@ -3496,16 +3693,19 @@ func _teleBoom(t: Dictionary) -> void:
 	_floorRing(t.pos, float(TT.killR) * 0.55, "#FF5FA2", 0.3, false, 0.7)
 	_sys("cam", "shake", [0.2, 0.3])
 	var late := _round() > int(TT.killUpTo)
-	for z in _zombies().duplicate():
+	for z in (_zombies().duplicate() if (_au and t.get("auth", true)) else []):
 		if not _alive(z) or _isBoss(z):
 			continue
 		if z.pos.distance_to(t.pos) > float(TT.killR):
 			continue
 		var dmg := float(TT.late)
+		var tx := {}
+		if mp != null:
+			tx = {"wfx": ["suck", center], "by": int(t.get("by", mp.localId()))}
 		var P = _doom(z, func():
 			if late:
-				return _damage(z, dmg, "tiny_tele", "tiny_tele")
-			return _kill(z, "tiny_tele", "tiny_tele"))
+				return _damage(z, dmg, "tiny_tele", "tiny_tele", tx)
+			return _kill(z, "tiny_tele", "tiny_tele", tx))
 		if P != null:
 			_suckIn(z, center, P)
 	for k in t.seated.keys():
@@ -3557,6 +3757,8 @@ func _relure() -> void:
 			nxt = x
 			break
 	_lureTele = nxt
+	if not _au:
+		return
 	_sys("zombies", "setLure", [nxt.pos if nxt != null else null, float(_nz(nxt.get("lure"), _nz(_teleDef().lure, 15))) if nxt != null else INF])
 
 func _updateTeleCount() -> void:
