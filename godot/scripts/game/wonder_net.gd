@@ -125,7 +125,7 @@ func onZap(up, ids) -> void:
 	if n == null or n.isClient or not (ids is Array):
 		return
 	var by: int = n.sender
-	var u := up == true
+	var u: bool = up == true
 	var def = WD.weaponDef("zapper", u)
 	var delay := 0.07
 	for id in ids.slice(0, 12):
@@ -291,7 +291,7 @@ func onBoomPlay(up, ch, origin, dir, mic) -> void:
 	if _rrec.has(by):
 		_stopRec(by)
 	_recVisual(by, false)
-	var u := up == true
+	var u: bool = up == true
 	var c := clampf(float(ch) if (ch is float or ch is int) else 0.0, 0.0, 10.0)
 	var def = WD.weaponDef("boom_mic", u)
 	var rp = actorOf(by)
@@ -304,7 +304,7 @@ func onBoomFx(by, up, ch, origin, dir, mic) -> void:
 	if int(by) == localId() or authority() or not (origin is Vector3) or not (dir is Vector3) or not (mic is Vector3):
 		return
 	_recVisual(int(by), false)
-	var u := up == true
+	var u: bool = up == true
 	var c := clampf(float(ch), 0.0, 10.0)
 	var def = WD.weaponDef("boom_mic", u)
 	w._playCones(origin, dir, w._boomCones(dir, c, u), u, def, mic, actorOf(by), false)
@@ -366,7 +366,7 @@ func onSplash(sid, pos, normal, directId, up) -> void:
 	if n == null or n.isClient or not (pos is Vector3):
 		return
 	var by: int = n.sender
-	var u := up == true
+	var u: bool = up == true
 	var nrm: Vector3 = normal if normal is Vector3 else Vector3.UP
 	_dropBlob(by, int(sid))
 	var direct = _z(directId)
@@ -378,7 +378,7 @@ func onSplashFx(by, sid, pos, normal, direct, up) -> void:
 	if int(by) == localId() or authority() or not (pos is Vector3):
 		return
 	_dropBlob(int(by), int(sid))
-	var u := up == true
+	var u: bool = up == true
 	w._splash(pos, normal if normal is Vector3 else Vector3.UP, u, WD.weaponDef("chroma_key", u), true if direct == true else null, false)
 
 # ------------------------------------------------------------------------------------------ Tiny Tele
