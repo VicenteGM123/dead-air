@@ -1369,6 +1369,7 @@ func net_reqBar(color) -> void:
 
 func net_reqPuppet(id) -> void:
 	var p = puppets.get(str(id))
+	print("[egg] reqPuppet %s from %d state=%s ok=%s" % [str(id), int(_net().sender), str(p.state) if p != null else "-", str(_hostOk())])
 	if not _hostOk() or p == null or p.state != "ghost":
 		return
 	_net().everyone("egg", "puppet", [p.id])
@@ -1442,20 +1443,47 @@ func net_chime(color, on) -> void:
 
 func net_puppet(id) -> void:
 	var p = puppets.get(str(id))
-	if not _act() or p == null or p.state != "ghost":
+	if not _act() or p == null:
 		return
-	_tunePuppet(p)
+	if p.state == "dormant":
+		_ghost(p)             # this peer's ghost timer lags the host's
+	if p.state == "ghost":
+		_tunePuppet(p)
 
 func net_pickup(id, carrier) -> void:
 	var p = puppets.get(str(id))
-	if not _act() or p == null or p.state != "ground":
+	if not _act() or p == null:
 		return
-	_pickup(p, int(carrier))
+	_toGround(p)
+	if p.state == "ground":
+		_pickup(p, int(carrier))
 
 func net_slot(carrier, ids) -> void:
 	if not _act() or not (ids is Array):
 		return
+	for id in ids:
+		var p = puppets.get(str(id))
+		if p != null and p.state != "carried":
+			_toGround(p)
+			if p.state == "ground":
+				_pickup(p, int(carrier))
 	_slotAll(ids)
+
+# MP: a puppet whose local timeline lags the host's (dormant / ghost / tuning / falling / landing) jumps to the floor.
+func _toGround(p: Dictionary) -> void:
+	if not ["dormant", "ghost", "tuning", "falling", "landing"].has(p.state):
+		return
+	if p.state == "dormant" or p.state == "ghost" or p.state == "tuning":
+		_revealPuppet(p)
+	var pr: Node3D = p.root
+	_setWorld(pr, p.drop, p.rotY, 1.0)
+	(p.model as Node3D).rotation = Vector3.ZERO
+	(p.model as Node3D).scale = Vector3.ONE
+	(p.pivot as Node3D).position = Vector3.ZERO
+	(p.pivot as Node3D).rotation = Vector3.ZERO
+	if p.blob == null:
+		p.blob = _oc(game.fx, "blob", [pr, 0.22])
+	p.state = "ground"
 
 func net_drop(ids) -> void:
 	if not _act() or not (ids is Array):
