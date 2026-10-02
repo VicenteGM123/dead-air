@@ -897,13 +897,17 @@ func _pollClosing(now: float) -> void:
 			while p.get_available_packet_count() > 0:
 				p.get_packet()
 
-func _setPeerTimeout(id: int) -> void:
+func _tunePeer(id: int) -> void:
 	if peer == null:
 		return
 	var pp: ENetPacketPeer = peer.get_peer(id)
 	if pp != null:
 		# loading a game blocks a frame for seconds: be patient before declaring a peer dead (default min 5 s)
 		pp.set_timeout(32, 15000, 30000)
+		# no adaptive packet throttle: ENet is serviced once per frame, so its RTT samples are frame-quantized and noisy
+		# and the default throttle (deceleration 2) dropped 50-70 % of the unreliable snapshots even on localhost.
+		# Deceleration 0 keeps the throttle at its maximum (no unreliable packet is dropped by the sender).
+		pp.throttle_configure(5000, 32, 0)
 
 func _disconnectPeer(id: int) -> void:
 	if peer != null and _hasPeer(id):
@@ -912,7 +916,7 @@ func _disconnectPeer(id: int) -> void:
 func _onPeerConnected(id: int) -> void:
 	if isHost:
 		_pending[id] = _now()
-		_setPeerTimeout(id)
+		_tunePeer(id)
 
 func _onPeerDisconnected(id: int) -> void:
 	if active:
@@ -921,7 +925,7 @@ func _onPeerDisconnected(id: int) -> void:
 func _onConnected() -> void:
 	if not isClient:
 		return
-	_setPeerTimeout(1)
+	_tunePeer(1)
 	_sendTo(1, "net", "hello", [{"version": version, "name": _joinInfo.get("name", "PLAYER"), "hero": _joinInfo.get("hero")}])
 
 func _onConnectFailed() -> void:

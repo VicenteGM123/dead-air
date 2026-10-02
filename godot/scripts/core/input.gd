@@ -38,6 +38,11 @@
 # itself) and a capture lost by any other means is noticed in update(). UI surfaces that consume a key (the pause
 # menu's Esc) must call get_viewport().set_input_as_handled() in their own _input (JS stopImmediatePropagation).
 # Renames (SPEC §3.2): none.
+# MP: while game.mpPaused (the MP pause card is an overlay over the running world) gameplay gets no input: `blocked`
+#   is true, held actions release once (like losing the pointer lock), every action then reads not-down / not-pressed,
+#   mouse and pad look / move are zero, and every key pressed while blocked (the one that hit RESUME included: the
+#   card resumes before this hook sees the key) is ignored until released. Esc with mpPaused resumes. Rumble hooks
+#   (player:hurt, weapon:fire) skip payloads whose `by` is another peer (RECONCILE R7); player:down rumbles (MP).
 extends RefCounted
 
 const GP = preload("res://scripts/core/gamepad.gd")
@@ -119,6 +124,8 @@ var _cursorHidden := false
 var _hook: Node = null     # the Node receiving Godot input events (the JS window/canvas listeners)
 var _lockPending := false  # requestLock() in flight (the browser locks asynchronously)
 var _weaponDefs = null
+var blocked := false       # MP: game.mpPaused (see the header)
+var _swallowCodes := {}    # MP: keys pressed while blocked, ignored until released (Set)
 
 func _init(g) -> void:
 	game = g
@@ -159,8 +166,11 @@ func init() -> void:
 				_snap.t = 0.0)
 		ev.on("weapon:fire", func(e) -> void: _fireRumble(e))
 		ev.on("player:hurt", func(e) -> void:
+			if not _mine(e):
+				return
 			var d := maxf(0.0, GP.U.num(e.get("dmg")) if e is Dictionary else 0.0)
 			rumble(minf(0.75, 0.3 + d / 300.0), minf(0.7, 0.2 + d / 220.0), 170.0))
+		ev.on("player:down", func(_e) -> void: rumble(0.8, 0.9, 420.0))   # MP only (solo never goes down)
 		ev.on("weapon:grenade", func(e) -> void:
 			var p = game.player
 			if not (e is Dictionary) or e.get("pos") == null or p == null:
@@ -286,8 +296,15 @@ func _defs() -> Variant:
 			_weaponDefs = d if d is Dictionary else {}
 	return _weaponDefs
 
+# RECONCILE R7: a payload caused by another peer's player carries its id in `by` (absent in solo).
+func _mine(e) -> bool:
+	if not (e is Dictionary) or e.get("by") == null:
+		return true
+	var n = game.get("net")
+	return n == null or not n.inGame or int(e.by) == int(n.localId)
+
 func _fireRumble(e) -> void:
-	if not (e is Dictionary) or device != "pad":
+	if not (e is Dictionary) or device != "pad" or not _mine(e):
 		return
 	var defs = _defs()
 	var def = defs.get(e.get("weaponId")) if defs is Dictionary else null
@@ -301,6 +318,15 @@ func _fireRumble(e) -> void:
 func update(dt: float = 0.0) -> void:
 	_syncLock()
 	_pollPad(dt)
+	# MP pause: entering it releases every held key once (their key-ups are swallowed: no second release)
+	var mpPause: bool = game.get("mpPaused") == true
+	if mpPause != blocked:
+		blocked = mpPause
+		if blocked:
+			for c in _codes:
+				_swallowCodes[c] = true
+			clear()
+			_dropPadLatches()
 	var PH := _padHeld
 	var PP := _padPress
 	var PR := _padRel
@@ -329,8 +355,22 @@ func update(dt: float = 0.0) -> void:
 	_acc.dx = 0.0
 	_acc.dy = 0.0
 	_acc.wheel = 0
+	if blocked:
+		_blockActions()
 	pad.updateRumble()
 	_updateCursor()
+
+# MP pause: nothing reaches gameplay this frame (the one-frame releases latched by clear() stay visible).
+func _blockActions() -> void:
+	for a in _state:
+		var s: Dictionary = _state[a]
+		s.down = false
+		s.pressed = false
+		s.toggled = false
+	mouse.dx = 0.0
+	mouse.dy = 0.0
+	mouse.wheel = 0
+	_resetPadActions()
 
 func _held(a: String) -> bool:
 	for c in bindings[a]:
@@ -668,6 +708,14 @@ func _onKey(code: String, isDown: bool, isRepeat: bool) -> void:
 		exitLock()
 
 func _onButton(code: String, isDown: bool) -> void:
+	if blocked or _swallowCodes.has(code):
+		# MP pause card up (or the key went down while it was): ignored until released
+		if isDown:
+			_swallowCodes[code] = true
+		else:
+			_swallowCodes.erase(code)
+			_codes.erase(code)
+		return
 	var acts = _codeToActions.get(code)
 	if isDown:
 		_codes[code] = true
@@ -683,6 +731,9 @@ func _onButton(code: String, isDown: bool) -> void:
 
 func _onMouseDown(button: int) -> void:
 	_setDevice("kbm")
+	if blocked:
+		_onButton("Mouse%d" % button, true)   # MP pause: no pointer-lock request, swallowed
+		return
 	var st = game.state
 	if (st == "playing" or st == "down") and not locked and not GP.U.truthy(game.params.get("test")):
 		requestLock()
@@ -729,6 +780,9 @@ func _onLockChange() -> void:
 func _onEscape() -> void:
 	if locked:
 		return  # the browser releases the lock; _onLockChange pauses
+	if game.get("mpPaused") == true:
+		game.resume()   # MP pause card (when the card itself did not take the key)
+		return
 	var st = game.state
 	if st == "playing" or st == "down":
 		game.pause()

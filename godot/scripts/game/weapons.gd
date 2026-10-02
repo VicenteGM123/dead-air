@@ -1467,11 +1467,11 @@ func _fire(s: Dictionary, def: Dictionary) -> void:
 		var rr: float
 		var phi: float
 		if pellets > 1:
-			phi = (float(i) / pellets) * PI * 2.0 + g.rand() * 0.7
-			rr = g.rand() * 0.25 if i == 0 else 0.45 + 0.55 * g.rand()
+			phi = (float(i) / pellets) * PI * 2.0 + _r() * 0.7
+			rr = _r() * 0.25 if i == 0 else 0.45 + 0.55 * _r()
 		else:
-			phi = g.rand() * PI * 2.0
-			rr = sqrt(g.rand())
+			phi = _r() * PI * 2.0
+			rr = sqrt(_r())
 		var t := tan(spreadRad) * rr
 		var n := (baseDir + r * (cos(phi) * t) + u * (sin(phi) * t)).normalized()
 		var end := _traceBullet(origin, n, def, s, shot, ghost)
@@ -1486,7 +1486,7 @@ func _fire(s: Dictionary, def: Dictionary) -> void:
 			fx.streak(muzzle, end, style, "#FF5FD2", 0.018, r * -0.035)
 		if style.get("style") == "stars":
 			for k in 2:
-				var a := muzzle.lerp(end, 0.25 + g.rand() * 0.7)
+				var a := muzzle.lerp(end, 0.25 + _r() * 0.7)
 				g.fx.burst(a, {"shape": "star", "count": 1, "speed": 0.6, "size": 0.07, "life": 0.45, "gravity": 0.5, "colors": [Config.PAL.marqueeGold, "#FFF3B0"]})
 	_endShot(shot, s, def)
 
@@ -1513,14 +1513,14 @@ func _kick(def: Dictionary, mul := 1.0) -> void:
 	var ads := _adsW
 	var kick: Array = def.kick if def.get("kick") else [0.02, 0.005]
 	if g.cam != null and g.cam.has_method("kick"):
-		g.cam.kick(kick[0] * mul * (1.0 - 0.35 * ads), (g.rand() - 0.5) * 2.0 * kick[1] * mul)
+		g.cam.kick(kick[0] * mul * (1.0 - 0.35 * ads), (_r() - 0.5) * 2.0 * kick[1] * mul)
 	if g.cam != null and g.cam.has_method("shake") and def.get("shake"):
 		g.cam.shake(def.shake * mul * (1.0 - 0.4 * ads), 0.16)
 	var rc: Array = def.recoil if def.get("recoil") else [0.04, 0.15]
 	var R := _recoil
 	R.vb += rc[0] * 30.0 * mul
 	R.vr += rc[1] * 28.0 * mul
-	R.vroll += (g.rand() - 0.5) * rc[1] * 18.0 * mul
+	R.vroll += (_r() - 0.5) * rc[1] * 18.0 * mul
 	var an = game.player.animator
 	if an != null and an.has_method("kick"):
 		an.kick(minf(0.22, rc[0] * 1.5) * mul)
@@ -1545,7 +1545,7 @@ func _muzzleFX(s: Dictionary, def: Dictionary, pos: Vector3, dir: Vector3) -> vo
 	var up := _truthy(s.upgraded)
 	var sig = WD.SIGNAL_COLORS.get(s["signal"]) if (up and s["signal"]) else null
 	var color = sig if sig else f.color
-	fx.flash(pos, dir, f.size * (0.9 + g.rand() * 0.25), color, 0.045 if def.mode == "auto" else 0.065)
+	fx.flash(pos, dir, f.size * (0.9 + _r() * 0.25), color, 0.045 if def.mode == "auto" else 0.065)
 	if up:
 		fx.ring(pos, dir, f.size * 0.18, f.size * 0.75, 0.2, "#ffffff", not sig)
 		if sig:
@@ -1556,7 +1556,7 @@ func _muzzleFX(s: Dictionary, def: Dictionary, pos: Vector3, dir: Vector3) -> vo
 		g.fx.burst(pos, {"shape": "star", "count": 3, "speed": 2, "size": 0.07, "life": 0.4, "colors": ["#FFFFFF", "#BFE8FF"]})
 	g.fx.flashLight(pos, color, 9 if def.get("pellets") else 6, 0.06)
 	var smoke: float = float(def.get("smoke", 0)) if def.get("smoke") else 0.0
-	var nSmoke := int(floor(smoke)) + (1 if g.rand() < fmod(smoke, 1.0) else 0)
+	var nSmoke := int(floor(smoke)) + (1 if _r() < fmod(smoke, 1.0) else 0)
 	if nSmoke:
 		g.fx.burst(pos, {"shape": "puff", "count": nSmoke, "size": 0.13 if def.get("pellets") else 0.08, "speed": 0.9, "life": 0.55, "gravity": -1.2, "drag": 3,
 			"dir": dir, "cone": 0.5, "colors": ["#EDE6DA", "#D8CFC2"]})
@@ -1570,7 +1570,7 @@ func _eject(kind: String, speed := 1.0) -> void:
 	var mt: Transform3D = h.model.global_transform
 	a = mt * a
 	var q: Quaternion = mt.basis.get_rotation_quaternion()
-	var b := q * (Vector3(1.6 + g.rand() * 0.8, 1.6 + g.rand() * 1.2, 0.4 + g.rand() * 0.6) * speed)
+	var b := q * (Vector3(1.6 + _r() * 0.8, 1.6 + _r() * 1.2, 0.4 + _r() * 0.6) * speed)
 	var pv: Vector3 = g.player.vel
 	b.x += pv.x * 0.8
 	b.z += pv.z * 0.8
@@ -1884,7 +1884,7 @@ func _updateReload(dt: float, pressedR: bool, firePressed: bool) -> void:
 				s.mag += 1
 				s.reserve -= 1
 				R.shells += 1
-				_play(def.reloadCue if def.get("reloadCue") else "reload_shell", {"vol": 0.9, "rate": 0.95 + g.rand() * 0.1})
+				_play(def.reloadCue if def.get("reloadCue") else "reload_shell", {"vol": 0.9, "rate": 0.95 + _r() * 0.1})
 			if s.mag >= def.mag or s.reserve <= 0:
 				if R.shells > 0 and (R.t - start) - R.shells * per > -per * 0.05:
 					_finishReload(s, def, false)
@@ -1991,7 +1991,7 @@ func _ejectDrum(k: int) -> void:
 	if h == null or not h.model.is_inside_tree():
 		return
 	var a: Vector3 = h.model.global_transform * Vector3(-0.04, 0.09, -0.05 + (k % 3) * 0.01)
-	var b := Vector3((g.rand() - 0.5) * 1.2, -0.5 - g.rand(), (g.rand() - 0.5) * 1.2)
+	var b := Vector3((_r() - 0.5) * 1.2, -0.5 - _r(), (_r() - 0.5) * 1.2)
 	fx.eject("brass", a, b)
 
 func _dropMagFX() -> void:
@@ -2151,7 +2151,7 @@ func _wonderFired(s: Dictionary, def: Dictionary, r, emitted := false) -> void:
 		var R := _recoil
 		R.vb += rc[0] * 30.0 * mul
 		R.vr += rc[1] * 22.0 * mul
-		R.vroll += (g.rand() - 0.5) * rc[1] * 14.0 * mul
+		R.vroll += (_r() - 0.5) * rc[1] * 14.0 * mul
 		var sh = o.shake if o.get("shake") != null else def.get("shake")
 		if sh and g.cam != null and g.cam.has_method("shake"):
 			g.cam.shake(sh * 0.6 * mul * (1.0 - 0.4 * _adsW), 0.16)
@@ -2432,7 +2432,7 @@ func _launchGrenade(cooked: float) -> void:
 	g.scene.add_child(model)
 	var pool = g.fx.lightPool(origin, 0.8, "#FF8A2E", 0.35) if g.fx.has_method("lightPool") else null
 	_projectiles.append({"kind": "grenade", "pos": origin, "vel": vel, "fuse": G.fuse - cooked, "model": model,
-		"spin": Vector3(g.rand() * 14 - 7, g.rand() * 10 + 6, g.rand() * 8 - 4), "rest": false, "pool": pool, "bounceT": 0.0})
+		"spin": Vector3(_r() * 14 - 7, _r() * 10 + 6, _r() * 8 - 4), "rest": false, "pool": pool, "bounceT": 0.0})
 	_play("grenade_throw", {"pos": origin})
 
 func _updateProjectiles(dt: float) -> void:

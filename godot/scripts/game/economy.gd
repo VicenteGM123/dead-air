@@ -58,6 +58,30 @@
 #   The rack's merged filaments (rackGlow) are the list of the rack tubes' glow meshes, toggled together.
 # * try/catch (_safe/_tick) become straight calls: a GDScript runtime error aborts only the failing call.
 # * No renames (§3.2) were needed.
+#
+# MP (online co-op, RECONCILE R1/R2/R15; every path below is behind net.inGame — solo runs the code above unchanged):
+#   POINTS are per player and owned by each peer (economy.points = the LOCAL player's). The host decides every world
+#   award and routes it: add(n, reason, to := null) on the host -> recipient = `to` (attacker peer id; ALL = -1 for
+#   everyone) > TEAM_REASONS (cancelled, gaffer, egg, morning: +n to EVERY player) > credit(peer) scope > net.sender
+#   (the client whose request is being handled) > the host; the delta is final (host multiplier) and reaches the peer
+#   as economy.net_award(delta, reason). A client ignores add() for HOST_REASONS (hit, kill, kill_bonus, board,
+#   cancelled, gaffer, egg, morning, telly_refund) — never awarded twice — and applies other reasons (debug) locally.
+#   Host event points:award {by (recipient, -1 = all), delta, reason} (power-up drop threshold). addFor(peer, n,
+#   reason) = add(n, reason, peer). refund(n, reason='refund') (points back, spent -= n, no multiplier, not earned),
+#   refundTo(peer, n, reason) (host). awards (host: routed award count, for "points unchanged" checks).
+#   Every peer broadcasts its own {points, kills, earned, spent} (economy.net_points, coalesced <= 10 Hz, flushed at game
+#   over); pointsOf(id) / statsOf(id) -> {points, kills, earned, spent} read them (kills = awards with reason 'kill').
+#   DOORS (shared): the buyer pays first, then economy.net_buyDoor(doorId, cost, fromPos) (client -> host); the host
+#   validates (closed, not busy, cost) and opens it (level.openDoor(id, {from}): replicated by level.gd) ->
+#   economy.net_doorFx(doorId, by) (host -> all: stars + confetti; the buyer's shake + economy:buy {.., by}) and
+#   economy.net_buyResult(kind, id, ok, cost) (host -> buyer; false = refunded: a second buyer of the same door). The
+#   door's prompt is hidden while the request is in flight (5 s without an answer: refunded).
+#   WALL-BUYS / TUBE-O-MATIC (inventory only): bought locally, then economy.net_wallbuyFx(anchorId, kind, need) (owner ->
+#   others): the same pop / hop / tubes aimed at the buyer's avatar hand (nothing given there; the wink stays "you own
+#   it"). A remote animation keeps the stand busy (no prompt) like a local one.
+#   BOARDS (shared): a completed repair hold sends economy.net_repairWindow(windowId) (client -> host); the host repairs
+#   (replicated by windows.gd), pays T.points.board to the repairer up to T.points.boardCap per player per round and
+#   sends economy.net_boardFx(windowId, at, by) (host -> all: sawdust + sparks, the repairer's shake).
 extends RefCounted
 
 const WIN_BOARDS := 6
@@ -90,8 +114,34 @@ var _starTex = null
 var _unsub = null
 var _driver: Node = null
 
+# MP (RECONCILE R1 / R2 / R15): each peer owns its local player's points; the host routes every award it decides.
+const ALL := -1                       # add(n, reason, ALL) on the host: every player of the session gets +n
+# Awards only the host decides (kills, boards, team bonuses, Telly refunds): a client ignores them in add() and gets
+# them through net_award, so nothing is ever awarded twice.
+const HOST_REASONS := ["hit", "kill", "kill_bonus", "board", "cancelled", "gaffer", "egg", "morning", "telly_refund"]
+const TEAM_REASONS := ["cancelled", "gaffer", "egg", "morning"]    # +n to EVERY player
+const PTS_EVERY := 0.1                # s (real) between two broadcasts of our points (coalesced)
+const PENDING_MAX := 5.0              # s: a door request the host never answered is refunded
+var kills: int = 0                    # MP: zombies killed by the local player (awards with reason 'kill')
+var awards: int = 0                   # host: awards routed so far, to any player (for "points unchanged" checks)
+var _credit: Array = []               # host: credit(peer) scopes (default recipient)
+var _peerStats := {}                  # other peers' {points, kills, earned, spent} (net_points)
+var _ptsDirty := false
+var _ptsSentAt := -INF
+var _pending := {}                    # client: doorId -> {cost, t} (a buy request in flight; its prompt is hidden)
+var _boardPtsBy := {}                 # host: peer -> board points awarded this round (cap per player)
+var _start: int = 0                   # start points of this run (statsOf before a peer's first broadcast)
+
 func _init(g) -> void:
 	game = g
+
+func _net():
+	return game.get("net") if game != null else null
+
+# An MP game is running (net.inGame is already true while the MP newGame's resets run).
+func _mp() -> bool:
+	var n = _net()
+	return n != null and bool(n.inGame)
 
 # ================================================================================================ points
 var multiplier: float:
@@ -104,7 +154,9 @@ var multiplier: float:
 	set(v):
 		_mult = v if is_finite(v) and v > 0.0 else 1.0
 
-func add(n, reason: String = "misc") -> int:
+func add(n, reason: String = "misc", to = null) -> int:
+	if _mp():
+		return _addMP(n, reason, to)
 	if not (n is int or n is float) or not is_finite(float(n)) or float(n) <= 0.0:
 		return 0
 	var delta: int = maxi(0, int(floorf(float(n) * multiplier + 0.5)))
@@ -135,11 +187,156 @@ func _changed(delta: int, reason: String) -> void:
 	g.events.emit("points:change", {"points": points, "delta": delta, "reason": reason})
 	if g.hud != null and g.hud.has_method("pointsPopup"):
 		g.hud.pointsPopup(delta)
+	if _mp():
+		_ptsDirty = true
+
+# ---------------------------------------------------------------------------------------- MP points routing
+# Host: the recipient is `to` (the attacker's peer id) > a team reason (every player) > a credit(peer) scope >
+# net.sender (the client whose request is being handled) > the host. The delta is final (host multiplier applied).
+func _addMP(n, reason: String, to) -> int:
+	if not (n is int or n is float) or not is_finite(float(n)) or float(n) <= 0.0:
+		return 0
+	var net = _net()
+	if net.isClient:
+		if HOST_REASONS.has(reason):
+			return 0                     # the host routes it to us (net_award): never twice
+		return _grant(_mulRound(n), reason)
+	var d := _mulRound(n)
+	if d <= 0:
+		return 0
+	var who := 0
+	if (to is int or to is float) and (int(to) > 0 or int(to) == ALL):
+		who = int(to)
+	elif TEAM_REASONS.has(reason):
+		who = ALL
+	elif not _credit.is_empty():
+		who = int(_credit.back())
+	else:
+		who = int(net.sender)
+	awards += 1
+	game.events.emit("points:award", {"by": who, "delta": d, "reason": reason})
+	if who == ALL:
+		for id in net.peers.keys():
+			_awardTo(int(id), d, reason)
+	else:
+		_awardTo(who, d, reason)
+	return d
+
+func _mulRound(n) -> int:
+	return maxi(0, int(floorf(float(n) * multiplier + 0.5)))
+
+func _awardTo(id: int, d: int, reason: String) -> void:
+	var net = _net()
+	if id == int(net.localId):
+		_grant(d, reason)
+	elif net.peers.has(id):
+		net.toPeer(id, "economy", "award", [d, reason])
+
+# Raw local award (no multiplier: the host already applied it).
+func _grant(d: int, reason: String) -> int:
+	if d <= 0:
+		return 0
+	points += d
+	earned += d
+	if reason == "kill":
+		kills += 1
+	_changed(d, reason)
+	return d
+
+# host -> peer: an award decided on the host (kill, hit, board, team bonus...).
+func net_award(d = 0, reason = "misc") -> void:
+	var net = _net()
+	if net == null or not net.inGame or net.sender != 1:
+		return
+	if not (d is int or d is float) or not is_finite(float(d)):
+		return
+	_grant(int(d), str(reason))
+
+# Alias of add(n, reason, peer) (the R15 name is add(n, reason, to)).
+func addFor(peer, n, reason: String = "misc") -> int:
+	return add(n, reason, peer)
+
+# Host: the default recipient of add() calls without `to` until uncredit() (for code acting for a peer).
+func credit(peer) -> void:
+	_credit.append(int(peer))
+
+func uncredit() -> void:
+	if not _credit.is_empty():
+		_credit.pop_back()
+
+# Points back (a denied request): no multiplier, not "earned"; the spend is undone. Emits points:change.
+func refund(n, reason: String = "refund") -> int:
+	if not (n is int or n is float) or not is_finite(float(n)) or float(n) <= 0.0:
+		return 0
+	var c: int = int(floorf(float(n) + 0.5))
+	points += c
+	spent = maxi(0, spent - c)
+	_changed(c, reason)
+	return c
+
+# Host: refund another peer (local refund for our own id / solo).
+func refundTo(peer, n, reason: String = "refund") -> int:
+	var net = _net()
+	if net == null or not net.inGame or int(peer) == int(net.localId):
+		return refund(n, reason)
+	if net.isHost and net.peers.has(int(peer)) and (n is int or n is float) and is_finite(float(n)) and float(n) > 0.0:
+		net.toPeer(int(peer), "economy", "refund", [int(floorf(float(n) + 0.5)), reason])
+	return 0
+
+func net_refund(n = 0, reason = "refund") -> void:
+	var net = _net()
+	if net == null or not net.inGame or net.sender != 1:
+		return
+	refund(n, str(reason))
+
+# Points of any player (our own, or the last value its peer broadcast).
+func pointsOf(id) -> int:
+	return int(statsOf(id).points)
+
+func statsOf(id) -> Dictionary:
+	var net = _net()
+	if net == null or not net.active or int(id) == int(net.localId):
+		return {"points": points, "kills": kills, "earned": earned, "spent": spent}
+	var st = _peerStats.get(int(id))
+	if st is Dictionary:
+		return st.duplicate()
+	return {"points": _start, "kills": 0, "earned": 0, "spent": 0}
+
+# owner -> others (coalesced, PTS_EVERY): our points for the teammates list and the results card.
+func net_points(p = 0, k = 0, e = 0, s = 0) -> void:
+	var net = _net()
+	if net == null or not net.active:
+		return
+	var id: int = int(net.sender)
+	if id == int(net.localId):
+		return
+	_peerStats[id] = {"points": _int(p), "kills": _int(k), "earned": _int(e), "spent": _int(s)}
+
+static func _int(v) -> int:
+	return int(v) if (v is int or v is float) and is_finite(float(v)) else 0
+
+func _flushPoints(force: bool) -> void:
+	var net = _net()
+	if net == null or not net.inGame:
+		_ptsDirty = false
+		return
+	var now: float = float(game.time.realNow)
+	if not force and now - _ptsSentAt < PTS_EVERY:
+		return
+	_ptsSentAt = now
+	_ptsDirty = false
+	net.toOthers("economy", "points", [points, kills, earned, spent])
 
 # ============================================================================================= lifecycle
 func init() -> void:
 	var g = game
-	g.events.on("round:start", func(_p = null): _boardPts = 0)
+	g.events.on("round:start", func(_p = null):
+		_boardPts = 0
+		_boardPtsBy.clear())
+	# MP: our final points reach the others before the results card (the pre-pass flush is rate-limited)
+	g.events.on("state", func(e = null):
+		if _ptsDirty and e is Dictionary and (e.get("to") == "gameover" or e.get("to") == "victory"):
+			_flushPoints(true))
 	if g.level == null or not X.g(g.level, "built", false):
 		return
 	_setupDoors()
@@ -169,6 +366,17 @@ func reset() -> void:
 	for w in wallbuys.values():
 		w.reset()
 	game.events.emit("points:change", {"points": points, "delta": 0, "reason": "start"})
+	# MP bookkeeping (a new run: in MP the start points come from the host's start message)
+	_start = points
+	kills = 0
+	awards = 0
+	_credit.clear()
+	_pending.clear()
+	_boardPtsBy.clear()
+	if _mp():
+		_peerStats.clear()
+		_ptsDirty = true
+		_ptsSentAt = -INF
 
 func update(dt: float) -> void:
 	_frameSeen = game.time.frame
@@ -176,6 +384,8 @@ func update(dt: float) -> void:
 
 func _drive() -> void:
 	var g = game
+	if _ptsDirty:
+		_flushPoints(false)
 	if _frameSeen == g.time.frame:
 		return
 	if g.state != "playing" and g.state != "down":
@@ -190,6 +400,8 @@ func _tick(dt: float) -> void:
 
 func _step(dt: float) -> void:
 	_time += dt
+	if not _pending.is_empty():
+		_expirePending()
 	_keepRepairing()
 	for w in wallbuys.values():
 		w.update(dt, _time)
@@ -235,7 +447,7 @@ func _setupDoors() -> void:
 			if g.interact != null:
 				g.interact.register({
 					"id": id, "pos": pos, "radius": DOOR_R, "normal": [n.x * sgn, 0.0, n.z * sgn], "facingSlack": 0.4,
-					"enabled": func(): return not X.g(d, "open", false) and not X.g(d, "busy", false) and _onSide(d, sgn),
+					"enabled": func(): return not X.g(d, "open", false) and not X.g(d, "busy", false) and not _pending.has(did) and _onSide(d, sgn),
 					"prompt": func(): return {"cost": cost},
 					"use": func(): buyDoor(did),
 				})
@@ -253,6 +465,8 @@ func _onSide(d, sgn: float) -> bool:
 	return s * sgn > -0.05
 
 func buyDoor(doorId) -> bool:
+	if _mp():
+		return _buyDoorMP(doorId)
 	var g = game
 	var e = doors.get(doorId)
 	if e == null or X.g(e.door, "open", false) or X.g(e.door, "busy", false):
@@ -264,11 +478,94 @@ func buyDoor(doorId) -> bool:
 	g.events.emit("economy:buy", {"kind": "door", "id": doorId, "cost": e.cost})
 	if g.cam != null and g.cam.has_method("shake"):
 		g.cam.shake(0.12, 0.3)
+	_doorStars(e)
+	return true
+
+func _doorStars(e) -> void:
+	var g = game
 	if g.fx != null:
 		var dpos: Vector3 = DAU.v3(X.g(e.door, "pos"))
 		g.fx.burst(dpos, {"count": 10, "shape": "star", "colors": [Config.PAL.marqueeGold, "#FFF3B0"], "speed": 3.4, "size": 0.12, "life": 0.9, "gravity": 5})
 		g.fx.burst(dpos, {"count": 14, "shape": "confetti", "speed": 4, "life": 1.2})
+
+# MP: the buyer pays first (reservation), the host opens the shared door (first request wins: a second buyer is
+# refunded), then every peer plays the buy beat (economy.doorFx). The prompt hides while the request is in flight.
+func _buyDoorMP(doorId) -> bool:
+	var net = _net()
+	var e = doors.get(doorId)
+	if e == null or X.g(e.door, "open", false) or X.g(e.door, "busy", false) or _pending.has(doorId):
+		return false
+	if not spend(e.cost, "door"):
+		_rattleDoor(e.door)
+		return false
+	var cost: int = int(floorf(float(e.cost) + 0.5))
+	var p = game.player
+	var from = p.pos if p != null and X.g(p, "pos") is Vector3 else null
+	if net.isClient:
+		_pending[doorId] = {"cost": cost, "t": float(game.time.realNow)}
+		net.toHost("economy", "buyDoor", [str(doorId), cost, from])
+		return true
+	_openDoorFor(str(doorId), int(net.localId), from)
 	return true
+
+func _openDoorFor(doorId: String, by: int, from) -> void:
+	var opts := {}
+	if from is Vector3:
+		opts["from"] = from          # doors.away(): the debris flies away from the buyer (mp-zombies)
+	game.level.openDoor(doorId, opts)   # replicated to every client by level.gd
+	_net().everyone("economy", "doorFx", [doorId, by])
+
+# client -> host: buy request (the client already paid `cost`).
+func net_buyDoor(doorId = "", cost = 0, from = null) -> void:
+	var net = _net()
+	if net == null or not net.isHost or not net.inGame:
+		return
+	var id := str(doorId)
+	var by: int = int(net.sender)
+	var e = doors.get(id)
+	var paid: int = int(cost) if (cost is int or cost is float) else 0
+	var ok: bool = e != null and not X.g(e.door, "open", false) and not X.g(e.door, "busy", false) \
+		and paid == int(floorf(float(e.cost) + 0.5)) and game.state == "playing"
+	if ok:
+		_openDoorFor(id, by, from if from is Vector3 else null)
+	net.toPeer(by, "economy", "buyResult", ["door", id, ok, paid])
+
+# host -> buyer: the request's outcome (false: refunded — somebody else opened it first).
+func net_buyResult(kind = "", id = "", ok = false, _cost = 0) -> void:
+	var net = _net()
+	if net == null or net.sender != 1:
+		return
+	if str(kind) == "door":
+		var pd = _pending.get(str(id))
+		if pd == null:
+			return
+		_pending.erase(str(id))
+		if not bool(ok):
+			refund(int(pd.cost), "refund")
+
+# host -> all: a door was bought (stars + confetti everywhere; the buyer's camera shake + economy:buy).
+func net_doorFx(doorId = "", by = 0) -> void:
+	var net = _net()
+	if net == null or not net.inGame or net.sender != 1:
+		return
+	var e = doors.get(str(doorId))
+	if e == null:
+		return
+	var g = game
+	if int(by) == int(net.localId):
+		g.events.emit("economy:buy", {"kind": "door", "id": str(doorId), "cost": e.cost, "by": int(by)})
+		if g.cam != null and g.cam.has_method("shake"):
+			g.cam.shake(0.12, 0.3)
+	_doorStars(e)
+
+func _expirePending() -> void:
+	var now: float = float(game.time.realNow)
+	for id in _pending.keys():
+		if now - float(_pending[id].t) > PENDING_MAX:
+			var c: int = int(_pending[id].cost)
+			_pending.erase(id)
+			push_warning("[economy] door %s: no answer from the host, refunded" % str(id))
+			refund(c, "refund")
 
 # Denied: the blocker gives a short "nuh-uh" shake (chain rattle). Restores its exact rest transform.
 func _rattleDoor(d) -> void:
@@ -340,8 +637,35 @@ func buyWallbuy(anchorId) -> bool:
 		return false
 	var kind: String = w.kindOf()
 	w.buy()
+	if _mp():
+		# inventory-only purchase (RECONCILE R2): no round trip; the others replay the pop toward our avatar
+		var net = _net()
+		game.events.emit("economy:buy", {"kind": kind, "id": anchorId, "cost": cost, "by": int(net.localId)})
+		net.toOthers("economy", "wallbuyFx", [str(anchorId), kind, int(w.get("lastNeed")) if w.get("lastNeed") != null else 0])
+		return true
 	game.events.emit("economy:buy", {"kind": kind, "id": anchorId, "cost": cost})
 	return true
+
+# owner -> others: a teammate bought at a wall-buy / the Tube-O-Matic (kind 'wallbuy' | 'ammo' | 'grenades', need =
+# tubes): the same animation aimed at its avatar's hand; its own peer gave the weapon / ammo / grenades.
+func net_wallbuyFx(anchorId = "", kind = "", need = 0) -> void:
+	var net = _net()
+	if net == null or not net.inGame:
+		return
+	var by: int = int(net.sender)
+	if by == int(net.localId) or net.playerById(by) == null:
+		return
+	var w = wallbuys.get(str(anchorId))
+	if w == null or w.busy:
+		return                          # our own buy is playing there: one flight is enough
+	w.remoteBuy(by, str(kind), int(need) if (need is int or need is float) else 0)
+
+# The player a wall-buy animation flies to: the local player (by 0) or a teammate's avatar (null once it left).
+func _playerOf(by: int):
+	if by == 0:
+		return game.player
+	var net = _net()
+	return net.playerById(by) if net != null else null
 
 # Finds the wall surface in front of an anchor (anchors sit 0.1 m off the wall centre line, i.e. inside it).
 func _wallFace(anchor) -> Vector3:
@@ -360,21 +684,21 @@ func _wallFace(anchor) -> Vector3:
 	return out
 
 # Hand position of the hero (target of the pop-off arcs).
-func _handPos() -> Vector3:
-	var p = game.player
+func _handPos(who = null) -> Vector3:
+	var p = who if who != null else game.player
 	var slot = X.g(X.g(X.g(p, "hero"), "slots"), "handR")
 	if slot is Node3D:
 		return DAU.worldPos(slot)
 	var pp: Vector3 = DAU.v3(X.g(p, "pos"))
 	return Vector3(pp.x, pp.y + 1.2, pp.z)
 
-func _handMatrix() -> Transform3D:
-	var p = game.player
+func _handMatrix(who = null) -> Transform3D:
+	var p = who if who != null else game.player
 	var slot = X.g(X.g(X.g(p, "hero"), "slots"), "handR")
 	if slot is Node3D:
 		return X.worldXform(slot)
 	var yaw: float = float(X.g(p, "yaw", 0.0)) if p != null else 0.0
-	return Transform3D(Basis(Vector3.UP, yaw), _handPos())
+	return Transform3D(Basis(Vector3.UP, yaw), _handPos(who))
 
 func _slot(id):
 	var w = game.weapons
@@ -495,6 +819,8 @@ func _setupWindows() -> void:
 		windows[wid] = {"win": w, "itemId": id, "max": mx}
 
 func repairWindow(windowId) -> bool:
+	if _mp():
+		return _repairMP(windowId)
 	var g = game
 	var e = windows.get(windowId)
 	if e == null or int(X.g(e.win, "boards", 0)) >= e.max:
@@ -505,10 +831,21 @@ func repairWindow(windowId) -> bool:
 	if _boardPts + pts <= int(Config.T.points.boardCap):
 		_boardPts += pts
 		add(pts, "board")
+	var at: Vector3 = _boardAt(e)
+	_boardBurst(e, at)
+	if g.cam != null and g.cam.has_method("shake"):
+		g.cam.shake(0.05, 0.12)
+	return true
+
+# Where the board just put back sits (its handle position, else the window).
+func _boardAt(e) -> Vector3:
 	var bm = X.g(e.win, "boardMeshes")
 	var bi: int = int(X.g(e.win, "boards", 0)) - 1
 	var b = bm[bi] if bm is Array and bi >= 0 and bi < bm.size() else null
-	var at: Vector3 = DAU.v3(X.g(b, "position")) if b != null else DAU.v3(X.g(e.win, "pos"))
+	return DAU.v3(X.g(b, "position")) if b != null else DAU.v3(X.g(e.win, "pos"))
+
+func _boardBurst(e, at: Vector3) -> void:
+	var g = game
 	if g.fx != null:
 		# sawdust puffs blown into the room + hammer sparks
 		var inward = null
@@ -519,9 +856,51 @@ func repairWindow(windowId) -> bool:
 			inward = dv.normalized()
 		g.fx.burst(at, {"count": 5, "shape": "puff", "colors": ["#EFE0C4", "#D8C29C"], "speed": 1.7, "size": 0.075, "life": 0.4, "gravity": -0.3, "dir": inward, "cone": 1.2})
 		g.fx.burst(at, {"count": 6, "shape": "spark", "colors": ["#FFE8A0", "#FFFFFF"], "speed": 3.8, "size": 0.035, "life": 0.2, "dir": inward, "cone": 1.4})
-	if g.cam != null and g.cam.has_method("shake"):
-		g.cam.shake(0.05, 0.12)
+
+# MP: the boards are shared (host). A client's completed hold is a request; the host repairs, pays the repairer
+# (board cap per player per round) and every peer plays the sawdust beat (economy.boardFx).
+func _repairMP(windowId) -> bool:
+	var e = windows.get(windowId)
+	if e == null or int(X.g(e.win, "boards", 0)) >= e.max:
+		return false
+	var net = _net()
+	if net.isClient:
+		net.toHost("economy", "repairWindow", [str(windowId)])
+		return true
+	return _repairFor(str(windowId), int(net.localId))
+
+func net_repairWindow(windowId = "") -> void:
+	var net = _net()
+	if net == null or not net.isHost or not net.inGame:
+		return
+	_repairFor(str(windowId), int(net.sender))
+
+func _repairFor(wid: String, by: int) -> bool:
+	var e = windows.get(wid)
+	if e == null or int(X.g(e.win, "boards", 0)) >= e.max or game.state != "playing":
+		return false
+	if not e.win.repairBoard():           # replicated to every client by windows.gd (level.net_boards)
+		return false
+	var pts: int = Config.T.points.board
+	var have: int = int(_boardPtsBy.get(by, 0))
+	if have + pts <= int(Config.T.points.boardCap):
+		_boardPtsBy[by] = have + pts
+		add(pts, "board", by)
+	_net().everyone("economy", "boardFx", [wid, _boardAt(e), by])
 	return true
+
+# host -> all: a board went back up at `at` (the repairer's camera shakes).
+func net_boardFx(windowId = "", at = null, by = 0) -> void:
+	var net = _net()
+	if net == null or not net.inGame or net.sender != 1 or not (at is Vector3):
+		return
+	var e = windows.get(str(windowId))
+	if e == null:
+		return
+	_boardBurst(e, at)
+	var g = game
+	if int(by) == int(net.localId) and g.cam != null and g.cam.has_method("shake"):
+		g.cam.shake(0.05, 0.12)
 
 # interact.gd completes a hold once per press; keep repairing one board per REPAIR_HOLD while E stays down.
 func _keepRepairing() -> void:
@@ -596,6 +975,7 @@ class WallBuy extends RefCounted:
 	var winked := false
 	var ok := false
 	var _state := "idle"     # idle | flying | away | restock
+	var _by := 0             # MP: peer id of the teammate the playing flight belongs to (0 = the local player)
 	var _t := 0.0
 	var _wobble := 1.0
 	var _glintPhase := 0.0
@@ -788,11 +1168,27 @@ class WallBuy extends RefCounted:
 		if kindOf() == "ammo":
 			_buyAmmo()
 			return
+		_by = 0
+		_fly(true)
+
+	# MP: a teammate (peer `by`) bought here: the same pop / hop, aimed at its avatar's hand. Its own peer gives the
+	# weapon / ammo; Duke's wink keeps meaning "YOU own this gun".
+	func remoteBuy(by: int, kind: String, _need: int = 0) -> void:
+		if busy or _state != "idle":
+			return
+		if kind == "ammo":
+			_buyAmmo(by)
+			return
+		_by = by
+		_fly(false)
+
+	func _fly(wink: bool) -> void:
 		var g = game
 		busy = true
 		_state = "flying"
 		_t = 0.0
-		_setWink(true, true)
+		if wink:
+			_setWink(true, true)
 		_wobble = 0.0
 		# Pop: the clips spring open, the gun is handed to the scene root keeping its world transform and arcs into
 		# the hero's hands (ka-ching from the spend now, boing from weapon:acquire on the catch).
@@ -808,9 +1204,10 @@ class WallBuy extends RefCounted:
 			g.fx.burst(_from, {"count": 5, "shape": "puff", "colors": ["#FFF4DC", "#F6E7C8"], "speed": 1.9, "size": 0.065, "life": 0.32, "gravity": -0.4, "dir": normal, "cone": 0.9})
 			g.fx.burst(_from, {"count": 7, "shape": "spark", "colors": ["#FFF3B0", "#FFFFFF"], "speed": 4.2, "size": 0.03, "life": 0.18, "dir": normal, "cone": 1.1})
 
-	func _buyAmmo() -> void:
+	func _buyAmmo(by: int = 0) -> void:
 		var g = game
-		eco._refillAmmo(weaponId)
+		if by == 0:
+			eco._refillAmmo(weaponId)
 		var def = eco._def(weaponId, false)
 		var a = g.audio
 		if a != null and def != null and X.g(def, "shellReload"):
@@ -833,9 +1230,10 @@ class WallBuy extends RefCounted:
 				gun.position = base
 				gun.quaternion = gunRest.quat)
 		_clipsOpen(0.5)
-		if g.fx != null:
+		var who = eco._playerOf(by)
+		if g.fx != null and who != null:
 			var gp := DAU.worldPos(gun)
-			var dir: Vector3 = (eco._handPos() - gp).normalized()
+			var dir: Vector3 = (eco._handPos(who) - gp).normalized()
 			g.fx.burst(gp, {"count": 12, "shape": "confetti", "colors": ["#E8B84A", "#C8963C", "#FFE09A"], "speed": 3.2, "size": 0.05, "life": 0.9, "gravity": 9, "dir": dir, "cone": 0.7})
 
 	func _clipsOpen(hold: float) -> void:
@@ -855,6 +1253,7 @@ class WallBuy extends RefCounted:
 	func reset() -> void:
 		busy = false
 		_state = "idle"
+		_by = 0
 		_wobble = 1.0
 		_setWink(false, false)
 		_restoreGun()
@@ -889,11 +1288,14 @@ class WallBuy extends RefCounted:
 
 		if _state == "flying":
 			_t += dt
+			var who = eco._playerOf(_by)
+			if _by != 0 and who == null:
+				_t = FLIGHT                  # MP: the buyer left mid-flight: catch now (the gun just vanishes)
 			var k := minf(1.0, _t / FLIGHT)
 			# fast pop off the sheet, a hang at the apex, a snap into the hand
 			var e := clampf(k + 0.12 * sin(TAU * k), 0.0, 1.0)
 			# landing frame = hand x inverse(wall pose): the gun arrives exactly as it will be held
-			var land: Transform3D = eco._handMatrix() * poseInv
+			var land: Transform3D = eco._handMatrix(who) * poseInv
 			var to := land.origin
 			var q2 := land.basis.get_rotation_quaternion()
 			var sc3 := land.basis.get_scale()
@@ -950,6 +1352,13 @@ class WallBuy extends RefCounted:
 		_restoreGun()
 		_state = "away"
 		_t = 0.0
+		if _by != 0:
+			# MP: a teammate's catch: its own peer gives the weapon (wink unchanged: it means "YOU own it")
+			var who = eco._playerOf(_by)
+			_by = 0
+			if g.fx != null and who != null:
+				g.fx.burst(eco._handPos(who), {"count": 6, "shape": "star", "colors": ["#FFFFFF", Config.PAL.marqueeGold], "speed": 2.2, "size": 0.07, "life": 0.45, "gravity": 2})
+			return
 		var w = g.weapons
 		if w != null and w.has_method("give"):
 			w.give(weaponId, {"source": "wallbuy"})
@@ -993,6 +1402,8 @@ class GrenadeCase extends RefCounted:
 	var busy := false
 	var itemId = null
 	var ok := false
+	var lastNeed := 0        # tubes of the last local purchase (MP: sent to the others for their replay)
+	var _by := 0             # MP: peer id of the teammate the flying tubes belong to (0 = the local player)
 	var _restock := -1.0
 	var _owed := 0
 	var _time := 0.0
@@ -1165,9 +1576,21 @@ class GrenadeCase extends RefCounted:
 					o.rotation.z = 0.0)
 
 	func buy() -> void:
-		var g = game
 		var need: int = maxi(1, mini(tubes.size(), int(Config.T.player.grenadesMax) - eco._grenades()))
-		_owed = need                        # granted one per tube caught (the HUD tubes light up in sync)
+		lastNeed = need
+		_by = 0
+		_launch(need, need)
+
+	# MP: a teammate (peer `by`) bought `need` tubes: they fly to its avatar's hand (its own peer adds the grenades).
+	func remoteBuy(by: int, _kind: String, need: int = 0) -> void:
+		if busy:
+			return
+		_by = by
+		_launch(clampi(need, 1, tubes.size()), 0)
+
+	func _launch(need: int, owed: int) -> void:
+		var g = game
+		_owed = owed                        # granted one per tube caught (the HUD tubes light up in sync)
 		busy = true
 		_rackOn(false)
 		_restock = RESTOCK + 0.25
@@ -1221,6 +1644,7 @@ class GrenadeCase extends RefCounted:
 		busy = false
 		_restock = -1.0
 		_owed = 0
+		_by = 0
 		glass.rotation.x = 0.0
 		_setBulbs(0, false)
 		for tb in tubes:
@@ -1262,9 +1686,12 @@ class GrenadeCase extends RefCounted:
 				tb.state = "fly"
 				tb.t = 0.0
 			if tb.state == "fly":
+				var who = eco._playerOf(_by)
+				if _by != 0 and who == null:
+					tb.t = FLIGHT                # MP: the buyer left: the tube is caught now (vanishes)
 				var k := minf(1.0, tb.t / FLIGHT)
 				var e := clampf(k + 0.1 * sin(TAU * k), 0.0, 1.0)
-				var to: Vector3 = eco._handPos()
+				var to: Vector3 = eco._handPos(who)
 				var from: Vector3 = tb.from
 				# cubic bezier: up out of the socket (staying under the display top), out through the open front, into the hand
 				var p1 := from + normal * 0.3
@@ -1282,6 +1709,14 @@ class GrenadeCase extends RefCounted:
 					if _owed > 0:
 						_owed -= 1
 						eco._addGrenades(1)
+					if _by != 0:
+						# a teammate's catch: positional, nothing granted here
+						if who != null:
+							if g.audio != null:
+								g.audio.play("grenade_bounce", {"pos": to, "vol": 0.7, "rate": 1.1 + tubes.find(tb) * 0.08})
+							if g.fx != null:
+								g.fx.burst(to, {"count": 3, "shape": "spark", "colors": ["#FFB060", "#FFE8A0"], "speed": 2, "size": 0.03, "life": 0.2})
+						continue
 					if g.audio != null:
 						g.audio.play("grenade_bounce", {"vol": 0.7, "rate": 1.1 + tubes.find(tb) * 0.08})
 					if g.fx != null:

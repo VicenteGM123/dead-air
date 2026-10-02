@@ -18,6 +18,11 @@
 # check(itemOrId) -> { ok, dist, dy, inRadius, inHeight, front, los } geometry only (no camera facing, no
 #   enabled/prompt), for tests and debugging.
 # Renames (SPEC §3.2): none.
+# MP: items may declare onCancel: Callable() — called once when a hold that reached onHold stops before completing
+#   (E released, focus lost, the item disabled / unregistered, the player no longer able to interact). mp-players'
+#   revive items use it (reviveStop). The hold internals current / _holdItem / progress / _holdDone keep their exact
+#   semantics (a frozen API: uplink.gd's crank and economy.gd's repair loop drive them). Prompt keys pass through to
+#   hud.setPrompt unchanged (revive: true draws the revive glyph).
 extends RefCounted
 
 # Collider tags that stop an interaction (shell.gd); everything else (props, machines, platforms, floor) is ignored.
@@ -33,6 +38,7 @@ var prompt = null
 var progress := 0.0
 var _holdItem = null
 var _holdDone := false
+var _cancelItem = null    # the item whose hold is running and has an onCancel (see the header)
 var _shown := {"item": null, "prompt": {}}
 var _col = null
 var _losOpts := {"camera": true, "ignoreTags": 0}
@@ -84,6 +90,7 @@ func reset() -> void:
 	prompt = null
 	progress = 0.0
 	_holdItem = null
+	_cancelItem = null
 
 # Player on the item's front side (items without a facing: always).
 func _front(it: Dictionary, p) -> bool:
@@ -179,6 +186,8 @@ func update(dt: float) -> void:
 			best = it
 			bestPrompt = pr
 	if not is_same(best, _holdItem):
+		if _cancelItem != null:
+			_holdStopped()
 		progress = 0.0
 		_holdItem = null
 	current = best
@@ -196,11 +205,16 @@ func update(dt: float) -> void:
 				var oh = best.get("onHold")
 				if oh is Callable and oh.is_valid():
 					oh.call(progress)
+				if best.get("onCancel") != null:
+					_cancelItem = best
 				if progress >= 1.0:
+					_cancelItem = null
 					_use(best)
 					progress = 0.0
 					_holdDone = true
 			else:
+				if _cancelItem != null:
+					_holdStopped()
 				progress = 0.0
 		elif input.pressed("interact"):
 			_use(best)
@@ -215,6 +229,15 @@ func _use(it: Dictionary) -> void:
 	if it.use is Callable and it.use.is_valid():
 		it.use.call()
 	game.events.emit("interact:use", {"id": it.id})
+
+# A hold with an onCancel stopped short (MP revive items).
+func _holdStopped() -> void:
+	var it = _cancelItem
+	_cancelItem = null
+	if it is Dictionary:
+		var oc = it.get("onCancel")
+		if oc is Callable and oc.is_valid():
+			oc.call()
 
 func _updateHud(item, pr) -> void:
 	var hud = game.hud

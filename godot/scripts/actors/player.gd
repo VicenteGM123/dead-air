@@ -22,7 +22,24 @@
 # Sounds: player:step {foot, sprint, surface} / jump / land / hurt are voiced by audio.gd's event hookups.
 # Renames (SPEC §3.2): History.get -> History.get_ (Object.get). The JS module scratch objects `_look` / `_move`
 # (named like the methods) are the members `_lookBuf` / `_moveBuf`.
+# MP (online co-op, MP_SPEC §4 + RECONCILE R6/R12; every MP path is guarded, solo runs the code above unchanged):
+#   Fields: offAir (bled out: alive = false, model hidden, spectating), hidden (out of the shared world for a cutscene:
+#   not targetable, model hidden for the others), inCommercial (performing a sponsor commercial: settable, also true
+#   while sponsors.inCommercial), teleports (int, +1 on every teleport(): remote avatars snap instead of sliding),
+#   spectate (the RemotePlayer followed while off-air, null otherwise: net.viewPlayer() reads it), mp (PlayerMP,
+#   scripts/actors/player_mp.gd: down / revive / bleed-out / spectate / respawn + the host's team table; null in solo).
+#   Keyed locks for MP cutscenes: lock(key, on) / protect(key, on); controlLocked / invulnerable read as "the plain
+#   field (solo writers) OR any held key", so every reader (weapons, the net stream...) sees them. isLockKey(key).
+#   netFlags() -> int (the state stream's flag byte: 1 alive, 2 downed, 4 offAir, 8 invulnerable (or god or grace),
+#   16 hidden, 32 inCommercial, 64 ads, 128 sprinting).
+#   Lethal damage in MP: perks.onLethal() first (Instant Replay), else mp.goDown() (downed, bleed-out; never
+#   game.gameOver() from here). A downed player can look around (camera low) but not move / shoot / interact.
+#   Messages (sys "player", handlers below, all validated): hurt (dmg, fromPos) / knockback (vec) from the host
+#   (RemotePlayer forwarding); the life-cycle messages downReq / reviveStart / reviveStop / reviveDone (requests) and
+#   downed / reviveState / revived / offAir / respawn (host broadcasts) are handled by PlayerMP (see its header).
 extends RefCounted
+
+const PlayerMPScript = preload("res://scripts/actors/player_mp.gd")
 
 var P: Dictionary = Config.T.player
 var JUMP_V: float = sqrt(2.0 * float(Config.T.player.gravity) * float(Config.T.player.jump))
@@ -175,9 +192,38 @@ var grounded := true
 var area = null
 var stamina: float = 4.0
 var god := false
-var invulnerable := false
-var controlLocked := false
+# invulnerable / controlLocked: the plain values (solo writers: commercials, Instant Replay, the ending, debug cameras)
+# OR any key held through protect() / lock() (MP cutscenes, RECONCILE R6).
+var invulnerable: bool:
+	get:
+		return _invulnerable or not _protects.is_empty()
+	set(v):
+		_invulnerable = v
+var controlLocked: bool:
+	get:
+		return _controlLocked or not _locks.is_empty()
+	set(v):
+		_controlLocked = v
 var mods: Dictionary
+# MP (see the header)
+var offAir := false
+var hidden := false
+var inCommercial: bool:
+	get:
+		if _inCommercial:
+			return true
+		var s = game.get("sponsors") if game != null else null
+		return s != null and s.get("inCommercial") == true
+	set(v):
+		_inCommercial = v
+var teleports := 0
+var spectate = null
+var mp = null
+var _invulnerable := false
+var _controlLocked := false
+var _inCommercial := false
+var _locks := {}
+var _protects := {}
 var anim := {"speed": 0.0, "sprint": false, "grounded": true, "aimPitch": 0.0, "aimYaw": 0.0, "aiming": true, "recoil": 0.0,
 	"reload": 0.0, "melee": 0.0, "hurt": 0.0, "climb": 0.0, "attack": 0.0, "dance": 0.0, "down": false, "dead": 0.0, "back": false,
 	"turn": 0.0, "legYaw": 0.0}
@@ -241,6 +287,21 @@ func reset() -> void:
 	_spawn()
 	history.clear()
 	_damage = 0.0
+	# MP: the last game's keyed locks / flags, then the life-cycle helper (built only for an MP game)
+	_locks.clear()
+	_protects.clear()
+	_inCommercial = false
+	hidden = false
+	offAir = false
+	spectate = null
+	var n = g.get("net")
+	if n != null and n.inGame:
+		if mp == null:
+			mp = PlayerMPScript.new(self, g)
+		mp.reset()
+	elif mp != null:
+		mp.dispose()
+		mp = null
 
 func _spawn() -> void:
 	var level = game.level
@@ -293,6 +354,7 @@ func teleport(x: float, z: float, yaw_ = null) -> void:
 		area = a if _truthy(a) else area
 	model.position = pos
 	model.rotation.y = _modelYaw.x
+	teleports += 1   # MP: remote avatars snap to the new position (state stream)
 
 func setHero(id) -> void:
 	var g = game
@@ -372,6 +434,8 @@ func hurt(dmg: float, fromPos = null) -> bool:
 		return false
 	if g.state != "playing":
 		return false
+	if mp != null and mp.blocksDamage():   # MP: off-air, revive / respawn grace
+		return false
 	health -= dmg
 	_iframes = float(P.iframes)
 	_sinceHurt = 0.0
@@ -383,8 +447,11 @@ func hurt(dmg: float, fromPos = null) -> bool:
 		health = 0.0
 		var handled = g.perks.onLethal() if g.perks != null and g.perks.has_method("onLethal") else false
 		if not _truthy(handled):
-			alive = false
-			g.gameOver()
+			if mp != null:
+				mp.goDown(fromPos)   # MP: downed (bleed-out; the host decides game over)
+			else:
+				alive = false
+				g.gameOver()
 	return true
 
 func heal(n: float) -> void:
@@ -395,6 +462,93 @@ func heal(n: float) -> void:
 
 func knockback(vec: Vector3) -> void:
 	knock += vec * float(mods.knockback)
+
+# MP cutscene locks (RECONCILE R6): every key held locks control / protects from damage; release with on = false.
+func lock(key: String, on: bool = true) -> void:
+	if on:
+		_locks[key] = true
+	else:
+		_locks.erase(key)
+
+func protect(key: String, on: bool = true) -> void:
+	if on:
+		_protects[key] = true
+	else:
+		_protects.erase(key)
+
+func isLockKey(key: String) -> bool:
+	return _locks.has(key) or _protects.has(key)
+
+# MP: the state stream's flag byte (RemotePlayer F_* layout).
+func netFlags() -> int:
+	var f := 0
+	if alive:
+		f |= 1
+	if downed:
+		f |= 2
+	if offAir:
+		f |= 4
+	if invulnerable or god or (mp != null and mp.graceT > 0.0):
+		f |= 8
+	if hidden:
+		f |= 16
+	if inCommercial:
+		f |= 32
+	if ads:
+		f |= 64
+	if sprinting:
+		f |= 128
+	return f
+
+# MP: a hit / knockback the host decided for this player (RemotePlayer.hurt / knockback forwarding). Host only.
+func net_hurt(dmg = 0.0, fromPos = null) -> void:
+	var n = game.get("net")
+	if n == null or not n.inGame or n.sender != 1 or not (dmg is float or dmg is int):
+		return
+	hurt(clampf(float(dmg), 0.0, 1000.0), fromPos if fromPos is Vector3 else null)
+
+func net_knockback(vec = null) -> void:
+	var n = game.get("net")
+	if n == null or not n.inGame or n.sender != 1 or not (vec is Vector3) or downed or not alive:
+		return
+	knockback(vec)
+
+# MP life-cycle messages (PlayerMP, scripts/actors/player_mp.gd): requests to the host, then the host's broadcasts.
+func net_downReq(pos = null) -> void:
+	if mp != null:
+		mp.net_downReq(pos)
+
+func net_reviveStart(target = 0) -> void:
+	if mp != null:
+		mp.net_reviveStart(target)
+
+func net_reviveStop(target = 0) -> void:
+	if mp != null:
+		mp.net_reviveStop(target)
+
+func net_reviveDone(target = 0) -> void:
+	if mp != null:
+		mp.net_reviveDone(target)
+
+func net_downed(id = 0, pos = null, bleed = 0.0) -> void:
+	if mp != null:
+		mp.net_downed(id, pos, bleed)
+
+func net_reviveState(id = 0, reviver = 0, left = 0.0) -> void:
+	if mp != null:
+		mp.net_reviveState(id, reviver, left)
+
+func net_revived(id = 0, reviver = 0) -> void:
+	if mp != null:
+		mp.net_revived(id, reviver)
+
+func net_offAir(id = 0) -> void:
+	if mp != null:
+		mp.net_offAir(id)
+
+func net_respawn(id = 0, pos = null, yaw = 0.0) -> void:
+	if mp != null:
+		mp.net_respawn(id, pos, yaw)
 
 func down() -> void:
 	if downed:
@@ -421,15 +575,23 @@ func update(dt: float) -> void:
 	if maxHealth != float(mods.maxHealth):
 		maxHealth = float(mods.maxHealth)
 		health = minf(health, maxHealth)
-	var control := alive and not downed and not controlLocked
+	if mp != null:
+		mp.update(dt, rdt)   # MP: life cycle, revive items, spectating (an off-air player rides along)
+	var locked := controlLocked
+	var control := alive and not downed and not locked
 	var override = g.render.get("cameraOverride") if g.render != null else null
 	if control and not _truthy(override) and g.state == "playing":
 		_look()
+	elif mp != null and downed and alive and not locked and not _truthy(override) and g.state == "playing":
+		_look()   # MP: a downed player still looks around
 	if dt > 0.0 and control:
 		_move(dt)
+	elif dt > 0.0 and mp != null and downed:
+		_move(dt, false)   # MP downed: no input, gravity / floor only
 	if dt > 0.0:
 		_vitals(dt)
-	_animate(rdt)
+	if not offAir:
+		_animate(rdt)
 
 func _look() -> void:
 	var d: Dictionary = game.input.lookDelta(_lookBuf)
@@ -438,20 +600,24 @@ func _look() -> void:
 	yaw = wrapAngle(yaw + float(d.yaw) * k + float(d.get("snapYaw", 0.0)))
 	pitch = clampf(pitch + float(d.pitch) * k + float(d.get("snapPitch", 0.0)), -1.25, 1.1)
 
-func _move(dt: float) -> void:
+# useInput = false (MP downed): no move / aim / sprint / jump input, only gravity, knockback decay and the floor.
+func _move(dt: float, useInput: bool = true) -> void:
 	var g = game
 	var input = g.input
 	# keyboard: digital -1/0/1 axes; gamepad: the analog left stick (magnitude <= 1 scales the speed)
 	var mv = input.move(_moveBuf) if input.has_method("move") else null
 	var fwdIn: float = float(mv.y) if mv != null else (1.0 if input.down("forward") else 0.0) - (1.0 if input.down("back") else 0.0)
 	var strIn: float = float(mv.x) if mv != null else (1.0 if input.down("right") else 0.0) - (1.0 if input.down("left") else 0.0)
+	if not useInput:
+		fwdIn = 0.0
+		strIn = 0.0
 	var mag := sqrt(fwdIn * fwdIn + strIn * strIn)
-	ads = input.down("aim")
+	ads = input.down("aim") and useInput
 
 	# Sprint + stamina (GDD §6.2: 4 s, refill 1 s after stopping, full in 3 s).
 	var unlimited := _truthy(mods.unlimitedSprint)
 	var canSprint := unlimited or (not _exhausted and stamina > 0.0)
-	sprinting = input.down("sprint") and fwdIn > SPRINT_FWD and not ads and canSprint
+	sprinting = useInput and input.down("sprint") and fwdIn > SPRINT_FWD and not ads and canSprint
 	if sprinting:
 		_sinceSprint = 0.0
 		if not unlimited:
@@ -500,7 +666,7 @@ func _move(dt: float) -> void:
 	vel.x += _hv.x
 	vel.z += _hv.z
 
-	if input.pressed("jump") and grounded:
+	if useInput and input.pressed("jump") and grounded:
 		vel.y = JUMP_V
 		grounded = false
 		g.events.emit("player:jump", {})
@@ -553,6 +719,8 @@ func _vitals(dt: float) -> void:
 		health = minf(maxHealth, health + float(mods.regenRate) * dt)
 	# Signal-loss post effect follows missing health (eased so hits read as a pulse).
 	var target := 1.0 - health / maxHealth if alive else 1.0
+	if mp != null:
+		target = mp.damageTarget(target)   # MP: downed = fading signal (bleed-out), off-air = the teammate's clear feed
 	_damage += (target - _damage) * (1.0 - exp(-dt * (14.0 if target > _damage else 3.0)))
 	if game.render != null and game.render.get("post") is Dictionary:
 		game.render.post.damage = _damage
@@ -592,7 +760,7 @@ func _animate(rdt: float) -> void:
 	a.grounded = grounded
 	a.aimPitch = pitch
 	a.aimYaw = clampf(wrapAngle(yaw - my), -1.1, 1.1)
-	a.aiming = not sprinting and weaponModel != null
+	a.aiming = not sprinting and weaponModel != null and not downed
 	a.back = back
 	a.turn = turn
 	a.legYaw = legYaw
@@ -627,6 +795,8 @@ func lateUpdate(_dt: float = 0.0) -> void:
 	if hero == null:
 		return
 	var d: float = float(g.cam.heroDistance) if g.cam != null else 3.0
+	if offAir:
+		d = 3.0   # MP: the hidden hero; the camera follows a teammate (whose model never uses the hero fade)
 	var fade := DAU.smoothstep3(d, 0.35, 0.8)
 	_setHeroFade(fade)
 	# Parts that cannot dither (glow eyes, glasses, art attachments) hide as soon as the dither starts.

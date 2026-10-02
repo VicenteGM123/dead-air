@@ -286,9 +286,23 @@ var _stampGeo: QuadMesh = null
 var _tapeGeo: QuadMesh = null
 var _ringGeo: PlaneMesh = null
 
+var _netPops: Array = []         # MP client: CANCELLED pops scheduled after a host stamp { z, t }
+
 func _init(g) -> void:
 	game = g
 	threshold = float(D().threshold)
+
+func _net():
+	return game.get("net") if game != null else null
+
+# An MP game is running (net.inGame is already true while the MP newGame's resets run).
+func _mp() -> bool:
+	var n = _net()
+	return n != null and bool(n.inGame)
+
+func _isClient() -> bool:
+	var n = _net()
+	return n != null and bool(n.inGame) and bool(n.isClient)
 
 # ------------------------------------------------------------------------------------------------ lifecycle
 func init() -> void:
@@ -297,6 +311,10 @@ func init() -> void:
 	_buildShared()
 	ev.on("zombie:kill", func(p = null): _onKill(p if p is Dictionary else {}))
 	ev.on("points:change", func(p = null):
+		if p and float(_f(p, "delta", 0.0)) > 0 and not _mp():   # MP: the host counts points:award instead
+			earned += float(p.delta))
+	# MP host: every award routed to any player (economy.add) counts toward the drop threshold
+	ev.on("points:award", func(p = null):
 		if p and float(_f(p, "delta", 0.0)) > 0:
 			earned += float(p.delta))
 	ev.on("round:start", func(p = null):
@@ -319,6 +337,7 @@ func reset() -> void:
 	lastDropAt = -INF
 	round = 1
 	_cancel = null
+	_netPops.clear()
 	for s in _stamps:
 		_free(s.mesh)
 	_stamps.clear()
@@ -344,6 +363,8 @@ func isActive(type: String) -> bool:
 	return float(active.get(type, 0.0)) > 0.0
 
 func drop(type = null, pos = null, opts: Dictionary = {}):
+	if _isClient():
+		return null                  # MP: drops are the host's (its RNG / bag); they arrive as powerups.net_spawn
 	var g = game
 	if type == null:
 		type = _nextType()
@@ -355,6 +376,15 @@ func drop(type = null, pos = null, opts: Dictionary = {}):
 		fwd.y = 0.0
 		pos = p.pos + fwd.normalized() * 2.2
 	var at := _placeFor(pos, opts.get("z"))
+	var item = _spawnItem("", type, at, bool(opts.get("special", false)))
+	if item != null and _mp():
+		_net().toAll("powerups", "spawn", [item.id, item.type, at, item.special])
+	return item
+
+# The drop on the ground (prop, floor light, idle pad, pop-in bursts, powerup:spawn). id "" = the next local id
+# (host / solo); MP clients pass the host's id.
+func _spawnItem(id: String, type: String, at: Vector3, special: bool):
+	var g = game
 	var group = _m(g.props, "build", ["drop_" + type, {}])
 	if not (group is Node3D):
 		push_warning("[powerups] drop prop failed drop_" + type)
@@ -365,9 +395,10 @@ func drop(type = null, pos = null, opts: Dictionary = {}):
 	if not (P is Dictionary):
 		P = {}
 	g.scene.add_child(group)
-	_n += 1
-	var id := "pu_drop_%d" % _n
-	var item := {"id": id, "type": type, "pos": at, "group": group, "parts": P, "age": 0.0, "life": float(D().life), "state": "in", "t": 0.0, "special": bool(opts.get("special", false)), "anchor": null, "idle": null, "glitch": 0.0, "glitchOff": false, "jx": 0.0, "sq": 1.0}
+	if id == "":
+		_n += 1
+		id = "pu_drop_%d" % _n
+	var item := {"id": id, "type": type, "pos": at, "group": group, "parts": P, "age": 0.0, "life": float(D().life), "state": "in", "t": 0.0, "special": special, "anchor": null, "idle": null, "glitch": 0.0, "glitchOff": false, "jx": 0.0, "sq": 1.0}
 	var ar = _m(g.level, "areaAt", [at.x, at.z])
 	var anc = _m(g.lights, "addAnchor", [{"pos": [at.x, at.y + 0.2, at.z], "color": GLOW[type], "intensity": 1.0, "distance": 2.4, "area": ar, "id": id}])
 	item.anchor = id if anc else null
@@ -387,6 +418,16 @@ func dropGuaranteed(type, pos):
 func grab(type: String) -> bool:
 	if not POWERUP_TYPES.has(type):
 		return false
+	if _mp():
+		# MP: a team effect decided by the host (a client asks; test / debug use only)
+		var net = _net()
+		var p = game.player
+		var at: Vector3 = p.pos if p != null else Vector3.ZERO
+		if net.isClient:
+			net.toHost("powerups", "grabAny", [type, at])
+		else:
+			net.everyone("powerups", "grabbed", ["", type, int(net.localId), at])
+		return true
 	_apply(type, null)
 	return true
 
@@ -396,7 +437,131 @@ func debugGrab(type: String) -> bool:
 func debugDrop(type = null, dist: float = 2.2):
 	var p = game.player
 	var v := Vector3(-sin(p.yaw), 0, -cos(p.yaw))
+	if _isClient():
+		_net().toHost("powerups", "debugDrop", [str(type) if type is String else "", p.pos + v * dist])
+		return null
 	return drop(type, p.pos + v * dist)
+
+# ------------------------------------------------------------------------------------------------ MP messages
+func _itemById(id: String):
+	for it in items:
+		if it.id == id:
+			return it
+	return null
+
+func _zById(zid):
+	var Z = game.zombies
+	if Z == null or not (zid is int or zid is float):
+		return null
+	if Z.has_method("byId"):
+		return Z.byId(int(zid))
+	for z in _f(Z, "alive", []):
+		if z and int(_f(z, "id", -1)) == int(zid):
+			return z
+	return null
+
+# host -> clients: a drop appeared (the host already resolved type and position).
+func net_spawn(id = "", type = "", pos = null, special = false) -> void:
+	var net = _net()
+	if net == null or not net.inGame or not net.isClient or net.sender != 1:
+		return
+	if not POWERUP_TYPES.has(str(type)) or not (pos is Vector3) or _itemById(str(id)) != null:
+		return
+	_spawnItem(str(id), str(type), pos, bool(special))
+
+# client -> host: my player touched drop `id` standing at `at`. The first request the host sees wins.
+func net_grab(id = "", at = null) -> void:
+	var net = _net()
+	if net == null or not net.isHost or not net.inGame:
+		return
+	var it = _itemById(str(id))
+	if it == null:
+		return
+	var ok: bool = it.state == "idle" or (it.state == "in" and it.t > 0.15) or (it.state == "expire" and it.t < 0.25)
+	var pos: Vector3 = at if at is Vector3 else it.pos
+	if not ok or Vector2(pos.x - it.pos.x, pos.z - it.pos.z).length() > float(D().pickupR) + 1.5:
+		return
+	net.everyone("powerups", "grabbed", [it.id, it.type, int(net.sender), pos])
+
+# host -> all: drop `id` (or "" for a debug grab) was grabbed by peer `by` at `at`: the team effect on every peer.
+func net_grabbed(id = "", type = "", by = 0, at = null) -> void:
+	var net = _net()
+	if net == null or not net.inGame or net.sender != 1 or not POWERUP_TYPES.has(str(type)):
+		return
+	var it = _itemById(str(id)) if str(id) != "" else null
+	var p = game.player
+	var pos: Vector3 = at if at is Vector3 else (p.pos if p != null else Vector3.ZERO)
+	if it != null and it.state != "grab":
+		_grabFx(it, pos)
+	_apply(str(type), it, int(by), pos)
+
+# client -> host: grab() without a drop (tests).
+func net_grabAny(type = "", at = null) -> void:
+	var net = _net()
+	if net == null or not net.isHost or not net.inGame or not POWERUP_TYPES.has(str(type)) or not game.params.get("test"):
+		return
+	net.everyone("powerups", "grabbed", ["", str(type), int(net.sender), at if at is Vector3 else Vector3.ZERO])
+
+# client -> host: debugDrop (tests).
+func net_debugDrop(type = "", pos = null) -> void:
+	var net = _net()
+	if net == null or not net.isHost or not net.inGame or not (pos is Vector3) or not game.params.get("test"):
+		return
+	drop(str(type) if str(type) != "" else null, pos)
+
+# host -> clients: the drop's life ran out.
+func net_expire(id = "") -> void:
+	var net = _net()
+	if net == null or not net.inGame or not net.isClient or net.sender != 1:
+		return
+	var it = _itemById(str(id))
+	if it != null and (it.state == "idle" or it.state == "in"):
+		_expire(it)
+
+# host -> clients: a timed effect is over.
+func net_end(type = "") -> void:
+	var net = _net()
+	if net == null or not net.inGame or not net.isClient or net.sender != 1:
+		return
+	if active.has(str(type)):
+		_end(str(type))
+
+# host -> clients: CANCELLED stamps zombie `zid` (the host kills it CANCEL.stampHold later; the kill replicates).
+func net_stamp(zid = -1) -> void:
+	var net = _net()
+	if net == null or not net.inGame or not net.isClient or net.sender != 1:
+		return
+	var z = _zById(zid)
+	if z == null or _f(z, "removed", false):
+		return
+	_stamp(z)
+	_m(game.audio, "play", ["telly_clack", {"pos": z.pos, "rate": 0.7 + randf() * 0.2, "vol": 0.9}])
+	_netPops.append({"z": z, "t": 0.0})
+
+func _updateNetPops(dt: float) -> void:
+	for i in range(_netPops.size() - 1, -1, -1):
+		var q: Dictionary = _netPops[i]
+		q.t += dt
+		if q.t < CANCEL.stampHold:
+			continue
+		_netPops.remove_at(i)
+		var z = q.z
+		if z == null or _f(z, "removed", false):
+			continue
+		var v: Vector3 = z.pos
+		v.y = z.pos.y + float(_f(z, "height", 1.7)) * 0.8
+		_m(game.fx, "burst", [v, {"shape": "confetti", "count": 12, "colors": ["#E8262E", "#FFFFFF", "#FFD23A"], "speed": 4, "life": 1}])
+		_m(game.fx, "burst", [v, {"shape": "static", "count": 8, "speed": 2.2, "size": 0.08, "life": 0.5}])
+
+# host -> clients: GAFFER TAPE taped window `wid` (its boards come back through the windows replication).
+func net_tape(wid = "") -> void:
+	var net = _net()
+	if net == null or not net.inGame or not net.isClient or net.sender != 1:
+		return
+	var W = _f(game.level, "windows", {})
+	var w = W.get(str(wid)) if W is Dictionary else null
+	if w != null:
+		_addTape(w)
 
 func state() -> Dictionary:
 	var its := []
@@ -416,6 +581,8 @@ func _onKill(p: Dictionary) -> void:
 	if float(active.get("one_take", 0.0)) > 0 and g.time.realNow - _laughAt > 0.18:
 		_laughAt = g.time.realNow
 		_m(g.audio, "play", ["crowd_laugh", {"pos": p.get("pos"), "dur": 0.45, "vol": 0.32, "rate": 1.15 + randf() * 0.25}])
+	if _isClient():
+		return                       # MP: the drop rules (and their RNG) are the host's
 	var due := earned >= threshold
 	if not due and not (g.rand() < float(D().chance)):
 		return
@@ -531,6 +698,12 @@ func update(dt: float) -> void:
 	var g = game
 	var p = g.player
 	var canGrab: bool = p != null and p.alive != false and not p.downed
+	var mp := _mp()
+	var cl := _isClient()
+	if canGrab and mp:
+		# MP: off-air, hidden and on-set (commercial) players never touch a drop
+		canGrab = not bool(_f(p, "offAir", false)) and not bool(_f(p, "hidden", false)) \
+			and not bool(_f(p, "inCommercial", false)) and not bool(_f(g.sponsors, "inCommercial", false))
 	for i in range(items.size() - 1, -1, -1):
 		var it: Dictionary = items[i]
 		it.age += dt
@@ -550,7 +723,12 @@ func update(dt: float) -> void:
 			_animIdle(it)
 			_reception(it, dt)
 			if it.life <= 0:
-				_expire(it)
+				if cl:
+					it.life = 0.0            # MP client: the host decides the expiry (powerups.net_expire)
+				else:
+					_expire(it)
+					if mp:
+						_net().toAll("powerups", "expire", [it.id])
 		elif it.state == "grab":
 			var k: float = it.t / GRAB_T
 			_animIdle(it)
@@ -583,15 +761,22 @@ func update(dt: float) -> void:
 			break
 		active[type] -= dt
 		if active[type] <= 0:
-			_end(type)
+			if cl:
+				active[type] = 0.001         # MP client: the effect ends with the host's powerups.net_end
+			else:
+				_end(type)
+				if mp:
+					_net().toAll("powerups", "end", [type])
 	if _cancel != null:
 		_updateCancel(dt)
+	if not _netPops.is_empty():
+		_updateNetPops(dt)
 	_updateStamps(dt)
 	_updateTapes(dt)
 	_updatePulses(dt)
 	_updateVignette(g.time.realDt if g.time.realDt else dt)
 	var zs = g.zombies
-	if float(active.get("please_stand_by", 0.0)) > 0 and zs and not _f(zs, "frozen", false):
+	if not cl and float(active.get("please_stand_by", 0.0)) > 0 and zs and not _f(zs, "frozen", false):
 		_m(zs, "freezeAll", [true])
 		_frozeZombies = true
 
@@ -631,6 +816,14 @@ func _reception(it: Dictionary, dt: float) -> void:
 	P.float.scale.y = it.sq
 
 func _pickup(it: Dictionary) -> void:
+	if _mp():
+		_pickupMP(it)
+		return
+	_grabFx(it, game.player.pos)
+	_apply(it.type, it)
+
+# The drop "tunes out" (confetti, stars, a flash) and a coloured ring pulses at `at` (the grabber's feet).
+func _grabFx(it: Dictionary, at: Vector3) -> void:
 	var g = game
 	it.state = "grab"
 	it.t = 0.0
@@ -643,8 +836,21 @@ func _pickup(it: Dictionary) -> void:
 	_m(g.fx, "burst", [v, {"shape": "confetti", "count": 18, "colors": [c, "#FFFFFF", Config.PAL.get("marqueeGold", "#FFD23A")], "speed": 4, "life": 1.1}])
 	_m(g.fx, "burst", [v, {"shape": "star", "count": 8, "colors": [c, "#FFFFFF"], "speed": 3.2, "life": 0.6, "size": 0.12}])
 	_m(g.fx, "flashLight", [v, c, 6, 0.2])
-	_pulse(g.player.pos, c)
-	_apply(it.type, it)
+	_pulse(at, c)
+
+# MP: the host decides who got it first. A client shows the "tune out" right away (the effect waits for the host's
+# powerups.net_grabbed: if a teammate was first, the drop is gone either way and the effect is the team's anyway).
+func _pickupMP(it: Dictionary) -> void:
+	var net = _net()
+	var p = game.player
+	if net.isClient:
+		if it.get("req", false):
+			return
+		it["req"] = true
+		_grabFx(it, p.pos)
+		net.toHost("powerups", "grab", [it.id, p.pos])
+		return
+	net.everyone("powerups", "grabbed", [it.id, it.type, int(net.localId), p.pos])
 
 func _expire(it: Dictionary) -> void:
 	var g = game
@@ -672,18 +878,26 @@ func _dispose(it: Dictionary) -> void:
 	_free(it.group)
 
 # ------------------------------------------------------------------------------------------------ effects
-func _apply(type: String, _item) -> void:
+# by / at: MP only (the grabber's peer id and position; the host runs the world parts, every peer its own player's).
+func _apply(type: String, _item, by = null, at = null) -> void:
 	var g = game
-	g.events.emit("powerup:grab", {"type": type})
+	var cl := _isClient()
+	if by == null:
+		g.events.emit("powerup:grab", {"type": type})
+	else:
+		g.events.emit("powerup:grab", {"type": type, "by": by})
 	if type == "cancelled":
-		_startCancel()
+		if not cl:
+			_startCancel(at)
 	elif type == "full_reel":
 		_m(g.weapons, "refillAll")
-		var v: Vector3 = g.player.pos
-		v.y = g.player.pos.y + 1.1
-		_m(g.fx, "burst", [v, {"shape": "star", "count": 10, "colors": ["#FFC23A", "#FFF3B0", "#FFFFFF"], "speed": 3, "life": 0.8, "size": 0.12}])
+		if not (by != null and g.player.alive == false):      # (MP: an off-air spectator gets no burst)
+			var v: Vector3 = g.player.pos
+			v.y = g.player.pos.y + 1.1
+			_m(g.fx, "burst", [v, {"shape": "star", "count": 10, "colors": ["#FFC23A", "#FFF3B0", "#FFFFFF"], "speed": 3, "life": 0.8, "size": 0.12}])
 	elif type == "gaffer_tape":
-		_gaffer()
+		if not cl:
+			_gaffer(at)
 	var DU := DURATION()
 	if not DU.has(type):
 		return
@@ -760,14 +974,14 @@ func _updatePulses(dt: float) -> void:
 			p.mesh.visible = false
 
 # --- CANCELLED
-func _startCancel() -> void:
+func _startCancel(origin = null) -> void:
 	var g = game
 	var Z = g.zombies
 	var list := []
 	for z in _f(Z, "alive", []):
 		if z and not _f(z, "dead", false) and not _f(z, "removed", false) and _f(z, "type") != "boss_baron":
 			list.append(z)
-	var pp: Vector3 = g.player.pos
+	var pp: Vector3 = origin if origin is Vector3 else g.player.pos      # MP: nearest the grabber first
 	list.sort_custom(func(a, b): return a.pos.distance_squared_to(pp) < b.pos.distance_squared_to(pp))
 	var n := list.size()
 	var entries := []
@@ -793,6 +1007,8 @@ func _updateCancel(dt: float) -> void:
 			e.stamped = true
 			_stamp(z)
 			_m(g.audio, "play", ["telly_clack", {"pos": z.pos, "rate": 0.7 + randf() * 0.2, "vol": 0.9}])
+			if _mp():
+				_net().toAll("powerups", "stamp", [int(_f(z, "id", -1))])
 		if e.stamped and c.t >= e.at + CANCEL.stampHold:
 			e.done = true
 			var v: Vector3 = z.pos
@@ -881,7 +1097,7 @@ func _updateStamps(dt: float) -> void:
 			_stamps.remove_at(i)
 
 # --- GAFFER TAPE
-func _gaffer() -> void:
+func _gaffer(origin = null) -> void:
 	var g = game
 	var L = g.level
 	var wins := []
@@ -890,7 +1106,7 @@ func _gaffer() -> void:
 		for w in W.values():
 			if w and _f(w, "type") == "boarded":
 				wins.append(w)
-	var pp: Vector3 = g.player.pos
+	var pp: Vector3 = origin if origin is Vector3 else g.player.pos      # MP: the cascade starts at the grabber
 	var dist := func(w) -> float:
 		var wp: Vector3 = DAU.v3(_f(w, "pos"))
 		return Vector2(wp.x - pp.x, wp.z - pp.z).length()
@@ -915,6 +1131,8 @@ func _updateTapes(dt: float) -> void:
 			if not _m(w, "repairBoard"):
 				break
 		_addTape(w)
+		if _mp():
+			_net().toAll("powerups", "tape", [str(_f(w, "id", ""))])
 	for tp in _tapes.values():
 		if tp.t >= 1:
 			continue

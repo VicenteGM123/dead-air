@@ -32,6 +32,15 @@
 #   the tick for hitmarker() calls without a zombie event (identical plays within 30 ms merge).
 # Exports FlipBoard (split-flap digits) and Roller (tape-counter drums) for menu.gd (preload this script).
 #
+# MP (online co-op; solo builds and runs none of it): isMine(payload) — RECONCILE R7 filter: a payload caused by another
+#   peer carries `by` (its id); every local-player reaction above (hitmarkers, popups, crosshair kick, Tiny Tele row,
+#   commercial hiding, Uplink chyron, replay bug) ignores payloads whose `by` is not the local peer. The prompt draws a
+#   revive glyph for {revive: true} (interact's revive hold items). `team` = HudTeam (scripts/ui/hud_team.gd, built on
+#   the first MP frame): teammates list (bottom right, above the tote: name, points, hero channel chip; downed / off-air
+#   states), name tags over remote players' heads, downed-teammate markers visible through walls (bleed-out ring, gold
+#   while revived), the own downed ring (replaces the crosshair) and the off-air spectate overlay. While the local
+#   player is downed / off-air the crosshair hides and the ammo / equipment dim / hide (self_modulate / modulate,
+#   never touched in solo).
 # Godot port notes (engine plumbing, not behaviour): the DOM/CSS tree is a CanvasLayer (layer 10 = the CSS z-index)
 # of Controls on the reference stage; every CSS-decorated static box (gradients, rounded corners, inset / drop
 # shadows, the inline SVG icons) is rasterized once through Godot's SVG rasterizer from an SVG transcription of its
@@ -44,6 +53,7 @@ extends RefCounted
 
 const FontsScript = preload("res://scripts/ui/fonts.gd")
 const Hud_ = preload("res://scripts/ui/hud.gd")   # self: inner classes reach the static helpers through it
+const HudTeamScript = preload("res://scripts/ui/hud_team.gd")   # MP overlays (built only in an MP game)
 
 const REF_H := 1080.0
 const M := 40.0 # safe margin (reference px)
@@ -701,6 +711,8 @@ class Knob extends RefCounted:
 
 # ================================================================================================ icons (SVG, as the JS)
 const PLUG_SVG := '<path d="M2 30c8 0 8-10 16-10h6" fill="none" stroke="#F4F1E8" stroke-width="4" stroke-linecap="round"/><rect x="22" y="9" width="22" height="22" rx="6" fill="#F4F1E8"/><rect x="26" y="13" width="14" height="4" rx="2" fill="#B8B2A8"/><path d="M44 14h14M44 26h14" stroke="#F4F1E8" stroke-width="4.5" stroke-linecap="round"/>'
+# MP revive glyph (prompt): a cream cross on the WZTV red disc
+const REVIVE_SVG := '<circle cx="20" cy="20" r="17" fill="#E23B3B" stroke="#F4F1E8" stroke-width="3"/><rect x="16.5" y="9" width="7" height="22" rx="2" fill="#F4F1E8"/><rect x="9" y="16.5" width="22" height="7" rx="2" fill="#F4F1E8"/>'
 
 # TUBE_SVG / TELE_SVG with the .dh .eq class styles inlined (on / off states).
 static func TUBE_SVG(on: bool) -> String:
@@ -810,7 +822,9 @@ var game
 var visible := false
 var _supp := {}
 var _shown := {"points": -1, "gold": null, "mag": -1, "res": -1, "low": null, "noAmmo": null, "gren": -1, "tele": -1, "teleRow": null, "spread": -1, "dim": null, "want": null}
-var _prompt := {"on": false, "key": "E", "cost": -1, "denied": null, "plug": null, "hold": null, "prog": -1.0, "t": 0.0}
+var _prompt := {"on": false, "key": "E", "cost": -1, "denied": null, "plug": null, "hold": null, "prog": -1.0, "t": 0.0, "revive": false}
+var team = null             # MP: HudTeam (scripts/ui/hud_team.gd)
+var _mpDim := -1.0          # MP: last own-element dim applied (-1: never)
 var _hm := 0
 var _hmT := -1.0
 var _starT := -1.0
@@ -1022,21 +1036,34 @@ func _redrawAll() -> void:
 
 func init() -> void:
 	var ev = game.events
-	ev.on("points:change", func(p): if p and p.get("delta"): _popupFrom("ev", p.delta))
-	ev.on("points:denied", func(_p): _shakeT = 0.32)
-	ev.on("zombie:hit", func(p): _mark(2 if p and p.get("head") else 1, false))
-	ev.on("zombie:kill", func(p): _mark(4 if p and p.get("head") else 3, false))
-	ev.on("player:hurt", func(p): _hurt(p if p else {}))
-	ev.on("weapon:fire", func(_p): _kick = minf(1.0, _kick + 0.55))
-	ev.on("weapon:acquire", func(p): if p and p.get("weaponId") == "tiny_tele": _hadTele = true)
-	ev.on("machine:commercial_start", func(_p): suppress("commercial", true))
-	ev.on("machine:commercial_end", func(_p): suppress("commercial", false))
-	ev.on("machine:uplink_take", func(p): _uplinkFallback(p if p else {}))
-	ev.on("perk:replay", func(p): replayBug(bool(p and (p.get("on") if p.get("on") != null else true))))
-	ev.on("replay:start", func(_p): replayBug(true))
-	ev.on("replay:end", func(_p): replayBug(false))
-	ev.on("player:revive", func(p): if p and p.get("selfRevive"): _later(1.2, func(): replayBug(false)))
+	ev.on("points:change", func(p): if p and p.get("delta") and isMine(p): _popupFrom("ev", p.delta))
+	ev.on("points:denied", func(p): if isMine(p): _shakeT = 0.32)
+	ev.on("zombie:hit", func(p): if isMine(p): _mark(2 if p and p.get("head") else 1, false))
+	ev.on("zombie:kill", func(p): if isMine(p): _mark(4 if p and p.get("head") else 3, false))
+	ev.on("player:hurt", func(p): if isMine(p): _hurt(p if p else {}))
+	ev.on("weapon:fire", func(p): if isMine(p): _kick = minf(1.0, _kick + 0.55))
+	ev.on("weapon:acquire", func(p): if p and p.get("weaponId") == "tiny_tele" and isMine(p): _hadTele = true)
+	ev.on("machine:commercial_start", func(p): if isMine(p): suppress("commercial", true))
+	ev.on("machine:commercial_end", func(p): if isMine(p): suppress("commercial", false))
+	ev.on("machine:uplink_take", func(p): if isMine(p): _uplinkFallback(p if p else {}))
+	ev.on("perk:replay", func(p): if isMine(p): replayBug(bool(p and (p.get("on") if p.get("on") != null else true))))
+	ev.on("replay:start", func(p): if isMine(p): replayBug(true))
+	ev.on("replay:end", func(p): if isMine(p): replayBug(false))
+	ev.on("player:revive", func(p): if p and p.get("selfRevive") and isMine(p): _later(1.2, func(): replayBug(false)))
 	ev.on("state", func(p): if p and not WORLD.has(p.get("to")): _releaseKnobs())
+
+# RECONCILE R7: false when the payload was caused by another peer's player (`by` = its id); solo: always true.
+# (mp-machines' Uplink payloads name the user `user` in older code: read as `by` too.)
+func isMine(p) -> bool:
+	if not (p is Dictionary):
+		return true
+	var by = p.get("by")
+	if by == null:
+		by = p.get("user")
+	if not (by is int or by is float):
+		return true
+	var n = game.get("net")
+	return n == null or not n.inGame or int(by) == int(n.localId)
 
 func reset() -> void:
 	_dial.shown = null
@@ -1148,6 +1175,10 @@ func setPrompt(obj) -> void:
 		changed = true
 	if plug != P.plug:
 		P.plug = plug
+		changed = true
+	var rv := _tb(obj.get("revive"))
+	if rv != P.revive:
+		P.revive = rv
 		changed = true
 	var hold := _tb(obj.get("hold"))
 	if hold != P.hold:
@@ -1870,6 +1901,8 @@ func _drawPrompt(ci: Control) -> void:
 		w += 14.0 + _costWidth(costS)
 	if P.plug:
 		w += 14.0 + 58.0
+	if P.revive:
+		w += 14.0 + 36.0
 	w += 22.0
 	var h := 54.0
 	w = ceilf(w)
@@ -1934,6 +1967,12 @@ func _drawPrompt(ci: Control) -> void:
 		var plug := _tx("plug", func(): return svgTexture(iconSvg(PLUG_SVG, 64, 40, 58, 36, [[0.0, 1.0, 0.0, "rgba(255,255,255,.3)"], [0.0, -1.0, 0.0, "rgba(0,0,0,.9)"]])))
 		if plug:
 			ci.draw_texture_rect(plug, Rect2(x - 8, (h - 36.0) / 2.0 - 8, 58 + 16, 36 + 16), false, Color(1, 1, 1, a))
+		x += 58.0
+	if P.revive:
+		x += 14.0
+		var rg := _tx("revive", func(): return svgTexture(iconSvg(REVIVE_SVG, 40, 40, 36, 36, [[0.0, 1.0, 0.0, "rgba(255,255,255,.3)"], [0.0, -1.0, 0.0, "rgba(0,0,0,.9)"]])))
+		if rg:
+			ci.draw_texture_rect(rg, Rect2(x - 8, (h - 36.0) / 2.0 - 8, 36 + 16, 36 + 16), false, Color(1, 1, 1, a))
 	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
 
 # ---- points

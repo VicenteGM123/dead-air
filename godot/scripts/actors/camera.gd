@@ -40,6 +40,11 @@
 # (THREE Vector3.project / unproject) is computed from fov and the viewport aspect (the symmetric perspective THREE
 # builds). Collision boxes are keyed by their index in col.boxes (the JS Map keyed the box objects).
 # Renames (SPEC §3.2): none.
+# MP (online co-op; nothing below runs in solo): `target` / spectate(player-like | null) — the camera follows that
+#   player (a RemotePlayer: pos, yaw, pitch, rig, ads, sprinting, downed are read like the local player's) instead of
+#   game.player; switching snaps the boom (no glide across the map). A DOWNED followed player gets the low, woozy
+#   down camera (pivot -0.62 m, shorter boom, slight roll sway, FOV -4, blended over DOWN_TIME). Remote avatars never
+#   occlusion-fade (mats.noOcclusion on their models, re-applied every second for new held weapons).
 extends RefCounted
 
 const HIP := {"right": 0.75, "up": 0.35, "back": 3.4, "fov": 70.0}
@@ -78,6 +83,9 @@ const OCC_SKIP := {"wall": true, "glass": true, "door": true, "window": true, "f
 const OCC_KEEP := {"wall": true, "glass": true, "door": true, "window": true, "platform": true, "fence": true}  # protected (floors: feetY)
 const OCC_WALLS := 4          # protected boxes (materials uOccWall0/1)
 const OCC_RAYS := [[0.0, 0.0], [0.6, 0.55], [-0.6, 0.55], [0.6, -0.55], [-0.6, -0.55], [0.0, -0.7]] # NDC view rays
+# MP down camera (see the header)
+const DOWN := {"right": 0.5, "up": 0.15, "back": 2.4, "drop": 0.62, "fov": -4.0}
+const DOWN_TIME := 0.35
 
 var game
 var camera: Camera3D
@@ -116,6 +124,10 @@ var _archIdx := PackedInt32Array()   # sphereCast candidates: camera-blocking ar
 var _keepIdx := PackedInt32Array()   # OCC_KEEP tags (protected boxes)
 var _fadeIdx := PackedInt32Array()   # whole-object fade candidates (not ramps, not OCC_SKIP, not camera architecture)
 var _bb := PackedFloat64Array()      # box bounds (minX, minY, minZ, maxX, maxY, maxZ) per box index (boxes never move)
+# MP
+var target = null                    # followed player-like (spectating), null = game.player
+var _downK := 0.0
+var _noOccT := 0.0
 
 func _init(g) -> void:
 	game = g
@@ -176,6 +188,25 @@ func reset() -> void:
 	_occState.clear()
 	occ.n = 0
 	occ.amt = 0.0
+	target = null
+	_downK = 0.0
+
+# MP: follow another player (spectating) or the local player again (null). Snaps the boom to the new player.
+func spectate(t) -> void:
+	if is_same(t, target):
+		return
+	target = t
+	_pivotY = null
+	_clip = MAX_BOOM
+	_holdT = 0.0
+	_occState.clear()
+
+# The followed player: the spectated one while it is still a live object, else the local player.
+func _follow(g):
+	if target != null and target is Object and is_instance_valid(target) and target.get("pos") is Vector3:
+		return target
+	target = null
+	return g.player
 
 func shake(amount: float = 0.3, duration: float = 0.4) -> void:
 	_trauma = minf(1.0, _trauma + amount)
@@ -190,12 +221,22 @@ func kick(pitch: float = 0.02, yaw: float = 0.0) -> void:
 
 func update(dt: float) -> void:
 	var g = game
-	var p = g.player
+	var p = g.player if target == null else _follow(g)
 	_t += dt
 	if g.input != null and g.input.pressed("shoulder"):
 		side = -side
 	if camera == null:
 		camera = g.camera
+	# MP: remote avatars never occlusion-fade (their held weapons change: re-applied every second)
+	var n = g.get("net")
+	if n != null and n.inGame:
+		_noOccT -= dt
+		if _noOccT <= 0.0:
+			_noOccT = 1.0
+			if g.mats != null and g.mats.has_method("noOcclusion"):
+				for rp in n.remotes():
+					if rp.model != null:
+						g.mats.noOcclusion(rp.model)
 	if not enabled or p == null or camera == null:
 		occ.amt = 0.0
 		return
@@ -214,6 +255,11 @@ func update(dt: float) -> void:
 	_ads = clampf(_ads + (adsRate if p.ads else -adsRate), 0.0, 1.0)
 	var a := _ads * _ads * (3.0 - 2.0 * _ads)
 	_sprintFov += ((SPRINT_FOV if p.sprinting else 0.0) - _sprintFov) * (1.0 - exp(-dt * 6.0))
+	# MP: the down camera blend of a downed followed player (always 0 in solo)
+	var dw := 1.0 if p.downed else 0.0
+	if _downK != dw:
+		_downK = clampf(_downK + (dt / DOWN_TIME if dw > _downK else -dt / DOWN_TIME), 0.0, 1.0)
+	var dk := _downK * _downK * (3.0 - 2.0 * _downK) if _downK > 0.0 else 0.0
 
 	# Recoil recovery (aim-affecting) and the visual punch.
 	_kickP = signf(_kickP) * maxf(0.0, absf(_kickP) - RECOVER * dt)
@@ -225,6 +271,8 @@ func update(dt: float) -> void:
 	if p.rig != null:
 		var dims = p.rig.dims
 		headH = float(dims.height) - float(dims.headH) * 0.55
+	if dk > 0.0:
+		headH -= DOWN.drop * dk
 	var ty: float = p.pos.y + headH
 	_pivotY = ty if _pivotY == null else float(_pivotY) + (ty - float(_pivotY)) * (1.0 - exp(-dt * 14.0))
 	_pivot = Vector3(p.pos.x, float(_pivotY), p.pos.z)
@@ -232,10 +280,16 @@ func update(dt: float) -> void:
 	var yaw: float = p.yaw + _kickY
 	var pitch := clampf(p.pitch + _kickP, -1.35, 1.25)
 	var _q := Quaternion.from_euler(Vector3(pitch + punch * 0.02, yaw, 0.0))  # Euler 'YXZ'
+	if dk > 0.0:
+		_q = Quaternion.from_euler(Vector3(pitch + punch * 0.02, yaw, sin(_t * 0.9) * 0.035 * dk))
 
 	var right := lerpf(HIP.right, ADS.right, a) * _side
 	var up := lerpf(HIP.up, ADS.up, a)
 	var back := lerpf(HIP.back, ADS.back, a)
+	if dk > 0.0:
+		right = lerpf(right, DOWN.right * _side, dk)
+		up = lerpf(up, DOWN.up, dk)
+		back = lerpf(back, DOWN.back, dk)
 	var _offset := _q * Vector3(right, up, back)
 	var want := _offset.length()
 	_dir = _offset / want
@@ -275,6 +329,8 @@ func update(dt: float) -> void:
 	cam.transform = Transform3D(Basis(cq), cpos)
 
 	var fov := lerpf(fovBase, ADS.fov + (fovBase - HIP.fov) * 0.5, a) + _sprintFov
+	if dk > 0.0:
+		fov += DOWN.fov * dk
 	if absf(cam.fov - fov) > 1e-3:
 		cam.fov = fov
 	heroDistance = cam.position.distance_to(_pivot)

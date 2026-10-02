@@ -46,6 +46,17 @@
 # ported. The lamp / jewel MeshBasicMaterials are unshaded StandardMaterial3Ds whose colour is written as the same
 # linear value three.js used (Color.setScalar / multiplyScalar), converted to the sRGB albedo Godot expects.
 # The hero pull drives rig.joints[name] as Node3D quaternions (three's Euler XYZ) and rig.root scale / position.
+#
+# MP (design/mp-machines.md, RECONCILE R9): the lever is a request. E on a client sends signon.net_lever() to the host
+#   (the host's own E runs the same handler locally); the host, if the station is still off, runs
+#   net.everyone("signon", "start", [by]) and EVERY peer plays the whole sequence from trigger(by) on its own real
+#   time (the hero yank poses the user's model: the local Player, or that peer's RemotePlayer chaining its
+#   weaponPose). World consequences stay with the host: at its t = 2.6 the host flips machines.powerOn, emits power:on
+#   and sends machines.net_power(true, "signon"); a client's own power beat only plays the visuals, its powerOn flips
+#   when that message arrives (netPower(): no jump to the end while its sequence runs). At t = 6.0 only the host opens
+#   DY (level.openDoor, replicated by level); clients play the gust if DY was closed when their sequence started.
+#   Camera shake / hit-stop / console animation follow the local (view) player as in solo.
+#   Messages: signon.net_lever() client -> host · signon.net_start(by: int) host -> all (everyone).
 extends RefCounted
 
 const Screens = preload("res://scripts/game/screens.gd")
@@ -92,6 +103,9 @@ var _console = null
 var _pullFn := Callable()
 var _pullPrev = null
 var _pullRoot = null
+var _pullP = null                 # the player-like whose hero yanks the lever (solo: game.player)
+var _pullBy := 0                  # MP: peer id of the lever user (0 = none)
+var _dyWasClosed := false         # MP client: DY was still closed when the sequence started (gust FX at t = 6.0)
 
 static func smooth(a: float, b: float, x: float) -> float:
 	var u := clamp01((x - a) / (b - a))
@@ -207,7 +221,7 @@ func _build() -> void:
 				"id": "machine_sign_on", "pos": pos, "radius": 1.7,
 				"enabled": func(): return state == "off" and not _powered(),
 				"prompt": func(): return {},
-				"use": func(): return trigger(),
+				"use": func(): return _useLever(),
 			})
 
 # Console details that play along: the audio board's two VU needles (rest on the left stop before power, pinned
@@ -359,9 +373,14 @@ func update(_dt = 0.0) -> void:
 		_heroPull(false)
 
 # ------------------------------------------------------------------------------------------------ API
-func trigger() -> bool:
+# by: MP peer id of the lever user (0 = the local player, as in solo).
+func trigger(by: int = 0) -> bool:
 	if state != "off" or _powered():
 		return false
+	_pullBy = by
+	if _mp():
+		var dy = _doorDY()
+		_dyWasClosed = dy != null and not dy.get("open")
 	_heroPull(true)
 	state = "sequence"
 	done = true
@@ -371,6 +390,64 @@ func trigger() -> bool:
 	waveRadius = -1.0
 	_tick(0.0)
 	return true
+
+# ------------------------------------------------------------------------------------------------ MP
+func _mp() -> bool:
+	var n = game.get("net")
+	return n != null and n.inGame
+
+func _cli() -> bool:
+	var n = game.get("net")
+	return n != null and n.inGame and n.isClient
+
+func _hst() -> bool:
+	var n = game.get("net")
+	return n != null and n.inGame and n.isHost
+
+# The lever's E: solo throws it; MP asks the host (a host's own E runs the handler right away).
+func _useLever() -> bool:
+	if not _mp():
+		return trigger()
+	game.net.toHost("signon", "lever", [])
+	return true
+
+# client -> host: someone pulled the lever.
+func net_lever() -> void:
+	var n = game.get("net")
+	if n == null or not n.inGame or n.isClient or state != "off" or _powered():
+		return
+	n.everyone("signon", "start", [n.sender])
+
+# host -> all (everyone): the Sign-On sequence starts on every peer.
+func net_start(by) -> void:
+	var n = game.get("net")
+	if n == null or not n.inGame or n.sender != 1:
+		return
+	trigger(int(by) if (by is int or by is float) else 0)
+
+# MP client: the host's power beat (machines.net_power(true, "signon")) while our own sequence runs: flip the flag
+# and emit power:on without jumping the sequence to its end. False when no sequence runs (machines applies setPower).
+func netPower() -> bool:
+	if state != "sequence":
+		return false
+	if _powered():
+		return true
+	_emitting = true
+	game.machines.powerOn = true
+	game.events.emit("power:on", {})
+	_emitting = false
+	return true
+
+# machines dispatch (net:peer left / team:down / team:offair): the lever user's yank pose is dropped if they leave.
+func onPeerGone(id: int, why: String = "left") -> void:
+	if why == "left" and id == _pullBy and _pullBy != 0:
+		_heroPull(false)
+		_pullBy = 0
+
+func _doorDY():
+	var lv = game.level
+	var doors = lv.get("doors") if lv != null else null
+	return doors.get("dy_mc_yard") if doors is Dictionary else null
 
 func waveReached(pos) -> bool:
 	if not _powered():
@@ -439,9 +516,10 @@ func _tick(dt: float) -> void:
 # Poses the hero's left arm on the lever for the slam (animator.override, chained after the weapons pose so the
 # gun arm keeps its hold), with a squash on impact. Only when the hero stands at the lever.
 func _heroPull(on: bool) -> void:
-	var p = game.player
-	var a = p.get("animator") if p != null else null
+	var p = _pullP if not on and _pullP != null else _pullPlayer()
+	var a = p.get("animator") if p != null and is_instance_valid(p) else null
 	if a == null:
+		_pullP = null
 		return
 	if not on:
 		var cur = a.get("override")
@@ -454,19 +532,33 @@ func _heroPull(on: bool) -> void:
 			if _pullRoot != null:
 				root.position = _pullRoot
 		_pullRoot = null
+		_pullP = null
 		return
 	var ov = a.get("override")
-	if (ov is Callable and not ov.is_null()) or (ov != null and not (ov is Callable)) or not _nearPlayer(2.4):
+	if (ov is Callable and not ov.is_null()) or (ov != null and not (ov is Callable)) or not _nearP(p, 2.4):
 		return
+	_pullP = p
 	_pullPrev = ov
 	var root0 = _rigRoot(p.get("rig"))
 	_pullRoot = root0.position if root0 != null else null
 	_pullFn = func(rg, dt): _pullPose(rg, dt)
 	a.set("override", _pullFn)
 
+# The lever user's player-like: solo / own pull = game.player, MP = that peer's RemotePlayer (null if gone).
+func _pullPlayer():
+	if _pullBy != 0 and _mp():
+		return game.net.playerById(_pullBy)
+	return game.player
+
 func _pullPose(rg, dt) -> void:
 	var w = game.weapons
-	if w != null:
+	var rp = _pullP if _pullP != null and _pullP != game.player else null
+	if rp != null:
+		# a remote user: chain its own gun pose (RemotePlayer.weaponPose), never the local weapons pose
+		var wp = rp.get("weaponPose")
+		if wp is Callable and (wp as Callable).is_valid():
+			wp.call(rg, dt)
+	elif w != null:
 		var pf = w.get("_poseFn")
 		if pf is Callable and pf.is_valid():
 			pf.call(rg, dt)
