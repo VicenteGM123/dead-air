@@ -43,6 +43,23 @@
 #   ticket/patch cards (< 7 m) and the eye veil + rim (< 13 m). Every mesh is on LAYERS.ZOMBIES. The stun stars and
 #   the ticket stubs are two MultiMesh pools.
 #
+# MP (online co-op, RECONCILE R16/R17; the work lives in scripts/actors/zombies_net.gd, built by reset() only while
+#   game.net.inGame — solo never creates it and runs the code above unchanged):
+#   HOST simulates as solo plus: every zombie chases z.tgt (nearest targetable player by path: nav.goalIdAt, 0.4 s
+#   retarget hysteresis); spawners use every present player (areas union, 8 m from all); contact hits on a remote
+#   player -> zombies.net_hurt(dmg, from, kb, zid, kind) to its peer; damage(info.by) awards via
+#   economy.add(n, reason, by) (the +10 dedupe key is by|shot|weapon); zombie:hit / zombie:kill payloads carry `by`
+#   (kill also `wfx`); every spawn / hit / kill / despawn / stun / lure / freeze / straggler re-entry / type event /
+#   gawk goes into one reliable zombies.net_ev(t, list) per client per frame; stream 'z' = 20 Hz packed snapshot.
+#   CLIENT builds puppets from those messages (same def.build, host variant + scale), interpolates 100 ms behind,
+#   replays the host's cues from state / mode changes (types: puppet(game, z, dt), puppetEvent(game, z, kind, args)).
+#   damage() on a client = predicted local feedback + an entry of the per-frame zombies.net_dmgBatch(list); kill /
+#   killAll / spawn / despawn* are host-only (no-ops); stun / knockback / setLure become stunReq / knockReq /
+#   lureReq requests; freezeAll only sets the local look. hitStop on a head pop only for the local killer.
+#   API: byId(id), targetOf(z), targetsList(), isRemote(p), authority(), isPuppet(), hurtTarget(p, dmg, z, kb, kind),
+#   netEvent(z, kind, args). Handlers: net_ev, net_stream_z, net_dmgBatch, net_hurt, net_stunReq, net_knockReq,
+#   net_lureReq.
+#
 # Port notes (GDScript):
 #   * z records, entries, queues, popped heads and star rings are Dictionaries (JS object literals). Every field the
 #     JS adds lazily is declared at spawn so dot reads work.

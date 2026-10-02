@@ -34,6 +34,10 @@
 #     Math.hypot is reproduced bit-exactly (DACollision.hypot2);
 #   * Nav.build uses DACollision._navGrid (a bulk floorAt + blockedAt, same results).
 # The JS `_pop` is inlined in _run.
+# MP: on the host of an online game (game.net.inGame) the field is seeded from EVERY target (zombies.targetsList())
+#   and each cell remembers which target reached it (frontOwn / goals): ownerAt(x, z) -> goal index, goalIdAt(x, z)
+#   -> peer id (0 none); dir() heads straight for the owning target; dist() = path to the nearest target. Clients run
+#   no solve (update() returns; queries still work). Solo / lure override: the single-goal code above, unchanged.
 extends RefCounted
 
 const CELL := 0.5

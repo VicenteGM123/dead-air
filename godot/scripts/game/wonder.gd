@@ -44,6 +44,16 @@
 #   z.animator.updateFn (frozen solid: rig.gd's assignable update), mesh materials (material_override: ice, static,
 #   bars). Damage bonuses lower z.hp directly unless lethal (then zombies.damage with cause 'signal_bonus').
 #
+# MP: (mp-combat, RECONCILE R17) scripts/game/wonder_net.gd (`wonder.mp`, built by reset() only in an MP game). Every
+#   wonder RESOLUTION runs on the host (victims, kills, statuses, slows, lure, seats, puddle keys, signal rolls with
+#   game.rand(), burn); `_au` (= net.authority) guards the world writes, so an MP client runs only its own fire logic
+#   (ammo, cooldowns, trails, sounds) + visuals and sends requests: wonder.zap(up, ids, origin, dir) (shooter-picked
+#   Zapper victims), boomRec(on, up) / boomPlay(up, charge, origin, dir, mic), splash(sid, pos, normal, direct, up),
+#   tele(lid, origin, vel). The host resolves with info.by = the requester and broadcasts visuals: fx(kind, args),
+#   signal(sig, ids, gen), boomRecFx / boomFx, splashFx, teleSpawn / teleLand / teleSeat / teleBoom. Wonder deaths
+#   travel with the kill: info.wfx (["gag", name, up, pulseR] · ["key", world, up] · ["tumble", dir, i] · ["suck",
+#   center]); mp-zombies calls corpseFx(z, wfx, by) on clients (idempotent). Observers get Zapper trails and Chroma
+#   blob flights from the weapons 'wfx' stream (remoteZap / remoteBlob). Solo: every MP branch is `mp != null`.
 # PORT NOTES (GDScript / Godot plumbing; behaviour is the JS one):
 #   * Zombies are Dictionaries: maps / sets keyed by zombie (JS Map / Set) are keyed by z.id here (_zk), identity
 #     tests use is_same(). Every optional field is read through _g() (Dictionary key or Object property).

@@ -34,6 +34,12 @@
 #
 # Port notes: `round` keeps its JS name although it shadows the global round() (use roundf/floorf here). Colours are
 #   lerped in linear space like THREE.Color (Godot Colors hold sRGB). try/catch guards became explicit checks.
+# MP: the host runs everything above and sends rounds.net_start(r, special, count, token, hullIdx, nextHull, first,
+#   maxAlive) / rounds.net_end(r, special, intermission, nextHull, hullIdx, kills, totalKills) to the clients, which
+#   mirror the fields and run the presentation half (_applyStart / _applyEnd: tint, round:* events, their own grenade
+#   grant, stings, music); a client never starts a round itself. Zombies per round x [1, 1.5, 2, 2.5] for 1..4
+#   session players (MP_COUNT_MUL; interval and HP unscaled). killsBy {peer id: kills} on every peer (team summary;
+#   clients mirror it from the replicated kills).
 class_name Rounds
 extends RefCounted
 

@@ -42,6 +42,9 @@
 # Not ported (engine plumbing, SPEC §0.2): the static merges (mergeByMaterial), staticopt.js (baked colours,
 # shadow proxies, area batches), the render hooks of the per-object portal culling (portalBegin/portalEnd:
 # main-pass-only hiding of objects outside the door view cones), matrix freezing. Area-level culling is kept.
+# MP: openDoor(id, {instant, from}) on the host also sends level.net_openDoor(id, instant, from) to the clients
+#   (`from` = the buyer's position: the debris flies away from it); on a client openDoor only runs from that message
+#   (economy / signon / boss call it on the host). net_boards(winId, boards, op) applies the host's board counts.
 extends RefCounted
 
 const Shell = preload("res://scripts/world/shell.gd")

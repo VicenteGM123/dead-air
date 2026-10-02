@@ -17,6 +17,9 @@
 # Fence climbs and the gate are Win objects with 0 boards (their break/repair calls return false).
 #
 # Renames (SPEC §3.2): Win.set (the BoardSet) -> Win.set_; BoardSet.set(slice, index, matrix) -> set_().
+# MP: Win.breakBoard / breakAll / repairBoard on the host send level.net_boards(id, boards, op) to the clients (op 0
+#   tear, 1 repair, 2 blast = breakAll in one message); on a client they do nothing unless level is applying such a
+#   message (boards are host state; the board animations, sounds and barricade:* events still play everywhere).
 extends RefCounted
 
 const Surf = preload("res://scripts/world/surfaces.gd")

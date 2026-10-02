@@ -25,6 +25,7 @@
 # kp_btn_2, kp_btn_4, kp_led; "da".mats {off, on, ledOff, ledOn}), exit_sign (DY).
 #
 # Not ported (engine plumbing): _bake()/_unbake() (the merged draw-call copy of an open door's blocker).
+# MP: play(instant, from) — `from` (the buyer's position) replaces the local player in away().
 extends RefCounted
 
 const Anim = preload("res://scripts/world/anim.gd")

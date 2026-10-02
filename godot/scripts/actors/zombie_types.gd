@@ -52,6 +52,10 @@
 #   or z.hitTest = Callable(origin, dir, maxDist) -> { dist, zone, head, mul } | null for custom shapes. Missing ->
 #   humanoid zones (head sphere on z.head, torso capsule, limb capsules) or, without a rig, one head sphere + body
 #   capsule.
+#   MP (zombies_net.gd; all optional): netModes (Array: wire enum of z.flags.mode for the snapshot),
+#   puppet(game, z, dt) (MP client, chase / attack states: cosmetic flavour driven by the replicated mode; must not
+#   call game.rand or change shared state), puppetEvent(game, z, kind, args) (MP client: a type event the host sent
+#   with zombies.netEvent(z, kind, args)). updateEntry also runs on client puppets: keep it cosmetic.
 # ---------------------------------------------------------------------------------------------------------------
 #
 # Builders: buildZombie(typeId, game, variant?) -> model { group, rig, animator, head, headR, def, baked, art,

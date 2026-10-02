@@ -78,6 +78,21 @@
 # SOUNDS: audio.gd voices fire / dry_fire / weapon_swap / melee / wallbuy from the events; this file plays reload_*,
 #   wpn_pump_rack, grenade_throw / grenade_bounce / grenade_explode, jumpcut_snip, studio_flash (the wonder system
 #   plays its own wonder cues and tele_throw).
+# MP: (online co-op; mp-combat, RECONCILE R17/R18) the companion scripts/game/weapons_net.gd (`weapons.mp`) exists only
+#   while an MP game runs (built by reset() when net.inGame; null in solo, so every MP branch is `mp != null`).
+#   Hits on zombies keep going through zombies.damage (the R17 funnel: a client's call predicts + forwards; in MP the
+#   info carries `shot` (per-shot dedupe) and `by`; the "points unchanged" fallback is off). Shootable hits on a
+#   client go to the host (weapons.net_shootableHits [[id, point, dir, weaponId, upgraded, melee, damage, cause]];
+#   the host runs onHit with info.by; an entry with `clientHit: true` keeps its onHit on the shooter). Grenades: the
+#   thrower simulates its projectile (weapons.net_nade(nid, origin, vel, fuse) -> others draw a copy), self-damage is
+#   local, the blast is a host-decided area action (_blastDamage on the host; a client sends weapons.net_nadeBoom(nid,
+#   pos, inHand, dmgMul); host -> all weapons.net_nadeFx(by, nid, pos, inHand); weapon:grenade carries `by` (+ remote)).
+#   The kill marker of a client comes with the host's zombie:kill (the predicted kill only shows a hit).
+#   Observers: stream 'wfx' (shots / melee / wind-ups / wonder launches, format in weapons_net.gd). Randomness: _r()
+#   = game.rand() in solo (same calls, same order), a per-peer stream in MP. Remote avatars:
+#   buildRemoteHeld(remote, id, upgraded, signal) (+ remote.postAnimate IK pose). resetLoadout() (alias loadout()):
+#   respawn kit. Arsenal messages host -> one peer: give(id, opts) · take(id) · takeCurrent() · upgrade(id, signal,
+#   source) · refillAll() · addGrenades(n) · resetLoadout(); weapons.net_confirm(hits, head) host -> thrower.
 #
 # Port notes (GDScript):
 #   * No renames of JS members. The fx pool helpers are GunFX (inner class, instance `fx`); the shared FX particle

@@ -36,6 +36,10 @@
 # windows) in sync with their animations.
 # Identical plays of one id within its `gap` (default 30 ms) at the same spot are merged, so a system
 # that also plays one of these by hand is harmless.
+# MP: (mp-combat) ui_hit / ui_kill only for the local player's damage (payload `by` == net.localId, RECONCILE R7);
+#   the listener and the area reverb / ambience follow net.viewPlayer() (the spectated teammate while off-air, R12).
+#   Remote players' weapon sounds are played by weapons_net.gd / wonder_net.gd (positional), their footsteps / jump /
+#   land / hurt by RemotePlayer (mp-core).
 #
 # Port notes (engine plumbing / known deviations):
 #   * No AudioContext: the engine is live from init() (no user-gesture unlock). The audio clock is real time.
