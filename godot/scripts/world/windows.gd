@@ -114,6 +114,7 @@ class Win extends RefCounted:
 	var outsidePos := Vector3.ZERO
 	var boardMeshes: Array = []
 	var _anim: Array = []
+	var _bulk := false               # MP: breakAll sends one message for all its boards
 
 	static func rnd(a: float, b: float) -> float:
 		return a + randf() * (b - a)
@@ -163,8 +164,19 @@ class Win extends RefCounted:
 		var m := pivot * Transform3D(Basis(q).scaled(Vector3(scale, scale, scale)), p)
 		set_.set_(k, index, m)
 
+	# MP: on a client only the host's board messages (level.net_boards) may change boards.
+	func _netBlocked() -> bool:
+		var n = game.get("net") if game != null else null
+		return n != null and n.inGame and n.isClient and not (game.level != null and game.level.get("_netApply") == true)
+
+	# MP host: the new count to every client (level.net_boards(id, boards, op) op 0 tear / 1 repair / 2 blast).
+	func _netSend(op: int) -> void:
+		var n = game.get("net") if game != null else null
+		if not _bulk and n != null and n.inGame and n.isHost:
+			n.toAll("level", "boards", [id, boards, op])
+
 	func breakBoard() -> bool:
-		if boards <= 0:
+		if boards <= 0 or _netBlocked():
 			return false
 		boards -= 1
 		var k := boards
@@ -181,16 +193,21 @@ class Win extends RefCounted:
 			game.events.emit("barricade:break", {"id": id, "boards": boards})
 		if game != null and game.audio != null:
 			game.audio.play("board_tear", {"pos": pos})
+		_netSend(0)
 		return true
 
 	func breakAll() -> int:
 		var n := 0
+		_bulk = true
 		while breakBoard():
 			n += 1
+		_bulk = false
+		if n > 0:
+			_netSend(2)
 		return n
 
 	func repairBoard() -> bool:
-		if type != "boarded" or boards >= SLICES:
+		if type != "boarded" or boards >= SLICES or _netBlocked():
 			return false
 		var k := boards
 		boards += 1
@@ -206,6 +223,7 @@ class Win extends RefCounted:
 			game.events.emit("barricade:repair", {"id": id, "boards": boards})
 		if game != null and game.audio != null:
 			game.audio.play("board_repair", {"pos": pos})
+		_netSend(1)
 		return true
 
 	func reset() -> void:

@@ -32,6 +32,7 @@
 # canvasTex(w, h, draw) is the shared "draw a canvas texture once" helper of the sponsors files.
 # CSS px -> canvas units of the 1920x1080 stretch stage (the layout is relative to the 4:3 picture, like the JS);
 # devicePixelRatio -> window pixels per canvas unit (capped at 1.5 like the JS).
+# MP: local presentation only — each peer draws its own commercial / replay overlay; nothing here is replicated.
 extends RefCounted
 
 const CANVAS_PATH := "res://scripts/gfx/canvas2d.gd"

@@ -66,6 +66,27 @@
 #   THREE.Sprite -> a camera-facing quad (spatial shader, _spriteMat); ShaderMaterials -> spatial shaders ported
 #   line by line (NOISE / TORNADO / BALL / WALL / FOG / BLADE / FAN). Godot's front faces are clockwise: every
 #   index buffer built here keeps three's front side by swapping the last two indices of each triangle.
+# MP (online co-op, MP_SPEC §2/§7, RECONCILE R14; every MP path is guarded by _mp() / _client() / _host(), solo runs the
+#   code above unchanged): the HOST owns the fight (phase, hp, hops, attacks, targets, adds, drops, defeat); clients run
+#   a puppet Baron from the host's replicated actions + a 15 Hz stream and never decide anything.
+#   Targets: net.targets(); the host keeps a FOCUS player (_focusId: the last attack target, else the nearest target,
+#   re-picked every 2.5 s or when it leaves the target set): he faces / drifts toward it. Volley and sweep targets are
+#   random targets (host randf); grab victim = nearest target within grabR at the windup start.
+#   VICTIM-SIDE HITS: every peer simulates the balls, the sweep and the grab strike and judges them ONLY against its
+#   own game.player (owner-authoritative health); the Baron never calls RemotePlayer.hurt().
+#   Damage: damage() on a client predicts the cosmetic feedback and forwards net_hit to the host; the host applies it
+#   with info.by (shooter) and awards economy.add(T.points.hit, "hit", by); the +10 dedupe key includes by + shot.
+#   Scaling: maxHp × MP_HP_MUL[players-1], adds per wave × MP_ADDS_MUL[players-1].
+#   Start: every peer runs the same start body (DY closed locally, shootable + wonder adapters registered); a player
+#   outside the yard is teleported to its YARD_SPOTS slot (each peer moves its own player). Off-air players respawn
+#   in the yard / everyone is revived at boss:defeated (mp-players listens to the events this file emits everywhere).
+#   MESSAGES (sys "boss"): host -> all: start (round, a0, maxHp) · phase (n, cracked, sparking) · trans (next) ·
+#     hop (to: Vector3) · volley (vid, o: Vector3, d: Vector3, target: int) · sweep (center: Vector3, a0, dir) ·
+#     grab (victim: int) · offair (on) · hitFx (point: Vector3, zone: String, by: int) (<= 12/s) ·
+#     defeated (round, summary: Dictionary (net.teamSummary()), addsPos: PackedVector3Array)
+#     client -> host: hit (amount, zone, point, dir, cause, weaponId, shot) · any -> others: ballPop (bid)
+#     stream 'bs' (host -> all, 15 Hz while intro / fight): PackedFloat32Array [x, y, z, yaw, hp, flags (1 hidden)],
+#     clients interpolate 100 ms behind (snap > 3 m, position ignored during a local hop).
 extends RefCounted
 
 const S := 2.5                                   # model units -> meters (boss_baron is sculpted at 1/2.5)
@@ -83,6 +104,11 @@ const FIXED_CAUSES := ["zapper", "boom_mic", "chroma_key", "wonder", "grenade", 
 const HEAD_GLB := "res://assets/runtime/boss/baron_head.glb"
 const FX_GLB := "res://assets/runtime/boss/baron_fx.glb"
 const STANDIN_GLB := "res://assets/runtime/boss/baron_standin.glb"
+const MP_HP_MUL := [1.0, 1.75, 2.5, 3.25]       # MP: boss HP by player count (RECONCILE R14)
+const MP_ADDS_MUL := [1.0, 1.3, 1.6, 2.0]       # MP: adds per wave by player count
+const YARD_SPOTS := [Vector2(37.0, -8.0), Vector2(37.0, -6.8), Vector2(38.2, -8.0), Vector2(38.2, -6.8)]
+const STREAM_EVERY := 1.0 / 15.0
+const INTERP := 0.1
 const EndingScript := preload("res://scripts/game/ending.gd")
 
 var B: Dictionary = Config.T.boss
@@ -604,6 +630,15 @@ var _fanMat: ShaderMaterial = null
 var _errT := -1e9
 var _faceTok := 0
 var _warned := {}
+# MP (see the header)
+var _mpN := 1
+var _focusId := 0
+var _focusT := 0.0
+var _vid := 0
+var _streamT := 0.0
+var _snaps: Array = []           # client: [recvRealNow, x, y, z, yaw] newest last (<= 8)
+var _netHidden := false
+var _hitFxT := 0.0
 
 func _init(g) -> void:
 	game = g
@@ -692,6 +727,62 @@ func _camShake(a: float, d: float) -> void:
 func _post():
 	return _gp(game.render, "post") if game.render != null else null
 
+# ------------------------------------------------------------------------------------------ MP helpers
+func _net():
+	return game.get("net")
+
+func _mp() -> bool:
+	var n = _net()
+	return n != null and n.inGame
+
+func _client() -> bool:
+	var n = _net()
+	return n != null and n.inGame and n.isClient
+
+func _host() -> bool:
+	var n = _net()
+	return n != null and n.inGame and n.isHost
+
+func _fromHost() -> bool:
+	var n = _net()
+	return n != null and n.inGame and n.isClient and int(n.sender) == 1
+
+func _targetable(p) -> bool:
+	var n = _net()
+	return p != null and n != null and n.isTargetable(p)
+
+# Host: the player the Baron faces / drifts toward (see the header).
+func _focusPlayer():
+	var n = _net()
+	var p = n.playerById(_focusId) if _focusId != 0 else null
+	if p == null or not _targetable(p) or _focusT <= 0.0:
+		var q = n.nearestPlayer(pos, true)
+		if q != null:
+			_focusId = n.idOf(q)
+			p = q
+			_focusT = 2.5
+		elif not _targetable(p):
+			p = null
+	return p
+
+# Sets the focus to an attack's target for a while.
+func _setFocus(p) -> void:
+	_focusId = _net().idOf(p)
+	_focusT = 2.5
+
+func _randomTarget():
+	var t: Array = _net().targets()
+	if t.is_empty():
+		return null
+	return t[mini(t.size() - 1, int(randf() * t.size()))]
+
+# Adds per wave (MP: scaled by the player count, cap scaled too).
+func _addsN(base: int, cap: int, alive: int) -> int:
+	if not _mp():
+		return mini(base, cap - alive)
+	var m: float = MP_ADDS_MUL[clampi(_mpN, 1, 4) - 1]
+	return mini(roundi(base * m), roundi(cap * m) - alive)
+
 # ------------------------------------------------------------------------------------------ lifecycle
 func init() -> void:
 	var ev = game.events
@@ -704,6 +795,9 @@ func init() -> void:
 	ev.on("zombie:kill", drop)
 	ev.on("zombie:despawn", drop)
 	ev.on("game:over", over)
+	var n = _net()
+	if n != null and n.has_method("registerStream"):
+		n.registerStream("bs", "boss")
 	if ending != null and ending.has_method("init"):
 		ending.init()
 
@@ -726,6 +820,8 @@ func start(round_ = null) -> bool:
 	var g = game
 	if active:
 		return false
+	if _client():
+		return false     # MP: only the host starts the fight (clients get net_start)
 	if not ((round_ is int or round_ is float) and is_finite(float(round_))):
 		var rr = _gp(g.rounds, "round", 0)
 		round_ = rr if rr else 1
@@ -733,8 +829,34 @@ func start(round_ = null) -> bool:
 	if g.scene == null:
 		push_warning("[boss] no game.scene (render missing): fight not started")
 		return false
-	round = maxi(1, int(round_))
-	maxHp = float(B.hpBase + B.hpPerRound * round)
+	var r := maxi(1, int(round_))
+	var mhp := float(B.hpBase + B.hpPerRound * r)
+	if _host():
+		_mpN = clampi(_net().players().size(), 1, 4)
+		mhp *= float(MP_HP_MUL[_mpN - 1])
+		var a0m := _pickRingAngleMP(null)
+		_net().toAll("boss", "start", [r, a0m, mhp])
+		_startAt(r, mhp, a0m)
+		return true
+	_startAt(r, mhp, null)
+	return true
+
+# MP client: the host started the fight.
+func net_start(r, a0, mhp) -> void:
+	if not _fromHost() or not (a0 is float or a0 is int):
+		return
+	if active:
+		end({"quiet": true})
+	_ensureBuilt()
+	if game.scene == null:
+		return
+	_startAt(maxi(1, int(r)), float(mhp), float(a0))
+
+# The start body (every peer). a0 = the ring angle (null: solo, picked here as before).
+func _startAt(r: int, mhp: float, a0_) -> void:
+	var g = game
+	round = r
+	maxHp = mhp
 	hp = maxHp
 	active = true
 	state = "intro"
@@ -759,9 +881,15 @@ func start(round_ = null) -> bool:
 	_hmFrame = -1
 	_drops = {}
 	_saved = {"round": _gp(g.rounds, "round")}
+	_vid = 0
+	_focusId = 0
+	_focusT = 0.0
+	_snaps.clear()
+	_netHidden = false
+	_streamT = 0.0
 	# position: the ring point with the best view from the player (7–11 m away, not behind the tower)
 	var p: Vector3 = _playerPos() if g.player != null else TOWER
-	var a0 := _pickRingAngle(p, null)
+	var a0: float = float(a0_) if a0_ != null else _pickRingAngle(p, null)
 	_ringA = a0
 	pos = _ringPoint(a0, HOVER[1])
 	_hoverY = HOVER[1]
@@ -805,7 +933,7 @@ func start(round_ = null) -> bool:
 		_throwSwitch()   # the egg throws the knife switch itself at step 5
 	g.events.emit("machine:boss_start", {"round": round})
 	# round paused (rounds reads boss.active) + every living zombie dissolves (no points; requeued for later)
-	if g.zombies != null:
+	if g.zombies != null and not _client():
 		_fc(g.zombies, "despawnAll", [{"fx": true, "requeue": true}])
 	_adds.clear()
 	_closeDY()
@@ -815,7 +943,19 @@ func start(round_ = null) -> bool:
 	_registerShootable()
 	_trackFeed(true)
 	_camShake(0.25, 0.4)
-	return true
+	if _mp():
+		_teleportIn()
+
+# MP: a player outside the yard is moved to its arena slot (DY slams shut behind the static wall).
+func _teleportIn() -> void:
+	var n = _net()
+	var p = game.player
+	if p == null or p.get("offAir") == true or _gp(p, "area") == "yard":
+		return
+	var s: Vector2 = YARD_SPOTS[clampi(n.slotOf(n.localId), 0, YARD_SPOTS.size() - 1)]
+	_fc(p, "teleport", [s.x, s.y, yawTo(TOWER.x - s.x, TOWER.z - s.y)])
+	_whiteout = maxf(_whiteout, 0.3)
+	_play("door_poof", {"pos": Vector3(s.x, 1.2, s.y), "vol": 0.9})
 
 # Stops everything and restores the world. keepEnding: the ending sequence keeps running (it calls
 # cleanupAfterEnding() when it is done).
@@ -865,10 +1005,16 @@ func update(dt: float) -> void:
 		_animateModel(0.0, false)
 		return
 	_t += dt
+	var cl := _client()
+	if cl:
+		_applyStream(dt)
 	if state == "intro":
 		_updateIntro(dt)
 	elif state == "fight":
-		_updateFight(dt)
+		if cl:
+			_puppetFight(dt)
+		else:
+			_updateFight(dt)
 	_updateBalls(dt)
 	_updateSweep(dt)
 	_updateAddsTick(dt)
@@ -877,6 +1023,12 @@ func update(dt: float) -> void:
 	_updateFeedTarget(dt)
 	_updateEnv(dt)
 	_updateWall(dt)
+	if _host():
+		_hitFxT = maxf(0.0, _hitFxT - rdt)
+		_streamT -= rdt
+		if _streamT <= 0.0:
+			_streamT = STREAM_EVERY
+			_net().stream("bs", PackedFloat32Array([pos.x, pos.y, pos.z, yaw, hp, 1.0 if _hidden else 0.0]))
 
 # The wall of static in the DY doorway unrolls from the top in 0.3 s, then keeps crawling.
 func _updateWall(dt: float) -> void:
@@ -943,7 +1095,8 @@ func _updateIntro(dt: float) -> void:
 		_play("boss_voice", {"pos": pos, "syllables": 5})
 	if t >= INTRO.end:
 		_dotScale(1.0)
-		_beginPhase(1)
+		if not _client():
+			_beginPhase(1)     # MP clients wait for the host's net_phase
 
 # ------------------------------------------------------------------------------------------ fight
 func _beginPhase(n: int) -> void:
@@ -969,9 +1122,34 @@ func _beginPhase(n: int) -> void:
 		_setFace("laugh")
 	if n == 3:
 		_enterDeadAir()
+	if _host():
+		_net().toAll("boss", "phase", [n, _cracked, _sparking])
 	g.events.emit("machine:boss_phase", {"phase": n})
-	if prev > 0:
+	if prev > 0 and not _client():
 		_dropReel()
+
+# MP client: the host began phase n (after the intro, a transition or a debug jump).
+func net_phase(n, cracked, sparking) -> void:
+	if not _fromHost() or not active or state == "defeated":
+		return
+	if state == "intro":
+		_introT = maxf(_introT, INTRO.end)
+		_introFlags = {"swirl": true, "form": true, "laugh": true}
+		tornado.group.scale = Vector3.ONE
+	_transT = 0.0
+	_hop = null
+	_restoreScale()
+	root.visible = true
+	_cracked = bool(cracked)
+	head.crack.visible = _cracked
+	_sparking = bool(sparking)
+	_beginPhase(clampi(int(n), 1, 3))
+
+# MP client: the phase-change recoil.
+func net_trans(next) -> void:
+	if not _fromHost() or not active or state != "fight":
+		return
+	_applyTrans(clampi(int(next), 2, 3))
 
 func _updateFight(dt: float) -> void:
 	var g = game
@@ -984,6 +1162,9 @@ func _updateFight(dt: float) -> void:
 		return
 	var n := phase
 	var p = g.player
+	if _host():
+		_focusT -= dt
+		p = _focusPlayer()
 	if n == 1 or n == 2:
 		# channel hopping (phase 2: only between sweeps)
 		if _hop == null:
@@ -1006,7 +1187,10 @@ func _updateFight(dt: float) -> void:
 				_startSweep()
 	elif n == 3:
 		_updateDrift(dt)
-		_updateGrab(dt)
+		if _mp():
+			_updateGrabMP(dt)
+		else:
+			_updateGrab(dt)
 		_updateOffAir(dt)
 	# adds
 	_updateAdds(dt, n)
@@ -1032,6 +1216,13 @@ func _checkPhase() -> void:
 		next = 3
 	if next == 0:
 		return
+	if _host():
+		_net().toAll("boss", "trans", [next])
+	_applyTrans(next)
+	_dropReel()
+
+# The phase-change recoil (every peer: the host from _checkPhase, clients from net_trans).
+func _applyTrans(next: int) -> void:
 	_nextPhase = next
 	_transT = TRANSITION
 	_hop = null
@@ -1051,7 +1242,6 @@ func _checkPhase() -> void:
 	_flash(v, "#E0C8FF", 12, 0.4)
 	_camShake(0.4, 0.5)
 	head.wobble = 1.0
-	_dropReel()
 
 func _dropReel() -> void:
 	var g = game
@@ -1074,6 +1264,9 @@ func _dropReel() -> void:
 
 # ------------------------------------------------------------------------------------------ helpers
 func _playerPos() -> Vector3:
+	if _host():
+		var f = _focusPlayer()
+		return f.pos if f != null else TOWER    # MP: the focus player
 	var p = _gp(game.player, "pos")
 	return p if p is Vector3 else TOWER
 
@@ -1104,6 +1297,36 @@ func _pickRingAngle(p: Vector3, from) -> float:
 		var oz := p.z + dz * k - TOWER.z
 		if Vector2(ox, oz).length() < 2.8 and k > 0.05 and k < 0.95:
 			s -= 12.0
+		if from is Vector3 and Vector2(v3.x - from.x, v3.z - from.z).length() < 5.0:
+			s -= 20.0
+		if s > bestS:
+			bestS = s
+			best = a
+	return best
+
+# MP host: the ring angle scored against every target (mean of the solo scores; one jitter roll per candidate).
+func _pickRingAngleMP(from) -> float:
+	var ts: Array = _net().targets()
+	if ts.is_empty():
+		return _pickRingAngle(TOWER + Vector3(0, 0, 6), from)
+	var best := 0.0
+	var bestS := -INF
+	for i in 16:
+		var a := (i / 16.0) * TAU + (randf() - 0.5) * 0.3
+		var v3 := _ringPoint(a, 0.0)
+		var s := randf() * 1.5
+		for q in ts:
+			var p: Vector3 = q.pos
+			var dx := v3.x - p.x
+			var dz := v3.z - p.z
+			var sc := -absf(Vector2(dx, dz).length() - 9.0)
+			var L2 := dx * dx + dz * dz
+			if L2 == 0.0:
+				L2 = 1.0
+			var k := clampf(((TOWER.x - p.x) * dx + (TOWER.z - p.z) * dz) / L2, 0.0, 1.0)
+			if Vector2(p.x + dx * k - TOWER.x, p.z + dz * k - TOWER.z).length() < 2.8 and k > 0.05 and k < 0.95:
+				sc -= 12.0
+			s += sc / ts.size()
 		if from is Vector3 and Vector2(v3.x - from.x, v3.z - from.z).length() < 5.0:
 			s -= 20.0
 		if s > bestS:
@@ -1800,10 +2023,24 @@ func _animateModel(dt: float, real: bool) -> void:
 # ============================================================================================ attacks
 # ---- channel hopping: CRT dot-out, jump along the ring, dot-in
 func _startHop() -> void:
-	var p: Vector3 = _playerPos() if game.player != null else TOWER
-	var a := _pickRingAngle(p, pos)
+	var a: float
+	if _host():
+		a = _pickRingAngleMP(pos)
+	else:
+		var p: Vector3 = _playerPos() if game.player != null else TOWER
+		a = _pickRingAngle(p, pos)
 	_ringA = a
 	_hop = {"t": 0.0, "to": _ringPoint(a, _hoverY), "moved": false}
+	if _host():
+		_net().toAll("boss", "hop", [_hop.to])
+	_play("boss_teleport", {"pos": pos})
+	_vel = null
+
+# MP client: a channel hop toward `to`.
+func net_hop(to) -> void:
+	if not _fromHost() or not active or state != "fight" or not (to is Vector3):
+		return
+	_hop = {"t": 0.0, "to": to, "moved": false}
 	_play("boss_teleport", {"pos": pos})
 	_vel = null
 
@@ -1817,7 +2054,7 @@ func _updateHop(dt: float) -> void:
 		_burst(Vector3(pos.x, pos.y + 1.2, pos.z), {"shape": "static", "count": 22, "speed": 4, "size": 0.22, "life": 0.5})
 		pos.x = h.to.x
 		pos.z = h.to.z
-		if game.player != null:
+		if game.player != null and not _client():
 			var pp := _playerPos()
 			yaw = yawTo(pp.x - pos.x, pp.z - pos.z)
 		_dotScale(0.0)
@@ -1841,23 +2078,59 @@ func _updateHop(dt: float) -> void:
 # ---- static balls: volleys of 3, weakly homing
 func _volley() -> void:
 	var p = game.player
+	var tid := 0
+	if _host():
+		p = _randomTarget()
+		if p == null:
+			return
+		_setFocus(p)
+		tid = _focusId
 	if p == null or not _gp(p, "alive", false):
 		return
 	_gesture = {"kind": "throw", "t": 0.0}
 	var o := DAU.worldPos(J.handR)
 	o.y += 0.2
-	var pp := _playerPos()
+	var pp: Vector3 = p.pos if _host() else _playerPos()
 	var target := Vector3(pp.x, pp.y + 1.1, pp.z)
 	var d := (target - o).normalized()
+	if _host():
+		_vid += 1
+		_net().toAll("boss", "volley", [_vid, o, d, tid])
+	_spawnVolley(o, d, _vid if _host() else -1, tid)
+	if randf() < 0.35 and _voiceT <= 0.0:
+		_voiceT = 3.0
+		_play("boss_voice", {"pos": pos, "syllables": 3})
+
+func _spawnVolley(o: Vector3, d: Vector3, vid: int, tid: int) -> void:
 	var spread := 0.24
 	for i in range(-1, 2):
 		var dir := d.rotated(Vector3.UP, i * spread)
 		dir.y += absf(i) * 0.04
 		dir = dir.normalized()
-		_spawnBall(o, dir * B.p1.ballSpeed, i * 0.06)
+		var b = _spawnBall(o, dir * B.p1.ballSpeed, i * 0.06)
+		if b != null:
+			b.id = vid * 3 + (i + 1) if vid >= 0 else -1
+			b.tgt = tid
+
+# MP client: a volley of 3 balls homing on peer `target`.
+func net_volley(vid, o, d, target) -> void:
+	if not _fromHost() or not active or state != "fight" or not (o is Vector3) or not (d is Vector3):
+		return
+	_gesture = {"kind": "throw", "t": 0.0}
+	_spawnVolley(o, (d as Vector3).normalized(), int(vid), int(target))
 	if randf() < 0.35 and _voiceT <= 0.0:
 		_voiceT = 3.0
 		_play("boss_voice", {"pos": pos, "syllables": 3})
+
+# MP: another peer's player was hit by ball `bid` (victim-side): pop it here too.
+func net_ballPop(bid) -> void:
+	if not _mp() or not active:
+		return
+	for x in _balls:
+		if x.alive and int(x.get("id", -1)) == int(bid) and int(bid) >= 0:
+			_play("hurt_static", {"pos": x.pos, "vol": 0.8})
+			_popBall(x, true)
+			return
 
 func _ballPool() -> void:
 	if _ballMat != null:
@@ -1890,6 +2163,8 @@ func _spawnBall(from: Vector3, vel: Vector3, delay: float = 0.0):
 		b = {"mesh": mesh, "halo": halo, "pos": Vector3.ZERO, "vel": Vector3.ZERO, "alive": false}
 		_balls.append(b)
 	b.alive = true
+	b.id = -1
+	b.tgt = 0
 	b.life = 5.5
 	b.delay = delay
 	b.trail = 0.0
@@ -1929,11 +2204,22 @@ func _updateBalls(dt: float) -> void:
 	if _ballMat != null:
 		_ballMat.set_shader_parameter("uTime", _t)
 	var maxTurn := deg_to_rad(15.0) * dt
+	var mp := _mp()
 	var palive: bool = p != null and _gp(p, "alive", false)
-	var pp := _playerPos()
+	var pp: Vector3 = _playerPos() if not mp else (_gp(p, "pos", TOWER) as Vector3)
+	var calive := palive
+	if mp and p != null and (p.get("downed") == true or p.get("offAir") == true):
+		calive = false
+	var halive := palive
+	var hp_ := pp
 	for b in _balls:
 		if not b.alive:
 			continue
+		if mp:
+			# MP: homing on the volley's target (by peer id), collision with the LOCAL player (victim-side)
+			var tq = _net().playerById(int(b.get("tgt", 0))) if int(b.get("tgt", 0)) != 0 else null
+			halive = tq != null and _targetable(tq)
+			hp_ = tq.pos if halive else pp
 		if b.delay > 0.0:
 			b.delay -= dt
 			if b.delay > 0.0:
@@ -1945,8 +2231,8 @@ func _updateBalls(dt: float) -> void:
 			_popBall(b)
 			continue
 		# weak homing toward the player's chest
-		if palive:
-			var v: Vector3 = (Vector3(pp.x, pp.y + 1.0, pp.z) - b.pos).normalized()
+		if halive:
+			var v: Vector3 = (Vector3(hp_.x, hp_.y + 1.0, hp_.z) - b.pos).normalized()
 			var v2: Vector3 = b.vel.normalized()
 			var ang := v2.angle_to(v)
 			if ang > 1e-4:
@@ -1973,7 +2259,7 @@ func _updateBalls(dt: float) -> void:
 			_popBall(b)
 			continue
 		# player capsule (feet+0.3 .. feet+1.5)
-		if palive:
+		if calive:
 			var cy := clampf(b.pos.y, pp.y + 0.3, pp.y + 1.5)
 			var dx: float = b.pos.x - pp.x
 			var dy: float = b.pos.y - cy
@@ -1982,6 +2268,8 @@ func _updateBalls(dt: float) -> void:
 			if dx * dx + dy * dy + dz * dz < pow(0.28 + (pr if pr else 0.38), 2.0):
 				_fc(p, "hurt", [B.p1.ballDmg, b.pos])
 				_play("hurt_static", {"pos": b.pos, "vol": 0.8})
+				if mp and int(b.get("id", -1)) >= 0:
+					_net().toOthers("boss", "ballPop", [int(b.id)])
 				_popBall(b, true)
 				continue
 		if b.pos.y < _floorY(b.pos.x, b.pos.z) + 0.15:
@@ -2036,15 +2324,32 @@ func _sweepAssets() -> void:
 func _startSweep() -> void:
 	var g = game
 	var p = g.player
+	if _host():
+		p = _randomTarget()
+		if p != null:
+			_setFocus(p)
 	if p == null:
 		return
 	_sweepAssets()
 	var fy := _floorY()
 	var center := Vector3(pos.x, fy + 0.03, pos.z)
-	var pp := _playerPos()
+	var pp: Vector3 = p.pos if _host() else _playerPos()
 	var aP := atan2(pp.z - center.z, pp.x - center.x)
 	var dir := 1.0 if randf() < 0.5 else -1.0
 	var a0 := aP - dir * PI / 2.0
+	if _host():
+		_net().toAll("boss", "sweep", [center, a0, dir])
+	_startSweepAt(center, a0, dir)
+
+# MP client: the host's sweep (center, start angle, direction).
+func net_sweep(center, a0, dir) -> void:
+	if not _fromHost() or not active or state != "fight" or not (center is Vector3):
+		return
+	_stopSweep()
+	_sweepAssets()
+	_startSweepAt(center, float(a0), float(dir))
+
+func _startSweepAt(center: Vector3, a0: float, dir: float) -> void:
 	_sweep = {"phase": "tele", "t": 0.0, "center": center, "a0": a0, "dir": dir, "prevA": a0, "hit": false}
 	var bl = _blade
 	bl.group.position = center
@@ -2147,7 +2452,7 @@ func _updateAdds(dt: float, n: int) -> void:
 		_addsT -= dt
 		if _addsT <= 0.0:
 			_addsT = float(B.p1.addsEvery)
-			_spawnAdds("tuned_in", mini(3, B.p1.addsMax - alive))
+			_spawnAdds("tuned_in", _addsN(3, B.p1.addsMax, alive))
 	elif n == 2:
 		if not _hasAdd("forecaster"):
 			_fcT -= dt
@@ -2157,12 +2462,12 @@ func _updateAdds(dt: float, n: int) -> void:
 		_socksT -= dt
 		if _socksT <= 0.0:
 			_socksT = float(B.p2.socksEvery)
-			_spawnAdds("sock_hopper", mini(6, 14 - alive))
+			_spawnAdds("sock_hopper", _addsN(6, 14, alive))
 	elif n == 3:
 		_addsT -= dt
 		if _addsT <= 0.0:
 			_addsT = float(B.p3.addsEvery)
-			_spawnAdds("tuned_in", mini(3, B.p3.addsMax - alive))
+			_spawnAdds("tuned_in", _addsN(3, B.p3.addsMax, alive))
 
 func _updateAddsTick(dt: float) -> void:
 	_voiceT = maxf(0.0, _voiceT - dt)
@@ -2269,6 +2574,159 @@ func _updateGrab(dt: float) -> void:
 		_grab = null
 		_grabCd = 2.4
 
+# ---- phase 3: the grab in MP: the host picks the victim (nearest target within grabR) at the windup start; every
+# peer runs the windup / strike / recover timeline; only the victim's peer applies the damage (victim-side).
+func _updateGrabMP(dt: float) -> void:
+	if _grab == null:
+		_grabCd -= dt
+		if _grabCd > 0.0:
+			return
+		var best = null
+		var bd: float = B.p3.grabR
+		for q in _net().targets():
+			var d := Vector2(q.pos.x - pos.x, q.pos.z - pos.z).length()
+			if d < bd:
+				bd = d
+				best = q
+		if best == null:
+			return
+		_setFocus(best)
+		_net().toAll("boss", "grab", [_focusId])
+		_beginGrab(_focusId)
+		return
+	_grabTimeline(dt)
+
+func _beginGrab(victim: int) -> void:
+	_grab = {"phase": "windup", "t": 0.0, "victim": victim}
+	_play("boss_grab", {"pos": pos, "vol": 1.1})
+	if offAir:
+		_revealT = maxf(_revealT, B.p3.grabWindup + 0.5)
+	_voice("baron_laugh", 0.8)
+
+# MP client: the host's grab windup on `victim`.
+func net_grab(victim) -> void:
+	if not _fromHost() or not active or state != "fight":
+		return
+	_beginGrab(int(victim))
+
+func _grabTimeline(dt: float) -> void:
+	var gr = _grab
+	if gr == null:
+		return
+	gr.t += dt
+	if gr.phase == "windup" and gr.t >= B.p3.grabWindup:
+		gr.phase = "strike"
+		gr.t = 0.0
+		_grabStrike(int(gr.get("victim", 0)))
+	elif gr.phase == "strike" and gr.t >= 0.2:
+		gr.phase = "recover"
+		gr.t = 0.0
+	elif gr.phase == "recover" and gr.t >= 0.8:
+		_grab = null
+		_grabCd = 2.4
+
+# The strike: the victim's own peer applies the hit (80 + throw); the others only show the outcome.
+func _grabStrike(victim: int) -> void:
+	var n = _net()
+	var v = n.playerById(victim) if victim != 0 else null
+	var ok: bool = v != null and _gp(v, "alive", false) and v.get("downed") != true and v.get("offAir") != true
+	var pp: Vector3 = v.pos if v != null else pos
+	var dx := pp.x - pos.x
+	var dz := pp.z - pos.z
+	var d := Vector2(dx, dz).length()
+	if ok and d < B.p3.grabR + 0.7:
+		var landed := true
+		if v == game.player:
+			landed = bool(_fc(v, "hurt", [B.p3.grabDmg, pos]))
+			if landed:
+				var l := d if d else 1.0
+				_fc(v, "knockback", [Vector3(dx / l, 0, dz / l) * (B.p3.throw * 6.0)])
+				var pv = _gp(v, "vel")
+				if pv is Vector3:
+					pv.y = maxf(pv.y, 6.5)
+					_sp(v, "vel", pv)
+				_camShake(0.6, 0.5)
+		if landed:
+			_burst(Vector3(pp.x, pp.y + 1.2, pp.z), {"shape": "static", "count": 30, "speed": 5, "size": 0.2})
+			_play("boss_hurt", {"pos": pos, "vol": 0.6, "rate": 1.4})
+	else:
+		_burst(Vector3(pos.x + dx * 0.4, _floorY() + 0.2, pos.z + dz * 0.4), {"shape": "puff", "count": 8, "speed": 2, "size": 0.3})
+
+# ---- MP client fight: no decisions, only the local timelines + the host's stream
+func _puppetFight(dt: float) -> void:
+	_phaseT += dt
+	if _transT > 0.0:
+		_transT -= dt
+	if _hop != null:
+		_updateHop(dt)
+	_grabTimeline(dt)
+	_puppetOffAir(dt)
+
+func _puppetOffAir(dt: float) -> void:
+	var hidden := offAir and _netHidden
+	if hidden != _hidden:
+		_hidden = hidden
+		_setLayers(Config.LAYERS.TV_ONLY if hidden else Config.LAYERS.WORLD)
+		for s in _shimmer:
+			s.visible = hidden
+	if offAir:
+		if _offAirLoop != null:
+			_fc(_offAirLoop, "setPos", [pos])
+		if hidden and randf() < dt * 9.0:
+			var v := Vector3(pos.x + (randf() - 0.5) * 1.6, pos.y + randf() * 3.2 - 1.5, pos.z + (randf() - 0.5) * 1.6)
+			_burst(v, {"shape": "static", "count": 1, "speed": 0.5, "size": 0.16, "life": 0.4})
+
+# MP client: snapshot stream (see the header).
+func net_stream_bs(_from, data) -> void:
+	if not _client() or int(_net().sender) != 1 or not active or state == "defeated":
+		return
+	if not (data is PackedFloat32Array) or data.size() < 6:
+		return
+	_snaps.append([float(game.time.realNow), data[0], data[1], data[2], data[3]])
+	if _snaps.size() > 8:
+		_snaps.pop_front()
+	hp = data[4]
+	_netHidden = (int(data[5]) & 1) != 0
+
+# Interpolates the newest snapshots INTERP s behind their arrival (positions ignored during a local hop).
+func _applyStream(dt: float) -> void:
+	if _snaps.is_empty() or state == "defeated":
+		return
+	var rt: float = float(game.time.realNow) - INTERP
+	var a: Array = _snaps[0]
+	var c: Array = _snaps[_snaps.size() - 1]
+	var x: float = c[1]
+	var y: float = c[2]
+	var z: float = c[3]
+	var yw: float = c[4]
+	if rt <= float(a[0]):
+		x = a[1]
+		y = a[2]
+		z = a[3]
+		yw = a[4]
+	else:
+		for i in range(_snaps.size() - 1):
+			var s0: Array = _snaps[i]
+			var s1: Array = _snaps[i + 1]
+			if rt >= float(s0[0]) and rt <= float(s1[0]):
+				var k := clampf((rt - float(s0[0])) / maxf(1e-4, float(s1[0]) - float(s0[0])), 0.0, 1.0)
+				if Vector3(s1[1] - s0[1], 0, s1[3] - s0[3]).length() > 3.0:
+					k = 1.0                                   # a hop: snap
+				x = lerpf(s0[1], s1[1], k)
+				y = lerpf(s0[2], s1[2], k)
+				z = lerpf(s0[3], s1[3], k)
+				yw = lerp_angle(s0[4], s1[4], k)
+				break
+	yaw = yw
+	if _hop != null:
+		return
+	var prev := pos
+	pos = Vector3(x, y, z)
+	if dt > 0.0:
+		_vel = (pos - prev) / maxf(1e-4, dt)
+		if (_vel as Vector3).length() > 20.0:
+			_vel = null
+
 # ---- phase 3: OFF-AIR (TV only) with the 10 % shimmer
 func _updateOffAir(dt: float) -> void:
 	if offAir:
@@ -2315,7 +2773,17 @@ func _setOffAir(on: bool) -> void:
 			_setLayers(Config.LAYERS.WORLD)
 			for s in _shimmer:
 				s.visible = false
+	if _host():
+		_net().toAll("boss", "offair", [on])
 	g.events.emit("machine:boss_offair", {"on": on})
+
+# MP client: the host's off-air toggle.
+func net_offair(on) -> void:
+	if not _fromHost() or not active:
+		return
+	if not bool(on):
+		_netHidden = false
+	_setOffAir(bool(on))
 
 # ============================================================================================ environment
 # The moon (a textured plane in the sky dome, renderOrder -8 in the JS) and the stars (a points cloud).
@@ -2520,8 +2988,8 @@ func _openDY(quiet: bool) -> void:
 	var g = game
 	if _wall != null:
 		DAU.detach(_wall)
-	if _dy != null and _dy.wasOpen:
-		_fc(g.level, "openDoor", [DY.id, {"instant": quiet}])
+	if _dy != null and _dy.wasOpen and not _client():
+		_fc(g.level, "openDoor", [DY.id, {"instant": quiet}])     # MP: the host's door open replicates
 	_dy = null
 
 # ============================================================================================ damage
@@ -2589,6 +3057,10 @@ func damage(amount: float, info: Dictionary = {}) -> bool:
 	var g = game
 	if not active or state != "fight" or not (amount > 0.0):
 		return false
+	if _client():
+		return _clientDamage(amount, info)
+	var mp := _mp()
+	var by: int = int(info.get("by")) if (mp and (info.get("by") is int or info.get("by") is float)) else (int(_net().localId) if mp else 1)
 	var cause: String = info.get("cause") if info.get("cause") else ("melee" if info.get("melee") else "bullet")
 	var zone = info.get("zone") if ZONE_MUL.has(info.get("zone", "")) else null
 	var mul := 1.0
@@ -2634,20 +3106,77 @@ func damage(amount: float, info: Dictionary = {}) -> bool:
 	# points: +10 per damaging hit event (one per frame + weapon)
 	if info.get("points") != false:
 		var key := "%d|%s" % [frame, str(info.get("weaponId")) if info.get("weaponId") else cause]
+		if mp:
+			key = "%d|%s|%s" % [by, str(info.get("shot", frame)), str(info.get("weaponId")) if info.get("weaponId") else cause]
 		if _ptKey != key:
 			_ptKey = key
 			if g.economy != null:
-				_fc(g.economy, "add", [Config.T.points.hit, "hit"])
-	if info.get("hitmarker") != false and _hmFrame != frame:
+				if mp:
+					_fc(g.economy, "add", [Config.T.points.hit, "hit", by])
+				else:
+					_fc(g.economy, "add", [Config.T.points.hit, "hit"])
+	if info.get("hitmarker") != false and _hmFrame != frame and (not mp or by == int(_net().localId)):
 		_hmFrame = frame
 		if g.hud != null:
 			_fc(g.hud, "hitmarker", [zone == "screen" or zone == "antenna", killed])
+	if mp and _hitFxT <= 0.0:
+		_hitFxT = 1.0 / 12.0
+		_net().toAll("boss", "hitFx", [point, str(zone) if zone != null else "body", by])
 	g.events.emit("boss:hit", {"dmg": dmg, "zone": zone, "point": point, "cause": cause, "weaponId": info.get("weaponId"), "hp": hp})
 	if killed:
 		_defeat()
 		return true
 	_checkPhase()
 	return false
+
+# MP client: cosmetic feedback now (once per frame), the damage on the host (net_hit).
+func _clientDamage(amount: float, info: Dictionary) -> bool:
+	var frame: int = game.time.frame
+	var zone = info.get("zone") if ZONE_MUL.has(info.get("zone", "")) else null
+	var point: Vector3 = info.point if info.get("point") is Vector3 else _screenWorld()
+	if _fxFrame != frame:
+		_fxFrame = frame
+		_hitFeedback(point, str(zone) if zone != null else "body")
+		if info.get("hitmarker") != false and game.hud != null:
+			_fc(game.hud, "hitmarker", [zone == "screen" or zone == "antenna", false])
+	var cause: String = str(info.get("cause")) if info.get("cause") else ("melee" if info.get("melee") else "bullet")
+	var dir: Vector3 = info.dir if info.get("dir") is Vector3 else Vector3.ZERO
+	_net().toHost("boss", "hit", [float(amount), str(zone) if zone != null else "", point, dir, cause,
+		str(info.get("weaponId")) if info.get("weaponId") else "", int(info.get("shot", frame))])
+	return false
+
+func _hitFeedback(point: Vector3, zone: String) -> void:
+	_burst(point, {"shape": "static", "count": 3, "speed": 2.5, "size": 0.12, "life": 0.35})
+	_burst(point, {"shape": "spark", "count": 3 if zone == "body" else 6, "speed": 5, "size": 0.045, "life": 0.25, "colors": ["#FFE27A", "#FFFFFF"] if zone == "antenna" else ["#FFFFFF", "#C9A0FF"]})
+	head.wobble = minf(1.0, head.wobble + (0.35 if zone == "screen" else 0.12))
+	_shake = minf(1.0, _shake + 0.15)
+
+# MP host: a client's hit on the Baron.
+func net_hit(amount, zone, point, dir, cause, weaponId, shot) -> void:
+	if not _host() or not active or state != "fight" or not (amount is float or amount is int):
+		return
+	var info := {"by": int(_net().sender), "shot": int(shot) if (shot is int or shot is float) else 0, "hitmarker": false,
+		"cause": str(cause) if cause else "bullet"}
+	if ZONE_MUL.has(str(zone)):
+		info.zone = str(zone)
+	if point is Vector3:
+		info.point = point
+	if dir is Vector3 and (dir as Vector3).length_squared() > 0.0:
+		info.dir = dir
+	if weaponId:
+		info.weaponId = str(weaponId)
+	damage(float(amount), info)
+
+# MP: the host applied someone's hit: sparks / wobble here too (the shooter already showed them).
+func net_hitFx(point, zone, by) -> void:
+	if not _fromHost() or not active or not (point is Vector3) or int(by) == int(_net().localId):
+		return
+	if offAir:
+		_revealT = float(B.p3.reveal)
+	_hitFeedback(point, str(zone))
+	if _voiceT <= 0.0 and randf() < 0.25:
+		_voiceT = 1.6
+		_play("boss_hurt", {"pos": pos, "vol": 0.9})
 
 # ---- shootable (bullets + melee through weapons.gd)
 func _registerShootable() -> void:
@@ -2746,6 +3275,15 @@ func _uninstallAdapters() -> void:
 # ============================================================================================ defeat
 func _defeat() -> void:
 	var g = game
+	var summary := {}
+	if _host():
+		summary = _net().teamSummary()
+		var ap := PackedVector3Array()
+		for z in _adds:
+			var zp = _gp(z, "pos")
+			if zp is Vector3 and not _gp(z, "dead", false):
+				ap.append(zp)
+		_net().toAll("boss", "defeated", [round, summary, ap])
 	hp = 0.0
 	state = "defeated"
 	_clearBalls()
@@ -2761,10 +3299,41 @@ func _defeat() -> void:
 	_completeEgg()
 	g.events.emit("boss:defeated", {"round": round})
 	if ending != null and ending.has_method("play"):
-		ending.play({"round": round})
+		if _mp():
+			ending.play({"round": round, "summary": summary})
+		else:
+			ending.play({"round": round})
 		return
 	end({"quiet": true})
 	g.victory()
+
+# MP client: the host killed the Baron: the same defeat beats here, then this peer's own ending.
+func net_defeated(r, summary, addsPos) -> void:
+	if not _fromHost() or not active or state == "defeated":
+		return
+	var g = game
+	round = int(r)
+	hp = 0.0
+	state = "defeated"
+	_snaps.clear()
+	_clearBalls()
+	_stopSweep()
+	_grab = null
+	_hop = null
+	if offAir:
+		_setOffAir(false)
+	_netHidden = false
+	_restoreScale()
+	if addsPos is PackedVector3Array:
+		for zp in addsPos:
+			_burst(Vector3(zp.x, zp.y + 0.8, zp.z), {"shape": "static", "count": 14, "speed": 2})
+	_adds.clear()
+	_unregisterShootable()
+	_uninstallAdapters()
+	_completeEgg()
+	g.events.emit("boss:defeated", {"round": round})
+	if ending != null and ending.has_method("play"):
+		ending.play({"round": round, "summary": summary if summary is Dictionary else {}})
 
 # egg:step {step:6} + egg:complete: through the egg's own API when it reached step 5 (a debug fight started from
 # an earlier step leaves the egg alone).
@@ -2970,9 +3539,11 @@ func debugSweep() -> bool:
 	_startSweep()
 	return _sweep != null
 
-func debugGrab() -> bool:
+func debugGrab(peerId: int = 0) -> bool:
 	if phase != 3:
 		debugPhase(3)
+	if peerId != 0 and _host() and _net().playerById(peerId) != null:
+		_setFocus(_net().playerById(peerId))
 	var pp := _playerPos()
 	pos.x = pp.x + 1.2
 	pos.z = pp.z - 1.2

@@ -749,6 +749,14 @@ var _pressBuf := 0.0         # trigger press buffered while not ready (sprint-to
 var _inWonder := false       # inside game.wonder.fire(): detects the wonder system's own weapon:fire
 var _wonderEmitted := false
 var _handlesTele := true     # tells game.wonder that Q is read here (its self-drive skips it)
+# MP (scripts/game/weapons_net.gd): built by reset() only while an MP game runs (null in solo: every MP path is
+# behind `mp != null`)
+const NET_PATH := "res://scripts/game/weapons_net.gd"
+var mp = null
+var _mpRand := Callable()
+var _shotSeq := 0
+var _endKind := 0            # MP: how the last _traceBullet ended (wfx shot record)
+var _endNormal := Vector3.ZERO
 
 func _init(g) -> void:
 	game = g
@@ -770,6 +778,9 @@ func _init(g) -> void:
 # ------------------------------------------------------------------------------------------ lifecycle
 func init() -> void:
 	fx = GunFX.new(game)
+	var n = game.get("net")
+	if n != null and n.has_method("registerStream"):
+		n.registerStream("wfx", "weapons")   # MP: observers' shot / melee / wind-up stream (weapons_net.gd)
 
 func reset() -> void:
 	slots.clear()
@@ -816,6 +827,20 @@ func reset() -> void:
 	_heldKey = null
 	give("revolver_38", {"source": "start"})
 	_raise = 1.0
+	_mpReset()
+
+# MP: the weapons_net companion exists only while an MP game runs (net.inGame is already true in the MP newGame's
+# resets); solo / lobby -> null, so every MP path is skipped.
+func _mpReset() -> void:
+	var n = game.get("net")
+	if n != null and n.inGame:
+		if mp == null:
+			mp = load(NET_PATH).new(self)
+		_mpRand = Rng.mulberry32(int(game.seed_value) ^ (int(n.localId) * 7919 + 104729))
+		mp.reset()
+	elif mp != null:
+		mp.dispose()
+		mp = null
 
 func _onRoundStart(e: Dictionary) -> void:
 	var r = e.get("round", 0)
@@ -1171,6 +1196,8 @@ func _castShootables(o: Vector3, d: Vector3, maxDist: float, kind := "bullets", 
 
 func _hitShootable(e: Dictionary, point: Vector3, dir: Vector3, weaponId, upgraded, damage: float, melee: bool, cause: String) -> void:
 	var info := {"id": e.id, "point": point, "dir": dir, "weaponId": weaponId, "upgraded": _truthy(upgraded), "melee": melee, "damage": damage, "head": false, "cause": cause}
+	if mp != null and mp.shootableHit(e, info):
+		return   # MP client: sent to the host (weapons.net_shootableHits), which runs onHit with info.by
 	if e.get("onHit") is Callable:
 		e.onHit.call(info)
 	game.events.emit("weapon:hit_shootable", info.duplicate())
@@ -1214,9 +1241,13 @@ func damageZombie(z, amount: float, opts := {}) -> bool:
 	o.merge(opts, true)
 	if not o.has("zone") or o.zone == null:
 		o.zone = "head" if o.get("head") else "torso"
+	if mp != null:
+		o.shot = _shotSeq                  # MP: "+10 per damaging hit" dedupe per shot event (RECONCILE R17)
+		if not o.has("by"):
+			o.by = g.net.localId
 	var killed := _truthy(g.zombies.damage(z, amount, o))
 	hit = null
-	if econ != null and not _isFalse(opts.get("points")) and econ.points == before:
+	if mp == null and econ != null and not _isFalse(opts.get("points")) and econ.points == before:
 		var pts: Dictionary = Config.T.points
 		if not killed:
 			econ.add(pts.hit, "hit")
@@ -1233,6 +1264,8 @@ func update(dt: float) -> void:
 	if p == null:
 		return
 	_wrapAnimator()
+	if mp != null:
+		mp.update(dt)
 	if dt <= 0.0:
 		return
 	var a: Dictionary = p.anim
@@ -1247,6 +1280,8 @@ func update(dt: float) -> void:
 	_updateGhosts(_eff().ghost)
 
 	var control: bool = p.alive and not p.downed and not p.controlLocked and g.state == "playing" and input != null
+	if mp != null and g.get("mpPaused") == true:
+		control = false
 	var fireDown: bool = control and input.down("fire")
 	var firePressed: bool = control and input.pressed("fire")
 	var fireReleased := _fireHeld and not fireDown
@@ -1317,6 +1352,8 @@ func update(dt: float) -> void:
 	_fire(s, def)
 
 func lateUpdate(dt = 0.0) -> void:
+	if mp != null:
+		mp.lateUpdate(dt if dt != null else 0.0)
 	if fx != null:
 		fx.update(dt if dt != null else 0.0, game.camera)
 
@@ -1325,6 +1362,13 @@ func _warnOnce(key: String, err = null) -> void:
 		return
 	_warned[key] = true
 	push_warning("[weapons] %s %s" % [key, str(err) if err != null else ""])
+
+# Weapon randomness (spread, kick jitter, cosmetics): game.rand() in solo (same calls, same order); in an MP game a
+# per-peer stream (clients never consume the shared world stream; MP: header).
+func _r() -> float:
+	if mp != null and _mpRand.is_valid():
+		return _mpRand.call()
+	return game.rand()
 
 func _wonderCall(fn: String, id, ctx = null) -> Variant:
 	var W = game.wonder
@@ -1463,6 +1507,8 @@ func _fire(s: Dictionary, def: Dictionary) -> void:
 	var shot := _beginShot(s, def)
 	var style: Dictionary = def.get("tracer") if def.get("tracer") is Dictionary else {}
 	var col = _tracerColor(s, def)
+	if mp != null:
+		mp.shotBegin(s, muzzle, ghost)
 	for i in pellets:
 		var rr: float
 		var phi: float
@@ -1475,6 +1521,8 @@ func _fire(s: Dictionary, def: Dictionary) -> void:
 		var t := tan(spreadRad) * rr
 		var n := (baseDir + r * (cos(phi) * t) + u * (sin(phi) * t)).normalized()
 		var end := _traceBullet(origin, n, def, s, shot, ghost)
+		if mp != null:
+			mp.shotPellet(end, _endKind, _endNormal)
 		fx.streak(muzzle, end, style, col, i * 0.004 if pellets > 1 else 0.0)
 		if style.get("style") == "scratch":
 			var st2 := style.duplicate()
@@ -1489,6 +1537,8 @@ func _fire(s: Dictionary, def: Dictionary) -> void:
 				var a := muzzle.lerp(end, 0.25 + _r() * 0.7)
 				g.fx.burst(a, {"shape": "star", "count": 1, "speed": 0.6, "size": 0.07, "life": 0.45, "gravity": 0.5, "colors": [Config.PAL.marqueeGold, "#FFF3B0"]})
 	_endShot(shot, s, def)
+	if mp != null:
+		mp.shotEnd(shot.every13)
 
 	# feel: muzzle, smoke, casing, recoil, camera
 	_muzzleFX(s, def, muzzle, baseDir)
@@ -1578,6 +1628,7 @@ func _eject(kind: String, speed := 1.0) -> void:
 
 # Shot event: aggregates damage per zombie (pellets / pierce / splash / ghost) so each zombie is damaged once.
 func _beginShot(s: Dictionary, def: Dictionary) -> Dictionary:
+	_shotSeq += 1
 	_aggPool.append_array(_aggVals)
 	_aggKeys.clear()
 	_aggVals.clear()
@@ -1668,10 +1719,12 @@ func _endShot(shot: Dictionary, s: Dictionary, def: Dictionary) -> void:
 			anyHead = true
 		if killed:
 			anyKill = true
-			if def.get("launch") and g.fx != null:
+			if def.get("launch") and g.fx != null and not (mp != null and mp.isClient()):
 				g.fx.burst(a.point, {"shape": "star", "count": 4, "speed": 3, "size": 0.1, "colors": [Config.PAL.marqueeGold, "#FFF3B0"]})
 		# hit read: white pop + sparks; head = gold stars
 		fx.pop(a.point, 0.42 if head else 0.3, "#FFE27A" if head else "#FFFFFF", 0.07)
+		if mp != null:
+			mp.shotZombie(a.point, head)
 		var back: Vector3 = -a.dir
 		g.fx.burst(a.point, {"shape": "spark", "count": 7 if head else 4, "dir": back, "cone": 0.9, "speed": 5, "life": 0.2, "size": 0.035})
 		if head:
@@ -1679,7 +1732,7 @@ func _endShot(shot: Dictionary, s: Dictionary, def: Dictionary) -> void:
 		if def.get("pageHits"):
 			g.fx.burst(a.point, {"shape": "confetti", "count": 7, "speed": 3, "size": 0.11, "life": 1.2, "colors": ["#F4F1E8", "#E6DCCB", "#FFFFFF", "#D9D2C2"], "dir": back, "cone": 1.3})
 	if hits and g.hud != null and g.hud.has_method("hitmarker"):
-		g.hud.hitmarker(anyHead, anyKill)
+		g.hud.hitmarker(anyHead, anyKill and not (mp != null and mp.isClient()))   # MP client: the kill marker comes with the host's kill
 	var L := lastShot
 	L.weaponId = s.id
 	L.upgraded = upgraded
@@ -1721,6 +1774,7 @@ func _traceBullet(origin: Vector3, dir: Vector3, def: Dictionary, s: Dictionary,
 			_hitShootable(sh.entry, sh.point, dir, s.id, s.upgraded, dmg * _falloff(def, sd), false, "bullet")
 			fx.pop(sh.point, 0.22, "#FFFFFF", 0.06)
 			if not _isFalse(sh.entry.get("blocksBullet")):
+				_endKind = 2
 				_bulletEnd(sh.point, s, def, shot, null)
 				return sh.point
 			skipEntry = sh.entry
@@ -1739,13 +1793,19 @@ func _traceBullet(origin: Vector3, dir: Vector3, def: Dictionary, s: Dictionary,
 				dmg *= PIERCE_MUL
 				from = zd + 0.08
 				continue
+			_endKind = 1
 			_bulletEnd(zh.point, s, def, shot, zh.z)
 			return zh.point
 		break
 	if wall != null:
-		g.fx.impact(wall.point, wall.normal, _surfaceKind(wall))
+		var sk := _surfaceKind(wall)
+		g.fx.impact(wall.point, wall.normal, sk)
+		if mp != null:
+			_endKind = 3 + maxi(0, ["wall", "wood", "metal", "glass"].find(sk))
+			_endNormal = wall.normal
 		_bulletEnd(wall.point, s, def, shot, null)
 		return wall.point
+	_endKind = 0
 	return origin + dir * minf(MAX_RANGE, 60.0)
 
 func _falloff(def: Dictionary, dist: float) -> float:
@@ -2192,6 +2252,8 @@ func _updateMelee(dt: float, pressed: bool) -> void:
 			M.target = z
 		_attachMeleeProp(true)
 		p.anim.melee = 1e-4
+		if mp != null:
+			mp.event(mp.K_MELEE)
 		return
 	M.t += dt
 	var u: float = M.t / D.time
@@ -2252,10 +2314,14 @@ func _meleeStrike() -> bool:
 	var c := Vector3(aimDir.x, 0, aimDir.z).normalized()
 	if z != null:
 		var a := Vector3(z.pos.x, z.pos.y + _num(z, "height", 1.7) * 0.62, z.pos.z)
+		if mp != null:
+			_shotSeq += 1
 		var killed := damageZombie(z, D.dmg * _num(p.mods, "meleeDamage", 1.0), {"head": false, "weaponId": "melee", "point": a, "dir": c, "knockback": 2.5, "cause": "melee", "melee": true})
 		if g.hud != null and g.hud.has_method("hitmarker"):
-			g.hud.hitmarker(false, killed)
+			g.hud.hitmarker(false, killed and not (mp != null and mp.isClient()))
 		fx.pop(a, 0.6, "#FFFFFF", 0.09)
+		if mp != null:
+			mp.meleeHit(1, a)
 		fx.ring(a, (g.camera.global_position - a).normalized(), 0.1, 0.55, 0.18, "#FFE27A", false)
 		g.fx.burst(a, {"shape": "star", "count": 5, "speed": 3, "size": 0.1, "life": 0.5})
 		g.fx.burst(a, {"shape": "spark", "count": 8, "dir": c, "cone": 0.8, "speed": 6, "life": 0.2})
@@ -2279,6 +2345,8 @@ func _meleeStrike() -> bool:
 	if best != null:
 		_hitShootable(best.entry, best.point, best.dir, "melee", false, D.dmg * _num(p.mods, "meleeDamage", 1.0), true, "melee")
 		fx.pop(best.point, 0.5, "#FFFFFF", 0.08)
+		if mp != null:
+			mp.meleeHit(2, best.point)
 		g.fx.burst(best.point, {"shape": "star", "count": 4, "speed": 2.5, "size": 0.09, "life": 0.45})
 		if g.cam != null and g.cam.has_method("shake"):
 			g.cam.shake(0.18, 0.18)
@@ -2330,6 +2398,8 @@ func _updateGrenade(dt: float, down: bool, pressed: bool) -> void:
 		N.cook = 0.0
 		grenades -= 1
 		_showNade(true)
+		if mp != null:
+			mp.event(mp.K_COOK)
 		_play("reload_mag", {"vol": 0.4, "rate": 1.6})
 		return
 	N.cook += dt
@@ -2433,6 +2503,8 @@ func _launchGrenade(cooked: float) -> void:
 	var pool = g.fx.lightPool(origin, 0.8, "#FF8A2E", 0.35) if g.fx.has_method("lightPool") else null
 	_projectiles.append({"kind": "grenade", "pos": origin, "vel": vel, "fuse": G.fuse - cooked, "model": model,
 		"spin": Vector3(_r() * 14 - 7, _r() * 10 + 6, _r() * 8 - 4), "rest": false, "pool": pool, "bounceT": 0.0})
+	if mp != null:
+		_projectiles[-1].nid = mp.nadeThrown(origin, vel, G.fuse - cooked)
 	_play("grenade_throw", {"pos": origin})
 
 func _updateProjectiles(dt: float) -> void:
@@ -2469,8 +2541,13 @@ func _updateProjectiles(dt: float) -> void:
 			fil.visible = sin(g.time.now * (30.0 + (1.0 - pr.fuse / G.fuse) * 70.0)) > -0.2
 		if pr.pool != null:
 			pr.pool.set_({"pos": Vector3(pr.pos.x, g.level.col.floorAt(pr.pos.x, pr.pos.z, pr.pos.y + 0.1) + 0.02, pr.pos.z), "intensity": 0.25 + 0.2 * randf()})
-		if pr.fuse <= 0.0:
-			_explode(pr.pos, false)
+		if pr.get("remote"):
+			# MP: an observer's copy of another player's grenade: its blast comes with weapons.net_nadeFx
+			if pr.fuse < -2.0:
+				_removeProjectile(pr)
+				_projectiles.remove_at(i)
+		elif pr.fuse <= 0.0:
+			_explode(pr.pos, false, pr.get("nid", -1))
 			_removeProjectile(pr)
 			_projectiles.remove_at(i)
 		i -= 1
@@ -2498,19 +2575,38 @@ func _removeProjectile(pr: Dictionary) -> void:
 	if pr.pool != null:
 		pr.pool.remove()
 
-func _explode(pos: Vector3, inHand: bool) -> void:
+# Tube grenade blast. Solo: damage, self-damage, FX in the original order. MP (RECONCILE R17: a host-decided area
+# action): the host resolves the victims (its own grenades here, a client's through weapons.net_nadeBoom), the
+# thrower takes its own self-damage, every peer plays the FX (others through weapons.net_nadeFx).
+func _explode(pos: Vector3, inHand: bool, nid := -1) -> void:
 	var g = game
 	var p = g.player
+	var base := _blastBase(_num(p.mods, "damage", 1.0))
+	if mp == null or not mp.isClient():
+		_blastDamage(pos, base, g.net.localId if mp != null else null)
+	var pd := _blastSelf(pos, base)
+	_blastFx(pos, inHand, pd, g.net.localId if mp != null else null)
+	if mp != null:
+		mp.nadeExploded(nid, pos, inHand, _num(p.mods, "damage", 1.0))
+
+func _blastBase(dmgMul: float) -> float:
+	var g = game
 	var G: Dictionary = WD.WEAPON_DEFS.tube_grenade
-	var r: float = G.radius
 	var rnd = g.rounds.get("round") if g.rounds != null else null
 	var round_v: int = maxi(1, int(rnd) if rnd else 1)
-	var base: float = (G.dmgBase + G.dmgPerRound * round_v) * _num(p.mods, "damage", 1.0)
-	var center := pos
+	return (G.dmgBase + G.dmgPerRound * round_v) * dmgMul
+
+# Zombies in the radius with line of sight + the boss. by: attacker peer id (MP) or null (solo). -> [hits, kills]
+func _blastDamage(center: Vector3, base: float, by = null) -> Array:
+	var g = game
+	var G: Dictionary = WD.WEAPON_DEFS.tube_grenade
+	var r: float = G.radius
 	_hitList.clear()
 	var list: Array = g.zombies.inRadius(center, r + 0.8, _hitList).duplicate() if (g.zombies != null and g.zombies.has_method("inRadius")) else []
 	var hits := 0
 	var kills := 0
+	if by != null:
+		_shotSeq += 1
 	for z in list:
 		var a: Vector3 = z.pos
 		a.y = z.pos.y + _num(z, "height", 1.7) * 0.5
@@ -2526,10 +2622,13 @@ func _explode(pos: Vector3, inHand: bool) -> void:
 		var dir := a - center
 		dir.y = 0.4
 		dir = dir.normalized()
-		if damageZombie(z, dmg, {"head": false, "weaponId": "tube_grenade", "point": a, "dir": dir, "knockback": 4.0 * (1.0 - k) + 1.0, "cause": "grenade"}):
+		var o := {"head": false, "weaponId": "tube_grenade", "point": a, "dir": dir, "knockback": 4.0 * (1.0 - k) + 1.0, "cause": "grenade"}
+		if by != null:
+			o.by = by
+		if damageZombie(z, dmg, o):
 			kills += 1
 		hits += 1
-	if hits and g.hud != null and g.hud.has_method("hitmarker"):
+	if hits and g.hud != null and g.hud.has_method("hitmarker") and (by == null or by == g.net.localId):
 		g.hud.hitmarker(false, kills > 0)
 	# bosses and anything else that wants blast damage
 	var boss = g.boss
@@ -2539,8 +2638,17 @@ func _explode(pos: Vector3, inHand: bool) -> void:
 		if bp == null and boss.get("group") != null:
 			bp = boss.group.position
 	if boss != null and bp is Vector3 and (boss.get("active") or boss.get("alive")) and boss.has_method("damage") and bp.distance_to(center) < r + 2.0:
-		boss.damage(base * 0.5, {"weaponId": "tube_grenade", "point": center, "cause": "grenade"})
-	# self damage (GDD §9.3: at most 40, x0.5 with Wobble-Up)
+		var bo := {"weaponId": "tube_grenade", "point": center, "cause": "grenade"}
+		if by != null:
+			bo.by = by
+		boss.damage(base * 0.5, bo)
+	return [hits, kills]
+
+# Self damage (GDD §9.3: at most 40, x0.5 with Wobble-Up): the local player only (no friendly fire). -> distance
+func _blastSelf(center: Vector3, base: float) -> float:
+	var p = game.player
+	var G: Dictionary = WD.WEAPON_DEFS.tube_grenade
+	var r: float = G.radius
 	var pa: Vector3 = p.pos
 	pa.y = p.pos.y + 0.9
 	var pd := pa.distance_to(center)
@@ -2552,7 +2660,14 @@ func _explode(pos: Vector3, inHand: bool) -> void:
 			var kb := pa - center
 			kb.y = 0.0
 			p.knockback(kb.normalized() * (5.0 * (1.0 - pd / r)))
-	# FX: orange puff cloud of spheres, sparks, glass shards, scorch, shockwave ring, light, shake
+	return pd
+
+# FX: orange puff cloud of spheres, sparks, glass shards, scorch, shockwave ring, light, shake (pd = distance to the
+# local player). by: MP thrower id (added to weapon:grenade, RECONCILE R7) or null (solo payload unchanged).
+func _blastFx(center: Vector3, inHand: bool, pd: float, by = null) -> void:
+	var g = game
+	var G: Dictionary = WD.WEAPON_DEFS.tube_grenade
+	var r: float = G.radius
 	g.fx.burst(center, {"shape": "puff", "count": 16, "size": 0.5, "speed": 4.2, "life": 0.8, "gravity": -1.5, "drag": 3.2, "colors": ["#FF8A2E", "#FFB347", "#FFD27A", "#E3662B"]})
 	g.fx.burst(center, {"shape": "puff", "count": 9, "size": 0.55, "speed": 2.2, "life": 1.5, "gravity": -1.2, "drag": 2.5, "colors": ["#6A5A68", "#8A7A80", "#5A4A5A"]})
 	g.fx.burst(center, {"shape": "spark", "count": 34, "speed": 13, "life": 0.45, "size": 0.05})
@@ -2566,7 +2681,12 @@ func _explode(pos: Vector3, inHand: bool) -> void:
 	if g.cam != null and g.cam.has_method("shake"):
 		g.cam.shake(clampf(0.75 * (1.0 - pd / 16.0), 0.1, 0.75), 0.5)
 	_play("grenade_explode", {"pos": center})
-	g.events.emit("weapon:grenade", {"pos": center, "inHand": _truthy(inHand)})
+	var ev := {"pos": center, "inHand": _truthy(inHand)}
+	if by != null:
+		ev.by = by
+		if by != g.net.localId:
+			ev.remote = true
+	g.events.emit("weapon:grenade", ev)
 
 # ------------------------------------------------------------------------------------------ Tiny Tele (Q)
 func _updateTele(dt: float, pressed: bool) -> void:
@@ -2582,6 +2702,8 @@ func _updateTele(dt: float, pressed: bool) -> void:
 		TT.t = 0.0
 		TT.thrown = false
 		_showTele(true)
+		if mp != null:
+			mp.event(mp.K_WIND)
 		return
 	TT.t += dt
 	var dur := 0.42 * _jumpCutMul()
@@ -2856,3 +2978,107 @@ static func timeMul(v) -> float:
 	if not _finite(v) or float(v) <= 0.0:
 		return 1.0
 	return float(v) if float(v) <= 1.0 else 1.0 / float(v)
+
+# ============================================================================================ MP (see the header)
+# Remote avatar held weapon (RemotePlayer calls it when the replicated weapon changes; RECONCILE R18): the model is
+# built and cached by weapons_net.gd, which also sets remote.postAnimate (the IK pose). null = unarmed / no MP.
+func buildRemoteHeld(remote, id, upgraded = false, sig_ = "") -> Variant:
+	if mp == null or remote == null or id == null or str(id) == "":
+		return null
+	return mp.buildRemoteHeld(remote, str(id), _truthy(upgraded), str(sig_) if sig_ != null else "")
+
+# MP respawn kit (off-air -> next round, mp-players): revolver + the starting grenades, no Tiny Teles, no upgrades /
+# wonder weapons; keeps the round bookkeeping and the projectiles in flight.
+func resetLoadout() -> void:
+	cancelReload()
+	var W = game.wonder
+	var s = _slotAt(current)
+	if s != null and W != null and W.has_method("holster"):
+		W.holster(s.id)
+	slots.clear()
+	current = -1
+	swapping = false
+	_swap.t = 0.0
+	_swap.to = -1
+	_swap.swapped = true
+	_burst = 0
+	_melee.t = -1.0
+	_nade.state = "none"
+	if _nade.model != null:
+		_nade.model.visible = false
+	_tele.t = -1.0
+	if _tele.model != null:
+		_tele.model.visible = false
+	if _melee.prop != null:
+		_melee.prop.visible = false
+	grenades = WD.WEAPON_DEFS.tube_grenade.start
+	teles = 0
+	teleOwned = false
+	game.player.setWeaponModel(null)
+	_heldKey = null
+	give("revolver_38", {"source": "start"})
+	_raise = 1.0
+
+func loadout() -> void:
+	resetLoadout()
+
+# ---- messages (validated; sender = net.sender)
+# Arsenal remote API: the host (machines / economy / story) reaches one peer's own inventory with net.toPeer.
+func net_give(id, opts = null) -> void:
+	if not (id is String) or not WD.WEAPON_DEFS.has(id):
+		return
+	var o: Dictionary = opts.duplicate() if opts is Dictionary else {}
+	if o.get("signal") is String and (o.signal == "" or not WD.SIGNAL_COLORS.has(o.signal)):
+		o.erase("signal")
+	give(id, o)
+
+func net_take(id) -> void:
+	if id is String:
+		take(id)
+
+func net_takeCurrent() -> void:
+	takeCurrent()
+
+func net_upgrade(id, sig_ = null, source = "uplink") -> void:
+	if id is String:
+		upgrade(id, sig_ if (sig_ is String and WD.SIGNAL_COLORS.has(sig_)) else null, str(source))
+
+func net_refillAll() -> void:
+	refillAll()
+
+func net_addGrenades(n) -> void:
+	if n is int or n is float:
+		addGrenades(int(n))
+
+func net_resetLoadout() -> void:
+	resetLoadout()
+
+# Client -> host: shootable hits tested on the shooter's peer; the host runs each entry's onHit with info.by.
+func net_shootableHits(list) -> void:
+	if mp != null:
+		mp.onShootableHits(list)
+
+# Owner -> others: a thrown grenade (cosmetic copy until the blast message).
+func net_nade(nid, origin, vel, fuse) -> void:
+	if mp != null:
+		mp.onNade(nid, origin, vel, fuse)
+
+# Client -> host: its grenade went off (the host resolves the victims).
+func net_nadeBoom(nid, pos, inHand, dmgMul = 1.0) -> void:
+	if mp != null:
+		mp.onNadeBoom(nid, pos, inHand, dmgMul)
+
+# Host -> all: a grenade blast (FX + weapon:grenade on observers).
+func net_nadeFx(by, nid, pos, inHand) -> void:
+	if mp != null:
+		mp.onNadeFx(by, nid, pos, inHand)
+
+# Host -> thrower: hit marker for host-resolved hits of its area actions (kills come with zombie:kill).
+func net_confirm(hits, head = false) -> void:
+	if mp != null and (hits is int or hits is float) and hits > 0 and game.hud != null and game.hud.has_method("hitmarker"):
+		game.hud.hitmarker(head == true, false)
+
+# Observer stream (owner -> others, unreliable): shots, melee, wind-ups, wonder launches (weapons_net.gd format).
+func net_stream_wfx(from, data) -> void:
+	if mp != null and data is PackedByteArray:
+		mp.onStream(int(from), data)

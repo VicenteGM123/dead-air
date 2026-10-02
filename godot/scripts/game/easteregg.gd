@@ -86,6 +86,26 @@
 # * The applause gloves are two MultiMeshInstance3D (the JS InstancedMeshes): the per-instance fade (JS aFade attribute)
 #   is INSTANCE_CUSTOM.a read by a patched copy of the toon shader (_clapMaterial, like the JS onBeforeCompile patch).
 # * Renames (SPEC §3.2): none.
+# MP (online co-op, RECONCILE R14; every MP path guarded by _mp() / _client() / _host(), solo runs the code above):
+#   the HOST owns the egg (step, puppets + carriers, applause, storm + leader, tape carrier, tracking, kill switch);
+#   clients send requests and run every visual from the host's replicated actions (same code paths, host results).
+#   Clients never complete a step (_complete() refuses): the host's net_step(n) runs the completion beats (_beats(n):
+#   TV overrides, stings, celebrate -> economy.add(eeStep, "egg") = a team reason paid once by the host, hooks).
+#   Player-bound items: puppets hang from their CARRIER's hero belt (remote heroes: render layer RemotePlayer.LAYER);
+#   the theater slots the sender's puppets; the tape belongs to its carrier (only they see the VTR #2 prompt). A
+#   carrier going off-air (team:offair) or leaving (net:peer) drops the puppets back to their drop spots / the tape
+#   is lost and Telly re-arms the tape pull. Stray Storm: follows a LEADER (the Forecaster's killer `by`, else the
+#   nearest target; a leader that stops being a target hands over to the nearest one, stranded until close); zaps
+#   the nearest target within 2 m (the victim's own peer applies the 10). Applause counts kills (host events) whose
+#   killer `by` stands in Studio A (any player in Studio A when the kill has no `by`). Tracking completes while any
+#   target is within tracking.radius of VTR #2. Chimes / knob / kill switch: shared, first request wins.
+#   MESSAGES (sys "egg"): client -> host (net.toHost; local on the host): reqBar (color) · reqPuppet (id) ·
+#     reqPickup (id) · reqSlot () · reqLoad () · reqKnob () · reqSwitch ()
+#   host -> everyone: chime (color, powered) · step (n) · puppet (id) · pickup (id, carrier) · slot (carrier, ids) ·
+#     drop (ids) · sockPop (pos) · applause (n, pos, zid) · storm (state 'spawn' | 'lost' | 'arrived', pos, leader) ·
+#     zap (victim) · tape (carrier, 0 = none) · load (carrier, s0, kT) · knob (k, by) · switch (thrown) ·
+#     setStep (n) (debug jumps)
+#   stream 'es' (host -> all, 10 Hz while the storm follows): PackedFloat32Array [x, y, z, rotY].
 extends RefCounted
 
 const STEP_IDS := ["ee_1_station_id", "ee_2_puppets", "ee_3_applause", "ee_4_storm", "ee_5_roll_tape", "ee_6_sign_off"]
@@ -380,6 +400,11 @@ var _hymn = null
 var _strikeFx = null
 var _boltM = null
 var _models := {}               # asset name -> PackedScene (cache)
+# MP (see the header)
+var tapeCarrier := 0            # peer id carrying the EE reel (0: nobody)
+var _esT := 0.0
+var _esPos = null               # client: the storm's streamed position / yaw
+var _esYaw := 0.0
 
 var stormActive: bool:
 	get:
@@ -405,10 +430,18 @@ func init() -> void:
 		if not _emitting and not done:
 			step = STEP_IDS.size()
 			done = true)
+	# MP host: a carrier off the air / gone drops what it carried
+	ev.on("team:offair", func(e): if e is Dictionary and e.get("id") != null: _onPlayerLost(int(e.id)))
+	ev.on("net:peer", func(e): if e is Dictionary and e.get("joined") == false and e.get("id") != null: _onPlayerLost(int(e.id)))
+	var n = _net()
+	if n != null and n.has_method("registerStream"):
+		n.registerStream("es", "egg")
 	_registerAll()
 
 func reset() -> void:
 	_jobs.clear()
+	tapeCarrier = 0
+	_esPos = null
 	step = 0
 	done = false
 	forceForecaster = false
@@ -491,6 +524,65 @@ var powered: bool:
 	get:
 		return bool(_g(game.machines, "powerOn", false))
 
+# ------------------------------------------------------------------------------------------ MP helpers
+func _net():
+	return game.get("net")
+
+func _mp() -> bool:
+	var n = _net()
+	return n != null and n.inGame
+
+func _client() -> bool:
+	return _mp() and _net().isClient
+
+func _host() -> bool:
+	return _mp() and _net().isHost
+
+func _fromHost() -> bool:
+	return _client() and int(_net().sender) == 1
+
+func _req(m: String, args: Array = []) -> void:
+	_net().toHost("egg", m, args)
+
+func _lid() -> int:
+	return int(_net().localId) if _mp() else 1
+
+func _pl(id: int):
+	return _net().playerById(id) if _mp() else (game.player if id == 1 else null)
+
+# The local player carries at least one puppet / the tape (solo: the old fields).
+func _hasCarried() -> bool:
+	if not _mp():
+		return carried.size() > 0
+	for p in puppets.values():
+		if p.state == "carried" and int(p.get("carrier", 0)) == _lid():
+			return true
+	return false
+
+func _tapeMine() -> bool:
+	return tapeCarrier == _lid() if _mp() else hasTape
+
+# MP host: player `id` went off the air or left: its puppets go back to their drop spots, its tape is lost.
+func _onPlayerLost(id: int) -> void:
+	if not _host():
+		return
+	var ids := []
+	for p in puppets.values():
+		if p.state == "carried" and int(p.get("carrier", 0)) == id:
+			ids.append(p.id)
+	if not ids.is_empty():
+		_net().everyone("egg", "drop", [ids])
+	if tapeCarrier == id and step == 4 and _track == null:
+		var t = game.telly
+		if _has(t, "tapeReset"):
+			_oc(t, "tapeReset")
+		elif _has(t, "rearmTape"):
+			_oc(t, "rearmTape")
+		else:
+			_oc(t, "setMood", ["purple"])
+			_oc(t, "forceTapePull")
+		_net().everyone("egg", "tape", [0])
+
 func _later(t: float, fn: Callable) -> void:
 	_jobs.append({"t": t, "fn": fn})
 
@@ -543,11 +635,32 @@ func _celebrate(n: int, o: Dictionary = {}) -> void:
 
 # step n completed (n = 1..5): the state change + egg:step (MC card, neon, beacons, Telly react to it)
 func _complete(n: int) -> bool:
-	if step != n - 1:
+	if step != n - 1 or _client():
 		return false
 	step = n
+	if _host():
+		_net().toAll("egg", "step", [n])
 	_emit("egg:step", {"step": n})
 	return true
+
+func _beats(n: int) -> void:
+	match n:
+		1: _beats1()
+		2: _beats2()
+		3: _beats3()
+		4: _beats4()
+		5: _beats5()
+
+# MP client: the host completed step n (missed steps, if any, are applied instantly first).
+func net_step(n) -> void:
+	if not _fromHost() or int(n) <= step:
+		return
+	while step < int(n) - 1:
+		step += 1
+		_applyInstant(step)
+	step = int(n)
+	_emit("egg:step", {"step": step})
+	_beats(step)
 
 # someone else (the boss) advanced the egg: keep our state in sync
 func _mirror(n: int) -> void:
@@ -576,6 +689,8 @@ func setStep(n) -> int:
 	if target == STEP_IDS.size() and not done:
 		done = true
 		_emit("egg:complete", {})
+	if _host():
+		_net().toAll("egg", "setStep", [target])
 	return step
 
 # the end state of step k, applied instantly (debug jumps and mirrored steps)
@@ -1171,13 +1286,13 @@ func _registerAll() -> void:
 		_oc(W, "registerShootable", [{"id": p.id, "raycast": func(o, d, mx): return _puppetRay(p, o, d, mx), "onHit": func(info): _onPuppetHit(p, info)}])
 		_oc(I, "register", [{
 			"id": "ee_pickup_%s" % p.key, "pos": p.drop, "radius": 1.2, "height": 2.2,
-			"enabled": func(): return p.state == "ground", "prompt": func(): return {} if p.state == "ground" else null, "use": func(): _pickup(p),
+			"enabled": func(): return p.state == "ground", "prompt": func(): return {} if p.state == "ground" else null, "use": func(): _usePickup(p),
 		}])
 	var th = O.get("ee_puppet_theater")
 	var thPos = _g(th, "interact")
 	_oc(I, "register", [{
 		"id": "ee_puppet_theater", "pos": v3(thPos) if thPos != null else Vector3(17.75, 0, -24.9), "radius": _g(th, "interactR", 1.5), "height": 2.5,
-		"enabled": func(): return carried.size() > 0, "prompt": func(): return {} if carried.size() > 0 else null, "use": func(): _slotAll(),
+		"enabled": func(): return _hasCarried(), "prompt": func(): return {} if _hasCarried() else null, "use": func(): _useTheater(),
 	}])
 	# step 5: VTR #2 load + the TRACKING knob
 	var vtr = O.get("ee_vtr2")
@@ -1189,8 +1304,8 @@ func _registerAll() -> void:
 	_vtrPos = vtrPos
 	_oc(I, "register", [{
 		"id": "ee_vtr2", "pos": vtrPos, "radius": 1.5, "height": 2.4,
-		"enabled": func(): return hasTape and step == 4 and _track == null, "prompt": func(): return {} if (hasTape and step == 4 and _track == null) else null,
-		"use": func(): _loadTape(),
+		"enabled": func(): return _tapeMine() and step == 4 and _track == null, "prompt": func(): return {} if (_tapeMine() and step == 4 and _track == null) else null,
+		"use": func(): _useVtr(),
 	}])
 	var knob = O.get("ee_tracking_knob")
 	var kp = _g(knob, "pos")
@@ -1198,8 +1313,8 @@ func _registerAll() -> void:
 	_knobPos = knobPos
 	_oc(I, "register", [{
 		"id": "ee_tracking_knob", "pos": knobPos, "radius": 1.5, "height": 2.4,
-		"enabled": func(): return powered and not (hasTape and step == 4 and _track == null), "prompt": func(): return {} if powered else null,
-		"use": func(): _turnKnob(),
+		"enabled": func(): return powered and not (_tapeMine() and step == 4 and _track == null), "prompt": func(): return {} if powered else null,
+		"use": func(): _useKnob(),
 	}])
 	# step 6 trigger: the kill switch (key-only hold)
 	var ks = O.get("ee_kill_switch")
@@ -1208,8 +1323,228 @@ func _registerAll() -> void:
 	_oc(I, "register", [{
 		"id": "ee_kill_switch", "pos": ksPos, "radius": 1.5, "height": 2.6, "hold": E.switchHold,
 		"enabled": func(): return step == 5 and not _killSwitchUsed, "prompt": func(): return {"hold": E.switchHold} if (step == 5 and not _killSwitchUsed) else null,
-		"use": func(): _throwSwitch(),
+		"use": func(): _useSwitch(),
 	}])
+
+# Interactable uses: MP -> a request to the host (local call on the host); solo -> the old functions.
+func _usePickup(p: Dictionary) -> void:
+	if _mp():
+		_req("reqPickup", [p.id])
+	else:
+		_pickup(p)
+
+func _useTheater() -> void:
+	if _mp():
+		_req("reqSlot")
+	else:
+		_slotAll()
+
+func _useVtr() -> void:
+	if _mp():
+		_req("reqLoad")
+	else:
+		_loadTape()
+
+func _useKnob() -> void:
+	if _mp():
+		_req("reqKnob")
+	else:
+		_turnKnob()
+
+func _useSwitch() -> void:
+	if _mp():
+		_req("reqSwitch")
+	else:
+		_throwSwitch()
+
+# ------------------------------------------------------------------------------------------ MP requests (host)
+func _hostOk() -> bool:
+	return _host() and (game.state == "playing" or game.state == "down")
+
+func net_reqBar(color) -> void:
+	if not _hostOk() or not BARS.has(str(color)):
+		return
+	_barFrame = -1
+	_onBarHit(str(color), {"by": int(_net().sender)})
+
+func net_reqPuppet(id) -> void:
+	var p = puppets.get(str(id))
+	if not _hostOk() or p == null or p.state != "ghost":
+		return
+	_net().everyone("egg", "puppet", [p.id])
+
+func net_reqPickup(id) -> void:
+	var p = puppets.get(str(id))
+	if not _hostOk() or p == null or p.state != "ground":
+		return
+	var pl = _pl(int(_net().sender))
+	if pl == null or not _net().isTargetable(pl):
+		return
+	_net().everyone("egg", "pickup", [p.id, int(_net().sender)])
+
+func net_reqSlot() -> void:
+	if not _hostOk():
+		return
+	var by := int(_net().sender)
+	var ids := []
+	for p in puppets.values():
+		if p.state == "carried" and int(p.get("carrier", 0)) == by:
+			ids.append(p.id)
+	if not ids.is_empty():
+		_net().everyone("egg", "slot", [by, ids])
+
+func net_reqLoad() -> void:
+	var by := int(_net().sender)
+	if not _hostOk() or tapeCarrier != by or step != 4 or _track != null:
+		return
+	var n: int = E.tracking.detents
+	var s0 := int(floor(game.rand() * n))
+	var kT := int(floor(game.rand() * (n - 1)))
+	if kT >= s0:
+		kT += 1
+	_net().everyone("egg", "load", [by, s0, kT])
+
+func net_reqKnob() -> void:
+	var by := int(_net().sender)
+	if not _hostOk() or not powered or (tapeCarrier == by and step == 4 and _track == null):
+		return
+	var knob = O.get("ee_tracking_knob")
+	var n: int = E.tracking.detents
+	var kt = _oc(knob, "turn", [1]) if _has(knob, "turn") else null
+	var k: int = int(kt) if kt != null else (int(_g(_track, "k", 3)) + 1) % n
+	_net().everyone("egg", "knob", [k, by])
+
+func net_reqSwitch() -> void:
+	if not _hostOk():
+		return
+	_throwSwitch()
+
+# ------------------------------------------------------------------------------------------ MP actions (everyone)
+func _act() -> bool:
+	return _mp() and int(_net().sender) == 1
+
+func net_chime(color, on) -> void:
+	if not _fromHost() or not BARS.has(str(color)):
+		return
+	var c := str(color)
+	var rack = O.get("ee_chime_rack")
+	var bars = _g(rack, "bars")
+	var bar = bars.get(c) if bars is Dictionary else null
+	var pos := Vector3(-6.6, 1.6, -4.5)
+	if bar != null:
+		pos = (_oc(bar, "top") as Vector3).lerp(_oc(bar, "bottom"), 0.6)
+	if not bool(on):
+		_play("ee_chime_tunk", {"pos": pos})
+		_oc(rack, "swing", [c, 0.35, null])
+		return
+	_play("ee_chime_%s" % c, {"pos": pos})
+	_emit("egg:chime", {"bar": c})
+
+func net_puppet(id) -> void:
+	var p = puppets.get(str(id))
+	if not _act() or p == null or p.state != "ghost":
+		return
+	_tunePuppet(p)
+
+func net_pickup(id, carrier) -> void:
+	var p = puppets.get(str(id))
+	if not _act() or p == null or p.state != "ground":
+		return
+	_pickup(p, int(carrier))
+
+func net_slot(carrier, ids) -> void:
+	if not _act() or not (ids is Array):
+		return
+	_slotAll(ids)
+
+func net_drop(ids) -> void:
+	if not _act() or not (ids is Array):
+		return
+	for id in ids:
+		var p = puppets.get(str(id))
+		if p != null and p.state == "carried":
+			_dropPuppet(p)
+
+func net_sockPop(pos) -> void:
+	if not _fromHost() or not (pos is Vector3):
+		return
+	_sockFx(pos)
+
+func net_applause(n, pos, zid) -> void:
+	if not _act() or not (pos is Vector3):
+		return
+	applause = int(n) - 1
+	var Z = game.zombies
+	var z = _oc(Z, "byId", [int(zid)]) if (zid != null and int(zid) >= 0 and _has(Z, "byId")) else null
+	_countApplause(pos, z)
+
+func net_storm(st, pos, leader) -> void:
+	if not _fromHost() or not (pos is Vector3):
+		return
+	match str(st):
+		"spawn":
+			_esPos = null
+			_spawnStorm(pos)
+			if storm != null:
+				storm.leader = int(leader)
+		"lost":
+			if storm != null:
+				_evaporate(storm)
+		"arrived":
+			if storm != null:
+				_stSetPos(storm, pos)
+				_arrive(storm)
+
+func net_zap(victim) -> void:
+	if not _act() or storm == null:
+		return
+	_zapFx(storm, int(victim))
+
+func net_tape(carrier) -> void:
+	if not _act():
+		return
+	tapeCarrier = int(carrier)
+	hasTape = tapeCarrier != 0
+	if tapeCarrier == 0:
+		# the tape was lost with its carrier: drop the reel from the back (Telly re-arms the pull on the host)
+		var r = _reel if _reel != null else _g(game.telly, "tapeReel")
+		if r is Node3D and is_instance_valid(r) and _track == null:
+			DAU.detach(r)
+		_reel = null
+	else:
+		_reel = _g(game.telly, "tapeReel")
+
+func net_load(carrier, s0, kT) -> void:
+	if not _act() or step != 4 or _track != null:
+		return
+	_loadTapeAt(int(s0), int(kT))
+
+func net_knob(k, by) -> void:
+	if not _act():
+		return
+	_knobTo(int(k), not _host())
+
+func net_switch(thrown) -> void:
+	if not _fromHost():
+		return
+	if bool(thrown):
+		_switchFx()
+	else:
+		_rearmSwitch()
+
+func net_setStep(n) -> void:
+	if not _fromHost():
+		return
+	setStep(int(n))
+
+# MP host -> client snapshot of the storm (follow state).
+func net_stream_es(_from, data) -> void:
+	if not _client() or int(_net().sender) != 1 or storm == null:
+		return
+	if not (data is PackedFloat32Array) or data.size() < 4:
+		return
+	_esPos = Vector3(data[0], data[1], data[2])
+	_esYaw = data[3]
 
 # ================================================================================================ STEP 1: chimes
 # The chime_rack prop's collider box sits ~0.3 m in front of the bars and stops bullets. A ray that (extended) hits
@@ -1249,6 +1584,9 @@ func _onBarHit(color: String, info = {}) -> void:
 	if _barFrame == int(g.time.frame):
 		return          # at most one bar per shot event
 	_barFrame = int(g.time.frame)
+	if _client():
+		_req("reqBar", [color])     # MP: the host rings it for everyone
+		return
 	var rack = O.get("ee_chime_rack")
 	var bars = _g(rack, "bars")
 	var bar = bars.get(color) if bars is Dictionary else null
@@ -1257,6 +1595,8 @@ func _onBarHit(color: String, info = {}) -> void:
 		var top: Vector3 = _oc(bar, "top")
 		var bot: Vector3 = _oc(bar, "bottom")
 		pos = top.lerp(bot, 0.6)
+	if _host():
+		_net().toAll("egg", "chime", [color, powered])
 	if not powered:
 		_play("ee_chime_tunk", {"pos": pos})
 		_oc(rack, "swing", [color, 0.35, _g(info, "dir")])
@@ -1280,6 +1620,9 @@ func _onBarHit(color: String, info = {}) -> void:
 func _completeStation() -> void:
 	if not _complete(1):
 		return
+	_beats1()
+
+func _beats1() -> void:
 	_override("station_id", ALL_TV, 3, PRI.ee)
 	_play("sting_round_start", {"delay": 0.25})
 	_oc(O.get("neon_logo"), "fix")
@@ -1408,6 +1751,15 @@ func _onPuppetHit(p: Dictionary, info = {}) -> void:
 		info = {}
 	if p.state != "ghost" or IGNORED_CAUSES.has(_g(info, "cause")):
 		return
+	if _client():
+		_req("reqPuppet", [p.id])
+		return
+	if _host():
+		_net().everyone("egg", "puppet", [p.id])
+		return
+	_tunePuppet(p)
+
+func _tunePuppet(p: Dictionary) -> void:
 	p.state = "tuning"
 	p.t = 0.0
 	var v: Vector3 = p.home
@@ -1415,10 +1767,11 @@ func _onPuppetHit(p: Dictionary, info = {}) -> void:
 	_oc(game.fx, "burst", [v, {"shape": "static", "count": 26, "speed": 1.6, "size": 0.07, "life": 0.45, "gravity": 0}])
 	_play("zmb_death_static", {"pos": v, "vol": 0.6})
 
-func _pickup(p: Dictionary) -> void:
+func _pickup(p: Dictionary, carrier: int = 0) -> void:
 	if p.state != "ground":
 		return
-	var pl = game.player
+	var pl = game.player if carrier == 0 else _pl(carrier)
+	p.carrier = carrier if carrier != 0 else _lid()
 	var belt = _g(_g(_g(pl, "hero"), "slots"), "belt")
 	_oc(p.blob, "remove")
 	p.blob = null
@@ -1436,7 +1789,7 @@ func _pickup(p: Dictionary) -> void:
 		root.position = Vector3(0, -0.25 * HANG_SCALE, 0)
 		root.rotation = Vector3(0, h[3], 0)
 		root.scale = Vector3.ONE * HANG_SCALE
-		_setPuppetLayer(p, 0)
+		_setPuppetLayer(p, 1 if (_mp() and pl != game.player) else 0)     # MP: remote heroes draw on the actors layer
 	else:
 		root.visible = false
 	var ppos = pl.pos if pl != null else null
@@ -1448,12 +1801,16 @@ func _pickup(p: Dictionary) -> void:
 	_play("costume_pop", o1)
 	_play("ee_puppet_giggle", o2)
 
-func _slotAll() -> void:
+func _slotAll(only = null) -> void:
 	var th = O.get("ee_puppet_theater")
 	if th == null or carried.is_empty():
 		return
-	var ids := carried.duplicate()
-	carried.clear()
+	var ids: Array = carried.duplicate()
+	if only is Array:
+		ids = ids.filter(func(id): return only.has(id))
+		carried = carried.filter(func(id): return not only.has(id))
+	else:
+		carried.clear()
 	var root := _areaRoot("studio_b")
 	var slots = _g(th, "slots")
 	for i in ids.size():
@@ -1492,6 +1849,28 @@ func _landSlot(p: Dictionary) -> void:
 	if all and step == 1:
 		_completePuppets()
 
+# MP: the carrier is gone: the puppet pops back to its drop spot on the floor (pickable again).
+func _dropPuppet(p: Dictionary) -> void:
+	if p.hanger != null:
+		_free(p.hanger)
+	p.hanger = null
+	p.carrier = 0
+	carried = carried.filter(func(id): return id != p.id)
+	var pr: Node3D = p.root
+	_add(_areaRoot(p.area), pr)
+	_setPuppetLayer(p, 0)
+	_setWorld(pr, p.drop, p.rotY, 1.0)
+	pr.visible = true
+	(p.model as Node3D).rotation = Vector3.ZERO
+	(p.model as Node3D).scale = Vector3.ONE
+	(p.pivot as Node3D).position = Vector3.ZERO
+	(p.pivot as Node3D).rotation = Vector3.ZERO
+	p.state = "ground"
+	p.t = 0.0
+	_oc(game.fx, "burst", [p.drop, {"shape": "puff", "count": 6, "speed": 0.8, "size": 0.12, "life": 0.5, "color": "#E8DCCB"}])
+	p.blob = _oc(game.fx, "blob", [pr, 0.22])
+	_play("costume_pop", {"pos": p.drop, "vol": 0.6})
+
 func _placeOnStage(p: Dictionary) -> void:
 	var th = O.get("ee_puppet_theater")
 	_oc(p.blob, "remove")
@@ -1521,6 +1900,9 @@ func _placeOnStage(p: Dictionary) -> void:
 func _completePuppets() -> void:
 	if not _complete(2):
 		return
+	_beats2()
+
+func _beats2() -> void:
 	var th = O.get("ee_puppet_theater")
 	_celebrate(2, {"laugh": 7.6, "box": 8.6})
 	_oc(th, "setOpen", [1, 0.8])
@@ -1542,6 +1924,8 @@ func _completePuppets() -> void:
 	_later(0.7, func(): _popSocks())
 
 func _popSocks() -> void:
+	if _client():
+		return
 	var Z = game.zombies
 	var alive = _g(Z, "alive")
 	if alive == null:
@@ -1556,7 +1940,7 @@ func _popSocks() -> void:
 		i += 1
 
 func _updateSocks(dt: float) -> void:
-	if _socks.is_empty():
+	if _socks.is_empty() or _client():
 		return
 	var Z = game.zombies
 	for i in range(_socks.size() - 1, -1, -1):
@@ -1580,11 +1964,16 @@ func _updateSocks(dt: float) -> void:
 		if s.t >= 0.9:
 			var v := zp
 			v.y += float(_g(z, "height", 1.0)) * 0.5
-			_oc(game.fx, "burst", [v, {"shape": "confetti", "count": 40, "speed": 4.5, "size": 0.08, "life": 1.3, "gravity": 5, "colors": RAINBOW}])
-			_oc(game.fx, "burst", [v, {"shape": "star", "count": 8, "speed": 2.5, "size": 0.1, "life": 0.6}])
-			_play("sock_boing", {"pos": v, "rate": 1.3})
+			if _host():
+				_net().toAll("egg", "sockPop", [v])
+			_sockFx(v)
 			_oc(Z, "kill", [z, {"cause": "egg", "points": false, "corpse": false}])
 			_socks.remove_at(i)
+
+func _sockFx(v: Vector3) -> void:
+	_oc(game.fx, "burst", [v, {"shape": "confetti", "count": 40, "speed": 4.5, "size": 0.08, "life": 1.3, "gravity": 5, "colors": RAINBOW}])
+	_oc(game.fx, "burst", [v, {"shape": "star", "count": 8, "speed": 2.5, "size": 0.1, "life": 0.6}])
+	_play("sock_boing", {"pos": v, "rate": 1.3})
 
 func _updateSong(dt: float) -> void:
 	var s = _song
@@ -1690,7 +2079,7 @@ func _updatePuppets(dt: float) -> void:
 				pivot.rotation.z = sin(ph * 1.3) * 0.04
 				_poseParts(p, 0.05 + maxf(0.0, sin(ph * 2.0)) * 0.08, 0.25, 0.25 + maxf(0.0, sin(ph * 1.1)) * 0.5)
 			"carried":
-				var pl = game.player
+				var pl = game.player if not _mp() else _pl(int(p.get("carrier", 0)))
 				var pv = _g(pl, "vel")
 				var sp := Vector2(pv.x, pv.z).length() if pv is Vector3 else 0.0
 				var ph: float = t * (4.0 + sp * 1.4) + p.phase
@@ -1782,7 +2171,7 @@ func _revealPuppet(p: Dictionary) -> void:
 
 # ================================================================================================ STEP 3: applause
 func _onKill(e) -> void:
-	if e == null or step != 2:
+	if e == null or step != 2 or _client():
 		return
 	var pos = _g(e, "pos")
 	if pos == null:
@@ -1795,6 +2184,22 @@ func _onKill(e) -> void:
 	var x1: float = zone[2]
 	var z1: float = zone[3]
 	if pos.x < x0 or pos.x > x1 or pos.z < z0 or pos.z > z1:
+		return
+	if _mp():
+		# MP: the killer stands in Studio A (no killer known: anybody in Studio A)
+		var by = _g(e, "by")
+		var ok := false
+		if by is int or by is float:
+			ok = _g(_pl(int(by)), "area") == "studio_a"
+		else:
+			for q in _net().players():
+				if _g(q, "area") == "studio_a" and q.get("offAir") != true:
+					ok = true
+		if not ok:
+			return
+		var z = _g(e, "z")
+		var zid = _g(z, "id")
+		_net().everyone("egg", "applause", [applause + 1, pos, int(zid) if zid != null else -1])
 		return
 	if _g(game.player, "area") != "studio_a":
 		return
@@ -1837,6 +2242,9 @@ func _countApplause(pos = null, z = null) -> void:
 func _completeApplause() -> void:
 	if not _complete(3):
 		return
+	_beats3()
+
+func _beats3() -> void:
 	var O_ := O
 	var g = game
 	_oc(O_.get("ee_tote_board"), "setValue", [TOTE_BASE + E.applauseKills])
@@ -2172,7 +2580,7 @@ func _thunderHook() -> void:
 	_rumbleT = 20.0
 	forceForecaster = true
 	var cnt = _oc(g.zombies, "count", ["forecaster"])
-	if not (cnt != null and float(cnt) > 0.0):
+	if not (cnt != null and float(cnt) > 0.0) and not _client():
 		_emit("egg:need_forecaster", {})
 
 func _moveMagnets(seconds: float) -> void:
@@ -2268,9 +2676,25 @@ func _updateMap(dt: float) -> void:
 
 # ================================================================================================ STEP 4: the Stray Storm
 func _onForecasterStorm(e) -> void:
-	if step != 3 or stormActive or _g(e, "pos") == null:
+	if step != 3 or stormActive or _g(e, "pos") == null or _client():
 		return
+	var by = _g(e, "by")
+	if by == null:
+		by = _g(_g(e, "z"), "lastHitBy")
+	_spawnBy = int(by) if (by is int or by is float) else 0
 	_spawnStorm(e.pos)
+	_spawnBy = 0
+
+var _spawnBy := 0
+
+# MP host: the storm's leader at the spawn (the Forecaster's killer when targetable, else the nearest target).
+func _pickLeader(pos: Vector3, prefer: int) -> int:
+	var n = _net()
+	var q = n.playerById(prefer) if prefer != 0 else null
+	if q != null and n.isTargetable(q):
+		return prefer
+	q = n.nearestPlayer(pos, true)
+	return n.idOf(q) if q != null else 0
 
 func _stSetPos(st: Dictionary, p: Vector3) -> void:
 	(st.art.root as Node3D).position = p
@@ -2295,6 +2719,12 @@ func _spawnStorm(pos: Vector3):
 	_crumbs.clear()
 	_crumbT = 0.0
 	var pl = g.player
+	if _host():
+		st.leader = _pickLeader(pos, _spawnBy)
+		pl = _pl(st.leader)
+		_net().toAll("egg", "storm", ["spawn", pos, st.leader])
+	elif _client():
+		pl = null
 	if pl != null:
 		_crumbs.append(pl.pos)
 	_oc(g.fx, "burst", [st.pos, {"shape": "puff", "count": 14, "speed": 2, "size": 0.35, "life": 0.8, "color": STORM_COLOR}])
@@ -2339,6 +2769,15 @@ func _updateStorm(dt: float) -> void:
 	var pl = g.player
 	# breadcrumbs (a position every 0.25 s while a storm lives)
 	var st = storm
+	if st != null and _mp() and st.state == "follow":
+		if _client():
+			_puppetStorm(st, dt)
+			return
+		pl = _stormLeader(st)
+		_esT -= dt
+		if _esT <= 0.0:
+			_esT = 0.1
+			_net().stream("es", PackedFloat32Array([st.pos.x, st.pos.y, st.pos.z, (st.art.root as Node3D).rotation.y]))
 	if st == null or pl == null:
 		return
 	if dt <= 0.0:
@@ -2445,7 +2884,19 @@ func _updateStorm(dt: float) -> void:
 	_setOpacity(art.glowMat, 0.55 * (st.flash / 0.18) if st.flash > 0.0 else 0.0)
 	# zap: 10 every 4 s within 2 m (horizontal)
 	st.zapCd -= dt
-	if hDist <= 2.0 and st.zapCd <= 0.0:
+	if _mp():
+		if st.zapCd <= 0.0:
+			var vb = null
+			var vd := 2.0
+			for q in _net().targets():
+				var dd := Vector2(q.pos.x - p.x, q.pos.z - p.z).length()
+				if dd <= vd:
+					vd = dd
+					vb = q
+			if vb != null:
+				st.zapCd = float(S.zapEvery)
+				_net().everyone("egg", "zap", [_net().idOf(vb)])
+	elif hDist <= 2.0 and st.zapCd <= 0.0:
 		_zap(st)
 	if st.bolt != null:
 		st.boltT -= dt
@@ -2470,6 +2921,94 @@ func _updateStorm(dt: float) -> void:
 	var tv := Vector3(plpos.x - TOWER.x, 0, plpos.z - TOWER.z)
 	if tv.length() <= E.towerR and p.distance_to(plpos) <= E.stormNear and step == 3:
 		_arrive(st)
+
+# MP host: the storm's leader (re-picked when it stops being a target: stranded until the new one is close).
+func _stormLeader(st: Dictionary):
+	var n = _net()
+	var q = n.playerById(int(st.get("leader", 0)))
+	if q != null and n.isTargetable(q):
+		return q
+	var nq = n.nearestPlayer(st.pos, true)
+	if nq == null:
+		return null
+	st.leader = n.idOf(nq)
+	_crumbs.clear()
+	st.stranded = true
+	return nq
+
+# MP client: the storm follows the host's stream; local wobble / rain / crackles / bolt fade.
+func _puppetStorm(st: Dictionary, dt: float) -> void:
+	var g = game
+	st.age += dt
+	var art: Dictionary = st.art
+	var root: Node3D = art.root
+	var p: Vector3 = root.position
+	if _esPos is Vector3:
+		p = p.lerp(_esPos, 1.0 - exp(-dt * 8.0))
+		root.rotation.y = lerp_angle(root.rotation.y, _esYaw, 1.0 - exp(-dt * 8.0))
+	_stSetPos(st, p)
+	var t: float = g.time.now
+	var body: Node3D = art.body
+	body.position = Vector3(sin(t * 1.3) * 0.06, sin(t * 2.1) * 0.08, 0)
+	body.rotation.z = sin(t * 0.9) * 0.05
+	var rainH := maxf(0.3, p.y - _floorY(p.x, p.z, p.y) - 0.35)
+	var rain: MeshInstance3D = art.rain
+	if rain != null:
+		rain.scale = Vector3(1, rainH / root.scale.y, 1)
+		rain.position.y = -0.3
+	var rt: Dictionary = art.rainTex
+	rt.offset.y = fmod(rt.offset.y + dt * 2.6, 1.0)
+	rt.repeat.y = rainH / 1.6
+	_rainUv(art.rainMat, rt)
+	st.crackleT -= dt
+	if st.crackleT <= 0.0:
+		st.crackleT = 0.5 + randf() * 1.1
+		st.flash = 0.18
+		var v2 := p + Vector3((randf() - 0.5) * 1.2, (randf() - 0.3) * 0.5, (randf() - 0.5) * 0.8)
+		_oc(g.fx, "burst", [v2, {"shape": "spark", "count": 6, "speed": 2.5, "size": 0.025, "life": 0.2, "color": "#E7D8FF"}])
+	if st.flash > 0.0:
+		st.flash -= dt
+	_setOpacity(art.glowMat, 0.55 * (st.flash / 0.18) if st.flash > 0.0 else 0.0)
+	if st.bolt != null:
+		st.boltT -= dt
+		_setOpacity((st.bolt as MeshInstance3D).material_override, maxf(0.0, st.boltT / 0.2) * (1.0 if randf() < 0.7 else 0.3))
+		if st.boltT <= 0.0:
+			_free(st.bolt)
+			st.bolt = null
+	_oc(st.loop, "setPos", [p])
+	if st.age >= S.life - 15:
+		var k := clamp01((st.age - (S.life - 15)) / 15.0)
+		root.scale = Vector3.ONE * (0.92 * (1.0 - k * 0.55))
+
+# MP: the zap bolt toward `victim` (as this peer sees it); only the victim's own peer takes the 10.
+func _zapFx(st: Dictionary, victim: int) -> void:
+	var g = game
+	var pl = _pl(victim)
+	if pl == null:
+		return
+	st.zapCd = float(S.zapEvery)
+	st.zaps = int(st.get("zaps", 0)) + 1
+	var v: Vector3 = pl.pos
+	v.y += 1.2
+	var from: Vector3 = (st.pos as Vector3) + Vector3(0, -0.45, 0)
+	var geo := boltGeometry(from, v, {"jag": 0.2, "segs": 8, "width": 0.035, "branches": 1})
+	if st.bolt != null:
+		_free(st.bolt)
+	var mat: ShaderMaterial = _boltMat().duplicate()
+	var bolt := MeshInstance3D.new()
+	bolt.mesh = geo
+	bolt.material_override = mat
+	bolt.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	st.bolt = bolt
+	g.scene.add_child(bolt)
+	st.boltT = 0.2
+	st.flash = 0.2
+	if pl == g.player:
+		_oc(pl, "hurt", [S.zap, st.pos])
+		_oc(g.cam, "shake", [0.12, 0.2])
+	_play("ee_storm_zap", {"pos": st.pos})
+	_oc(g.fx, "burst", [v, {"shape": "spark", "count": 12, "speed": 3, "size": 0.03, "life": 0.25, "color": "#E0D0FF"}])
+	_oc(g.fx, "flashLight", [v, "#C9A8FF", 4, 0.2])
 
 func _zap(st: Dictionary) -> void:
 	var g = game
@@ -2502,6 +3041,8 @@ func _evaporate(st: Dictionary) -> void:
 		return
 	st.state = "evaporate"
 	st.fade = 1.0
+	if _host():
+		_net().toAll("egg", "storm", ["lost", st.pos, 0])
 	_oc(st.loop, "stop", [0.8])
 	_oc(game.fx, "burst", [st.pos, {"shape": "puff", "count": 12, "speed": 1.5, "size": 0.3, "life": 0.9, "color": "#8A7AA8"}])
 	_play("fc_cloud_pop", {"pos": st.pos, "rate": 0.7})
@@ -2509,6 +3050,8 @@ func _evaporate(st: Dictionary) -> void:
 	_emit("egg:storm", {"state": "lost"})
 
 func _arrive(st: Dictionary) -> void:
+	if _host():
+		_net().toAll("egg", "storm", ["arrived", st.pos, 0])
 	st.state = "race"
 	st.raceT = 0.0
 	st.raceFrom = st.pos
@@ -2565,6 +3108,10 @@ func _strike(st: Dictionary) -> void:
 	_removeStorm()
 	if not _complete(4):
 		return
+	_beats4()
+
+func _beats4() -> void:
+	_removeStorm(true)
 	forceForecaster = false
 	_mapBlink = false
 	_restoreMapTower()
@@ -2581,6 +3128,17 @@ func _boltMat() -> ShaderMaterial:
 # ================================================================================================ STEP 5: tape + tracking
 func _onTellyTake(e) -> void:
 	if e == null or _g(e, "itemId") != "ee_tape_reel":
+		return
+	if _mp():
+		# MP: the host names the carrier (the Telly user: `by`, or mp-machines' `user`) for everyone
+		if not _host():
+			return
+		var by = _g(e, "by")
+		if by == null:
+			by = _g(e, "user")
+		if by == null:
+			by = _g(game.telly, "tapeHolder")
+		_net().everyone("egg", "tape", [int(by) if (by is int or by is float) and int(by) != 0 else _lid()])
 		return
 	hasTape = true
 	_reel = _g(game.telly, "tapeReel")
@@ -2613,6 +3171,44 @@ func _loadTape() -> void:
 	_track = {"s0": s0, "kT": kT, "k": s0, "quietT": 0.0, "started": false, "t": 0.0, "wob": 0.0}
 	_oc(O.get("ee_tracking_knob"), "set", [s0, true])
 	_later(1.5, func(): _startPlayback())
+
+# MP (every peer): the carrier loads the reel with the host's s0 / kT (the _loadTape body without the rolls).
+func _loadTapeAt(s0: int, kT: int) -> void:
+	var g = game
+	var vtr = O.get("ee_vtr2")
+	hasTape = false
+	tapeCarrier = 0
+	var reel = _reel if _reel != null else _g(g.telly, "tapeReel")
+	if reel is Node3D and is_instance_valid(reel):
+		var from := _worldPos(reel)
+		_attach(g.scene, reel)
+		var vg = _g(vtr, "group")
+		var to: Vector3
+		if vg is Node3D:
+			to = _worldXform(vg) * Vector3(0, 1.3, -0.55)
+		else:
+			to = _vtrPos
+			to.y = 1.3
+		_reelFly = {"reel": reel, "from": from, "to": to, "t": 0.0}
+	_oc(vtr, "loadTape", [1.5])
+	_play("ee_tape_thread", {"pos": _vtrPos})
+	_track = {"s0": s0, "kT": kT, "k": s0, "quietT": 0.0, "started": false, "t": 0.0, "wob": 0.0}
+	_oc(O.get("ee_tracking_knob"), "set", [s0, true])
+	_later(1.5, func(): _startPlayback())
+
+# MP (every peer): the knob went to detent k (the host already turned its own).
+func _knobTo(k: int, setKnob: bool) -> void:
+	if setKnob:
+		_oc(O.get("ee_tracking_knob"), "set", [k, false])
+	_play("ee_tracking_click", {"pos": _knobPos})
+	var tr = _track
+	if tr == null or step != 4:
+		return
+	tr.k = k
+	tr.quietT = 0.0
+	var d := _trackDist()
+	_oc(_tones, "setDistance", [d])
+	_emit("egg:tracking", {"detent": k, "distance": d})
 
 func _startPlayback() -> void:
 	var g = game
@@ -2690,6 +3286,12 @@ func _updateTracking(dt: float) -> void:
 		var pp: Vector3 = pl.pos
 		near = Vector2(pp.x - _vtrPos.x, pp.z - _vtrPos.z).length() <= E.tracking.radius
 		vis = _g(pl, "area") == "master_control" or pp.distance_to(_vtrPos) < 14.0
+	if _mp():
+		near = false
+		if not _client():
+			for q in _net().targets():
+				if Vector2(q.pos.x - _vtrPos.x, q.pos.z - _vtrPos.z).length() <= E.tracking.radius:
+					near = true
 	if _picture != null:
 		_picture.update(dt, float(d), vis)
 	tr.t += dt
@@ -2708,9 +3310,13 @@ func _updateTracking(dt: float) -> void:
 		tr.quietT = 0.0
 
 func _completeTape() -> void:
-	var g = game
 	if not _complete(5):
 		return
+	_beats5()
+
+func _beats5() -> void:
+	var g = game
+	tapeCarrier = 0
 	var O_ := O
 	_stopTracking()
 	_track = null
@@ -2799,19 +3405,13 @@ func _removeOutline() -> void:
 	_oc(game.lights, "removeAnchor", ["ee_switch_glow"])
 
 func _throwSwitch() -> void:
-	if step != 5 or _killSwitchUsed:
+	if step != 5 or _killSwitchUsed or _client():
 		return
 	var g = game
-	_killSwitchUsed = true
-	_switchThrownAt = g.time.realNow
+	if _host():
+		_net().toAll("egg", "switch", [true])
+	_switchFx()
 	var ks = O.get("ee_kill_switch")
-	_switchT = 0.0
-	_oc(_alarm, "stop", [0.2])
-	_alarm = null
-	_oc(g.cam, "shake", [0.25, 0.3])
-	_later(0.3, func():
-		if _killSwitchUsed:
-			_removeOutline())
 	# boss.start plays the THUNK itself (after audio.stopAll, the dead air); play it here only without a boss
 	var ok := false
 	var boss = g.boss
@@ -2833,10 +3433,25 @@ func _throwSwitch() -> void:
 	elif not ok:
 		_rearmSwitch()
 
+# The switch is thrown (every peer): THUNK animation, alarm off, the outline goes.
+func _switchFx() -> void:
+	var g = game
+	_killSwitchUsed = true
+	_switchThrownAt = g.time.realNow
+	_switchT = 0.0
+	_oc(_alarm, "stop", [0.2])
+	_alarm = null
+	_oc(g.cam, "shake", [0.25, 0.3])
+	_later(0.3, func():
+		if _killSwitchUsed:
+			_removeOutline())
+
 # the fight never started (or ended without a defeat, e.g. an aborted boss): the switch can be thrown again
 func _rearmSwitch() -> void:
 	if step != 5 or done:
 		return
+	if _host():
+		_net().toAll("egg", "switch", [false])
 	_killSwitchUsed = false
 	_switchT = -1.0
 	var sw = _g(_g(O.get("ee_kill_switch"), "parts"), "switch")
@@ -2856,7 +3471,7 @@ func _updateYard(dt: float, rdt: float) -> void:
 		if k >= 1.0:
 			_cageT = -1.0
 	var boss = game.boss
-	if _killSwitchUsed and step == 5 and not done and boss != null and not bool(_g(boss, "active", false)) \
+	if _killSwitchUsed and step == 5 and not done and boss != null and not bool(_g(boss, "active", false)) and not _client() \
 			and game.state == "playing" and float(game.time.realNow) - float(_switchThrownAt if _switchThrownAt != null else 0.0) > 4.0:
 		_rearmSwitch()
 	if _switchT >= 0.0 and sw is Node3D:
@@ -2933,7 +3548,7 @@ func debugUse(id) -> bool:
 	if sid.begins_with("pickup:"):
 		var p = puppets.get(sid.substr(7))
 		if p != null:
-			_pickup(p)
+			_usePickup(p)
 		return p != null
 	var items = _g(game.interact, "items")
 	var it = items.get(sid) if items is Dictionary else null
@@ -2960,8 +3575,11 @@ func debugStorm(x = null, z = null) -> bool:
 	var pz: float = z if z != null else pl.pos.z
 	return _spawnStorm(Vector3(px, _floorY(px, pz) + 2.5, pz)) != null
 
-func debugGiveTape() -> bool:
+func debugGiveTape(peer: int = 0) -> bool:
 	var g = game
+	if _host() and peer != 0 and peer != _lid():
+		_net().everyone("egg", "tape", [peer])     # MP test: a remote carrier (no reel model here)
+		return true
 	var back = _g(_g(_g(g.player, "hero"), "slots"), "back")
 	var reel = _g(g.telly, "tapeReel")
 	if reel == null:
@@ -2979,6 +3597,8 @@ func debugGiveTape() -> bool:
 			_s(g.telly, "tapeReel", reel)
 	_reel = reel
 	hasTape = true
+	if _host():
+		_net().everyone("egg", "tape", [_lid()])
 	return true
 
 func debugTrack(k: int) -> int:

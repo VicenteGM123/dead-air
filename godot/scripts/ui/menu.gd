@@ -3844,7 +3844,7 @@ func _drawMpRows(ci: Control, y: float, rows: Array) -> float:
 		var chs := str(CHANNELS[ci2].ch) if ci2 >= 0 else "?"
 		_paintBox(ci, "mpChn", x0 + 4.0, cy - 20.0, 40.0, 40.0, {"r": 20, "bg": "#F4F1E8", "insets": [[0, 0, 0, 4, "#E23B3B"]], "shadows": [[0, 2, 0, 0, "rgba(0,0,0,.35)"]]})
 		_txt(ci, "hud", 22, x0 + 24.0 - _tw("hud", 22, chs) / 2.0, cy, chs, "#2F5BD3")
-		var glow: String = CHANNELS[ci2].glow if ci2 >= 0 else "#F6E7C8"
+		var glow: String = str(r.color) if r.get("color") is String and str(r.color).begins_with("#") else (CHANNELS[ci2].glow if ci2 >= 0 else "#F6E7C8")
 		_paintBox(ci, "mpPip%s" % glow, x0 + 56.0, cy - 6.0, 12.0, 12.0, {"r": 6, "bg": glow, "shadows": [[0, 0, 8, 1, glow]]})
 		var nm: String = str(r.get("name", "?")).to_upper()
 		_txt(ci, "hud", 30, x0 + 80.0, cy, nm, "#FFE08A" if r.get("me") else "#F6E7C8", 30.0 * 0.06, [[0.0, 3.0, 0.0, "#2A140A"]])

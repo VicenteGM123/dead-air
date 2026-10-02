@@ -1091,6 +1091,14 @@ var _clock := 0.0
 var _shootable := false
 var _freezeAt = null
 var _powerAt := -1.0
+# MP (see the header)
+const MP_GRACE := 0.25               # host-side extension of the offer window (a client's last-moment E still lands)
+var tapeHolder := 0                  # peer id of the EE reel carrier (0 = none)
+var _seqId := 0                      # host: pull counter sent with net_spin (stale requests are ignored)
+var _exclCtx = null                  # host: {owned, teles} of the pull's user while rolling / bumping
+var _reqT := -1.0                    # requester: a pull request is pending (s); _reqCost refunded if it expires
+var _reqCost := 0
+var _freezeWarned := false
 
 # Config.T.telly-derived tables (the JS module constants)
 var TT: Dictionary
@@ -1640,6 +1648,9 @@ func reset() -> void:
 	pity = 0
 	_tapeArmed = false
 	_freezeAt = null
+	tapeHolder = 0
+	_exclCtx = null
+	_reqT = -1.0
 	mood = "normal"
 	awake = false
 	_wakeHop = false
@@ -1679,6 +1690,8 @@ func update(dt: float) -> void:
 		return
 	_clock += dt
 	var t := _clock
+	if _reqT >= 0.0:
+		_updateReq(dt)
 	_updatePower(dt)
 	_updateProximity(dt)
 	if seq != null:
@@ -1816,9 +1829,11 @@ func _prompt():
 	if s == null:
 		if not _field(game.machines, "powerOn", false) or not awake:
 			return {"plug": true}
+		if _reqT >= 0.0:
+			return null
 		return {"cost": COST}
 	if s.phase == "offer" and s.u > OFFER.out * 0.6:
-		return {}
+		return {} if not _mp() or (int(s.by) == _me() and not s.orphan) else null
 	return null
 
 func _use() -> void:
@@ -1839,6 +1854,8 @@ func canPull() -> bool:
 
 # opts: { free = false, forced = null }
 func pull(opts = {}) -> bool:
+	if _mp():
+		return _pullMP(opts)
 	if not canPull():
 		return false
 	var o: Dictionary = opts if opts is Dictionary else {}
@@ -1854,8 +1871,13 @@ func pull(opts = {}) -> bool:
 	pulls += 1
 	pullsHere += 1
 	var r := _roll(forced)
+	return _beginSpin(r, _dialCh(), -2, 0 if free else COST, 0)
+
+# Builds the pull sequence from a resolved roll r {outcome, item, ch} with the dial on `start` (solo: pull(); MP:
+# net_spin on every peer). cameo -2 = roll it here (randf, as the solo order); by = the user's peer id (0 = local).
+func _beginSpin(r: Dictionary, start: int, cameo: int, cost: int, by: int) -> bool:
+	var gm = game
 	var cycle: Array = CYCLE_EE if r.outcome == "tape" else CYCLE
-	var start := _dialCh()
 	var L := cycle.size()
 	var startPos := cycle.find(start)
 	if startPos < 0:
@@ -1875,19 +1897,22 @@ func pull(opts = {}) -> bool:
 	var times: Array = [SPIN.t0]
 	for j in N - 1:
 		times.append(times[j] + (iv[j] * SPIN.dur) / sum)
-	var cameo := -1
-	if r.outcome != "tape" and randf() < float(TT.cameo):
-		cameo = 6 + int(floor(randf() * maxi(1, N - 12)))
+	if cameo == -2:
+		cameo = -1
+		if r.outcome != "tape" and randf() < float(TT.cameo):
+			cameo = 6 + int(floor(randf() * maxi(1, N - 12)))
 	seq = {
 		"phase": "spin", "t": 0.0, "prev": -1.0, "u": -1e-6, "pu": -1.0,
 		"outcome": r.outcome, "item": r.item, "ch": r.ch, "orig": r.duplicate(),
-		"cost": 0 if free else COST, "cycle": cycle, "startPos": startPos, "N": N, "times": times, "passed": 0, "shift": 0,
+		"cost": cost, "cycle": cycle, "startPos": startPos, "N": N, "times": times, "passed": 0, "shift": 0,
 		"landT": times[times.size() - 1],
 		"bumped": false, "cameo": cameo,
 		"shownCh": start, "detT": -1.0, "offerT": -1.0, "took": false, "drum": false, "wag": false, "refunded": false,
 		"dest": null, "walk": null, "arp": null, "lastDetentCh": start,
 		# fields the JS adds on the fly
 		"detIdx": 0, "cameoNow": false, "bopT": 0.0, "catchT": 0.0, "drumK": -1, "yawnT": null, "walkDone": false,
+		# MP: user peer, host pull id, the user's exclusions, the host's landing, orphaned (user down / gone)
+		"by": by, "id": 0, "excl": null, "landMsg": null, "orphan": false, "holdT": 0.0,
 	}
 	phase = "spin"
 	gm.events.emit("machine:telly_spin", {"homeId": homeId})
@@ -1932,6 +1957,10 @@ func _roll(forced) -> Dictionary:
 	return {"outcome": "item", "item": pick, "ch": int(ITEM_CH[pick])}
 
 func _excluded(id) -> bool:
+	if _exclCtx != null and id != null and id != "":
+		if id == "tiny_tele":
+			return float(_exclCtx.teles) >= float(Config.T.player.teleMax)
+		return (_exclCtx.owned as Array).has(id)
 	var w = game.weapons
 	if w == null or id == null or id == "":
 		return false
@@ -1953,6 +1982,10 @@ func _areaOpen(areaId) -> bool:
 	var lv = game.level
 	if areaId == "lobby" or _field(game.player, "area") == areaId:
 		return true
+	if _mp():
+		for pl in game.net.players():
+			if pl != null and pl.alive and not pl.get("offAir") and pl.area == areaId:
+				return true
 	var areas = _field(lv, "areas")
 	var a = areas.get(areaId) if areas is Dictionary else null
 	var doors = _field(lv, "doors")
@@ -1981,6 +2014,9 @@ func onHit(info = {}) -> void:
 		return
 	if not (info is Dictionary):
 		info = {}
+	if _mp():
+		_onHitMP(info)
+		return
 	var gm = game
 	var s = seq
 	if not info.get("melee", false):
@@ -2017,14 +2053,16 @@ func onHit(info = {}) -> void:
 		_invoke(gm.cam, "shake", [0.08, 0.15])
 
 # Percussive maintenance (GDD §10.2 rules 1-6): one detent forward now, then resolve the landing.
-func _bump(s: Dictionary) -> void:
-	var gm = game
-	s.bumped = true
+func _bump(s: Dictionary, hitter: int = 0) -> void:
+	var r := _bumpResolve(s)
+	_bumpApply(s, r[0], r[1], r[2], r[3], r[4], hitter)
+
+# The percussive-maintenance rules (no mutation): [fromCh, ch, outcome, item|null, extra]. Host / solo only.
+func _bumpResolve(s: Dictionary) -> Array:
 	var fromCh: int = s.ch            # the channel the dial was going to land on (GDD: "a 12 bumps to a 13")
-	s.shift += 1
 	var cyc: Array = s.cycle
 	var L := cyc.size()
-	var pos: int = s.startPos + s.N + s.shift
+	var pos: int = s.startPos + s.N + s.shift + 1
 	var ch: int = cyc[pos % L]
 	var extra := 0
 	var toItem := func() -> Array:
@@ -2036,18 +2074,29 @@ func _bump(s: Dictionary) -> void:
 			ex += 1
 			cc = cyc[pp % L]
 		return [pp, cc, ex]
+	var outcome: String = s.outcome
 	if s.outcome == "signoff":                          # rule 5: bumping cancels a sign-off
 		var r: Array = toItem.call()
 		pos = r[0]; ch = r[1]; extra = r[2]
-		s.outcome = "item"
+		outcome = "item"
 	elif SNOW.has(ch):                                  # rule 4
-		s.outcome = "signoff" if canMove() else "bad"
+		outcome = "signoff" if canMove() else "bad"
 	else:                                               # rule 3
 		var r: Array = toItem.call()
 		pos = r[0]; ch = r[1]; extra = r[2]
-		s.outcome = "item"
+		outcome = "item"
+	return [fromCh, ch, outcome, CH_ITEM.get(ch) if outcome == "item" else null, extra]
+
+# Applies a resolved bump (solo / every MP peer): the dial jumps, the landing moves `extra` detents later.
+func _bumpApply(s: Dictionary, fromCh: int, ch: int, outcome: String, item, extra: int, hitter: int = 0) -> void:
+	var gm = game
+	s.bumped = true
+	s.shift += 1
+	var cyc: Array = s.cycle
+	var L := cyc.size()
+	s.outcome = outcome
 	s.ch = ch
-	s.item = CH_ITEM.get(ch) if s.outcome == "item" else null
+	s.item = item
 	var times: Array = s.times
 	var last: float = times[times.size() - 1]
 	for i in range(1, extra + 1):
@@ -2066,28 +2115,31 @@ func _bump(s: Dictionary) -> void:
 	_jolt(0.09)
 	ears.L.kick(-7)
 	ears.R.kick(7)
-	_invoke(gm.cam, "shake", [0.12, 0.2])
+	if _isMe(hitter):
+		_invoke(gm.cam, "shake", [0.12, 0.2])
 	_invoke(gm.fx, "burst", [_worldPoint(Vector3(0, 1.25, -0.1)), {"shape": "star", "count": 6, "speed": 2.6, "size": 0.1, "life": 0.6}])
-	gm.events.emit("machine:telly_bump", {"fromChannel": fromCh, "toChannel": ch})
+	gm.events.emit("machine:telly_bump", {"fromChannel": fromCh, "toChannel": ch} if not _mp() else {"fromChannel": fromCh, "toChannel": ch, "by": hitter})
 
-func _bopBack() -> void:
+func _bopBack(hitter: int = 0) -> void:
 	var gm = game
 	var s = seq
-	var p = gm.player
+	var p = gm.player if _isMe(hitter) else null    # MP: only the hitter's own peer moves its player
 	_play("telly_nuh_uh", {"vol": 1.1})
 	_gloveTo("bop", 0.12, easeOutCubic)
-	s.bopT = 0.32
+	if s != null:
+		s.bopT = 0.32
 	if p != null:
 		var pp := DAU.v3(_field(p, "pos"))
 		var v := Vector3(pp.x - root.position.x, 0, pp.z - root.position.z).normalized() * 6.0
 		v.y = 2.0
 		_invoke(p, "knockback", [v])
-	_invoke(gm.cam, "shake", [0.14, 0.22])
+	if _isMe(hitter):
+		_invoke(gm.cam, "shake", [0.14, 0.22])
 
 func _catchHand() -> void:
 	var s = seq
 	_play("telly_nuh_uh", {"vol": 1.0})
-	if s.phase == "offer":
+	if s != null and s.phase == "offer":
 		s.catchT = 1.1
 		_gloveTo("catch", 0.12, easeOutCubic)
 	else:
@@ -2190,7 +2242,12 @@ func _updateSeq(dt: float) -> void:
 		var back: float = s.t - _freezeAt
 		s.t -= back
 		s.u = maxf(0.0, s.u - back)
-		gm.time.scale = 0.0
+		if _mp():
+			if not _freezeWarned:
+				_freezeWarned = true
+				push_warning("[telly] debugFreezeAt: no global freeze in MP (ignored)")
+		else:
+			gm.time.scale = 0.0
 		_freezeAt = null
 	match s.phase:
 		"spin": _seqSpin(s)
@@ -2230,6 +2287,13 @@ func _seqSpin(s: Dictionary) -> void:
 	if u >= SPIN.t0:
 		prop.spin = 1.0 if u < s.landT - 0.8 else lerp_(1.0, 0.25, (u - (s.landT - 0.8)) / 0.8)
 	if u >= s.landT and s.passed >= times.size():
+		if _cli():
+			var lm = s.landMsg
+			if lm == null:
+				return                                 # MP client: hold the last detent until the host lands
+			s.outcome = lm[0]
+			s.item = lm[1]
+			s.ch = lm[2]
 		_land(s)
 
 # One detent: the dial clacks forward, 60 ms of snow, then the channel's card + its 3D item inside the cabinet.
@@ -2269,7 +2333,9 @@ func _land(s: Dictionary) -> void:
 		else:
 			pity += 1
 	var result = "bad_reception" if s.outcome == "bad" else (s.item if s.outcome == "item" else s.outcome)
-	gm.events.emit("machine:telly_result", {"result": result, "channel": s.ch})
+	if _hst():
+		gm.net.toAll("telly", "land", [s.id, str(s.outcome), str(s.item) if s.item != null else "", int(s.ch)])
+	gm.events.emit("machine:telly_result", {"result": result, "channel": s.ch} if not _mp() else {"result": result, "channel": s.ch, "by": s.by})
 	if s.outcome == "tape":
 		_play("baron_laugh", {"vol": 1.0})
 	if s.outcome == "signoff" or s.outcome == "bad":
@@ -2379,25 +2445,42 @@ func _seqOffer(s: Dictionary) -> void:
 	if _hit(s, OFFER.wag + 1.3):
 		glove.wag = 0
 		_gloveTo("present", 0.3, easeOutBack)
-	if s.u >= OFFER.window:
-		_phase(s, "timeout")
-		_gloveTo("reach", 0.3, easeInOut)
-		_play("telly_slurp")
+	if not _mp():
+		if s.u >= OFFER.window:
+			_doTimeout(s)
+	elif _hst() and (s.u >= OFFER.window + MP_GRACE or (s.orphan and s.u >= 1.0)):
+		game.net.everyone("telly", "timeout", [s.id])
+
+func _doTimeout(s: Dictionary) -> void:
+	_phase(s, "timeout")
+	_gloveTo("reach", 0.3, easeInOut)
+	_play("telly_slurp")
 
 func take() -> bool:
 	var s = seq
 	if s == null or s.phase != "offer" or s.u < OFFER.out * 0.6:
 		return false
+	if _mp():
+		if s.orphan or s.by != _me():
+			return false
+		game.net.toHost("telly", "take", [s.id])
+		return true
+	_doTake(s)
+	return true
+
+# The take on every peer (solo: take(); MP: net_took): only the user's peer gets the weapon / reel.
+func _doTake(s: Dictionary) -> void:
 	var gm = game
 	var it = items.get(s.item)
 	if s.outcome == "tape":
-		_giveTape(it)
-	else:
+		_giveTape(it, s.by)
+	elif _isMe(s.by):
 		var w = gm.weapons
 		if _hasm(w, "give"):
 			_invoke(w, "give", [s.item, {"source": "telly"}])
 		else:
 			gm.events.emit("weapon:acquire", {"weaponId": s.item, "upgraded": false, "source": "telly"})
+	if s.outcome != "tape":
 		if it != null:
 			for h in it.hulls:
 				h.visible = false
@@ -2407,7 +2490,8 @@ func take() -> bool:
 			it.flyT = 0.0
 			it.flyFrom = (it.wrap as Node3D).position
 			it.flyScale = (it.wrap as Node3D).scale.x
-	gm.events.emit("machine:telly_take", {"itemId": s.item})
+			it["flyBy"] = s.by
+	gm.events.emit("machine:telly_take", {"itemId": s.item} if not _mp() else {"itemId": s.item, "by": s.by})
 	s.took = true
 	_phase(s, "take")
 	_gloveTo("fingerguns", 0.18, easeOutBack)
@@ -2415,11 +2499,11 @@ func take() -> bool:
 	glove.wag = 0
 	glove.shake = 0
 	_play("costume_pop", {"vol": 0.6})
-	return true
 
-func _giveTape(it) -> void:
+func _giveTape(it, by: int = 0) -> void:
 	var gm = game
-	var p = gm.player
+	var p = _pl(by)
+	tapeHolder = by
 	if it == null:
 		return
 	for h in it.hulls:
@@ -2440,6 +2524,8 @@ func _giveTape(it) -> void:
 		reel.visible = false
 	reel.visible = true
 	reel.name = TAPE_ID
+	if p != null and p != gm.player and back is Node3D:
+		DAU.setLayerRecursive(reel, 1)            # RemotePlayer.LAYER: drawn with the remote hero
 	tapeReel = reel
 	setMood("normal")
 
@@ -2474,6 +2560,13 @@ func _seqTimeout(s: Dictionary) -> void:
 # Sign-off: roaring snow, test card + lullaby + refund coin, stand up, waddle, CRT power-off, unfold elsewhere.
 func _seqSignoff(s: Dictionary) -> void:
 	var gm = game
+	if s.dest == null and s.u >= SO.arrive - 0.01 and _cli():
+		s.holdT += gm.time.realDt
+		if s.holdT < 3.0:
+			s.u = SO.arrive - 0.01                     # MP client: wait for the host's destination
+			s.pu = s.u
+		else:
+			s.dest = homeId if homes.has(homeId) else homes.keys()[0]
 	var u: float = s.u
 	if _hit(s, SO.card):
 		_play("telly_lullaby", {"vol": 1.1})
@@ -2515,7 +2608,7 @@ func _seqSignoff(s: Dictionary) -> void:
 	if _hit(s, SO.turnBack) and walk != null:
 		walk.yaw1 = root.rotation.y
 	if walk != null and u >= SO.turnBack and u < SO.wave:
-		var p = gm.player
+		var p = _pl(s.by)
 		var faceYaw: float = walk.yaw0
 		if p != null:
 			var pp := DAU.v3(_field(p, "pos"))
@@ -2531,8 +2624,13 @@ func _seqSignoff(s: Dictionary) -> void:
 		_gloveTo("hidden", 0.14, easeInBack)
 	if _hit(s, SO.off):
 		_showGlove(false)
-		var dest = _pickDestination()
-		s.dest = dest if dest != null else homeId
+		if _cli():
+			pass                                       # MP client: the host's net_dest sets s.dest
+		else:
+			var dest = _pickDestination()
+			s.dest = dest if dest != null else homeId
+			if _hst():
+				gm.net.toAll("telly", "dest", [s.id, str(s.dest)])
 		gm.events.emit("machine:telly_move", {"from": homeId, "to": s.dest})
 		_play("crt_power_off", {"vol": 1.1})
 		screen.fx.collapse = 0.0
@@ -2699,7 +2797,7 @@ func _updateCoin(dt: float) -> void:
 		return
 	c.t += dt
 	var k := clamp01(c.t / c.dur)
-	var p = gm.player
+	var p = _pl(c.s.by)
 	var v: Vector3 = DAU.v3(_field(p, "pos")) if p != null else c.from
 	v.y = (DAU.v3(_field(p, "pos")).y if p != null else 0.0) + 1.25
 	var cp: Vector3 = (c.from as Vector3).lerp(v, k)
@@ -2711,7 +2809,13 @@ func _updateCoin(dt: float) -> void:
 		coin.visible = false
 		coinFly = null
 		var eco = gm.economy
-		if c.refund > 0 and eco != null and not c.s.refunded:
+		if _mp():
+			# MP: only the user's peer is refunded (economy.refund: not earned, no multiplier)
+			if c.refund > 0 and eco != null and not c.s.refunded and _isMe(c.s.by):
+				c.s.refunded = true
+				if _hasm(eco, "refund"):
+					_invoke(eco, "refund", [c.refund, "telly_refund"])
+		elif c.refund > 0 and eco != null and not c.s.refunded:
 			c.s.refunded = true
 			var mul = _field(eco, "multiplier", 1)
 			if not mul:
@@ -3100,7 +3204,7 @@ func _updateItem(dt: float, t: float) -> void:
 		if it.mode == "fly":
 			it.flyT += dt
 			var k := clamp01(it.flyT / 0.22)
-			var p = game.player
+			var p = _pl(int(it.get("flyBy", 0)))
 			var v: Vector3 = DAU.v3(_field(p, "pos")) if p != null else it.flyFrom
 			v.y = (DAU.v3(_field(p, "pos")).y if p != null else 0.0) + 1.1
 			w.position = (it.flyFrom as Vector3).lerp(v, easeInCubic(k))
@@ -3454,6 +3558,316 @@ func _play(id: String, o: Dictionary = {}):
 	var opts := {"pos": DAU.v3(at) if at != null else _audio()}
 	opts.merge(rest, true)
 	return _invoke(a, "play", [id, opts])
+
+
+# ============================================================================================ MP (online co-op)
+# See the header's MP paragraph. Every function here is reached only with game.net.inGame (solo never calls them).
+func _mp() -> bool:
+	var n = game.get("net")
+	return n != null and n.inGame
+
+func _cli() -> bool:
+	var n = game.get("net")
+	return n != null and n.inGame and n.isClient
+
+func _hst() -> bool:
+	var n = game.get("net")
+	return n != null and n.inGame and n.isHost
+
+func _me() -> int:
+	return int(game.net.localId) if _mp() else 0
+
+# by == the local player (solo: always; 0 = local)
+func _isMe(by) -> bool:
+	return by == 0 or not _mp() or int(by) == int(game.net.localId)
+
+# The player-like of peer `by` (0 / solo = game.player; null when that peer is gone).
+func _pl(by):
+	if by == null or int(by) == 0 or not _mp():
+		return game.player
+	return game.net.playerById(int(by))
+
+func _fromHost() -> bool:
+	var n = game.get("net")
+	return n != null and n.inGame and n.sender == 1
+
+# pull() in MP, on the user's peer: spend (the reservation), then ask the host. The host's own pulls go the same way.
+func _pullMP(opts) -> bool:
+	var o: Dictionary = opts if opts is Dictionary else {}
+	if _reqT >= 0.0 or not canPull():
+		return false
+	var morning: bool = bool(o.get("morning", false))
+	var cost := 0 if bool(o.get("free", false)) else int(o.get("cost", 13 if morning else COST))
+	if cost > 0:
+		var eco = game.economy
+		if eco == null or not _invoke(eco, "spend", [cost, "telly"]):
+			squash.kick(-2)
+			_tempExpr("pout", 0.8)
+			return false
+	var owned: Array = []
+	var w = game.weapons
+	var slots = _field(w, "slots")
+	if slots is Array:
+		for sl in slots:
+			if sl != null and _field(sl, "id") != null:
+				owned.append(str(_field(sl, "id")))
+	var ex = o.get("exclude")
+	if ex is Array:
+		for x in ex:
+			if not owned.has(str(x)):
+				owned.append(str(x))
+	var forced = o.get("forced")
+	_reqT = 5.0
+	_reqCost = cost
+	game.net.toHost("telly", "pull", [cost, owned, int(_num(_field(w, "teles", 0))), str(forced) if forced != null else "", morning])
+	return true
+
+# client -> host: a pull request (the client already paid `cost`).
+func net_pull(cost, owned, teles, forced, isMorning) -> void:
+	var n = game.get("net")
+	if n == null or not n.inGame or n.isClient:
+		return
+	var by: int = n.sender
+	if not canPull() or not (owned is Array):
+		n.toPeer(by, "telly", "deny", [int(cost)])
+		return
+	var f = null
+	if str(forced) != "" and game.params.get("test"):
+		f = str(forced)
+	_exclCtx = {"owned": owned, "teles": int(teles) if (teles is int or teles is float) else 0}
+	if isMorning == true and morning and f == null:
+		var en = game.get("ending")
+		if en != null and en.has_method("rollTelly"):
+			f = en.rollTelly(owned)
+	pulls += 1
+	pullsHere += 1
+	var r := _roll(f)
+	var start := _dialCh()
+	_beginSpin(r, start, -2, int(cost), by)
+	_seqId += 1
+	seq.id = _seqId
+	seq.excl = _exclCtx
+	_exclCtx = null
+	if by == n.localId:
+		_reqT = -1.0
+	n.toAll("telly", "spin", [by, _seqId, str(r.outcome), str(r.item) if r.item != null else "", int(r.ch), start,
+		int(seq.cameo), int(cost), pulls, pullsHere])
+
+# host -> requester: the pull was refused (Telly busy / asleep): give the reservation back.
+func net_deny(cost) -> void:
+	if not _fromHost():
+		return
+	_reqT = -1.0
+	_refund(int(cost), "telly")
+	squash.kick(-2)
+	_tempExpr("pout", 0.8)
+
+func _refund(n: int, reason: String) -> void:
+	var eco = game.economy
+	if n <= 0 or eco == null:
+		return
+	if _hasm(eco, "refund"):
+		_invoke(eco, "refund", [n, reason])
+	else:
+		_invoke(eco, "add", [n, reason])
+
+# host -> clients: a pull starts (the host already runs it).
+func net_spin(by, id, outcome, item, ch, startCh, cameo, cost, pulls_, here) -> void:
+	if not _fromHost() or not built:
+		return
+	if int(by) == _me():
+		_reqT = -1.0
+	if seq != null:
+		_endSeq(true)
+	pulls = int(pulls_)
+	pullsHere = int(here)
+	var sc := int(startCh)
+	if _dialCh() != sc and DIAL_ORDER.has(sc):
+		dial.idx = DIAL_ORDER.find(sc)
+		var a := setTellyDial(g, sc)
+		dial.angle = a
+		dial.from = a
+		dial.to = a
+		dial.t = 1.0
+	var r := {"outcome": str(outcome), "item": str(item) if str(item) != "" else null, "ch": int(ch)}
+	_beginSpin(r, sc, int(cameo), int(cost), int(by))
+	seq.id = int(id)
+
+# host -> clients: the host's landing (a client holds its last detent until it arrives).
+func net_land(id, outcome, item, ch) -> void:
+	var s = seq
+	if not _fromHost() or s == null or int(id) != int(s.id) or s.phase != "spin":
+		return
+	s.landMsg = [str(outcome), str(item) if str(item) != "" else null, int(ch)]
+
+# Host: a hit on Telly (weapons runs shootable onHit on the host with info.by; a client without that path forwards).
+func _onHitMP(info: Dictionary) -> void:
+	var n = game.net
+	if n.isClient:
+		if info.get("melee", false):
+			n.toHost("telly", "hit", [true, DAU.v3(info.point) if info.get("point") != null else Vector3.ZERO])
+		return
+	var hitter := int(info.get("by", n.sender))
+	var s = seq
+	if not info.get("melee", false):
+		if _clock - _tinkT > 0.07:
+			_tinkT = _clock
+			n.everyone("telly", "tink", [DAU.v3(info.point) if info.get("point") != null else root.position + Vector3(0, 1, 0)])
+		return
+	if _clock - _smackT < 0.35:
+		return
+	_smackT = _clock
+	if s != null and s.phase == "spin" and s.outcome == "tape":
+		n.everyone("telly", "smack", [hitter, "catch"])
+		return
+	if s != null and s.phase == "offer":
+		n.everyone("telly", "smack", [hitter, "catch" if s.outcome == "tape" else "bop"])
+		return
+	if s != null and s.phase == "spin" and not s.bumped and s.t >= WINDOW[0] and s.t < WINDOW[1]:
+		_exclCtx = s.excl
+		var r := _bumpResolve(s)
+		_exclCtx = null
+		n.everyone("telly", "bump", [hitter, int(s.id), r[0], r[1], str(r[2]), str(r[3]) if r[3] != null else "", r[4]])
+		return
+	if s == null or s.phase == "spin" or s.phase == "land":
+		n.everyone("telly", "smack", [hitter, "hey"])
+
+# client -> host (fallback while weapons runs onHit on clients): a melee hit.
+func net_hit(melee, point) -> void:
+	var n = game.get("net")
+	if n == null or not n.inGame or n.isClient or not built or homeId == null or not root.visible:
+		return
+	_onHitMP({"melee": bool(melee), "point": point, "by": n.sender})
+
+# host -> all: bullets "tink" (cosmetic).
+func net_tink(point) -> void:
+	if not _fromHost() or not built or homeId == null:
+		return
+	var s = seq
+	_play("smile_ting", {"vol": 0.7, "rate": 1.5 + randf() * 0.3, "at": point})
+	_invoke(game.fx, "burst", [DAU.v3(point), {"shape": "spark", "count": 5, "speed": 3, "size": 0.03, "life": 0.2}])
+	if s == null or s.phase == "spin" or s.phase == "land":
+		_tempExpr("glare", 1.2)
+	squash.kick(-0.4)
+
+# host -> all: a melee reaction ("hey" | "bop" | "catch").
+func net_smack(hitter, kind) -> void:
+	if not _fromHost() or not built or homeId == null:
+		return
+	var h := int(hitter)
+	match str(kind):
+		"catch":
+			_catchHand()
+		"bop":
+			_bopBack(h)
+		_:
+			_play("telly_hey")
+			_tempExpr("glare", 1.4)
+			squash.kick(-2.2)
+			_jolt(0.05)
+			if _isMe(h):
+				_invoke(game.cam, "shake", [0.08, 0.15])
+
+# host -> all: a resolved percussive-maintenance bump.
+func net_bump(hitter, id, fromCh, ch, outcome, item, extra) -> void:
+	var s = seq
+	if not _fromHost() or s == null or int(id) != int(s.id) or s.phase != "spin" or s.bumped:
+		return
+	_bumpApply(s, int(fromCh), int(ch), str(outcome), str(item) if str(item) != "" else null, int(extra), int(hitter))
+
+# client -> host: the user takes the offered item.
+func net_take(id) -> void:
+	var n = game.get("net")
+	var s = seq
+	if n == null or not n.inGame or n.isClient or s == null or int(id) != int(s.id):
+		return
+	if s.phase != "offer" or s.orphan or int(s.by) != n.sender or s.u < OFFER.out * 0.6:
+		return
+	n.everyone("telly", "took", [int(s.id)])
+
+# host -> all: the take happens (weapon / reel only on the user's peer).
+func net_took(id) -> void:
+	var s = seq
+	if not _fromHost() or s == null or int(id) != int(s.id):
+		return
+	if s.phase == "land" or s.phase == "bulge":
+		_ploop(s)
+	if s.phase != "offer":
+		return
+	_doTake(s)
+
+# host -> all: the offer ended (user too late, down or gone).
+func net_timeout(id) -> void:
+	var s = seq
+	if not _fromHost() or s == null or int(id) != int(s.id):
+		return
+	if s.phase == "land" or s.phase == "bulge":
+		_ploop(s)
+	if s.phase == "offer":
+		_doTimeout(s)
+
+# host -> clients: the sign-off destination (picked at SO.off with game.rand()).
+func net_dest(id, dest) -> void:
+	var s = seq
+	if not _fromHost() or s == null or int(id) != int(s.id) or not homes.has(str(dest)):
+		return
+	s.dest = str(dest)
+
+# EE (mp-story): host API, re-arms the tape pull after its carrier went off-air / left. Replicated.
+func rearmTape() -> bool:
+	if _cli():
+		return false
+	if _hst():
+		game.net.everyone("telly", "rearm", [])
+	else:
+		net_rearm()
+	return true
+
+func net_rearm() -> void:
+	if _mp() and not _fromHost():
+		return
+	if tapeReel != null and is_instance_valid(tapeReel):
+		DAU.detach(tapeReel)
+		tapeReel.queue_free()
+	tapeReel = null
+	tapeHolder = 0
+	if items.get(TAPE_ID) == null:
+		var reel := buildTapeReel(game)
+		if reel != null:
+			items[TAPE_ID] = _wrapItem(TAPE_ID, reel)
+	setMood("purple")
+	forceTapePull()
+
+# machines.net_sync: the host's start home (reset-time game.rand() pick).
+func netHome(id: String) -> void:
+	if not built or seq != null or not homes.has(id) or id == homeId:
+		return
+	var from = homes.get(homeId)
+	if from != null:
+		from.lampMode = "off"
+	_placeAt(id)
+	homes[id].lampMode = ("purple" if mood == "purple" else "full") if awake else "dim"
+	_applyLamps(true)
+	if _field(game.nav, "built"):
+		_invoke(game.nav, "build")
+
+# machines dispatch: net:peer left / team:down / team:offair of `id`. Host: the user's pull is orphaned (nobody can
+# take it; the offer ends within a second). Every peer: a gone requester's pending state is cleared.
+func onPeerGone(id: int, why: String = "left") -> void:
+	var s = seq
+	if _hst() and s != null and int(s.by) == id:
+		s.orphan = true
+	if why == "left" and tapeHolder == id:
+		tapeHolder = 0
+
+# requester: a pending pull without any answer (5 s) is refunded.
+func _updateReq(dt: float) -> void:
+	if _reqT < 0.0:
+		return
+	_reqT -= dt
+	if _reqT < 0.0:
+		push_warning("[telly] pull request timed out (refunded)")
+		_refund(_reqCost, "telly")
 
 # ============================================================================================ debug
 func debugPull(outcome = null, opts = {}) -> bool:

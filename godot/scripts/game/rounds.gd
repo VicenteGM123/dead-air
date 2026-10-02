@@ -128,6 +128,9 @@ var _eeForcedT := 0.0
 var _tint = null                  # { saved, key, k, dir, warm?, lastWarm? } while the lilac shift runs
 var _thirteenT := 0.0
 var _lastSockPos = null
+# MP: kills per peer id (team summary), the zombie count multiplier per player count (MP_SPEC §5 / RECONCILE R16)
+var killsBy := {}
+const MP_COUNT_MUL := [1.0, 1.5, 2.0, 2.5]
 
 func _init(g) -> void:
 	game = g
@@ -179,6 +182,7 @@ func reset() -> void:
 	_bigShotCarry = 0
 	_spawned = 0
 	_eeForcedT = 0.0
+	killsBy = {}
 	_restoreTint(true)
 	if g.zombies != null:
 		g.zombies.maxAlive = int(_R().maxAlive)
@@ -193,6 +197,8 @@ func isHullabaloo(r: int) -> bool:
 # ------------------------------------------------------------------------------------------------ rounds
 func startRound(n) -> void:
 	var g = game
+	if _cli():
+		return                          # MP client: rounds come from the host (net_start)
 	var H: Dictionary = _R().hullabaloo
 	var r := maxi(1, int(floorf(float(n))))
 	# Jumping ahead (params.round / debug.setRound): the skipped Hullabaloo Hours count (k grows as if they had been
@@ -226,6 +232,14 @@ func startRound(n) -> void:
 	_tunedIn = queue.filter(func(t): return t == "tuned_in").size()
 	_superCap = int(floorf(float(_R().speedRoll.superCap) * _tunedIn))
 	_superUsed = 0
+	if _mpHost():
+		g.net.toAll("rounds", "start", [r, str(special) if special else "", count, token, hullabalooIndex, nextHullabaloo, first,
+			int(g.zombies.maxAlive) if g.zombies != null else int(_R().maxAlive)])
+	_applyStart(r, first)
+
+# The presentation half of a round start (host and MP clients): tint, round:start, grenades, stings, music, 13.
+func _applyStart(r: int, first: bool) -> void:
+	var g = game
 	if special and _tint == null:
 		_startTint()
 	# Grenades: +2 per round from round 2 (the start kit covers round 1). weapons.gd may grant them itself on
@@ -255,10 +269,10 @@ func _buildQueue(r: int) -> Array:
 		# A Big Shot scheduled on a Hullabaloo round moves to the next round.
 		_bigShotCarry += bigShotScheduled(r)
 		var hq: Array = []
-		hq.resize(hullabalooCount(hullabalooIndex))
+		hq.resize(_mpCount(hullabalooCount(hullabalooIndex)))
 		hq.fill("sock_hopper")
 		return hq
-	var n := zombieCount(r)
+	var n := _mpCount(zombieCount(r))
 	var q: Array = []
 	q.resize(n)
 	q.fill("tuned_in")
@@ -315,6 +329,9 @@ func rollTunedInSpeed() -> float:
 func onZombieKilled(z) -> void:
 	var g = game
 	totalKills += 1
+	var by = z.get("killBy") if z is Dictionary else null
+	if by != null:
+		killsBy[by] = int(killsBy.get(by, 0)) + 1
 	if phase != "active" or z == null or z.get("fromRound") != token:
 		return
 	killsThisRound += 1
@@ -359,6 +376,15 @@ func _endRound() -> void:
 	var wasSpecial = special
 	phase = "intermission"
 	timer = float(R.hullabaloo.intermission) if wasSpecial else float(R.intermission)
+	if _mpHost():
+		g.net.toAll("rounds", "end", [round, str(wasSpecial) if wasSpecial else "", timer, nextHullabaloo, hullabalooIndex,
+			killsThisRound, totalKills])
+	_applyEnd(wasSpecial)
+
+# The presentation half of a round end (host and MP clients).
+func _applyEnd(wasSpecial) -> void:
+	var g = game
+	var R := _R()
 	var next := {"round": round + 1, "special": "hullabaloo" if isHullabaloo(round + 1) else false}
 	g.events.emit("round:end", {"round": round, "special": wasSpecial, "intermission": timer, "next": next})
 	if g.zombies != null:
@@ -387,6 +413,10 @@ func update(dt: float) -> void:
 	_updateTint(dt)
 	if _thirteenT > 0.0:
 		_thirteenT -= dt
+	if _cli():
+		if phase != "active":
+			timer = maxf(0.0, timer - dt)   # display only: the host starts the next round
+		return
 	if _bossActive():
 		return
 	if phase != "active":
@@ -445,6 +475,57 @@ func _nextIndex() -> int:
 			continue
 		return i
 	return -1
+
+# ------------------------------------------------------------------------------------------------ MP
+func _cli() -> bool:
+	var n = game.get("net")
+	return n != null and n.inGame and n.isClient
+
+func _mpHost() -> bool:
+	var n = game.get("net")
+	return n != null and n.inGame and n.isHost
+
+# Zombies per round x [1, 1.5, 2, 2.5] for 1..4 players in the session (counted at round start).
+func _mpCount(n: int) -> int:
+	var nt = game.get("net")
+	if nt == null or not nt.inGame:
+		return n
+	var k: int = clampi(nt.players().size(), 1, MP_COUNT_MUL.size())
+	return int(floorf(float(n) * float(MP_COUNT_MUL[k - 1]) + 0.5))
+
+# Host -> clients (net.toAll): a round starts. The client mirrors the host's fields and plays the presentation.
+func net_start(r, sp, cnt, tok, hIdx, nextHull, first, maxAl) -> void:
+	if not _cli() or game.net.sender != 1 or not (r is int) or not (cnt is int):
+		return
+	round = r
+	special = str(sp) if (sp is String and sp != "") else false
+	count = cnt
+	toSpawn = cnt
+	token = int(tok)
+	hullabalooIndex = int(hIdx)
+	nextHullabaloo = int(nextHull)
+	killsThisRound = 0
+	phase = "active"
+	timer = 0.0
+	if game.zombies != null and (maxAl is int):
+		game.zombies.maxAlive = maxAl
+	_applyStart(r, first == true)
+
+# Host -> clients: the round ended (the client's counters are resynced too).
+func net_end(r, sp, intermission, nextHull, hIdx, kills, total) -> void:
+	if not _cli() or game.net.sender != 1 or not (r is int):
+		return
+	round = r
+	special = str(sp) if (sp is String and sp != "") else false
+	var wasSpecial = special
+	phase = "intermission"
+	timer = float(intermission)
+	nextHullabaloo = int(nextHull)
+	hullabalooIndex = int(hIdx)
+	killsThisRound = int(kills)
+	totalKills = int(total)
+	toSpawn = 0
+	_applyEnd(wasSpecial)
 
 # ------------------------------------------------------------------------------------------------ helpers
 func _music() -> void:

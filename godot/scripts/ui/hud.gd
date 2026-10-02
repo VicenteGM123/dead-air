@@ -1022,6 +1022,8 @@ func _layout() -> void:
 	el.pu.position = Vector2(W / 2.0, REF_H - M)
 	el.rb.position = Vector2(M, M)
 	el.fl.position = Vector2(W / 2.0, REF_H * 0.28)
+	if team != null:
+		team.layout(W)
 
 func _redrawAll() -> void:
 	for k in el:
@@ -1090,6 +1092,8 @@ func reset() -> void:
 	_shown.points = -1
 	_knobs.damage.wrote = null
 	setPrompt(null)
+	if team != null:
+		team.reset()
 	show()
 
 func show() -> void:
@@ -1394,8 +1398,30 @@ func update(dt: float) -> void:
 	_updateDial(dt)
 	_updateChyron(dt)
 	_updatePowerups(dt)
+	_updateTeam(dt)
 	if _replay:
 		el.rb.queue_redraw()
+
+# MP: the HudTeam overlays + the own elements while the local player is downed / off-air (never in solo).
+func _updateTeam(dt: float) -> void:
+	var n = game.get("net")
+	if team == null:
+		if n == null or not n.inGame:
+			return
+		team = HudTeamScript.new(self)
+	team.update(dt)
+	var pl = game.player
+	var dim := 1.0
+	if n != null and n.inGame and pl != null:
+		if pl.get("offAir") == true:
+			dim = 0.0
+		elif pl.downed:
+			dim = 0.35
+	if dim != _mpDim:
+		_mpDim = dim
+		el.xh.self_modulate.a = 1.0 if dim >= 1.0 else 0.0
+		el.ammo.modulate.a = dim
+		el.eq.modulate.a = dim
 
 func _updatePost(dt: float) -> void:
 	var g = game

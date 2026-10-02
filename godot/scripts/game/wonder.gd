@@ -507,6 +507,12 @@ var _fxMats: Array = []       # every fx ShaderMaterial (their uFxTime is the sh
 var _meshLib := {}            # name -> Mesh (res://assets/runtime/wonder/meshes.glb)
 var _wid := 0
 var _zombiesHook := Callable()   # boss adapter (see the header)
+# MP (scripts/game/wonder_net.gd; RECONCILE R17): every wonder resolution (victims, statuses, lure, puddle keys) runs on
+# the host; clients run the owner's fire logic + visuals and send requests. null / true in solo.
+const NET_PATH := "res://scripts/game/wonder_net.gd"
+var mp = null                    # WonderNet while an MP game runs
+var _au := true                  # may mutate the world (solo / host); false on an MP client
+var _byCtx = null                # acting peer id while the host resolves someone's action (zombies.damage info.by)
 var _warned := {}
 
 func _init(g) -> void:
@@ -566,7 +572,17 @@ func reset() -> void:
 	_lastTeles = null
 	_kick.x = 0.0
 	_kick.v = 0.0
-	_sys("zombies", "setLure", [null])
+	var n = game.get("net")
+	if n != null and n.inGame:
+		if mp == null:
+			mp = load(NET_PATH).new(self)
+		mp.reset()
+		_au = mp.authority()
+	else:
+		mp = null
+		_au = true
+	if _au:
+		_sys("zombies", "setLure", [null])
 
 # Once per frame, from Game's UPDATE_ORDER (right after weapons).
 func update(dt: float) -> void:
@@ -580,6 +596,9 @@ func update(dt: float) -> void:
 	_syncFxTime()
 	if g.state != "playing" and g.state != "down":
 		dt = 0.0
+	if mp != null:
+		_au = mp.authority()
+		mp.update(dt)
 	# (JS try/finally kept these balanced; a GDScript error inside zombies.damage cannot leave them raised)
 	_applying = 0
 	_dooming = 0
@@ -823,12 +842,16 @@ func _damage(z, amount: float, weaponId, cause, extra: Dictionary = {}) -> bool:
 		return false
 	var prev = _dmgCtx
 	_dmgCtx = {"weaponId": weaponId, "cause": cause, "splash": _t(extra.get("splash")), "upgraded": _t(extra.get("upgraded"))}
+	if mp != null:
+		_dmgCtx.by = int(extra.get("by", _byCtx if _byCtx != null else mp.localId()))
 	_applying += 1
 	# inside _doom a lethal hit must not play the manager's own death (the clone animates it): corpse false
 	var info := {"head": false, "weaponId": weaponId, "cause": cause}
 	if _dooming > 0:
 		info.corpse = false
 	info.merge(extra, true)
+	if mp != null and not info.has("by"):
+		info.by = _byCtx if _byCtx != null else mp.localId()
 	var r = zm.damage(z, amount, info)
 	_applying -= 1
 	_dmgCtx = prev
@@ -860,6 +883,8 @@ func _doom(z, fn: Callable):
 
 # Real stun (stars over the head): zombies.stun when available.
 func _stun(z, s: float) -> void:
+	if not _au:
+		return
 	var zm = game.zombies
 	if zm != null and zm.has_method("stun"):
 		zm.stun(z, s)
@@ -868,6 +893,8 @@ func _stun(z, s: float) -> void:
 
 # Keeps the zombie AI idle for s seconds (no walking, no attacks).
 func _hold(z, s: float) -> void:
+	if not _au:
+		return
 	var cur = _g(z, "stun")
 	if cur == null or _isNum(cur):
 		_sset(z, "stun", maxf(_num(cur, 0.0), s))
@@ -3574,7 +3601,7 @@ func _unslow(z, key: String) -> void:
 	_maybeDrop(z)
 
 func _applySpeed(z, s: Dictionary) -> void:
-	if s.baseSpeed == null:
+	if s.baseSpeed == null or not _au:
 		return
 	var m := 1.0
 	for k in s.slows:
@@ -3585,6 +3612,8 @@ func _applySpeed(z, s: Dictionary) -> void:
 		s.baseSpeed = null
 
 func _releaseHold(z) -> void:
+	if not _au:
+		return
 	if _isNum(_g(z, "stun")):
 		_sset(z, "stun", minf(float(z.stun), 0.05))
 
@@ -3814,6 +3843,11 @@ func _updateSeat(z, s: Dictionary, dt: float) -> void:
 	_hold(z, 0.2)
 	st.t += dt
 	var k: float = clamp01(st.t / st.dur) if st.dur > 0.0 else 1.0
+	if not _au:
+		if not st.plopped and not st.stand and st.t >= st.dur + 0.18:
+			st.plopped = true
+			_akick(z, 0.7)
+		return   # MP client: position / yaw come from the snapshot
 	z.pos = (st.from as Vector3).lerp(st.pos, E.inOutQuad(k))
 	var face := atan2(-(t.pos.x - z.pos.x), -(t.pos.z - z.pos.z))
 	var want := face
@@ -3840,7 +3874,7 @@ func _updateSeat(z, s: Dictionary, dt: float) -> void:
 # primary hits only (weapons.hit.primary; Double Vision ghosts don't roll), half chance for splash targets,
 # a cooldown per weapon + color. Wonder weapons roll too (their non-lethal late-round hits).
 func _onHit(p) -> void:
-	if not (p is Dictionary) or p.get("z") == null:
+	if not (p is Dictionary) or p.get("z") == null or not _au or p.get("predicted") == true:
 		return
 	var z = p.z
 	var cause = p.get("cause")
@@ -3850,12 +3884,14 @@ func _onHit(p) -> void:
 	var SIG: Dictionary = Config.T.uplink.signals
 	var s = _status.get(_zk(z))
 	var dmg := _num(p.get("dmg"), 0.0)
+	var pby = p.get("by")
+	var remote: bool = mp != null and pby != null and int(pby) != mp.localId()
 	if s != null and (s.laugh > 0.0 or s.frozen > 0.0) and dmg > 0.0 and _hp(z) > 0.0:
 		var bonus := dmg * (float(SIG.cold_open.mul if s.frozen > 0.0 else SIG.laugh_track.mul) - 1.0)
 		if _hp(z) - bonus > 0.0:
 			z.hp = _hp(z) - bonus
 		else:
-			_damage(z, bonus + 1.0, p.get("weaponId"), "signal_bonus")
+			_damage(z, bonus + 1.0, p.get("weaponId"), "signal_bonus", {"by": int(pby)} if pby != null and mp != null else {})
 	if not _t(p.get("weaponId")) or _t(p.get("ghost")) or cause == "ghost":
 		return
 	if not (_hp(z) > 0.0) or _zstate(z) == "dying" or _t(_g(z, "dead")):
@@ -3864,7 +3900,13 @@ func _onHit(p) -> void:
 	var dc = _dmgCtx if _applying > 0 else null
 	if wh != null and wh.get("primary") == false:
 		return
-	var slot = _slotOf(p.weaponId)
+	if remote:
+		# MP: another player's hit (zombies.net_dmgBatch / a host-resolved action): its own weapon, never our slots
+		if p.get("primary") == false:
+			return
+		wh = null
+		dc = dc if (dc != null and dc.get("by") == int(pby)) else null
+	var slot = _slotOf(p.weaponId) if not remote else null
 	var upgraded = _nz(wh.get("upgraded") if (wh != null and wh.get("weaponId") == p.weaponId) else null,
 		_nz(dc.upgraded if dc != null else null, _nz(p.get("upgraded"), _g(slot, "upgraded"))))
 	if not _t(upgraded):
@@ -3875,7 +3917,7 @@ func _onHit(p) -> void:
 	if not SIGNALS.has(sig):
 		return
 	var S: Dictionary = SIG[sig]
-	var key := "%s|%s" % [p.weaponId, sig]
+	var key := "%s|%s" % [p.weaponId, sig] if mp == null else "%s|%s|%s" % [str(pby), p.weaponId, sig]
 	var now := float(game.time.now)
 	if float(_sigCd.get(key, -1e9)) > now:
 		return
@@ -3884,7 +3926,11 @@ func _onHit(p) -> void:
 	if float(game.rand()) >= chance:
 		return
 	_sigCd[key] = now + float(S.cd)
+	var prevBy = _byCtx
+	if pby != null and mp != null:
+		_byCtx = int(pby)
 	applySignal(z, sig, {"weaponId": p.weaponId, "splash": splash})
+	_byCtx = prevBy
 
 func _onKill(p) -> void:
 	var z = p.get("z") if p is Dictionary else null
@@ -3907,6 +3953,9 @@ func _ignite(z, gen: int, weaponId) -> void:
 	s.burn = float(S.dur)
 	s.burnGen = gen
 	s.burnLeft = 2 if gen == 1 else 0
+	if mp != null:
+		s.burnBy = _byCtx if _byCtx != null else mp.localId()
+		mp.signalOut("hot_mic", [z], gen)
 	s.burnCap = 1500.0 if (special or boss) else INF
 	s.burnWeapon = weaponId
 	if not special and not boss:
@@ -3936,11 +3985,16 @@ func _updateBurn(z, s: Dictionary, dt: float) -> void:
 	s.burn -= dt
 	var per := minf(float(_or(_g(z, "maxHp"), _or(_g(z, "hp"), 100))) * float(S.burn), s.burnCap)
 	var dmg := per * dt
-	if _hp(z) - dmg > 0.0:
+	if not _au:
+		pass   # MP client: the host burns (visuals below only)
+	elif _hp(z) - dmg > 0.0:
 		z.hp = _hp(z) - dmg
 	else:
 		_applying += 1
-		_sys("zombies", "damage", [z, dmg + 1.0, {"weaponId": _or(s.burnWeapon, "signal_hot_mic"), "cause": "burn"}])
+		var bi := {"weaponId": _or(s.burnWeapon, "signal_hot_mic"), "cause": "burn"}
+		if mp != null and s.get("burnBy") != null:
+			bi.by = s.burnBy
+		_sys("zombies", "damage", [z, dmg + 1.0, bi])
 		_applying -= 1
 	if s.flame != null and is_instance_valid(s.flame):
 		var a := _headPos(z)
@@ -3958,7 +4012,7 @@ func _updateBurn(z, s: Dictionary, dt: float) -> void:
 		if randf() < 0.3:
 			_fx("burst", [Vector3(c.x, c.y + 0.6, c.z), {"shape": "puff", "count": 1, "colors": ["#5A4A5A", "#7A6A70"], "size": 0.12, "gravity": -1.5, "life": 0.8}])
 	# spread: touches up to 2 zombies (one generation)
-	if s.burnLeft > 0:
+	if s.burnLeft > 0 and _au:
 		for o in _zombies():
 			if is_same(o, z) or not _alive(o) or _isBoss(o):
 				continue
@@ -3987,6 +4041,8 @@ func _updatePanic(z, s: Dictionary, dt: float) -> void:
 		_releaseHold(z)
 		_applyPose(z)
 		return
+	if not _au:
+		return   # MP client: the snapshot moves it (pose only here)
 	# run away from the player along the reversed flow field (fallback: straight away), zig-zagging
 	var d := -_navDir(z.pos.x, z.pos.z)
 	if d.length_squared() < 1e-3:
@@ -4015,6 +4071,14 @@ func _laughTrack(z, _weaponId) -> void:
 			near.append(o)
 	near.sort_custom(func(a, b): return a.pos.distance_to(z.pos) < b.pos.distance_to(z.pos))
 	group.append_array(near.slice(0, 3))
+	if mp != null:
+		mp.signalOut("laugh_track", group, 0)
+	_laughGroup(group)
+
+# The laugh itself on a resolved group (MP clients replay it from wonder.net_signal).
+func _laughGroup(group: Array) -> void:
+	var S: Dictionary = Config.T.uplink.signals.laugh_track
+	var P: Dictionary = Config.PAL
 	_play("crowd_laugh", {"dur": 2.5, "vol": 0.9})
 	for o in group:
 		if _isBoss(o):
@@ -4039,6 +4103,14 @@ func _coldOpen(z, _weaponId) -> void:
 	for o in _zombies():
 		if _alive(o) and not _isBoss(o) and (is_same(o, z) or o.pos.distance_to(z.pos) <= float(S.r)):
 			list.append(o)
+	if mp != null:
+		mp.signalOut("cold_open", [z] + list, 0)
+	_coldGroup(z, list)
+
+# The freeze itself on a resolved list (MP clients replay it from wonder.net_signal).
+func _coldGroup(z, list: Array) -> void:
+	var S: Dictionary = Config.T.uplink.signals.cold_open
+	var P: Dictionary = Config.PAL
 	_play("wonder_freeze", {"pos": z.pos})
 	_floorRing(z.pos, float(S.r), P.coldOpen, 0.4, true, 0.8)
 	for o in list:

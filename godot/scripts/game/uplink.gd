@@ -303,6 +303,19 @@ var _poolI := -1.0
 var _boothDark = null
 var _consoleOn = null
 var _consoleOff = null
+# MP (see the header)
+const MP_GRACE := 0.25
+var crankUser := 0                     # peer id cranking the dish (0 = nobody), host-authoritative
+var _user := 0                         # peer id whose weapon is in the machine
+var _useId := 0                        # host counter of upgrades (stale take requests are ignored)
+var _crankSent := false                # this peer reported "holding" to the host
+var _crankSendT := 0.0
+var _crankDenied := false              # another peer won the crank: off until E is released
+var _lockPending := 0.0                # our hold completed, waiting for net_aligned (s)
+var _reqT := -1.0                      # an insert request is pending (s)
+var _reqData: Array = []
+var _userGone := ""                    # host: the user went "down" / "offair" / "left" during the upgrade
+var _stateT := 0.0
 
 func _init(g) -> void:
 	game = g
@@ -333,6 +346,13 @@ func reset() -> void:
 	disabled = false
 	aligned = false
 	align = 0.0
+	crankUser = 0
+	_user = 0
+	_crankSent = false
+	_crankDenied = false
+	_lockPending = 0.0
+	_reqT = -1.0
+	_userGone = ""
 	_lockT = -1.0
 	_satT = game.rand() * SAT.period * 0.6 if game.has_method("rand") else 0.0
 	_toIdle(true)
@@ -734,12 +754,16 @@ func _registerInteract() -> void:
 	var kp: Vector3 = X.worldXform(crank) * DAU.v3(cint.point if cint is Dictionary and cint.has("point") else [0.0, 1.0, -0.55])
 	_crankItem = I.register({
 		"id": "machine_uplink_crank", "pos": kp, "radius": 1.35,
-		"enabled": func(): return built and not aligned and not disabled,
+		"enabled": func(): return built and not aligned and not disabled and (not _mp() or (not _crankDenied and _lockPending <= 0.0 and (crankUser == 0 or crankUser == _me()))),
 		"prompt": func(): return {"hold": U.alignHold} if _powered() else {"plug": true},
 		"hold": 0,
 		"use": func():
 			if _powered():
-				_lock()
+				if _mp():
+					_lockPending = 1.5
+					game.net.toHost("uplink", "lock", [])
+				else:
+					_lock()
 			else:
 				_unpoweredPoke(),
 		"onHold": func(p):
@@ -750,7 +774,7 @@ func _registerInteract() -> void:
 	var cp: Vector3 = X.worldXform(cradle) * DAU.v3(rint.point if rint is Dictionary and rint.has("point") else [0.0, 1.3, -0.55])
 	_cradleItem = I.register({
 		"id": "machine_uplink", "pos": cp, "radius": 1.4,
-		"enabled": func(): return built and aligned and not disabled and _powered() and (phase == "ready" or (phase == "idle" and _upgradable() != null)),
+		"enabled": func(): return built and aligned and not disabled and _powered() and ((phase == "ready" and (not _mp() or _user == _me())) or (phase == "idle" and _reqT < 0.0 and _upgradable() != null)),
 		"prompt": func():
 			if phase == "ready":
 				return {}
@@ -758,9 +782,15 @@ func _registerInteract() -> void:
 			return {"cost": U.reroll if X.g(s, "upgraded", false) else U.cost} if s != null else null,
 		"use": func():
 			if phase == "ready":
-				_takeWeapon()
+				if _mp():
+					game.net.toHost("uplink", "take", [_useId])
+				else:
+					_takeWeapon()
 			elif phase == "idle":
-				_start(false),
+				if _mp():
+					_requestInsert()
+				else:
+					_start(false),
 	})
 
 # ============================================================================================ helpers
@@ -812,6 +842,8 @@ func update(dt: float) -> void:
 		return
 	_t += dt
 	_time.value += dt
+	if _reqT >= 0.0:
+		_reqTick(dt)
 	for m in [beam, aurora] + streams:
 		(m.material_override as ShaderMaterial).set_shader_parameter("uTime", _time.value)
 	_updateSatellite(dt)
@@ -867,14 +899,20 @@ func _updateCrank(dt: float) -> void:
 		I.set("_holdItem", item)
 		I.set("progress", clampf(align / float(U.alignHold), 0.0, 1.0))
 	_wasHolding = holding
-	if holding:
+	# MP: another peer cranking drives the same visuals; its progress is extrapolated between its reports
+	var remote: bool = _mp() and crankUser != 0 and crankUser != _me()
+	if holding or remote:
 		if not _cranking:
 			_startCrank()
+		if remote and not aligned and dt > 0.0:
+			align = minf(float(U.alignHold) * 0.995, align + dt)
 	else:
 		if _cranking:
 			_stopCrank()
-		if not aligned and align > 0.0 and dt > 0.0:
+		if not aligned and align > 0.0 and dt > 0.0 and _lockPending <= 0.0:
 			align = maxf(0.0, align - DECAY * dt)
+	if _mp():
+		_crankNet(holding, down, dt)
 	# wheel + gauge + grip glow
 	var PC: Dictionary = P.crank
 	var wheel = PC.get("wheel")
@@ -921,6 +959,12 @@ func _stopCrank() -> void:
 
 func _onHurt() -> void:
 	if not _cranking or aligned:
+		return
+	if _mp():
+		if not _wasHolding:
+			return                                   # someone else cranks: their own peer applies it
+		_penalty()
+		game.net.toHost("uplink", "penalty", [align])
 		return
 	_penalty()
 
@@ -1173,13 +1217,16 @@ func _updateFly(dt: float) -> void:
 	if tk != null:
 		tk.t += dt
 		var k := clampf(tk.t / 0.2, 0.0, 1.0)
-		var hand = X.g(X.g(X.g(game.player, "hero"), "slots"), "handR")
+		var tp = _pl(int(tk.get("by", 0)))
+		var hand = X.g(X.g(X.g(tp, "hero"), "slots"), "handR")
 		var w: Vector3
 		if hand is Node3D:
 			w = DAU.worldPos(hand)
-		else:
-			w = DAU.v3(game.player.pos)
+		elif tp != null:
+			w = DAU.v3(tp.pos)
 			w.y = 1.2
+		else:
+			w = slotPos
 		var v := slotPos.lerp(w, k * k)
 		v.y += sin(k * PI) * 0.35
 		tk.obj.position = v
@@ -1476,7 +1523,8 @@ func _snap() -> void:
 		g.audio.play("uplink_fanfare", {"pos": slotPos, "delay": 0.1})
 	var nm := _nameOf(id)
 	var shown := false
-	if g.hud != null and g.hud.has_method("chyron"):
+	var near: bool = not _mp() or _user == _me() or (g.player != null and DAU.v3(g.player.pos).distance_to(slotPos) < 12.0)
+	if near and g.hud != null and g.hud.has_method("chyron"):
 		g.hud.chyron(nm)
 		shown = true
 	if g.screens != null and g.screens.has_method("setInsert"):
@@ -1488,7 +1536,9 @@ func _snap() -> void:
 	readyT = 0.0
 	_flickT = 0.0
 	_tickPlayed = false
-	g.events.emit("machine:uplink_ready", {"weaponId": id, "signal": sig, "name": nm, "chyron": shown})
+	g.events.emit("machine:uplink_ready", {"weaponId": id, "signal": sig, "name": nm, "chyron": shown} if not _mp() else {"weaponId": id, "signal": sig, "name": nm, "chyron": shown, "by": _user})
+	if _hst() and _userGone != "":
+		_releaseUser()
 
 func _cancelOverride() -> void:
 	var h = _override
@@ -1570,8 +1620,11 @@ func _updateReady(dt: float) -> void:
 		var cm := cone.material_override as ShaderMaterial
 		cm.set_shader_parameter("opacity", X.smooth(0.0, 0.5, t) * (0.38 + 0.08 * sin(t * 7.0)) * (0.25 if gun != null and not gun.visible else 1.0))
 		cm.set_shader_parameter("uvOffset", Vector2(t * 0.08, 0.0))
-	if t >= collect:
-		_loseWeapon()
+	if not _mp():
+		if t >= collect:
+			_loseWeapon()
+	elif _hst() and t >= collect + MP_GRACE:
+		game.net.everyone("uplink", "lost", [_useId])
 
 func _takeWeapon() -> void:
 	var g = game
@@ -1581,11 +1634,14 @@ func _takeWeapon() -> void:
 	var id = weaponId
 	var sig = signal_
 	var ok := false
-	if W != null and W.has_method("give"):
+	if not _isMe(_user):
+		ok = true                                     # MP: the weapon goes to the user's own peer
+	elif W != null and W.has_method("give"):
 		ok = bool(W.give(id, {"upgraded": true, "signal": sig, "source": "uplink"}))
 	if not ok:
 		push_error("[uplink] give failed")
-		return
+		if not _mp():
+			return
 	if _gun != null:
 		var obj := _gun
 		var xf := X.worldXform(obj)
@@ -1596,14 +1652,15 @@ func _takeWeapon() -> void:
 		obj.quaternion = xf.basis.get_rotation_quaternion()
 		obj.scale = Vector3.ONE * s
 		obj.visible = true
-		_take = {"obj": obj, "t": 0.0}
+		_take = {"obj": obj, "t": 0.0, "by": _user}
 		_gun = null
 	_jaw.target = 1.0
+	var up = _pl(_user)
 	if g.audio != null:
-		g.audio.play("wallbuy_boing", {"pos": DAU.v3(g.player.pos)})
+		g.audio.play("wallbuy_boing", {"pos": DAU.v3(up.pos) if up != null else slotPos})
 	if g.fx != null:
 		g.fx.burst(slotPos, {"shape": "star", "count": 6, "speed": 2, "life": 0.5, "colors": [SIGNAL_COLORS.get(sig, "#FFFFFF"), "#FFFFFF"]})
-	g.events.emit("machine:uplink_take", {"weaponId": id})
+	g.events.emit("machine:uplink_take", {"weaponId": id} if not _mp() else {"weaponId": id, "by": _user})
 	_toIdle(false)
 
 func _loseWeapon() -> void:
@@ -1621,13 +1678,14 @@ func _loseWeapon() -> void:
 	if g.audio != null:
 		g.audio.play("uplink_lost", {"pos": slotPos})
 	_jaw.target = 1.0
-	g.events.emit("machine:uplink_lost", {"weaponId": id})
+	g.events.emit("machine:uplink_lost", {"weaponId": id} if not _mp() else {"weaponId": id, "by": _user})
 	_toIdle(false)
 
 func _toIdle(hard: bool) -> void:
 	var g = game
 	phase = "idle"
 	busy = false
+	_userGone = ""
 	weaponId = null
 	signal_ = null
 	seqT = 0.0
@@ -1689,7 +1747,10 @@ func _setDisabled(on: bool) -> void:
 	if not on:
 		return
 	# hand back whatever is in the machine (upgraded: it was paid for)
-	if weaponId and (phase == "seq" or phase == "ready"):
+	if _mp():
+		if _hst() and weaponId and (phase == "seq" or phase == "ready"):
+			g.net.everyone("uplink", "handback", [_user, str(weaponId), str(signal_) if signal_ else ""])
+	elif weaponId and (phase == "seq" or phase == "ready"):
 		if g.weapons != null and g.weapons.has_method("give"):
 			g.weapons.give(weaponId, {"upgraded": true, "signal": signal_, "source": "uplink"})
 		g.events.emit("machine:uplink_take", {"weaponId": weaponId})
@@ -1912,6 +1973,312 @@ func _updateFlash(dt: float) -> void:
 		if k >= 1.0:
 			satFlare.visible = false
 			_flareT = -1.0
+
+
+# ============================================================================================== MP (online co-op)
+# See the header's MP paragraph. Reached only with game.net.inGame (solo never calls these).
+func _mp() -> bool:
+	var n = game.get("net")
+	return n != null and n.inGame
+
+func _hst() -> bool:
+	var n = game.get("net")
+	return n != null and n.inGame and n.isHost
+
+func _me() -> int:
+	return int(game.net.localId) if _mp() else 0
+
+func _isMe(by) -> bool:
+	return by == null or int(by) == 0 or not _mp() or int(by) == int(game.net.localId)
+
+func _pl(by):
+	if by == null or int(by) == 0 or not _mp():
+		return game.player
+	return game.net.playerById(int(by))
+
+func _fromHost() -> bool:
+	var n = game.get("net")
+	return n != null and n.inGame and n.sender == 1
+
+# Crank reports (local cranker -> host): edges + 10 Hz while holding; the host relays 5 Hz while someone cranks.
+func _crankNet(holding: bool, down: bool, dt: float) -> void:
+	var n = game.net
+	if _lockPending > 0.0:
+		_lockPending = maxf(0.0, _lockPending - dt)
+	if not down:
+		_crankDenied = false
+	if holding != _crankSent:
+		_crankSent = holding
+		_crankSendT = 0.1
+		n.toHost("uplink", "crank", [holding, align])
+	elif holding:
+		_crankSendT -= dt
+		if _crankSendT <= 0.0:
+			_crankSendT = 0.1
+			n.toHost("uplink", "crank", [true, align])
+	if n.isHost and crankUser != 0:
+		_stateT -= dt
+		if _stateT <= 0.0:
+			_stateT = 0.2
+			n.toAll("uplink", "crankState", [crankUser, align])
+
+func net_crank(holding, a) -> void:
+	var n = game.get("net")
+	if n == null or not n.inGame or n.isClient or aligned or disabled or not _powered():
+		return
+	var by: int = n.sender
+	if crankUser != 0 and crankUser != by:
+		if holding == true:
+			n.toPeer(by, "uplink", "crankBusy", [crankUser])
+		return
+	var was := crankUser
+	crankUser = by if holding == true else 0
+	if (a is float or a is int) and by != n.localId:
+		align = clampf(float(a), 0.0, float(U.alignHold))
+	if was != crankUser:
+		_stateT = 0.2
+		n.toAll("uplink", "crankState", [crankUser, align])
+
+func net_crankBusy(u) -> void:
+	if not _fromHost():
+		return
+	_crankDenied = true
+	crankUser = int(u)
+
+func net_crankState(u, a) -> void:
+	if not _fromHost():
+		return
+	crankUser = int(u)
+	if not _wasHolding and (a is float or a is int) and not aligned:
+		align = clampf(float(a), 0.0, float(U.alignHold))
+
+func net_penalty(a) -> void:
+	var n = game.get("net")
+	if n == null or not n.inGame or n.isClient or aligned or n.sender != crankUser:
+		return
+	if n.sender != n.localId and (a is float or a is int):
+		align = clampf(float(a), 0.0, float(U.alignHold))
+	n.toAll("uplink", "penaltyFx", [n.sender, align])
+	if n.sender != n.localId:
+		_penaltyFxLocal()
+
+func net_penaltyFx(by, a) -> void:
+	if not _fromHost() or int(by) == _me():
+		return
+	_penaltyFxLocal()
+	if a is float or a is int:
+		align = clampf(float(a), 0.0, float(U.alignHold))
+
+# the clunk of a hit cranker, seen by everyone else (align comes with the message)
+func _penaltyFxLocal() -> void:
+	var g = game
+	_tilt.v -= 1.6
+	_jiggle = 0.25
+	var p := Vector3(pivot.x, pivot.y - 1.1, pivot.z)
+	if g.fx != null:
+		g.fx.burst(p, {"shape": "spark", "count": 12, "speed": 5, "life": 0.4})
+	if g.audio != null:
+		g.audio.play("uplink_clang", {"pos": p, "vol": 0.5, "rate": 1.4})
+
+func net_lock() -> void:
+	var n = game.get("net")
+	if n == null or not n.inGame or n.isClient or aligned or disabled or not _powered():
+		return
+	if crankUser != 0 and crankUser != n.sender:
+		return
+	n.everyone("uplink", "aligned", [])
+
+func net_aligned() -> void:
+	if not _fromHost():
+		return
+	crankUser = 0
+	_lockPending = 0.0
+	_lock()
+
+# The user's side of an upgrade: pay (reservation), yank the weapon out of the hands, then ask the host.
+func _requestInsert() -> bool:
+	var g = game
+	var W = g.weapons
+	if phase != "idle" or not aligned or disabled or _reqT >= 0.0:
+		return false
+	var s = _upgradable()
+	if s == null:
+		return false
+	var rr: bool = bool(X.g(s, "upgraded", false))
+	var cost: int = int(U.reroll if rr else U.cost)
+	if not (g.economy != null and g.economy.spend(cost, "uplink")):
+		return false
+	var hand: Vector3
+	var slot = X.g(X.g(X.g(g.player, "hero"), "slots"), "handR")
+	if slot is Node3D:
+		hand = DAU.worldPos(slot)
+	else:
+		hand = DAU.v3(g.player.pos)
+		hand.y += 1.2
+	var yaw: float = float(X.g(g.player, "yaw", 0.0))
+	var data = null
+	if W.has_method("takeCurrent"):
+		data = W.takeCurrent()
+	elif W.has_method("remove"):
+		data = W.remove(X.g(s, "id"))
+	if data == null:
+		_refund(cost)
+		return false
+	var p = g.player
+	if p != null and p.has_method("knockback"):
+		var v := Vector3(p.pos.x - slotPos.x, 0, p.pos.z - slotPos.z)
+		var d := v.length()
+		if d < 2.6 and d > 1e-3:
+			v = (v / d + Vector3(-cos(yaw), 0, sin(yaw)) * 0.55).normalized()
+			p.knockback(v * 7.0)
+	if g.cam != null and g.cam.has_method("shake"):
+		g.cam.shake(0.1, 0.18)
+	var dsig = X.g(data, "signal")
+	_reqT = 5.0
+	_reqData = [str(X.g(data, "id")), bool(X.g(data, "upgraded", false)), str(dsig) if dsig else "", cost]
+	g.net.toHost("uplink", "insert", [_reqData[0], _reqData[1], _reqData[2], cost, hand, yaw])
+	return true
+
+func _refund(n: int) -> void:
+	var eco = game.economy
+	if n <= 0 or eco == null:
+		return
+	if eco.has_method("refund"):
+		eco.refund(n, "uplink")
+	else:
+		eco.add(n, "uplink")
+
+# requester: no answer in 5 s -> weapon back + refund
+func _reqTick(dt: float) -> void:
+	_reqT -= dt
+	if _reqT < 0.0 and _reqData.size() == 4:
+		push_warning("[uplink] insert request timed out (weapon returned)")
+		net_deny(_reqData[0], _reqData[1], _reqData[2], _reqData[3], true)
+
+func net_insert(wid, upgraded, prevSig, cost, hand, yaw) -> void:
+	var n = game.get("net")
+	if n == null or not n.inGame or n.isClient:
+		return
+	var by: int = n.sender
+	if phase != "idle" or not aligned or disabled or not _powered() or not (wid is String) or str(wid) == "":
+		n.toPeer(by, "uplink", "deny", [str(wid), bool(upgraded), str(prevSig), int(cost)])
+		return
+	var rr := bool(upgraded)
+	var ps := str(prevSig)
+	var pool: Array = SIGNALS.filter(func(x): return x != ps) if rr else SIGNALS.duplicate()
+	var sig: String = pool[int(floorf(game.rand() * pool.size())) % pool.size()]
+	_useId += 1
+	n.everyone("uplink", "start", [by, _useId, str(wid), rr, ps, sig, rr, DAU.v3(hand), float(yaw), _satT])
+
+func net_deny(wid, upgraded, prevSig, cost, _local = false) -> void:
+	if not _local and not _fromHost():
+		return
+	_reqT = -1.0
+	_reqData = []
+	var W = game.weapons
+	if W != null and W.has_method("give") and str(wid) != "":
+		var o := {"upgraded": bool(upgraded), "source": "uplink"}
+		if str(prevSig) != "":
+			o["signal"] = str(prevSig)
+		W.give(str(wid), o)
+	_refund(int(cost))
+	if game.audio != null:
+		game.audio.play("sponsor_denied", {"pos": slotPos})
+
+# host -> all (everyone): the upgrade starts (the user already paid and let go of the weapon).
+func net_start(by, id, wid, upgraded, prevSig, sig, rr, hand, yaw, satT) -> void:
+	if not _fromHost() or not built:
+		return
+	if int(by) == _me():
+		_reqT = -1.0
+		_reqData = []
+	var g = game
+	if phase != "idle":
+		_toIdle(true)
+	if (satT is float or satT is int) and float(satT) >= 0.0:
+		_satT = float(satT)
+	weaponId = str(wid)
+	reroll = bool(rr)
+	_prevSignal = str(prevSig) if str(prevSig) != "" else null
+	signal_ = str(sig)
+	_user = int(by)
+	_useId = int(id)
+	_userGone = ""
+	busy = true
+	phase = "seq"
+	seqT = 0.0
+	readyT = 0.0
+	_cue = 0
+	_cues = _rerollCues() if reroll else _fullCues()
+	_clearGun()
+	_gun = _makeGun(weaponId, bool(upgraded), _prevSignal)
+	_makeCopies(weaponId, bool(upgraded), _prevSignal)
+	var from: Vector3 = DAU.v3(hand)
+	var fromQ := Quaternion(UP, float(yaw) - PI / 2.0)
+	if _flyer != null:
+		X.dispose(_flyer)
+	_flyer = DAU.node3d("uplink_flyer")
+	g.scene.add_child(_flyer)
+	_flyer.position = from
+	_flyer.quaternion = fromQ
+	_flyer.add_child(_gun)
+	_fly = {"t": 0.0, "dur": FULL.land, "from": from, "fromQ": fromQ, "prev": from}
+	_jaw.target = 1.0
+	g.events.emit("machine:uplink_start", {"weaponId": weaponId, "by": _user})
+
+func net_take(id) -> void:
+	var n = game.get("net")
+	if n == null or not n.inGame or n.isClient or phase != "ready" or int(id) != _useId or n.sender != _user:
+		return
+	if _userGone != "" or readyT >= float(U.collect) + MP_GRACE:
+		return
+	n.everyone("uplink", "took", [_useId])
+
+func net_took(id) -> void:
+	if not _fromHost() or int(id) != _useId:
+		return
+	if phase == "seq":
+		_updateSeq(maxf(0.0, (float(RE.snap) if reroll else float(FULL.snap)) - seqT + 0.001))
+	if phase == "ready":
+		_takeWeapon()
+
+func net_lost(id) -> void:
+	if not _fromHost() or int(id) != _useId:
+		return
+	if phase == "seq":
+		_updateSeq(maxf(0.0, (float(RE.snap) if reroll else float(FULL.snap)) - seqT + 0.001))
+	if phase == "ready":
+		_loseWeapon()
+
+# host -> all: the weapon goes back to its owner (boss start, owner downed).
+func net_handback(by, wid, sig) -> void:
+	if not _fromHost():
+		return
+	if _isMe(int(by)) and str(wid) != "":
+		var W = game.weapons
+		if W != null and W.has_method("give"):
+			W.give(str(wid), {"upgraded": true, "signal": str(sig) if str(sig) != "" else null, "source": "uplink"})
+	game.events.emit("machine:uplink_take", {"weaponId": str(wid), "by": int(by)})
+	_toIdle(true)
+
+# host: the user is gone / down / off-air -> hand back (down) or lose (off-air, left) once the weapon is ready.
+func _releaseUser() -> void:
+	var n = game.net
+	if _userGone == "down":
+		n.everyone("uplink", "handback", [_user, str(weaponId), str(signal_) if signal_ else ""])
+	else:
+		n.everyone("uplink", "lost", [_useId])
+
+func onPeerGone(id: int, why: String = "left") -> void:
+	if not _hst():
+		return
+	if crankUser == id:
+		crankUser = 0
+		game.net.toAll("uplink", "crankState", [0, align])
+	if _user == id and (phase == "seq" or phase == "ready"):
+		_userGone = why
+		if phase == "ready":
+			_releaseUser()
 
 # ============================================================================================ debug / status
 func status() -> Dictionary:

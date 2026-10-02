@@ -50,6 +50,17 @@
 #   * economy.multiplier: the JS writes it only when economy has no getter; an economy port that mirrors the JS
 #     getter keeps its backing field `_mult`, so the write happens only when that field is absent.
 #   * No renames were needed (§3.2).
+# MP (RECONCILE R3; behind net.inGame — solo unchanged): the HOST owns drops (rules, g.rand(), bag, threshold — counted
+#   from economy's host event points:award, every player's awards — life and expiry). Messages (sys "powerups"):
+#   net_spawn(id, type, pos, special) host -> clients (drop() / dropGuaranteed() are no-ops on clients) ·
+#   net_grab(id, pos) client -> host when the LOCAL player touches a drop (the client plays the "tune out" at once) ·
+#   net_grabbed(id, type, by, pos) host -> all (first request wins; id "" = a debug grab): every peer runs the team
+#   effect (_apply): FULL REEL refills its own player, timed effects start everywhere; CANCELLED / GAFFER TAPE run their
+#   world part on the host only (kills, Big Shot half HP, board repairs; +400 / +200 to every player = economy team
+#   reasons) · net_stamp(zid) / net_tape(windowId) host -> clients (stamp / tape X visuals) · net_expire(id),
+#   net_end(type) host -> clients (clients never expire / end on their own clock) · net_grabAny(type, pos),
+#   net_debugDrop(type, pos) client -> host (tests only). powerup:grab carries `by` in MP. Off-air, hidden and
+#   in-commercial players never grab.
 extends RefCounted
 
 const Commercial = preload("res://scripts/ui/commercial.gd")

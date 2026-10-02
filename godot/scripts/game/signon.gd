@@ -646,11 +646,15 @@ func _beatPower() -> void:
 	var g = game
 	var s = g.screens
 	# the single power flag, then everyone else (level lights, sponsors, Telly, feeds...) hears power:on
-	_emitting = true
-	if g.machines != null:
-		g.machines.powerOn = true
-	g.events.emit("power:on", {})
-	_emitting = false
+	# MP: a client's powerOn flips from the host's machines.net_power (netPower); only the host decides it
+	if not _cli():
+		_emitting = true
+		if g.machines != null:
+			g.machines.powerOn = true
+		g.events.emit("power:on", {})
+		_emitting = false
+		if _hst():
+			g.net.toAll("machines", "power", [true, "signon"])
 	_setU("uWaveOrigin", origin)
 	_setU("uWaveRadius", 0.0)
 	waveRadius = 0.0
@@ -686,9 +690,14 @@ func _beatDoor() -> void:
 		return
 	var doors = lv.get("doors")
 	var d = doors.get("dy_mc_yard") if doors is Dictionary else null
-	if d == null or d.get("open"):
+	if _cli():
+		# the host opens DY (level replicates it); the client plays the gust if DY was closed at the lever
+		if d == null or not _dyWasClosed:
+			return
+	elif d == null or d.get("open"):
 		return
-	lv.openDoor("dy_mc_yard")
+	else:
+		lv.openDoor("dy_mc_yard")
 	var pos: Vector3 = DAU.v3(d.pos) if d.get("pos") != null else Vector3(35, 0, -8)
 	var ap = d.get("approach")
 	var inside = ap.get("master_control") if ap is Dictionary else null
@@ -791,6 +800,7 @@ func _instantOn() -> void:
 
 func _toOff() -> void:
 	_heroPull(false)
+	_pullBy = 0
 	state = "off"
 	done = false
 	t = 0.0
@@ -847,7 +857,9 @@ func _powered() -> bool:
 	return game.machines != null and bool(game.machines.powerOn)
 
 func _nearPlayer(r: float) -> bool:
-	var p = game.player
+	return _nearP(game.player, r)
+
+func _nearP(p, r: float) -> bool:
 	if p == null:
 		return false
 	var pp = p.get("pos")

@@ -52,6 +52,18 @@
 #     AD + 1 s after its start is aborted (the explicit guard the catch stood for).
 #   * innerWidth/innerHeight -> CommercialOverlay.innerSize() (the overlay's canvas-unit screen size).
 #   * No renames were needed (§3.2).
+# MP (RECONCILE R2/R5; behind net.inGame — solo unchanged): one performer per set, locked on the host; two players may
+#   shoot ads at different sets at once. buy(): the buyer pays, then sponsors.net_lock(perkId) (client -> host);
+#   the host grants the first request -> sponsors.net_locked(perkId, by) (host -> all: the performer starts its
+#   commercial, the others light the set up, blink its tally and hear the jingle there) or sponsors.net_denied(perkId)
+#   (host -> requester: refunded). No time.scale: the performer is locked / protected (player.lock / protect
+#   ("commercial") when they exist), player.inCommercial = true (visible on the mark, held weapon hidden, never
+#   targeted), music held (audio._music.hold / release("commercial")); 0.75 s protection after the ad. At the end
+#   (or on an abort) sponsors.net_end(perkId, pos) (performer -> host: the 3 m studio-light shove there, lock freed)
+#   -> sponsors.net_unlocked(perkId, by) (host -> all: set lights back + a studio flash). A set's prompt is hidden
+#   while a teammate holds it or our request is in flight; the host frees locks of a peer that left and any lock older
+#   than AD() + 4 s. machine:commercial_start / _end are emitted only on the performer's peer (with `by`). Sold-out
+#   Replay-Ade and the teaser / camera-head / limit-shake looks stay per player. lockedBy(perkId), performing(peer).
 extends RefCounted
 
 const PerksLib = preload("res://scripts/game/perks.gd")
@@ -70,6 +82,7 @@ const T_BUTTON := T_CARD + 1.0       # 3.2 s: the jingles end ~2.9-3.4 s -> the 
 const DUCK := {"db": -18, "lowpass": 800}   # same world-audio duck as audio.gd's machine:commercial_start hook
 const FLICKER := [[0.0, true], [0.07, false], [0.14, true], [0.22, false], [0.3, true]]
 const TAU := PI * 2.0
+const POST_AD_GRACE := 0.75        # MP: s of protection after the commercial (the world kept running)
 # Disco point to the sky (right arm up and out), left hand on the hip.
 const DISCO := {"shoulderR": [2.72, 0, 0.28], "elbowR": [0.12, 0, 0], "shoulderL": [-0.2, 0, -0.55], "elbowL": [1.75, 0, 0], "hips": [0, 0, 0.1], "spine": [0, 0, -0.08], "head": [0.25, 0, 0.12]}
 # Commercial-shot cheats per set (see _makeCamera): orbit (rad) around the mark, max lens distance.
@@ -89,6 +102,12 @@ var _built := false
 var _unsubPre = null
 var debugHoldAt = null
 var _matCache := {}
+# MP (RECONCILE R2/R5): one performer per set, locked on the host
+var _locks := {}                  # perkId -> {by, t} (replicated: sponsors.net_locked / net_unlocked)
+var _pendingAd = null             # our lock request in flight {id, cost, paid, t}
+var _remoteAds := {}              # peer -> {S, id, t} a teammate's commercial on a set (lights up, tally blinks)
+var _adGrace := 0.0               # MP: s of protection left after our commercial (the world did not wait)
+var _held := false                # MP: we hold the music (audio._music.hold("commercial"))
 
 static func AD() -> float:
 	return float(Config.T.perks.adLength) + CARD_HOLD   # 4.2 s
@@ -470,6 +489,18 @@ func init() -> void:
 	g.events.on("state", func(e = null):
 		if e and (e.to == "menu" or e.to == "gameover" or e.to == "victory"):
 			_abortCommercial())
+	# MP: a peer left: its set is free again (host releases + broadcasts), its on-set look stops
+	g.events.on("net:peer", func(p = null):
+		if not (p is Dictionary) or p.get("joined", true):
+			return
+		var id := int(p.get("id", 0))
+		if _remoteAds.has(id):
+			_stopRemote(id, false)
+		var net = _net()
+		if net != null and net.isHost and net.inGame:
+			for pid in _locks.keys():
+				if int(_locks[pid].by) == id:
+					net.everyone("sponsors", "unlocked", [pid, id]))
 	# During a commercial nothing may dither the hero (the main camera still runs behind the scenes).
 	if g.render and g.render.has_method("addPrePass"):
 		_unsubPre = g.render.addPrePass(func(_r = null):
@@ -493,6 +524,11 @@ func init() -> void:
 
 func reset() -> void:
 	_abortCommercial()
+	for id in _remoteAds.keys():
+		_stopRemote(id, false)
+	_locks.clear()
+	_pendingAd = null
+	_adGrace = 0.0
 	replayBought = 0
 	for S in sets.values():
 		S.soldOut = false
@@ -574,7 +610,7 @@ func _buildSets() -> void:
 		S.cam = _makeCamera(S)
 		S.item = _m(g.interact, "register", [{
 			"id": "set_" + perkId, "pos": mark, "radius": Config.T.perks.markRadius, "height": 1.6,
-			"enabled": func(): return _ad == null and not _f(game.perks, "replayActive", false) and game.state == "playing",
+			"enabled": func(): return _ad == null and not _f(game.perks, "replayActive", false) and game.state == "playing" and not _busyMP(perkId),
 			"prompt": func(): return _prompt(S),
 			"use": func(): _use(S),
 		}])
@@ -735,6 +771,8 @@ func _prompt(S: Dictionary):
 	var P = game.perks
 	if P == null or S.soldOut or P.has(S.id) or _ad != null:
 		return null
+	if _busyMP(S.id):
+		return null
 	if P.list.size() >= P.max:
 		return null
 	if not _live(S):
@@ -757,9 +795,14 @@ func buy(perkId: String) -> bool:
 		return false
 	if perkId == "replay_ade" and replayBought >= int(Config.T.perks.replayMax):
 		return false
+	if S != null and _busyMP(perkId):
+		return false
 	var cost = Config.T.perks.get(perkId)
 	if not (cost is int or cost is float) or g.economy == null or not g.economy.has_method("spend") or not g.economy.spend(cost, "perk"):
 		return false
+	if S != null and _mp():
+		_requestSet(perkId, int(floorf(float(cost) + 0.5)), true)     # paid: refunded if the host says no
+		return true
 	if perkId == "replay_ade":
 		replayBought += 1
 	if S == null:
@@ -775,8 +818,206 @@ func playCommercial(perkId: String, opts: Dictionary = {}) -> bool:
 	var S = sets.get(perkId)
 	if S == null or P == null or _ad != null or P.has(perkId) or P.list.size() >= P.max:
 		return false
+	if _mp():
+		if _busyMP(perkId):
+			return false
+		_requestSet(perkId, 0, false)
+		return true
 	_startCommercial(S)
 	return true
+
+# ------------------------------------------------------------------------------------------ MP set locks
+func _net():
+	return game.get("net") if game != null else null
+
+func _mp() -> bool:
+	var n = _net()
+	return n != null and bool(n.inGame)
+
+# MP: the set is unusable for us now (a request of ours in flight, or a teammate shooting there).
+func _busyMP(perkId: String) -> bool:
+	if not _mp():
+		return false
+	if _pendingAd != null:
+		return true
+	var L = _locks.get(perkId)
+	return L != null and int(L.by) != int(_net().localId)
+
+func lockedBy(perkId: String) -> int:
+	var L = _locks.get(perkId)
+	return int(L.by) if L != null else 0
+
+func performing(peer) -> String:
+	for pid in _locks:
+		if int(_locks[pid].by) == int(peer):
+			return pid
+	return ""
+
+func _requestSet(perkId: String, cost: int, paid: bool) -> void:
+	_pendingAd = {"id": perkId, "cost": cost, "paid": paid, "t": float(game.time.realNow)}
+	_net().toHost("sponsors", "lock", [perkId])
+
+# client -> host: may I shoot the ad at this set? First request wins.
+func net_lock(perkId = "") -> void:
+	var net = _net()
+	if net == null or not net.isHost or not net.inGame:
+		return
+	var id := str(perkId)
+	var S = sets.get(id)
+	var ok: bool = S != null and _live(S) and not _locks.has(id) and game.state == "playing"
+	if ok:
+		net.everyone("sponsors", "locked", [id, int(net.sender)])
+	else:
+		net.toPeer(int(net.sender), "sponsors", "denied", [id])
+
+# host -> all: `by` shoots the ad at set perkId (the performer starts its commercial, the others see the set go live).
+func net_locked(perkId = "", by = 0) -> void:
+	var net = _net()
+	if net == null or not net.inGame or net.sender != 1:
+		return
+	var id := str(perkId)
+	var who := int(by)
+	_locks[id] = {"by": who, "t": float(game.time.realNow)}
+	var S = sets.get(id)
+	if S == null:
+		return
+	if who != int(net.localId):
+		_startRemote(who, S)
+		return
+	var pa = _pendingAd
+	_pendingAd = null
+	var p = game.player
+	if pa == null or pa.id != id or _ad != null or p == null or not p.alive or p.downed:
+		# not ours to shoot any more: give the set back (and the money)
+		if pa != null and pa.id == id and pa.paid and game.economy != null:
+			game.economy.refund(pa.cost, "refund")
+		net.toHost("sponsors", "end", [id, p.pos if p != null else Vector3.ZERO])
+		return
+	if id == "replay_ade" and pa.paid:
+		replayBought += 1
+	_startCommercial(S)
+
+# host -> requester: the set is taken / dark: refunded.
+func net_denied(perkId = "") -> void:
+	var net = _net()
+	if net == null or net.sender != 1:
+		return
+	var pa = _pendingAd
+	if pa == null or pa.id != str(perkId):
+		return
+	_pendingAd = null
+	if pa.paid and game.economy != null:
+		game.economy.refund(pa.cost, "refund")
+	_play("sponsor_denied")
+
+# performer -> host: my ad is over (or aborted): shove the zombies around me, free the set.
+func net_end(perkId = "", pos = null) -> void:
+	var net = _net()
+	if net == null or not net.isHost or not net.inGame:
+		return
+	var id := str(perkId)
+	var L = _locks.get(id)
+	if L == null or int(L.by) != int(net.sender):
+		return
+	if pos is Vector3:
+		_shove(pos)
+	net.everyone("sponsors", "unlocked", [id, int(L.by)])
+
+# host -> all: set perkId is free again.
+func net_unlocked(perkId = "", by = 0) -> void:
+	var net = _net()
+	if net == null or net.sender != 1:
+		return
+	_locks.erase(str(perkId))
+	if int(by) != int(net.localId) and _remoteAds.has(int(by)):
+		_stopRemote(int(by), true)
+
+# A teammate's ad on set S: its avatar stands on the mark (its own stream), the key lights go up, the tally blinks.
+func _startRemote(by: int, S: Dictionary) -> void:
+	if _remoteAds.has(by):
+		_stopRemote(by, false)
+	_remoteAds[by] = {"S": S, "id": S.id, "t": 0.0}
+	for l in S.lights:
+		_m(game.lights, "setAnchor", [l.id, {"intensity": l.intensity * 2.2, "enabled": true}])
+	_play("sponsor_jingle_" + S.id, {"pos": S.product, "vol": 0.55})
+
+func _stopRemote(by: int, flash: bool) -> void:
+	var r = _remoteAds.get(by)
+	_remoteAds.erase(by)
+	if r == null:
+		return
+	var S: Dictionary = r.S
+	for l in S.lights:
+		_m(game.lights, "setAnchor", [l.id, {"intensity": l.intensity if S.powered or S.id == "replay_ade" else 0.0}])
+	setTally(S.camProp, _live(S) and not S.soldOut)
+	if flash:
+		var fp: Vector3 = S.product + S.fwd * 1.2
+		_m(game.lights, "flash", [fp, "#FFF2D8", 10, 0.3, 10])
+		_play("studio_flash", {"pos": S.spot, "vol": 0.7})
+
+func _updateRemote(rdt: float) -> void:
+	for by in _remoteAds.keys():
+		var r: Dictionary = _remoteAds[by]
+		r.t += rdt
+		var S: Dictionary = r.S
+		setTally(S.camProp, int(floorf(r.t / 0.35)) % 2 == 0)          # ON AIR blink
+		if r.t > AD() + 3.0:
+			_stopRemote(by, false)                                   # (the host's unlocked is late or lost)
+
+func _updateMP(p, rdt: float) -> void:
+	if not _remoteAds.is_empty():
+		_updateRemote(rdt)
+	if _adGrace > 0.0:
+		_adGrace -= rdt
+		if _adGrace <= 0.0 and _ad == null:
+			_protectP(p, false)
+	var net = _net()
+	var now: float = float(game.time.realNow)
+	if _pendingAd != null and now - float(_pendingAd.t) > 5.0:
+		# the host never answered: refund (the session is probably gone)
+		var pa = _pendingAd
+		_pendingAd = null
+		if pa.paid and game.economy != null:
+			game.economy.refund(pa.cost, "refund")
+	if net.isHost:
+		for pid in _locks.keys():
+			if now - float(_locks[pid].t) > AD() + 4.0:
+				push_warning("[sponsors] set %s lock timed out (peer %d)" % [pid, int(_locks[pid].by)])
+				net.everyone("sponsors", "unlocked", [pid, int(_locks[pid].by)])
+
+# MP local-player lock / protection (mp-players' keyed API when present).
+func _lockP(p, on: bool) -> void:
+	if p.has_method("lock"):
+		p.lock("commercial", on)
+	else:
+		p.controlLocked = on
+
+func _protectP(p, on: bool) -> void:
+	if p.has_method("protect"):
+		p.protect("commercial", on)
+	else:
+		p.invulnerable = on
+
+func _setInCommercial(p, on: bool) -> void:
+	if p != null and "inCommercial" in p:
+		p.inCommercial = on
+
+func _music():
+	var a = game.audio
+	var m = a.get("_music") if a != null else null
+	return m if m != null and m.has_method("hold") and m.has_method("release") else null
+
+# The studio lights flash and shove the zombies within 3 m of pos back 2 m.
+func _shove(pos: Vector3) -> void:
+	var g = game
+	var zs = _m(g.zombies, "inRadius", [pos, 3.0, []])
+	if zs is Array:
+		for z in zs:
+			var v: Vector3 = z.pos - pos
+			v.y = 0.0
+			if v.length_squared() < 1e-4:
+				v = Vector3(randf() - 0.5, 0, randf() - 0.5)
+			_m(g.zombies, "knockback", [z, v.normalized() * 2.0])
 
 func debugCommercial(perkId: String) -> bool:
 	return playCommercial(perkId, {"free": true})
@@ -809,9 +1050,17 @@ func _startCommercial(S: Dictionary) -> void:
 	}
 	_ad = ad
 	inCommercial = true
-	g.time.scale = 0.0
-	p.invulnerable = true
-	p.controlLocked = true
+	if _mp():
+		# MP: no world freeze (RECONCILE R5): the performer is locked, protected, off the zombies' target list and stays
+		# visible on the mark for the others (inCommercial), while the world keeps running
+		_lockP(p, true)
+		_protectP(p, true)
+		_setInCommercial(p, true)
+		_adGrace = 0.0
+	else:
+		g.time.scale = 0.0
+		p.invulnerable = true
+		p.controlLocked = true
 	p.vel = Vector3.ZERO
 	p.sprinting = false
 	p.ads = false
@@ -834,10 +1083,15 @@ func _startCommercial(S: Dictionary) -> void:
 	var an = _f(p, "animator")
 	if an:
 		an.set("override", _pose)
-	_m(g.audio, "music", ["silence"])
+	var mus = _music() if _mp() else null
+	if mus != null:
+		mus.hold("commercial")       # MP: a round / boss music change during the ad waits for release()
+		_held = true
+	else:
+		_m(g.audio, "music", ["silence"])
 	_play("commercial_cut")
 	_play("sponsor_jingle_" + S.id, {"delay": 0.05})
-	g.events.emit("machine:commercial_start", {"perkId": S.id})
+	g.events.emit("machine:commercial_start", {"perkId": S.id, "by": int(_net().localId)} if _mp() else {"perkId": S.id})
 	# audio.gd ducks the world for 3.2 s on that event; keep it ducked for the whole (longer) commercial
 	_m(g.audio, "duck", [DUCK.db, DUCK.lowpass, AD()])
 
@@ -850,6 +1104,21 @@ func _abortCommercial() -> void:
 	_ad = null
 	inCommercial = false
 	Commercial.getOverlay().clear()
+	if _mp():
+		var p = game.player
+		if p != null:
+			_lockP(p, false)
+			_protectP(p, false)
+			_setInCommercial(p, false)
+		_adGrace = 0.0
+		if _held:
+			_held = false
+			var mus = _music()
+			if mus != null:
+				mus.release("commercial")
+		var net = _net()
+		if _locks.has(ad.id):
+			net.toHost("sponsors", "end", [ad.id, p.pos if p != null else Vector3.ZERO])
 
 func _finishRender(ad: Dictionary) -> void:
 	var r = game.render
@@ -935,20 +1204,28 @@ func _endCommercial() -> void:
 	Commercial.getOverlay().clear()
 	_ad = null
 	inCommercial = false
-	g.time.scale = ad.scale if ad.scale > 0 else 1.0
-	p.controlLocked = false
-	p.invulnerable = bool(_f(g.perks, "replayActive", false)) or float(_f(g.perks, "_invulnT", 0.0)) > 0.0
-	if ad.music:
-		_m(g.audio, "music", [ad.music])
-	# the studio lights flash and shove the zombies within 3 m back 2 m
-	var zs = _m(g.zombies, "inRadius", [p.pos, 3.0, []])
-	if zs is Array:
-		for z in zs:
-			var v: Vector3 = z.pos - p.pos
-			v.y = 0.0
-			if v.length_squared() < 1e-4:
-				v = Vector3(randf() - 0.5, 0, randf() - 0.5)
-			_m(g.zombies, "knockback", [z, v.normalized() * 2.0])
+	var mp := _mp()
+	if mp:
+		_lockP(p, false)
+		_setInCommercial(p, false)
+		_adGrace = POST_AD_GRACE            # protected a moment longer: the zombies did not wait for us
+		if _held:
+			_held = false
+			var mus = _music()
+			if mus != null:
+				mus.release("commercial")
+		elif ad.music:
+			_m(g.audio, "music", [ad.music])
+		# the studio lights flash and shove the zombies within 3 m back 2 m (a world mutation: the host does it)
+		_net().toHost("sponsors", "end", [S.id, p.pos])
+	else:
+		g.time.scale = ad.scale if ad.scale > 0 else 1.0
+		p.controlLocked = false
+		p.invulnerable = bool(_f(g.perks, "replayActive", false)) or float(_f(g.perks, "_invulnT", 0.0)) > 0.0
+		if ad.music:
+			_m(g.audio, "music", [ad.music])
+		# the studio lights flash and shove the zombies within 3 m back 2 m
+		_shove(p.pos)
 	var fp: Vector3 = S.product + S.fwd * 1.2
 	_m(g.lights, "flash", [fp, "#FFF2D8", 10, 0.3, 10])
 	_m(g.hud, "whiteout", [0.45, 0.28])
@@ -959,7 +1236,7 @@ func _endCommercial() -> void:
 		_m(g.perks, "detachCostume", [S.id, {"poof": false}])
 	if S.id == "replay_ade" and replayBought >= int(Config.T.perks.replayMax):
 		_soldOut(S)
-	g.events.emit("machine:commercial_end", {"perkId": S.id})
+	g.events.emit("machine:commercial_end", {"perkId": S.id, "by": int(_net().localId)} if mp else {"perkId": S.id})
 
 # THREE Vector3.project(camera) for the ad's 4:3 perspective camera -> overlay (CSS px) coordinates.
 func _project(pos: Vector3, cam: Camera3D) -> Dictionary:
@@ -1030,6 +1307,8 @@ func update(dt: float) -> void:
 	var P = g.perks
 	if p == null:
 		return
+	if _mp():
+		_updateMP(p, rdt)
 	for S in sets.values():
 		_updatePower(S, rdt)
 		_updateTip(S, rdt)

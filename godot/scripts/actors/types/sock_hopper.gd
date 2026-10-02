@@ -68,6 +68,7 @@ var range := 1.0
 var windup := CROUCH
 var cd = Config.T.zombies.sock.cd
 var spawnMode := "both"
+var netModes := ["hop", "crouch", "leap", "recover"]    # MP: wire enum of z.flags.mode (zombies_net.gd snapshot)
 
 # ------------------------------------------------------------------------------------------------ math helpers
 static func clamp01(x: float) -> float:
@@ -223,6 +224,43 @@ static func camQuat(g) -> Quaternion:
 		return Quaternion.IDENTITY
 	var b: Basis = g.camera.global_transform.basis if g.camera.is_inside_tree() else g.camera.transform.basis
 	return b.get_rotation_quaternion()
+
+# ---- MP helpers shared by the special modules (zombies.gd API; solo: the player)
+# The player-like this zombie chases (solo: game.player; MP: zombies.targetOf).
+static func target(g, z):
+	var Z = g.zombies if g != null else null
+	if Z != null and Z.has_method("targetOf"):
+		return Z.targetOf(z)
+	return g.player
+
+# Who a contact attack may hit: [p] in solo, every target in MP.
+static func victims(g, p) -> Array:
+	var Z = g.zombies if g != null else null
+	if Z != null and Z.has_method("isPuppet") and Z.get("_zn") != null:
+		return Z.targetsList()
+	return [p]
+
+static func isRemote(g, p) -> bool:
+	return g != null and g.zombies != null and g.zombies.has_method("isRemote") and g.zombies.isRemote(p)
+
+# solo / MP host (may decide outcomes) vs MP client puppet.
+static func authority(g) -> bool:
+	return g == null or g.zombies == null or not g.zombies.has_method("authority") or g.zombies.authority()
+
+static func netEvent(g, z, kind: String, args: Array = []) -> void:
+	if g != null and g.zombies != null and g.zombies.has_method("netEvent"):
+		g.zombies.netEvent(z, kind, args)
+
+# Is `by` (a peer id or null) the local player (hit markers and other local-only feedback, RECONCILE R7)?
+static func localBy(g, by) -> bool:
+	if by == null or g == null or g.get("net") == null or not g.net.inGame:
+		return true
+	return int(by) == int(g.net.localId)
+
+# Distance to the local listener (cosmetic sound culling on every peer).
+static func listenerDist(g, pos: Vector3) -> float:
+	var p = g.player if g != null else null
+	return Vector2(p.pos.x - pos.x, p.pos.z - pos.z).length() if p != null else INF
 
 # ---- glTF runtime assets (blender/runtime/specials.py)
 static var _scenes := {}
@@ -976,7 +1014,9 @@ static func poseSock(z: Dictionary, f: Dictionary, dt: float, st: Dictionary) ->
 
 # ------------------------------------------------------------------------------------------------ behaviour
 static func beginLeap(g, z: Dictionary, f: Dictionary) -> void:
-	var p = g.player
+	var p = target(g, z)
+	if p == null:
+		p = g.player
 	f.mode = "leap"
 	f.mt = 0.0
 	f.bit = false
@@ -993,7 +1033,6 @@ static func beginLeap(g, z: Dictionary, f: Dictionary) -> void:
 	burst(g, Vector3(z.pos.x, z.pos.y + 0.04, z.pos.z), {"shape": "puff", "count": 3, "size": 0.055, "speed": 1.6, "life": 0.3, "colors": ["#EDE6D6", "#D8CDB8"]})
 
 static func doLeap(g, z: Dictionary, f: Dictionary, dt: float) -> void:
-	var p = g.player
 	f.mt += dt
 	var k := clamp01(f.mt / LEAP_T)
 	f.leapArc = LEAP_H * 4.0 * k * (1.0 - k)
@@ -1006,30 +1045,11 @@ static func doLeap(g, z: Dictionary, f: Dictionary, dt: float) -> void:
 	var fy := floorAt(g, z.pos.x, z.pos.z, z.pos.y + 0.3)
 	if fy > -INF and z.pos.y <= fy + 0.001:
 		z.vy = 0.0
-	# Bite: the mouth against the player's body capsule (feet +0.25 .. +1.5).
-	if not f.bit and p.alive:
-		var mouthY: float = z.pos.y + f.leapArc + 0.55
-		var mx: float = z.pos.x - sin(z.yaw) * 0.22
-		var mz: float = z.pos.z - cos(z.yaw) * 0.22
-		var hd := Vector2(p.pos.x - mx, p.pos.z - mz).length()
-		var lo: float = p.pos.y + 0.2
-		var hi: float = p.pos.y + 1.5
-		var vy := (lo - mouthY) if mouthY < lo else ((mouthY - hi) if mouthY > hi else 0.0)
-		var pr := num(p, "radius", 0.0)
-		if Vector2(hd, vy).length() < (pr if pr != 0.0 else 0.38) + 0.2:
-			f.bit = true
-			f.bitT = 0.0
-			if p.hurt(S.dmg, z.pos):
-				g.events.emit("zombie:attack", {"z": z, "dmg": S.dmg})
-				var v := Vector3(p.pos.x - z.pos.x, 0.0, p.pos.z - z.pos.z).normalized() * 6.0
-				if p.has_method("knockback"):
-					p.knockback(v)
-			audioPlay(g, "zmb_hit", {"pos": z.pos, "rate": 1.7, "vol": 0.8})
-			f.leapV = f.leapV * -0.35        # bounce off
-			f.sq.kick(-2.5)
-			if budget.giggle >= 0.5:
-				budget.giggle -= 0.5
-				audioPlay(g, "sock_giggle", {"pos": z.pos, "rate": 1.1, "delay": 0.25})
+	# Bite: the mouth against the player's body capsule (feet +0.25 .. +1.5). MP: any target in the way.
+	for p in victims(g, target(g, z)):
+		if not f.bit and p != null and p.alive:
+			_bite(g, z, f, p)
+
 	if f.mt >= LEAP_T:
 		f.mode = "recover"
 		f.mt = 0.0
@@ -1037,6 +1057,32 @@ static func doLeap(g, z: Dictionary, f: Dictionary, dt: float) -> void:
 		z.cd = S.cd
 		f.sq.kick(-2.0)
 		burst(g, Vector3(z.pos.x, z.pos.y + 0.04, z.pos.z), {"shape": "puff", "count": 3, "size": 0.05, "speed": 1.3, "life": 0.3, "colors": ["#EDE6D6", "#D8CDB8"]})
+
+static func _bite(g, z: Dictionary, f: Dictionary, p) -> void:
+	var mouthY: float = z.pos.y + f.leapArc + 0.55
+	var mx: float = z.pos.x - sin(z.yaw) * 0.22
+	var mz: float = z.pos.z - cos(z.yaw) * 0.22
+	var hd := Vector2(p.pos.x - mx, p.pos.z - mz).length()
+	var lo: float = p.pos.y + 0.2
+	var hi: float = p.pos.y + 1.5
+	var vy := (lo - mouthY) if mouthY < lo else ((mouthY - hi) if mouthY > hi else 0.0)
+	var pr := num(p, "radius", 0.0)
+	if Vector2(hd, vy).length() < (pr if pr != 0.0 else 0.38) + 0.2:
+		f.bit = true
+		f.bitT = 0.0
+		if isRemote(g, p):
+			g.zombies.hurtTarget(p, S.dmg, z, Vector3(p.pos.x - z.pos.x, 0.0, p.pos.z - z.pos.z).normalized() * 6.0, "bite")
+		elif p.hurt(S.dmg, z.pos):
+			g.events.emit("zombie:attack", {"z": z, "dmg": S.dmg})
+			var v := Vector3(p.pos.x - z.pos.x, 0.0, p.pos.z - z.pos.z).normalized() * 6.0
+			if p.has_method("knockback"):
+				p.knockback(v)
+		audioPlay(g, "zmb_hit", {"pos": z.pos, "rate": 1.7, "vol": 0.8})
+		f.leapV = f.leapV * -0.35        # bounce off
+		f.sq.kick(-2.5)
+		if budget.giggle >= 0.5:
+			budget.giggle -= 0.5
+			audioPlay(g, "sock_giggle", {"pos": z.pos, "rate": 1.1, "delay": 0.25})
 
 # Hop direction chosen at takeoff: straight at the player when visible, else the flow field; separation, pack
 # cohesion, and circling when close but cooling down.
@@ -1112,7 +1158,9 @@ static func hopPeriod(g, z: Dictionary, f: Dictionary) -> Dictionary:
 
 static func updateSock(g, z: Dictionary, dt: float) -> bool:
 	var f: Dictionary = z.flags
-	var p = g.player
+	var p = target(g, z)
+	if p == null:
+		return false
 	var Zs = g.zombies
 	refill(g)
 	z.gawkT = 0.0
@@ -1424,6 +1472,69 @@ func release(_game, z: Dictionary) -> void:
 
 func update(game, z: Dictionary, dt: float) -> bool:
 	return updateSock(game, z, dt)
+
+# MP client puppet (zombies_net.gd): the host's mode / hop phase (z.flags.mode, netPh, netH, netBit) drive the pose;
+# the cues updateSock plays at those moments are replayed here. Cosmetic only.
+func puppet(game, z: Dictionary, dt: float) -> void:
+	var f: Dictionary = z.flags
+	refill(game)
+	var mode = f.mode
+	var lured: bool = game.zombies.get("lure") != null and z.get("lured")
+	f.driven = not lured
+	if f.get("pMode") != mode:
+		match mode:
+			"crouch":
+				if budget.giggle >= 0.4:
+					budget.giggle -= 0.4
+					audioPlay(game, "sock_giggle", {"pos": z.pos, "rate": 1.25, "vol": 0.8})
+			"leap":
+				f.bit = false
+				f.bitT = 0.0
+				audioPlay(game, "sock_leap", {"pos": z.pos, "rate": 0.95 + randf() * 0.15})
+				audioPlay(game, "zmb_swipe", {"pos": z.pos, "rate": 1.4, "vol": 0.6})
+				burst(game, Vector3(z.pos.x, z.pos.y + 0.04, z.pos.z), {"shape": "puff", "count": 3, "size": 0.055, "speed": 1.6, "life": 0.3, "colors": ["#EDE6D6", "#D8CDB8"]})
+			"recover":
+				f.sq.kick(-2.0)
+				burst(game, Vector3(z.pos.x, z.pos.y + 0.04, z.pos.z), {"shape": "puff", "count": 3, "size": 0.05, "speed": 1.3, "life": 0.3, "colors": ["#EDE6D6", "#D8CDB8"]})
+		f.pMode = mode
+		f.mt = 0.0
+	else:
+		f.mt += dt
+	if mode == "leap":
+		var k := clamp01(f.mt / LEAP_T)
+		f.leapArc = LEAP_H * 4.0 * k * (1.0 - k)
+		var bit: bool = f.get("netBit", false) == true
+		if bit and not f.bit:
+			f.bit = true
+			f.bitT = 0.0
+			audioPlay(game, "zmb_hit", {"pos": z.pos, "rate": 1.7, "vol": 0.8})
+			f.sq.kick(-2.5)
+			if budget.giggle >= 0.5:
+				budget.giggle -= 0.5
+				audioPlay(game, "sock_giggle", {"pos": z.pos, "rate": 1.1, "delay": 0.25})
+		if f.bit:
+			f.bitT += dt
+	else:
+		f.leapArc = 0.0
+	if not lured and f.has("netPh"):
+		var prev: float = f.ph
+		f.ph = float(f.netPh)
+		f.H = float(f.get("netH", 0.26))
+		if mode == "hop":
+			if prev > 0.75 and f.ph < 0.25:
+				f.sq.kick(-1.2)
+				for e in f.eyeS:
+					e.y.kick(-5.0)
+			elif prev < C and f.ph >= C and prev > C * 0.25:
+				if listenerDist(game, z.pos) < HEAR and budget.boing >= 1.0:
+					budget.boing -= 1.0
+					audioPlay(game, "sock_boing", {"pos": z.pos, "rate": f.pitch, "vol": 0.5})
+	f.giggleT -= dt
+	if f.giggleT <= 0:
+		f.giggleT = 3.0 + randf() * 5.0
+		if listenerDist(game, z.pos) < HEAR and budget.giggle >= 1.0:
+			budget.giggle -= 1.0
+			audioPlay(game, "sock_giggle", {"pos": z.pos, "rate": 0.9 + randf() * 0.35, "vol": 0.7})
 
 # Eyes (the top 40 %) deal exactly ×2: weapons pre-multiply their own head multiplier for head:true zones.
 func onDamage(game, _z, amount: float, info = null) -> float:

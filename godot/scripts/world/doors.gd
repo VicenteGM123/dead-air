@@ -69,6 +69,7 @@ var _resets: Array = []
 var _silent := false
 var _rest: Array = []
 var _beat: Callable = func(): pass
+var _from = null                       # MP: the buyer's position for this beat (debris flies away from it)
 
 func _init(ctx: Dictionary, data: Dictionary) -> void:
 	for k in data:
@@ -145,11 +146,14 @@ func _load() -> void:
 	DAU.ud(blocker).dynamic = true
 	Surf.applyDa(game, pivot, surf)
 
-func play(instant: bool = false) -> void:
+# from: the position of whoever opened it (MP: the buyer; null = the local player).
+func play(instant: bool = false, from = null) -> void:
 	_tl.clear()
 	_debris.clear()
 	_silent = instant
+	_from = from if from is Vector3 else null
 	_beat.call()
+	_from = null
 	if instant:
 		_tl.finish()
 		_debris.finish()
@@ -193,7 +197,7 @@ func puff(colors: Array) -> void:
 
 # +1 / -1: the local z side away from the player (debris flies away from whoever bought the door).
 func away() -> int:
-	var p = game.player.pos if game != null and game.player != null and game.player.get("pos") != null else null
+	var p = _from if _from != null else (game.player.pos if game != null and game.player != null and game.player.get("pos") != null else null)
 	if p == null:
 		return 1
 	var xf: Transform3D = pivot.global_transform if pivot.is_inside_tree() else pivot.transform

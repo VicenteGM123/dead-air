@@ -417,6 +417,11 @@ var _lastArea = null
 # Boss fight adapters (boss.gd installs them; the JS replaced damage / raycast on the instance): see damage() / raycast().
 var _damageHook := Callable()
 var _raycastHook := Callable()
+# MP (see the MP paragraph in the header): game.net, the companion (null in solo) and the id map.
+var net = null
+var _zn = null
+var _byId := {}
+var _despawnFx := false
 
 func _init(g) -> void:
 	game = g
@@ -426,6 +431,9 @@ func init() -> void:
 	_stars = StarRings.new(_sceneRoot())
 	_tickets = Tickets.new(_sceneRoot())
 	g.events.on("power:on", func(_p = null): _signOnGawk())
+	net = g.get("net")
+	if net != null and net.has_method("registerStream"):
+		net.registerStream("z", "zombies")
 
 func reset() -> void:
 	for z in alive.duplicate():
@@ -447,6 +455,9 @@ func reset() -> void:
 	_standby = false
 	ZombieTypes.setEyeMode("static")
 	ZombieTypes.setZombieTint(null)
+	_byId.clear()
+	net = game.get("net")
+	_zn = load("res://scripts/actors/zombies_net.gd").new(self) if (net != null and net.inGame) else null
 	if _stars != null:
 		_stars.clear()
 	if _tickets != null:
@@ -457,13 +468,8 @@ func reset() -> void:
 		_prewarmHeads(id, 1)
 
 # ---------------------------------------------------------------------------------------------- spawning
-func spawn(typeId = "tuned_in", entryId = null, pos = null, opts: Dictionary = {}):
-	var g = game
-	if alive.size() >= maxAlive:
-		return null
-	var def := ZombieTypes.getType(typeId if typeId != null else "tuned_in")
-	var rnd: int = maxi(1, int(_f(g.rounds, "round", 1)) if g.rounds != null else 1)
-	_uid += 1
+# A fresh zombie record (every field the manager and the types read) for def; id = the current _uid.
+func _record(def: Dictionary, rnd: int, opts: Dictionary) -> Dictionary:
 	var z := {
 		"id": _uid, "type": def.id, "def": def, "pos": Vector3.ZERO, "vel": Vector3.ZERO, "yaw": 0.0, "vy": 0.0,
 		"hp": 1.0, "maxHp": 1.0, "state": "chase", "area": null, "group": null, "rig": null, "animator": null, "model": null,
@@ -481,6 +487,18 @@ func spawn(typeId = "tuned_in", entryId = null, pos = null, opts: Dictionary = {
 		"hitTest": null, "deathDur": null, "dieDir": null, "dissolved": false, "onScreen": false,
 		"_rayFrame": -1, "_rayZone": null, "_rayHead": null, "_rayMul": null, "_fxFrame": -1, "_hitKey": null, "_hmFrame": -1,
 	}
+	return z
+
+func spawn(typeId = "tuned_in", entryId = null, pos = null, opts: Dictionary = {}):
+	var g = game
+	if _zn != null and _zn.client:
+		return null                 # MP client: zombies come from the host (zombies_net.gd puppets)
+	if alive.size() >= maxAlive:
+		return null
+	var def := ZombieTypes.getType(typeId if typeId != null else "tuned_in")
+	var rnd: int = maxi(1, int(_f(g.rounds, "round", 1)) if g.rounds != null else 1)
+	_uid += 1
+	var z := _record(def, rnd, opts)
 	if def.get("build") is Callable:
 		def.build.call(g, z)
 	if z.group == null:
@@ -488,12 +506,7 @@ func spawn(typeId = "tuned_in", entryId = null, pos = null, opts: Dictionary = {
 		if def.id != "tuned_in":
 			return spawn("tuned_in", entryId, pos, opts)
 		return null
-	if z.head == null:
-		z.head = DAU.node3d()
-		z.head.position = Vector3(0, z.height - z.headR, 0)
-		z.group.add_child(z.head)
-	if z.hitZones == null and not (z.hitTest is Callable):
-		z.hitZones = ZombieTypes.humanoidHitZones({"rig": z.rig, "head": z.head, "headR": z.headR})
+	_finishBuild(z)
 	var hpv = opts.get("hp")
 	if hpv == null:
 		hpv = def.hp.call(rnd, g) if def.get("hp") is Callable else Rounds.zombieHp(rnd)
@@ -509,7 +522,8 @@ func spawn(typeId = "tuned_in", entryId = null, pos = null, opts: Dictionary = {
 	# Where does it come in?
 	if pos != null:
 		z.pos = _standPos(DAU.v3(pos))
-		z.yaw = yawTo(g.player.pos.x - z.pos.x, g.player.pos.z - z.pos.z)
+		var fp: Vector3 = g.player.pos if _zn == null else _zn.facePos(z.pos)
+		z.yaw = yawTo(fp.x - z.pos.x, fp.z - z.pos.z)
 		z.state = "chase"
 		z.area = g.level.areaAt(z.pos.x, z.pos.z)
 		z.spawnT = 0.25             # quick pop-in out of a burst of static
@@ -519,7 +533,7 @@ func spawn(typeId = "tuned_in", entryId = null, pos = null, opts: Dictionary = {
 		var sp = _spawnerById(entryId) if entryId else _pickSpawner(def)
 		if sp == null:
 			# Nothing sensible (should not happen): drop it near the player's area like a debug spawn.
-			var p: Vector3 = g.player.pos
+			var p: Vector3 = g.player.pos if _zn == null else _zn.facePos(Vector3.ZERO)
 			z.pos = Vector3(p.x + 6, p.y, p.z)
 			z.state = "chase"
 		elif sp.kind == "screen":
@@ -527,6 +541,21 @@ func spawn(typeId = "tuned_in", entryId = null, pos = null, opts: Dictionary = {
 		else:
 			_beginEntry(z, sp.win)
 		_firstSpawn = false
+	_addToWorld(z, pos != null, opts.get("silent", false))
+	return z
+
+# Default head node + humanoid hit zones when the type's build did not provide them.
+func _finishBuild(z: Dictionary) -> void:
+	if z.head == null:
+		z.head = DAU.node3d()
+		z.head.position = Vector3(0, z.height - z.headR, 0)
+		z.group.add_child(z.head)
+	if z.hitZones == null and not (z.hitTest is Callable):
+		z.hitZones = ZombieTypes.humanoidHitZones({"rig": z.rig, "head": z.head, "headR": z.headR})
+
+# Adds a built zombie to the scene and the lists (MP host: registers it and queues its spawn message).
+func _addToWorld(z: Dictionary, posSpawn := false, silent := false) -> void:
+	var g = game
 	var G: Node3D = z.group
 	G.rotation_order = EULER_ORDER_YXZ
 	G.position = z.pos
@@ -535,8 +564,10 @@ func spawn(typeId = "tuned_in", entryId = null, pos = null, opts: Dictionary = {
 	_sceneRoot().add_child(G)
 	z.blob = g.fx.blob(G, z.radius * 1.15) if g.fx != null else null
 	alive.append(z)
+	_byId[z.id] = z
+	if _zn != null:
+		_zn.added(z, posSpawn, silent)
 	g.events.emit("zombie:spawn", {"z": z})
-	return z
 
 # Where a body given an explicit spawn pos can stand: the nav floor under it (debug.spawn may hand us the top of a
 # desk or a lamp), else the nearest nav cell within 3 m.
@@ -575,6 +606,8 @@ func _spawnerById(id):
 
 # Areas the spawners are active in: the player's area (weight 1) + areas behind its open doors (0.5).
 func _activeAreas() -> Dictionary:
+	if _zn != null:
+		return _zn.activeAreas()        # MP: union over the players (zombies_net.gd)
 	var g = game
 	var L = g.level
 	var here = _f(g.player, "area")
@@ -638,12 +671,12 @@ func _pickSpawner(def: Dictionary, opts: Dictionary = {}):
 			addScreens.call()
 	if cands.is_empty():
 		return null
-	var far: Array = cands.filter(func(c): return _hypot(c.pos.x - p.x, c.pos.z - p.z) >= RULE_8M)
+	var far: Array = cands.filter(func(c): return _spD(c.pos, p) >= RULE_8M)
 	if far.is_empty():
 		var best = cands[0]
 		var bd := -1.0
 		for c in cands:
-			var d := _hypot(c.pos.x - p.x, c.pos.z - p.z)
+			var d := _spD(c.pos, p)
 			if d > bd:
 				bd = d
 				best = c
@@ -652,7 +685,7 @@ func _pickSpawner(def: Dictionary, opts: Dictionary = {}):
 		var best = far[0]
 		var bd := INF
 		for c in far:
-			var d := _hypot(c.pos.x - p.x, c.pos.z - p.z)
+			var d := _spD(c.pos, p)
 			if d < bd:
 				bd = d
 				best = c
@@ -666,6 +699,12 @@ func _pickSpawner(def: Dictionary, opts: Dictionary = {}):
 		if r <= 0.0:
 			return c
 	return far[far.size() - 1]
+
+# Spawner distance for the 8 m rule: to the player (solo); MP: to the nearest player that is not off air.
+func _spD(pos: Vector3, p: Vector3) -> float:
+	if _zn != null:
+		return _zn.minPlayerDist(pos)
+	return _hypot(pos.x - p.x, pos.z - p.z)
 
 func _entryQueue(id) -> Dictionary:
 	var q = _entries.get(id)
@@ -745,20 +784,27 @@ func update(dt: float) -> void:
 		_standby = standby
 		ZombieTypes.setZombieTint("standby" if standby else null)
 
-	if not frozen:
-		_separation()
-	var list := alive
-	for i in range(list.size() - 1, -1, -1):
-		if i >= list.size():
-			continue
-		var z: Dictionary = list[i]
+	if _zn != null and _zn.client:
+		_zn.clientTick(dt)              # MP client: puppets (interpolation, cues, animation, local body push)
+	else:
+		if _zn != null:
+			_zn.hostPre(dt)             # MP host: target set + retargeting
 		if not frozen:
-			_think(z, dt, i)
-			if z.dead or z.removed:
+			_separation()
+		var list := alive
+		for i in range(list.size() - 1, -1, -1):
+			if i >= list.size():
 				continue
-			_animate(z, dt)
-	if not frozen:
-		_blockPlayer()
+			var z: Dictionary = list[i]
+			if not frozen:
+				_think(z, dt, i)
+				if z.dead or z.removed:
+					continue
+				_animate(z, dt)
+		if not frozen:
+			_blockPlayer()
+			if _zn != null:
+				_zn.blockRemotes()
 	_updateDying(dt)
 	_updateHeads(dt)
 	if _stars != null:
@@ -776,6 +822,8 @@ static func _puActive(pu, id: String) -> bool:
 
 func lateUpdate(_dt = null) -> void:
 	_lod()
+	if _zn != null:
+		_zn.late()                      # MP: host event outbox + snapshot stream; client damage batch
 
 # Boid separation (GDD §5.10: radius 0.6 m) among grounded zombies.
 func _separation() -> void:
@@ -1093,7 +1141,10 @@ func _screen(z: Dictionary, dt: float) -> void:
 # --- chase + attack -------------------------------------------------------------------------------------
 func _chase(z: Dictionary, dt: float) -> void:
 	var g = game
-	var p = g.player
+	var p = g.player if _zn == null else z.tgt
+	if p == null:
+		_zn.idle(z, dt)                 # MP: nobody to chase (everyone down / off air)
+		return
 	var ppos: Vector3 = p.pos
 	if z.stun > 0.0:
 		z.stun -= dt
@@ -1221,7 +1272,7 @@ func _fall(z: Dictionary, dt: float) -> void:
 
 func _attack(z: Dictionary, dt: float, dist: float, dy: float) -> void:
 	var g = game
-	var p = g.player
+	var p = g.player if _zn == null else z.tgt
 	var TI: Dictionary = _Z().tunedIn
 	var wind: float = float(z.def.windup) if z.def.get("windup") else float(TI.windup)
 	var total := wind * 2.5
@@ -1246,7 +1297,12 @@ func _attack(z: Dictionary, dt: float, dist: float, dy: float) -> void:
 		var rng: float = float(z.def.range) if z.def.get("range") else 1.3
 		if not (lure != null and z.lured) and p.alive and dist < rng + 0.35 and absf(dy) < 1.3 and fwdDot > 0.3:
 			var dmg = z.def.dmg if z.def.get("dmg") != null else TI.dmg
-			if p.hurt(dmg, z.pos):
+			if _zn != null and p != g.player:
+				# MP: the victim's own peer applies the hit (zombies.net_hurt)
+				var rkb: Vector3 = p.pos - z.pos
+				rkb.y = 0.0
+				_zn.hurtRemote(p, dmg, z, rkb.normalized() * 2.2, "")
+			elif p.hurt(dmg, z.pos):
 				g.events.emit("zombie:attack", {"z": z, "dmg": dmg})
 				var kb: Vector3 = p.pos - z.pos
 				kb.y = 0.0
@@ -1261,7 +1317,7 @@ func _attack(z: Dictionary, dt: float, dist: float, dy: float) -> void:
 # Area, anti-stuck and the straggler rule (chase states only).
 func _bookkeep(z: Dictionary, dt: float) -> void:
 	var g = game
-	var p = g.player
+	var p = g.player if _zn == null else z.tgt
 	var ar = g.level.areaAt(z.pos.x, z.pos.z)
 	if ar:
 		z.area = ar
@@ -1270,7 +1326,7 @@ func _bookkeep(z: Dictionary, dt: float) -> void:
 		return
 	z.navT = 0.0
 	var nd := _navDist(z.pos.x, z.pos.z)
-	var near := _hypot(p.pos.x - z.pos.x, p.pos.z - z.pos.z) < 3.0
+	var near := p != null and _hypot(p.pos.x - z.pos.x, p.pos.z - z.pos.z) < 3.0
 	# Anti-stuck (GDD §5.10): nav distance has not decreased for 8 s while not attacking. A zombie that keeps walking
 	# (>= 35 % of its speed over the last second) is chasing a kiting player, not stuck: training circles keep the
 	# path length constant for much longer than 8 s.
@@ -1314,6 +1370,8 @@ func _restraggle(z: Dictionary) -> void:
 	else:
 		_beginEntry(z, sp.win)
 	_place(z)
+	if _zn != null:
+		_zn.outReenter(z)
 
 func _turnTo(z: Dictionary, yaw: float, dt: float) -> void:
 	var d := angDiff(yaw, z.yaw)
@@ -1331,12 +1389,20 @@ func _place(z: Dictionary, pitch := 0.0, sx := 1.0, sy := 1.0, sz := 1.0) -> voi
 	if z.spawnT > 0.0:
 		s *= easeOutBack(1.0 - z.spawnT / 0.25)
 	G.scale = Vector3(s * sx, s * sy, s * (sx if sz == 1.0 else sz))
+	if _zn != null:
+		# MP: the snapshot carries the last entry pose (pitch / squash) to the puppets
+		z["pP"] = pitch
+		z["pX"] = sx
+		z["pY"] = sy
+		z["pZ"] = sz
 
 # Keep the player out of zombie bodies (shared push: zombies are solid, crowds can pin you).
 func _blockPlayer() -> void:
 	var g = game
 	var p = g.player
 	if p == null or not p.alive:
+		return
+	if _zn != null and (p.get("downed") == true or p.get("offAir") == true):
 		return
 	var prad := float(_f(p, "radius", 0.38))
 	var px := 0.0
@@ -1453,6 +1519,14 @@ func damage(z, amount, info: Dictionary = {}) -> bool:
 			return _t(hr)
 	if z == null or z.dead or z.removed or not (float(amount) > 0.0):
 		return false
+	if _zn != null and _zn.client and not _zn.applying:
+		return _zn.predict(z, amount, info)     # MP client: local feedback + request (zombies_net.gd)
+	# MP: the attacker (peer id) that gets the points; host-local damage defaults to the host's own player.
+	var by = info.get("by")
+	if _zn != null:
+		if by == null:
+			by = net.localId
+		z["lastHitBy"] = by
 	var frame: int = g.time.frame
 	var zone = info.get("zone")
 	var head = info.get("head")
@@ -1518,21 +1592,34 @@ func damage(z, amount, info: Dictionary = {}) -> bool:
 		_hitSfx += 1
 		_play("zmb_hit", {"pos": ipoint if ipoint != null else z.pos, "rate": 0.9 + randf() * 0.25})
 
-	g.events.emit("zombie:hit", {"z": z, "dmg": dmg, "head": head, "weaponId": weaponId, "point": ipoint if ipoint != null else z.pos,
-		"zone": zone, "cause": cause, "upgraded": _t(info.get("upgraded", false))})
+	var hev := {"z": z, "dmg": dmg, "head": head, "weaponId": weaponId, "point": ipoint if ipoint != null else z.pos,
+		"zone": zone, "cause": cause, "upgraded": _t(info.get("upgraded", false))}
+	if _zn != null:
+		hev.by = by
+		for k in ["signal", "primary", "ghost", "shot"]:
+			if info.has(k):
+				hev[k] = info[k]
+		_zn.outHit(z, dmg, head, zone, ipoint, idir, cause, weaponId, by, killed, info)
+	g.events.emit("zombie:hit", hev)
 	# Points (GDD §6.3).
 	if info.get("points") != false and not NO_POINTS.has(cause):
 		if not killed:
 			var key := "%d|%s" % [frame, weaponId]
+			if _zn != null:
+				var shot = info.get("shot")
+				key = "%s|%s|%s" % [str(by), str(shot if shot != null else frame), weaponId]
 			if z._hitKey != key:
 				z._hitKey = key
-				_addPoints(_P().hit, "hit")
-	if info.get("hitmarker") != false and g.hud != null and g.hud.has_method("hitmarker") and z._hmFrame != frame:
+				_addPoints(_P().hit, "hit", by)
+	if info.get("hitmarker") != false and g.hud != null and g.hud.has_method("hitmarker") and z._hmFrame != frame \
+			and (_zn == null or by == net.localId):
 		z._hmFrame = frame
 		g.hud.hitmarker(head, killed)
 	if killed:
 		full.weaponId = weaponId
 		full.cause = cause
+		if _zn != null:
+			full.by = by
 		_kill(z, full, info.get("points") != false)
 	return killed
 
@@ -1547,6 +1634,8 @@ func _zoneMul(z: Dictionary, zone) -> float:
 func kill(z, info: Dictionary = {}) -> bool:
 	if z == null or z.dead or z.removed:
 		return false
+	if _zn != null and _zn.client and not _zn.applying:
+		return false                    # MP client: only the host kills
 	var full := {"cause": "script"}
 	full.merge(info, true)
 	_kill(z, full, info.get("points") != false)
@@ -1577,14 +1666,15 @@ func _kill(z: Dictionary, info: Dictionary, award: bool) -> void:
 		z.blob = null
 	if _stars != null:
 		_stars.remove(z)
-	if award:
+	var by = info.get("by")
+	if award and (_zn == null or not _zn.client):
 		var pts := killPoints(cause, head, info.get("weaponId"))
 		if pts > 0:
-			_addPoints(pts, "kill")
+			_addPoints(pts, "kill", by)
 			var pd = z.def.get("points")
 			var bonus = pd.get("killBonus") if pd is Dictionary else null
 			if bonus:
-				_addPoints(bonus, "kill_bonus")
+				_addPoints(bonus, "kill_bonus", by)
 	# Custom death (specials) or the default topple. info.corpse === false: another system (wonder weapons) animates
 	# a clone of the body, so no death visuals here (the type's onDeath still runs for its side effects).
 	var corpse: bool = info.get("corpse") != false
@@ -1614,14 +1704,23 @@ func _kill(z: Dictionary, info: Dictionary, award: bool) -> void:
 			z.yaw += angDiff(yawTo(-idir.x, -idir.z), z.yaw) * 0.6
 		z.vy = 0.0
 		if head and cause != "cancelled":
-			_popHead(z)
+			_popHead(z, _zn == null or by == null or by == net.localId)
 		_burst(z.pos + Vector3(0, z.height * 0.75, 0), {"shape": "confetti", "count": 10, "speed": 3.5})
 		if z.group.visible and _stars != null:
 			_stars.add(z, DIE_LIE + 0.1, 3, 0.24 * z.scale)
 		_play("zmb_head_pop" if head else "zmb_groan", {"pos": z.pos, "rate": 1.0 if head else 0.7, "vol": 1.0 if head else 0.7})
-	g.events.emit("zombie:kill", {"z": z, "weaponId": info.get("weaponId"), "head": head, "melee": melee, "pos": z.pos, "cause": cause})
+	var kev := {"z": z, "weaponId": info.get("weaponId"), "head": head, "melee": melee, "pos": z.pos, "cause": cause}
+	if _zn != null:
+		kev.by = by
+		kev.wfx = info.get("wfx")
+		z["killBy"] = by
+	g.events.emit("zombie:kill", kev)
+	if _zn != null and _zn.client:
+		return                          # MP client: the round bookkeeping is the host's
 	if g.rounds != null and g.rounds.has_method("onZombieKilled"):
 		g.rounds.onZombieKilled(z)
+	if _zn != null:
+		_zn.outKill(z, info, by)
 
 func _leaveEntry(z: Dictionary) -> void:
 	if z.entry == null or z.entry.get("kind") == "screen":
@@ -1706,6 +1805,8 @@ func _remove(z: Dictionary) -> void:
 	if z.removed:
 		return
 	z.removed = true
+	if is_same(_byId.get(z.id), z):
+		_byId.erase(z.id)
 	var g = game
 	_leaveEntry(z)
 	if z.entry != null and z.entry.get("kind") == "screen" and z.entry.get("phase") == "tele" and z.entry.get("tele") != null:
@@ -1782,18 +1883,21 @@ func _releaseHead(h: Dictionary) -> void:
 	if list.size() < 4 and int(h.model.get("gen", 0)) == ZombieTypes.modelGen():
 		list.append(h)
 
-func _popHead(z: Dictionary) -> void:
+# local: the kill is the local player's (MP: only the killer feels the 30 ms hit-stop).
+func _popHead(z: Dictionary, local := true) -> void:
 	var g = game
 	var J = _f(z.rig, "joints")
 	if J == null or _f(J, "head") == null or z.model == null:
 		var a0: Vector3 = _worldPos(z.head) if z.head != null else z.pos
 		_burst(a0, {"shape": "static", "count": 14})
-		g.hitStop(0.03)
+		if local:
+			g.hitStop(0.03)
 		return
 	var a := _worldPos(z.head)
 	var q := _world(J.head).basis.get_rotation_quaternion()
 	J.head.scale = Vector3(0.001, 0.001, 0.001)
-	g.hitStop(0.03)
+	if local:
+		g.hitStop(0.03)
 	_burst(a, {"shape": "static", "count": 12, "speed": 2, "size": 0.07})
 	_burst(a, {"shape": "star", "count": 5, "speed": 3})
 	var variant = _f(z.model, "variant")
@@ -1976,6 +2080,8 @@ func roundAlive(token) -> int:
 
 # ------------------------------------------------------------------------------------------------ control
 func killAll(cause = "cancelled") -> void:
+	if _zn != null and _zn.client:
+		return
 	for z in alive.duplicate():
 		if z.type != "boss_baron":
 			_kill(z, {"cause": cause}, false)
@@ -1983,6 +2089,11 @@ func killAll(cause = "cancelled") -> void:
 func stun(z, seconds: float) -> void:
 	if z == null or z.dead:
 		return
+	if _zn != null and _zn.client and not _zn.applying:
+		_zn.request("stunReq", [int(z.id), float(seconds)])
+		return
+	if _zn != null:
+		_zn.outStun(z, seconds)
 	z.stun = maxf(z.stun, seconds)
 	if z.state == "attack":
 		z.state = "chase"
@@ -1997,15 +2108,23 @@ func stunAll(seconds: float) -> void:
 func knockback(z, vec) -> void:
 	if z == null or z.dead:
 		return
+	if _zn != null and _zn.client:
+		_zn.request("knockReq", [int(z.id), DAU.v3(vec)])
+		return
 	z.knock.x += vec.x * 9.0
 	z.knock.z += vec.z * 9.0
 
 func freezeAll(on) -> void:
 	frozen = _t(on)
+	if _zn != null and not _zn.client:
+		_zn.outFreeze(frozen)           # MP: clients get the look (a client call only sets its local flag)
 
 # setLure(pos|null, radius = INF): radius = PATH distance (metres) inside which zombies are lured (Tiny Tele 15);
 # INF keeps the old behaviour (every zombie, via nav.setGoalOverride).
 func setLure(pos, radius := INF) -> void:
+	if _zn != null and _zn.client and not _zn.applying:
+		_zn.request("lureReq", [DAU.v3(pos) if pos != null else Vector3.ZERO, pos != null, float(radius) if is_finite(radius) else -1.0])
+		return
 	lure = DAU.v3(pos) if pos != null else null
 	lureR = radius
 	_lureField = null
@@ -2024,12 +2143,18 @@ func setLure(pos, radius := INF) -> void:
 		for z in alive:
 			z.anim.down = false
 			z.lured = false
+	if _zn != null and not _zn.client:
+		_zn.outLure(lure, lureR)
 
 # Silent removal: no points, no kill event. requeue = the round spawns it again (anti-stuck).
 func despawn(z, requeue := true) -> void:
 	if z == null or z.removed:
 		return
+	if _zn != null and _zn.client and not _zn.applying:
+		return                          # MP client: only the host despawns
 	var g = game
+	if _zn != null and not _zn.client:
+		_zn.outDespawn(z, _despawnFx)
 	var i := _idx(alive, z)
 	if i >= 0:
 		alive.remove_at(i)
@@ -2046,13 +2171,19 @@ func despawn(z, requeue := true) -> void:
 func despawnAll(opts: Dictionary = {}) -> void:
 	var fx: bool = opts.get("fx", true)
 	var requeue: bool = opts.get("requeue", false)
+	if _zn != null and _zn.client:
+		return
 	for z in alive.duplicate():
 		if fx and z.group.visible:
 			_burst(z.pos + Vector3(0, 0.8, 0), {"shape": "static", "count": 16, "speed": 2})
+		_despawnFx = fx
 		despawn(z, requeue)
+		_despawnFx = false
 
 # Sign-On (GDD §7.8): living zombies stop and turn their heads toward the nearest TV for 1.5 s as the wave passes.
 func _signOnGawk() -> void:
+	if _zn != null and _zn.client:
+		return                          # MP: host only (the snapshot packer replicates gawks)
 	var g = game
 	var L = g.level
 	if L == null:
@@ -2150,7 +2281,93 @@ func _play(id: String, opts: Dictionary = {}) -> void:
 	if a != null:
 		a.play(id, opts)
 
-func _addPoints(n, reason: String) -> void:
+func _addPoints(n, reason: String, by = null) -> void:
 	var e = game.economy
-	if e != null:
-		e.add(n, reason)
+	if e == null:
+		return
+	if _zn != null:
+		_zn.award(e, n, reason, by)     # MP host: economy.add(n, reason, by) routes to the attacker
+		return
+	e.add(n, reason)
+
+# ------------------------------------------------------------------------------------------------ MP API
+# (see the MP paragraph in the header; the work happens in zombies_net.gd, these are thin wrappers)
+func byId(id):
+	return _byId.get(int(id)) if (id is int or id is float) else null
+
+# The player-like this zombie chases: game.player in solo; MP host z.tgt; MP client the snapshot's target.
+func targetOf(z):
+	if _zn == null:
+		return game.player
+	return _zn.targetOf(z) if z != null else null
+
+# The players zombies may chase this frame (solo: [game.player]). Shared array: read only.
+func targetsList() -> Array:
+	if _zn == null:
+		return [game.player]
+	return _zn.targetsList()
+
+func isRemote(p) -> bool:
+	return p != null and p is Object and p.get("isRemote") == true
+
+# May this peer decide zombie outcomes (solo / MP host)?
+func authority() -> bool:
+	return _zn == null or not _zn.client
+
+func isPuppet() -> bool:
+	return _zn != null and _zn.client
+
+# MP host: a contact hit on a RemotePlayer, applied on its owner's peer (zombies.net_hurt). Returns false when it
+# cannot land (host view). Solo / local player: the solo call pattern.
+func hurtTarget(p, dmg, z, kb = null, kind := "") -> bool:
+	if p == null:
+		return false
+	if _zn != null and isRemote(p):
+		return _zn.hurtRemote(p, dmg, z, kb, kind)
+	if p.hurt(dmg, z.pos):
+		var ev := {"z": z, "dmg": dmg}
+		if kind != "":
+			ev.kind = kind
+		game.events.emit("zombie:attack", ev)
+		if kb is Vector3 and p.has_method("knockback"):
+			p.knockback(kb)
+		return true
+	return false
+
+# MP host: a type-specific event for the puppets (def.puppetEvent(game, z, kind, args) on every client).
+func netEvent(z, kind: String, args: Array = []) -> void:
+	if _zn != null and not _zn.client and z != null:
+		_zn.outType(z, kind, args)
+
+# --- net handlers (game.net dispatch: zombies.net_<method>)
+func net_ev(t, list) -> void:
+	if _zn != null and _zn.client and net.sender == 1:
+		_zn.onEvents(t, list)
+
+func net_stream_z(_from, data) -> void:
+	if _zn != null and _zn.client and data is PackedByteArray:
+		_zn.onSnapshot(data)
+
+func net_dmgBatch(list) -> void:
+	if _zn != null and not _zn.client:
+		_zn.onDmgBatch(list)
+
+func net_hurt(dmg, fromPos = null, kb = null, zid = 0, kind = "") -> void:
+	if _zn != null and net.sender == 1:
+		_zn.onHurt(dmg, fromPos, kb, zid, kind)
+
+func net_stunReq(id, seconds) -> void:
+	if _zn != null and not _zn.client and (seconds is float or seconds is int):
+		var z = byId(id)
+		if z != null and not z.dead:
+			stun(z, clampf(float(seconds), 0.0, 10.0))
+
+func net_knockReq(id, vec) -> void:
+	if _zn != null and not _zn.client and vec is Vector3:
+		var z = byId(id)
+		if z != null and not z.dead:
+			knockback(z, vec.limit_length(8.0))
+
+func net_lureReq(pos, on = true, radius = -1.0) -> void:
+	if _zn != null and not _zn.client and pos is Vector3 and (radius is float or radius is int):
+		setLure(pos if on else null, float(radius) if float(radius) >= 0.0 else INF)

@@ -101,6 +101,14 @@ func update(game, z: Dictionary, dt: float) -> bool:
 	z.anim.clap = sin((1.0 - f.clapT / 0.22) * PI) if f.clapT > 0.0 else 0.0
 	return false
 
+# MP client puppet (zombies_net.gd): the same flavour (groans, claps, the clap pose) for the local listener; the
+# "spotted" groan uses distance (no line-of-sight test on puppets).
+func puppet(game, z: Dictionary, dt: float) -> void:
+	var p = game.player
+	if p != null:
+		z.los = Vector2(p.pos.x - z.pos.x, p.pos.z - z.pos.z).length() < 9.0
+	update(game, z, dt)
+
 func _play(game, id_: String, opts: Dictionary) -> void:
 	if game.audio != null:
 		game.audio.play(id_, opts)

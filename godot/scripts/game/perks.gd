@@ -44,6 +44,15 @@
 #   * The dropped referee whistle is a Blender asset (blender/runtime/sponsors.py -> assets/runtime/sponsors/whistle.glb).
 #   * JS try/catch inside the replay: a replay that errors keeps being stepped until the watchdog (6 s) finishes it.
 #   * Renames (§3.2): none. player.history.get(i) is called as history.get_(i) (the player port's rename of `get`).
+# MP (RECONCILE R4/R5; behind net.inGame — solo unchanged): perks are per player and local (mods, max 4, Replay-Ade
+#   limits). The loadout goes to the teammates as net ext "perks" ([perkIds]) + "perksGold" (bool); every peer dresses
+#   the other avatars (_syncRemote on net:ext / net:avatar: costume pieces on RemotePlayer.hero slots, render layer 1,
+#   no hero fade, pop / poof sparkles, skates lift). loadoutOf(peer) / remoteHas(peer, id); clearAll(opts) (bleed-out:
+#   every perk with a poof; gold Morning Show perks are permanent unless opts.force) / loseAll(). Instant Replay never
+#   writes time.scale in MP (the hero alone rewinds while the world runs); control lock / protection go through
+#   player.lock / protect("replay", on) when they exist; the landing shockwave is perks.net_shockwave(pos) (owner ->
+#   host: knockback + stun there) and perks.net_replayFx(kind, pos, consumed) (owner -> others: 'start' rewind sound,
+#   'land' ring + bursts). perk:gain / perk:lose / replay:start / replay:end / player:revive carry `by` in MP.
 extends RefCounted
 
 const Commercial = preload("res://scripts/ui/commercial.gd")
@@ -470,14 +479,57 @@ var _rp = null
 var _ringMat = null
 var _ringGeo: ArrayMesh = null
 
+var _remote := {}                 # MP: peerId -> {hero, gold, costumes: {perkId -> pieces}} (teammates' costumes)
+var _batch := false               # MP: clearAll() sends one loadout at the end
+
 func _init(g) -> void:
 	game = g
 	max = float(Config.T.perks.limit)
+
+func _net():
+	return game.get("net") if game != null else null
+
+func _mp() -> bool:
+	var n = _net()
+	return n != null and bool(n.inGame)
+
+# MP cutscene lock / protection of the local player (mp-players' keyed API; plain fields without it).
+func _lock(p, on: bool) -> void:
+	if p == null:
+		return
+	if _mp() and p.has_method("lock"):
+		p.lock("replay", on)
+	else:
+		p.controlLocked = on
+
+func _protect(p, on: bool) -> void:
+	if p == null:
+		return
+	if _mp() and p.has_method("protect"):
+		p.protect("replay", on)
+	else:
+		p.invulnerable = on
+
+# Event payload: MP events carry the acting peer (RECONCILE R7); solo payloads stay as they were.
+func _ev(d: Dictionary) -> Dictionary:
+	if _mp():
+		d["by"] = int(_net().localId)
+	return d
 
 func init() -> void:
 	var g = game
 	var ev = g.events
 	sparkles = Sparkles.new(g)
+	# MP: teammates' perk loadouts (net ext "perks") dress their avatars
+	ev.on("net:ext", func(p = null):
+		if p is Dictionary and (p.get("key") == "perks" or p.get("key") == "perksGold"):
+			_syncRemote(int(p.get("id", 0))))
+	ev.on("net:avatar", func(p = null):
+		if p is Dictionary:
+			_syncRemote(int(p.get("id", 0))))
+	ev.on("net:peer", func(p = null):
+		if p is Dictionary and not p.get("joined", true):
+			_remote.erase(int(p.get("id", 0))))
 	ev.on("player:hurt", func(_p = null): _onHurt())
 	ev.on("player:land", func(p = null):
 		if has("wobble_up"):
@@ -518,6 +570,10 @@ func reset() -> void:
 	if hero:
 		hero.group.position.y = 0.0
 		hero.group.scale = Vector3.ONE
+	if _mp():
+		_remote.clear()       # (the avatars are rebuilt for the new game; net:avatar re-dresses them)
+		_batch = false
+		_syncExt()
 
 # ------------------------------------------------------------------------------------------ ownership
 func has(perkId: String) -> bool:
@@ -536,7 +592,8 @@ func give(perkId: String, opts: Dictionary = {}) -> bool:
 	if perkId == "wobble_up":
 		_tintRim(true)
 	if emit:
-		game.events.emit("perk:gain", {"perkId": perkId})
+		game.events.emit("perk:gain", _ev({"perkId": perkId}))
+	_syncExt()
 	return true
 
 func remove(perkId: String, opts: Dictionary = {}) -> bool:
@@ -551,11 +608,89 @@ func remove(perkId: String, opts: Dictionary = {}) -> bool:
 		_restoreRim()
 	if perkId == "roller_boogie":
 		_skateLoop(false)
-	game.events.emit("perk:lose", {"perkId": perkId})
+	game.events.emit("perk:lose", _ev({"perkId": perkId}))
+	_syncExt()
 	return true
 
 func lose(perkId: String) -> bool:
 	return remove(perkId)
+
+# MP bleed-out (mp-players): every perk goes with a costume poof. The Morning Show's gold perks are permanent and
+# stay (opts.force removes them too). Returns how many were removed.
+func clearAll(opts: Dictionary = {}) -> int:
+	if gold and not opts.get("force", false):
+		return 0
+	var n := 0
+	_batch = true
+	for id in list.duplicate():
+		if remove(id, opts):
+			n += 1
+	_batch = false
+	_syncExt()
+	return n
+
+func loseAll() -> int:
+	return clearAll({"poof": true})
+
+# ------------------------------------------------------------------------------------------ MP loadout
+# Our loadout for the teammates' copies of our hero (net ext "perks" = [perkIds], "perksGold" = bool).
+func _syncExt() -> void:
+	if _batch or not _mp():
+		return
+	var net = _net()
+	if not net.has_method("setLocalExt"):
+		return
+	net.setLocalExt("perks", list.duplicate())
+	net.setLocalExt("perksGold", true if gold else null)
+
+# A teammate's perk ids (empty when unknown).
+func loadoutOf(peer) -> Array:
+	var net = _net()
+	if net == null or not net.active or int(peer) == int(net.localId):
+		return list.duplicate()
+	var e = net.extOf(int(peer)) if net.has_method("extOf") else {}
+	var l = e.get("perks") if e is Dictionary else null
+	return l.duplicate() if l is Array else []
+
+func remoteHas(peer, perkId: String) -> bool:
+	return loadoutOf(peer).has(perkId)
+
+# Dresses a teammate's avatar with the costume pieces of its loadout (pop on gains, poof on losses).
+func _syncRemote(id: int) -> void:
+	var net = _net()
+	if net == null or not net.inGame or id == int(net.localId) or id <= 0:
+		return
+	var rp = net.playerById(id)
+	var hero = _f(rp, "hero")
+	if rp == null or hero == null or not (_f(hero, "group") is Node3D):
+		return
+	var want: Array = loadoutOf(id)
+	var e = net.extOf(id)
+	var g: bool = bool(e.get("perksGold", false)) if e is Dictionary else false
+	var R = _remote.get(id)
+	var pop := true
+	if R == null or not is_same(R.hero, hero):
+		R = {"hero": hero, "gold": g, "costumes": {}}
+		_remote[id] = R
+		pop = false                        # a (re)built avatar: dress it quietly
+	if R.gold != g:
+		for pid in R.costumes.keys():
+			_undress(R.costumes[pid], pid, false)
+		R.costumes.clear()
+		R.gold = g
+	for pid in R.costumes.keys():
+		if not want.has(pid):
+			_undress(R.costumes[pid], pid, true)
+			R.costumes.erase(pid)
+	for pid in want:
+		if COSTUMES.has(pid) and not R.costumes.has(pid):
+			var pieces = _dressHero(hero, pid, g, pop, false)
+			if pieces != null:
+				R.costumes[pid] = pieces
+				if pop and sparkles:
+					for pc in pieces:
+						sparkles.emit(_wpos(pc.obj), {"count": 14, "colors": ["#FFE27A", "#FFFFFF", "#FF9EDB", "#7FE7FF"], "speed": 2.4, "size": 0.13, "life": 0.7, "gravity": 0.8})
+	hero.group.position.y = SKATE_LIFT if R.costumes.has("roller_boogie") else 0.0
 
 # Sign-Off reward (GDD §13 Morning Show): all five, gold leaf, permanent, no limit.
 func morningShow() -> Array:
@@ -570,6 +705,7 @@ func setGold(on) -> void:
 	for id in _costumes.keys():
 		detachCostume(id, {"poof": false})
 		attachCostume(id, {"pop": true})
+	_syncExt()
 
 # ------------------------------------------------------------------------------------------ player.mods
 func _applyMods() -> void:
@@ -630,10 +766,24 @@ func attachCostume(perkId: String, opts: Dictionary = {}) -> bool:
 		return false
 	if _costumes.has(perkId):
 		detachCostume(perkId, {"poof": false})
-	var prop = _m(g.props, "build", [COSTUMES[perkId] + ("_gold" if gold else ""), {}])
+	var pieces = _dressHero(hero, perkId, gold, pop, true)
+	if pieces == null:
+		return false
+	_costumes[perkId] = {"pieces": pieces, "gold": gold}
+	if pop:
+		for pc in pieces:
+			if sparkles:
+				sparkles.emit(_wpos(pc.obj), {"count": 14, "colors": ["#FFE27A", "#FFFFFF", "#FF9EDB", "#7FE7FF"], "speed": 2.4, "size": 0.13, "life": 0.7, "gravity": 0.8})
+	return true
+
+# The costume pieces of perkId on a hero's slots (-> [{obj, slot, scale}] | null). local = the local hero (hero-fade
+# dither); a teammate's avatar (MP) gets its pieces on RemotePlayer's render layer instead.
+func _dressHero(hero, perkId: String, goldLeaf: bool, pop: bool, local: bool):
+	var g = game
+	var prop = _m(g.props, "build", [COSTUMES[perkId] + ("_gold" if goldLeaf else ""), {}])
 	if not (prop is Node3D):
 		push_warning("[perks] costume build failed " + perkId)
-		return false
+		return null
 	load("res://scripts/game/sponsors.gd").resolveRefs(prop, DAU.ud(prop))
 	var parts = DAU.ud(prop).get("parts", {})
 	var pieces := []
@@ -649,7 +799,10 @@ func attachCostume(perkId: String, opts: Dictionary = {}) -> bool:
 			obj.rotation = Vector3.ZERO
 			var s := _slotFit(perkId, slot, hero)
 			obj.scale = Vector3.ONE * s
-			_m(g.mats, "applyHeroFade", [obj])
+			if local:
+				_m(g.mats, "applyHeroFade", [obj])
+			else:
+				DAU.setLayerRecursive(obj, 1)       # RemotePlayer.LAYER (actors): never in layer-0-only shots
 			DAU.traverse(obj, func(o):
 				if o is MeshInstance3D:
 					DAU.ud(o).costume = perkId)
@@ -661,12 +814,7 @@ func attachCostume(perkId: String, opts: Dictionary = {}) -> bool:
 	_drop(prop)        # the gallery root (its parts moved onto the hero)
 	if perkId == "roller_boogie":
 		hero.group.position.y = SKATE_LIFT
-	_costumes[perkId] = {"pieces": pieces, "gold": gold}
-	if pop:
-		for pc in pieces:
-			if sparkles:
-				sparkles.emit(_wpos(pc.obj), {"count": 14, "colors": ["#FFE27A", "#FFFFFF", "#FF9EDB", "#7FE7FF"], "speed": 2.4, "size": 0.13, "life": 0.7, "gravity": 0.8})
-	return true
+	return pieces
 
 func detachCostume(perkId: String, opts: Dictionary = {}) -> bool:
 	var poof: bool = opts.get("poof", true)
@@ -675,7 +823,15 @@ func detachCostume(perkId: String, opts: Dictionary = {}) -> bool:
 		return false
 	_costumes.erase(perkId)
 	var g = game
-	for pc in c.pieces:
+	_undress(c.pieces, perkId, poof)
+	var hero = _f(g.player, "hero")
+	if perkId == "roller_boogie" and hero:
+		hero.group.position.y = 0.0
+	return true
+
+func _undress(pieces: Array, perkId: String, poof: bool) -> void:
+	var g = game
+	for pc in pieces:
 		if not is_instance_valid(pc.obj):
 			continue
 		if poof and pc.obj.get_parent():
@@ -692,10 +848,6 @@ func detachCostume(perkId: String, opts: Dictionary = {}) -> bool:
 		if i >= 0:
 			_pops.remove_at(i)
 		_drop(pc.obj)
-	var hero = _f(g.player, "hero")
-	if perkId == "roller_boogie" and hero:
-		hero.group.position.y = 0.0
-	return true
 
 # Every material of a mesh (override, surface overrides, mesh surfaces).
 static func _materialsOf(mi: MeshInstance3D) -> Array:
@@ -832,12 +984,15 @@ func _startReplay(consume: bool) -> void:
 		"health0": maxf(0.0, p.health),
 	}
 	replayActive = true
-	p.invulnerable = true
-	p.controlLocked = true
+	_protect(p, true)
+	_lock(p, true)
 	p.vel = Vector3.ZERO
-	_setScale(0.0)
+	if not _mp():
+		_setScale(0.0)            # MP: no world freeze (RECONCILE R5): only the hero rewinds
 	_replayFx(1.0, 0.0, 0.0, 0.0)
-	g.events.emit("replay:start", {})
+	g.events.emit("replay:start", _ev({}))
+	if _mp():
+		_net().toOthers("perks", "replayFx", ["start", p.pos, false])
 	_m(g.audio, "play", ["replay_wipe", {}])
 	_m(g.cam, "shake", [0.25, 0.3])
 	_ensureGhosts()
@@ -894,7 +1049,8 @@ func _stepReplay(rdt: float) -> void:
 		if rp.t >= 0.3:
 			rp.phase = "rewind"
 			rp.t = 0.0
-			_setScale(REWIND_SCALE)
+			if not _mp():
+				_setScale(REWIND_SCALE)
 			_m(g.audio, "play", ["replay_rewind", {}])
 		return
 	if rp.phase == "rewind":
@@ -958,22 +1114,17 @@ func _landReplay() -> void:
 	p.vel = Vector3.ZERO
 	p.health = p.maxHealth
 	p.alive = true
-	p.controlLocked = false
+	_lock(p, false)
 	var h = _f(p, "history")
 	_m(h, "clear")
 	_m(h, "push", [p.pos, p.yaw, p.area])
 	_invulnT = float(R.invuln)
-	# shockwave: zombies within 5 m knocked back 3 m and stunned 2 s
-	var zs = _m(g.zombies, "inRadius", [p.pos, float(R.knock), []])
-	if zs is Array:
-		for z in zs:
-			var v: Vector3 = z.pos - p.pos
-			v.y = 0.0
-			if v.length_squared() < 1e-4:
-				v = Vector3(randf() - 0.5, 0, randf() - 0.5)
-			v = v.normalized() * 3.0
-			_m(g.zombies, "knockback", [z, v])
-			_m(g.zombies, "stun", [z, float(R.stun)])
+	# shockwave: zombies within 5 m knocked back 3 m and stunned 2 s (MP: the host applies it — a world mutation)
+	if _mp():
+		_net().toHost("perks", "shockwave", [p.pos])
+		_net().toOthers("perks", "replayFx", ["land", p.pos, rp.consume and has("replay_ade")])
+	else:
+		_shockwave(p.pos)
 	_ring(p.pos, float(R.knock))
 	var up: Vector3 = p.pos
 	up.y = p.pos.y + 1.0
@@ -985,7 +1136,43 @@ func _landReplay() -> void:
 	if rp.consume and has("replay_ade"):
 		_dropWhistle()
 		remove("replay_ade", {"poof": true})
-	g.events.emit("player:revive", {"selfRevive": true})
+	g.events.emit("player:revive", _ev({"selfRevive": true}))
+
+func _shockwave(pos: Vector3) -> void:
+	var g = game
+	var R = Config.T.perks.replay
+	var zs = _m(g.zombies, "inRadius", [pos, float(R.knock), []])
+	if zs is Array:
+		for z in zs:
+			var v: Vector3 = z.pos - pos
+			v.y = 0.0
+			if v.length_squared() < 1e-4:
+				v = Vector3(randf() - 0.5, 0, randf() - 0.5)
+			v = v.normalized() * 3.0
+			_m(g.zombies, "knockback", [z, v])
+			_m(g.zombies, "stun", [z, float(R.stun)])
+
+# owner -> host: an Instant Replay landed at pos: knock back + stun the zombies around it.
+func net_shockwave(pos = null) -> void:
+	var net = _net()
+	if net == null or not net.isHost or not net.inGame or not (pos is Vector3):
+		return
+	_shockwave(pos)
+
+# owner -> others: a teammate's replay ('start' | 'land' at pos; consumed = its Replay-Ade is gone).
+func net_replayFx(kind = "", pos = null, _consumed = false) -> void:
+	var net = _net()
+	if net == null or not net.inGame or not (pos is Vector3) or int(net.sender) == int(net.localId):
+		return
+	var g = game
+	if str(kind) == "land":
+		_ring(pos, float(Config.T.perks.replay.knock))
+		var up: Vector3 = pos + Vector3(0, 1.0, 0)
+		_m(g.fx, "burst", [up, {"shape": "star", "count": 14, "speed": 5, "size": 0.16, "life": 0.8, "colors": ["#FFE27A", "#FFFFFF", "#7FE7FF"]}])
+		_m(g.fx, "burst", [pos, {"shape": "puff", "count": 12, "speed": 3.5, "size": 0.3, "life": 0.7, "dir": Vector3(0, 0.2, 0), "cone": 1}])
+		_m(g.audio, "play", ["studio_flash", {"pos": pos, "vol": 0.7}])
+	elif str(kind) == "start":
+		_m(g.audio, "play", ["replay_rewind", {"pos": pos, "vol": 0.7}])
 
 # THE cleanup path: every temporary state the replay may hold, whatever phase it reached. Idempotent. hard = the
 # run is over (reset / menu / game over / victory): a world speed the replay still holds goes back to 1.
@@ -1005,13 +1192,16 @@ func _endReplay(hard: bool) -> void:
 	for gh in _ghosts:
 		gh.t = -1.0
 		gh.group.visible = false
+	if hard and _mp() and g.player:
+		_protect(g.player, false)         # MP: the keyed protection never outlives the run
+		_lock(g.player, false)
 	if not was:
 		return
 	if g.player:
-		g.player.controlLocked = false
+		_lock(g.player, false)
 	if not _f(g.sponsors, "inCommercial", false):
 		Commercial.getOverlay().clear()   # a running commercial redraws its own bezel every frame
-	g.events.emit("replay:end", {})
+	g.events.emit("replay:end", _ev({}))
 
 # Afterimage pool: frozen pose copies of the hero, additive cyan, fading.
 func _ensureGhosts() -> void:
@@ -1223,7 +1413,9 @@ func update(dt: float) -> void:
 		_scaleSet = null
 	if _invulnT > 0:
 		_invulnT -= rdt
-		if _invulnT <= 0 and not replayActive and not _f(g.sponsors, "inCommercial", false):
+		if _invulnT <= 0 and not replayActive and _mp():
+			_protect(p, false)             # (MP: keyed — a commercial holds its own key)
+		elif _invulnT <= 0 and not replayActive and not _f(g.sponsors, "inCommercial", false):
 			p.invulnerable = false
 	# Roller Boogie skating strides (legs after the procedural + weapon pose).
 	var an = _f(p, "animator")

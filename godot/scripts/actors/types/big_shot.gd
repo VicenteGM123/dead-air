@@ -73,6 +73,7 @@ var cd: float = BUMP_CD
 var spawnMode := "window"
 var points := {"killBonus": Config.T.points.bigShot}
 var oneTakeMul := 5
+var netModes := ["roll", "rushTele", "rush", "skid", "flashWind", "bump"]   # MP: wire enum of z.flags.mode
 
 static func clamp01(x: float) -> float:
 	return SH.clamp01(x)
@@ -645,7 +646,7 @@ static func registerPlug(game, z: Dictionary) -> void:
 		"onHit": func(info):
 			if z.get("dead") or not (SH.num(info, "damage") > 0.0):
 				return
-			game.zombies.damage(z, info.damage, {"zone": "plug", "head": true, "point": info.get("point"), "dir": info.get("dir"), "weaponId": info.get("weaponId"),
+			game.zombies.damage(z, info.damage, {"zone": "plug", "head": true, "point": info.get("point"), "dir": info.get("dir"), "weaponId": info.get("weaponId"), "by": info.get("by"),
 				"upgraded": info.get("upgraded"), "cause": "melee" if info.get("melee") else (info.get("cause") if info.get("cause") else "bullet")})
 			SH.burst(game, info.point if info.get("point") != null else z.model.plug.position, {"shape": "spark", "count": 8, "speed": 4, "colors": ["#FFE08A", "#FFB23A", "#FFFFFF"]}),
 		"blocksBullet": true,
@@ -726,9 +727,10 @@ static func poseBigShot(z: Dictionary, f: Dictionary, dt: float, st: Dictionary)
 	var colScale := 1.0
 	var speed := SH.num(st, "speed")
 	var mode = f.mode
-	# aim the camera head at the player
-	if g != null and g.player != null:
-		var p: Vector3 = g.player.pos
+	# aim the camera head at the player (MP: the zombie's target)
+	var tp = SH.target(g, z) if g != null else null
+	if tp != null:
+		var p: Vector3 = tp.pos
 		headYaw = clampf(angDiff(yawTo(p.x - z.pos.x, p.z - z.pos.z), z.yaw), -0.9, 0.9)
 		var dh := Vector2(p.x - z.pos.x, p.z - z.pos.z).length()
 		headPitch = clampf(atan2(p.y + 1.3 - (z.pos.y + 1.75), maxf(0.5, dh)), -0.4, 0.3)
@@ -899,6 +901,7 @@ static func flashPop(game, z: Dictionary) -> void:
 		if game.screens != null and game.screens.has_method("override"):
 			game.screens.override("flinch", null, 3)
 	game.events.emit("zombie:flash", {"z": z, "pos": a, "hit": hit})
+	SH.netEvent(game, z, "bsFlash", [])     # MP: every peer pops the flash and judges its own player (victim-side)
 	f.lastFlashHit = hit
 
 static func casterDust(game, m: Dictionary, size: float, speed: float, life: float, colors: Array) -> void:
@@ -907,7 +910,9 @@ static func casterDust(game, m: Dictionary, size: float, speed: float, life: flo
 
 static func updateBigShot(game, z: Dictionary, dt: float) -> bool:
 	var f: Dictionary = z.flags
-	var p = game.player
+	var p = SH.target(game, z)
+	if p == null:
+		return false
 	var Zs = game.zombies
 	z.gawkT = 0.0
 	f.rushCd -= dt
@@ -982,12 +987,29 @@ static func updateBigShot(game, z: Dictionary, dt: float) -> bool:
 					Zs.knockback(o, Vector3(f.rushDir.x * 0.4 - f.rushDir.z * side * 0.5, 0.0, f.rushDir.z * 0.4 + f.rushDir.x * side * 0.5))
 					if o.get("animator") != null and o.animator.has_method("kick"):
 						o.animator.kick(0.8)
-			# the player
-			var pd := Vector2(p.pos.x - z.pos.x, p.pos.z - z.pos.z).length()
-			var pr := SH.num(p, "radius", 0.0)
-			if not f.rushHit and p.alive and pd < RADIUS + (pr if pr != 0.0 else 0.38) + 0.2 and absf(p.pos.y - z.pos.y) < 1.5:
+			# the player (MP: whichever target he runs into)
+			var hp_ = null
+			if not f.rushHit:
+				for q in SH.victims(game, p):
+					if q == null or not q.alive:
+						continue
+					var qd := Vector2(q.pos.x - z.pos.x, q.pos.z - z.pos.z).length()
+					var qr := SH.num(q, "radius", 0.0)
+					if qd < RADIUS + (qr if qr != 0.0 else 0.38) + 0.2 and absf(q.pos.y - z.pos.y) < 1.5:
+						hp_ = q
+						break
+			if hp_ != null:
+				p = hp_
 				f.rushHit = true
-				if p.hurt(RU.dmg, z.pos):
+				SH.netEvent(game, z, "bsHit", ["rush"])
+				if SH.isRemote(game, p):
+					var rx: float = p.pos.x - z.pos.x
+					var rz: float = p.pos.z - z.pos.z
+					var rl := Vector2(rx, rz).length()
+					if rl == 0.0:
+						rl = 1.0
+					game.zombies.hurtTarget(p, RU.dmg, z, Vector3(f.rushDir.x * 0.7 + (rx / rl) * 0.3, 0.0, f.rushDir.z * 0.7 + (rz / rl) * 0.3).normalized() * (RU.knock * 6.0), "rush")
+				elif p.hurt(RU.dmg, z.pos):
 					game.events.emit("zombie:attack", {"z": z, "dmg": RU.dmg, "kind": "rush"})
 					var kx: float = p.pos.x - z.pos.x
 					var kz: float = p.pos.z - z.pos.z
@@ -999,7 +1021,7 @@ static func updateBigShot(game, z: Dictionary, dt: float) -> bool:
 					if p.has_method("knockback"):
 						p.knockback(a)
 				SH.audioPlay(game, "bs_wall_bonk", {"pos": z.pos, "rate": 1.25, "vol": 0.8})
-				if game.fx != null:
+				if game.fx != null and not SH.isRemote(game, p):
 					game.fx.shake(0.35, 0.3)
 				f.mode = "skid"
 				f.mt = 0.0
@@ -1013,6 +1035,7 @@ static func updateBigShot(game, z: Dictionary, dt: float) -> bool:
 				z.vel = Vector3.ZERO
 				f.dizzyUntil = game.time.now + RU.dizzy
 				Zs.stun(z, RU.dizzy)
+				SH.netEvent(game, z, "bsBonk", [])
 				SH.audioPlay(game, "bs_wall_bonk", {"pos": z.pos})
 				if z.get("animator") != null:
 					z.animator.kick(1.4)
@@ -1075,7 +1098,10 @@ static func updateBigShot(game, z: Dictionary, dt: float) -> bool:
 					f.bumped = true
 					var fwd := (fx * dx + fz * dz) / dist
 					if p.alive and dist < BUMP.range + 0.4 and fwd > 0.3 and absf(p.pos.y - z.pos.y) < 1.4:
-						if p.hurt(BUMP.dmg, z.pos):
+						SH.netEvent(game, z, "bsHit", ["bump"])
+						if SH.isRemote(game, p):
+							game.zombies.hurtTarget(p, BUMP.dmg, z, Vector3(dx / dist, 0.0, dz / dist) * 12.0, "bump")
+						elif p.hurt(BUMP.dmg, z.pos):
 							game.events.emit("zombie:attack", {"z": z, "dmg": BUMP.dmg, "kind": "bump"})
 							var a := Vector3(dx / dist, 0.0, dz / dist) * 12.0
 							if p.has_method("knockback"):
@@ -1191,7 +1217,7 @@ static func startDeath(game, z: Dictionary, _info) -> void:
 	m.halo.visible = false
 	# FULL REEL on his first death this game
 	var gs := gameState(game)
-	if not gs.reelDropped:
+	if not gs.reelDropped and SH.authority(game):
 		gs.reelDropped = true
 		var pu = game.powerups
 		var pos := Vector3(z.pos.x, z.pos.y + 0.6, z.pos.z)
@@ -1485,6 +1511,85 @@ func updateEntry(game, z: Dictionary, dt: float) -> void:
 	tickCable(game, z, dt)
 	f.cableFrame = game.time.frame
 
+# MP client puppet (zombies_net.gd): the replicated mode drives the pose; the cues updateBigShot plays at the mode
+# changes are replayed here (dust, sounds, lens charge, roll loop). Cosmetic only.
+func puppet(game, z: Dictionary, dt: float) -> void:
+	var f: Dictionary = z.flags
+	var m = z.model
+	if not f.cableInit:
+		f.cableInit = true
+		initCable(z)
+	var mode = f.mode
+	if f.get("pMode") != mode:
+		match mode:
+			"rushTele":
+				f.dustT = 0.0
+				SH.audioPlay(game, "bs_rush", {"pos": z.pos})
+			"rush":
+				f.rushDir = Vector3(-sin(z.yaw), 0.0, -cos(z.yaw))
+				if z.get("animator") != null:
+					z.animator.kick(0.6)
+			"skid":
+				SH.audioPlay(game, "bs_squeak", {"pos": z.pos})
+			"flashWind":
+				SH.audioPlay(game, "bs_flash_charge", {"pos": z.pos})
+			"bump":
+				SH.audioPlay(game, "bs_squeak", {"pos": z.pos, "rate": 1.2})
+		f.pMode = mode
+		f.mt = 0.0
+	else:
+		f.mt += dt
+	var sp := Vector2(z.vel.x, z.vel.z).length()
+	match mode:
+		"rushTele":
+			f.dustT -= dt
+			if f.dustT <= 0:
+				f.dustT = 0.07
+				casterDust(game, m, 0.04, 1.4, 0.3, ["#D8CDB8", "#BFB3A0"])
+		"rush":
+			f.trailT = SH.num(f, "trailT") - dt
+			if f.trailT <= 0:
+				f.trailT = 0.06
+				casterDust(game, m, 0.045, 0.8, 0.3, ["#D8CDB8", "#BFB3A0"])
+			var dCam := SH.camPos(game).distance_to(z.pos)
+			if dCam < 9.0 and game.fx != null:
+				game.fx.shake(0.06 * (1.0 - dCam / 9.0), 0.1)
+		"skid":
+			f.trailT = SH.num(f, "trailT") - dt
+			if f.trailT <= 0 and sp > 0.5:
+				f.trailT = 0.05
+				casterDust(game, m, 0.05, 1.0, 0.35, ["#CFC6B6", "#AFA595"])
+		"flashWind":
+			var k := clamp01(f.mt / FL.windup)
+			f.iris = smooth(k)
+			f.glow = 0.15 + 0.55 * k * k
+	if f.get("rollSnd") != null:
+		if f.rollSnd.has_method("setPos"):
+			f.rollSnd.setPos(z.pos)
+		if f.rollSnd.has_method("setVol"):
+			f.rollSnd.setVol(clamp01(sp / 3.0) * 0.8 + (0.4 if mode == "rush" else 0.0), 0.1)
+
+func puppetEvent(game, z: Dictionary, kind: String, args: Array) -> void:
+	var f: Dictionary = z.flags
+	match kind:
+		"bsFlash":
+			if z.get("model") != null:
+				flashPop(game, z)
+		"bsBonk":
+			f.dizzyUntil = game.time.now + RU.dizzy
+			SH.audioPlay(game, "bs_wall_bonk", {"pos": z.pos})
+			if z.get("animator") != null:
+				z.animator.kick(1.4)
+			var a := lensWorld(z)
+			SH.burst(game, a, {"shape": "star", "count": 7, "speed": 2.4})
+			SH.burst(game, a, {"shape": "spark", "count": 10, "speed": 5})
+			var dC := SH.camPos(game).distance_to(z.pos)
+			if game.fx != null:
+				game.fx.shake(0.3 * (1.0 - dC / 12.0) + 0.08 if dC < 12.0 else 0.05, 0.35)
+		"bsHit":
+			var bump: bool = args.size() > 0 and args[0] == "bump"
+			SH.audioPlay(game, "bs_wall_bonk", {"pos": z.pos, "rate": 1.4 if bump else 1.25, "vol": 0.6 if bump else 0.8})
+
 # front ×0.4 / sides+back ×1 / plug ×3 / dizzy ×1.5 from every side.
 func onDamage(game, z: Dictionary, amount: float, info = null) -> float:
 	var f: Dictionary = z.flags
@@ -1501,8 +1606,13 @@ func onDamage(game, z: Dictionary, amount: float, info = null) -> float:
 		dx = -info.dir.x
 		dz = -info.dir.z
 	else:
-		dx = game.player.pos.x - z.pos.x
-		dz = game.player.pos.z - z.pos.z
+		# MP: the attacker's position (info.by) instead of the local player's
+		var src = game.player
+		var by = info.get("by")
+		if by != null and game.get("net") != null and game.net.inGame and game.net.playerById(int(by)) != null:
+			src = game.net.playerById(int(by))
+		dx = src.pos.x - z.pos.x
+		dz = src.pos.z - z.pos.z
 	var l := sqrt(dx * dx + dz * dz)
 	if l == 0.0:
 		l = 1.0

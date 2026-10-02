@@ -16,6 +16,12 @@
 #   beat(): { bpm, beat } of the current state (fractional beats since it started) or null; `state` = current id.
 # JS plumbing not ported: the 25 ms lookahead scheduler, the delay-line tape (replaced by pitch_scale), the plate
 # convolver (baked into the stems). Renames: none.
+# MP: the music is LOCAL to every peer and follows that peer's replicated view of the game (rounds, boss phases, the
+#   ending, the Morning Show call audio.music() on every peer from their replicated actions; adapt() counts the
+#   puppet zombies). No messages. New hold(tag, id = 'silence') / release(tag) / held(): a LOCAL cutscene that runs
+#   while the shared world keeps going (the sponsor commercial in MP) holds the music: while any hold is active,
+#   setState() only remembers the latest requested state (_want); the last release() applies it through
+#   audio.music() (so audio.gd's _musicState / ambience bookkeeping follow). Nobody holds in solo: unchanged.
 extends RefCounted
 
 const Param = preload("res://scripts/audio/param.gd")
@@ -49,6 +55,9 @@ var clavWant := false
 var clavSince := 0.0
 var fading: Array = []
 var _node: Node
+var _holds := {}         # MP: tag -> true while a local cutscene holds the music
+var _want = null         # MP: the latest state requested while held (null: nothing requested)
+var _holding := false    # hold() is switching itself
 
 # music.js `get state()`.
 var state:
@@ -207,6 +216,9 @@ func _start(key: String, fade: float, delay: float, vars: Dictionary):
 	return p
 
 func setState(id) -> void:
+	if not _holds.is_empty() and not _holding:
+		_want = id
+		return
 	var s := String(id)
 	var parts := s.split(":")
 	var base := parts[0]
@@ -236,6 +248,36 @@ func setState(id) -> void:
 		_clack(now + 0.005)
 	clavWant = false
 	cur = {"id": base, "key": key, "player": _start(key, fade, float(def.get("delay", 0.03)), {"intensity": intensity}) if hasSong else null}
+
+# MP: a local cutscene takes the music (switches to `id`, default silence); world states requested meanwhile wait.
+func hold(tag: String, id = "silence") -> void:
+	if _holds.is_empty():
+		_want = null
+		if cur != null:
+			_want = ("boss:%d" % intensity) if cur.id == "boss" else (("select:" + hero) if cur.id == "select" else cur.id)
+	_holds[tag] = true
+	_holding = true
+	setState(id)
+	_holding = false
+
+# MP: the last release applies the latest world state (through audio.music, keeping audio.gd's bookkeeping).
+func release(tag: String) -> void:
+	if not _holds.has(tag):
+		return
+	_holds.erase(tag)
+	if not _holds.is_empty():
+		return
+	var w = _want
+	_want = null
+	if w == null:
+		return
+	if audio != null and audio.has_method("music"):
+		audio.music(w)
+	else:
+		setState(w)
+
+func held() -> bool:
+	return not _holds.is_empty()
 
 func setIntensity(n) -> void:
 	var v := int(roundf(float(n)))

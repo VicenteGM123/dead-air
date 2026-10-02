@@ -1,10 +1,12 @@
 # DEAD AIR — the MP lobby on the dial (MP_SPEC §3.5; added for online co-op). A helper of menu.gd (game.menu): while
 # the character-select dial is the lobby of an MP session, menu._lobby is this object (null in solo, so every solo
 # path of the dial is unchanged). It owns no Nodes; menu.gd paints it on the panel pn.lobby (over the dial's UI).
-#   Each player tunes their own channel locally. A channel whose hero another player claimed shows ON AIR: <NAME> on
-#   the TV's chyron (menu._drawUI asks claimText()) and the Dymo reads TAKEN BY <NAME>; E / A / a click there is
-#   denied (bzzt, the hero pouts). Tuning in a free channel = net.setHero(hero) + net.setReady(true): the hero kicks
-#   and smiles, the roster's ON AIR lamp lights. Turning the dial while ready un-readies first. Esc / B: ready ->
+#   Each player tunes their own channel locally. Every peer holds a unique hero (mp-core gives a free one at join,
+#   our solo pick when free); a channel whose hero another player holds shows ON AIR: <NAME> on the TV's chyron
+#   (menu._drawUI asks claimText()) and the Dymo reads TAKEN BY <NAME>; E / A / a click there is denied (bzzt, the
+#   hero pouts). Tuning in a free channel = net.setHero(hero) (when not ours yet; READY waits for the host's echo, a
+#   refusal arrives as net:hero) + net.setReady(true): the hero kicks and smiles, the roster's ON AIR lamp lights, the
+#   chyron reads ON AIR: YOU. Turning the dial while ready un-readies first. Esc / B: ready ->
 #   un-ready; not ready -> leave (net.leave) back to the MULTIPLAYER card (a host with guests is asked once: CLOSE
 #   THE STATION?). Tuning in needs game.loaded (always true past the title) and a lobby that is not still on air.
 #   Roster (a TV GUIDE card right of the TV, "Tonight's Cast"): up to 4 rows (channel badge, name, hero, ON AIR lamp =
@@ -40,6 +42,7 @@ var lanIp := ""
 var upnp := {"state": "pending", "ip": "", "port": 0}
 var toast := {"text": "", "t": 99.0}
 var msg := {"w1": "", "w2": "", "t": 99.0}   # a transient Dymo line (denied reasons)
+var _names := {}                   # peer id -> name (the SIGNED OFF toast of a peer already gone)
 
 func _init(menu) -> void:
 	m = menu
@@ -72,7 +75,7 @@ func phase() -> String:
 	var ph = _f(lb, "phase", "lobby")
 	return str(ph) if ph != null else "lobby"
 
-# Every peer, host first: [{id, name, hero, ready, ping, me, host}].
+# Every peer in join order (the host's slot 0 first): [{id, name, hero, ready, ping, me, host}].
 func peers() -> Array:
 	var n = _net()
 	var P = n.get("peers") if n != null else null
@@ -80,13 +83,14 @@ func peers() -> Array:
 	if not (P is Dictionary):
 		return out
 	var me := localId()
-	var ids: Array = (P as Dictionary).keys()
-	ids.sort()
-	for id in ids:
+	for id in P:
 		var pi = P[id]
 		var hero = _f(pi, "hero", "")
+		var slot = _f(pi, "slot", null)
 		out.append({"id": int(id), "name": str(_f(pi, "name", "PLAYER %d" % int(id))), "hero": str(hero) if hero != null else "",
-			"ready": _f(pi, "ready", false) == true, "ping": _f(pi, "ping", -1), "me": int(id) == me, "host": int(id) == 1})
+			"ready": _f(pi, "ready", false) == true, "ping": _f(pi, "ping", -1), "me": int(id) == me, "host": int(id) == 1,
+			"slot": int(slot) if slot != null else int(id)})
+	out.sort_custom(func(a, b): return a.slot < b.slot if a.slot != b.slot else a.id < b.id)
 	return out
 
 func _mine() -> Dictionary:
@@ -348,7 +352,7 @@ func onNet(ev: String, p) -> void:
 			_sync()
 		"net:peer":
 			var id := int(d.get("id", 0))
-			var nm := "PLAYER %d" % id
+			var nm: String = _names.get(id, "PLAYER %d" % id)
 			for q in peers():
 				if q.id == id:
 					nm = str(q.name)
@@ -378,7 +382,7 @@ func _sync() -> void:
 		var n = _net()
 		var lb = n.get("lobby") if n != null else null
 		var c = _f(lb, "countdown", 3.0)
-		cdDur = clampf(float(c) if c != null else 3.0, 1.0, 10.0)
+		cdDur = clampf(float(c) if c != null else 3.0, 1.0, 30.0)
 		m._css.selbar.on.set_(0.0)
 		armLeave = -1.0
 	elif ph == "lobby" and cd >= 0.0 and not live:
@@ -394,6 +398,8 @@ func _sync() -> void:
 # -------------------------------------------------------------------------------------------- per frame
 func update(dt: float) -> void:
 	t += dt
+	for p in peers():
+		_names[p.id] = p.name
 	toast.t += dt
 	msg.t += dt
 	if deny > 0.0:

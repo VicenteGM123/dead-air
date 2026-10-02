@@ -45,6 +45,21 @@
 #   uAmber 0, uWaveRadius -1, uHeroFade 1) and CAM_NOFOG. setTimeout -> SceneTreeTimer. localStorage -> ConfigFile (section "",
 #   key "deadair.signoff"). The kid's popcorn bowl, Telly's side-arm hatch and the portrait's backdrop/floor are the
 #   Blender runtime asset blender/runtime/ending.py -> assets/runtime/ending/ending.glb.
+# MP (online co-op, RECONCILE R14/R20; guarded by _mp(), solo unchanged): every peer plays the whole sequence LOCALLY
+#   for its own player (its own hero stars in the credits and the portrait; the local skip rule stays per peer). The
+#   host's boss sends net.teamSummary() with the defeat (play({round, summary})): the results card shows the team.
+#   Credits add an "AT THE CONTROLS" block (each player's name as their hero); CO-STARRING lists the session's heroes
+#   first. The local player is held with player.lock / protect("ending") (keyed MP locks).
+#   STAY TUNED? is the HOST's call: a client reaching its card sends net_atCard; the host's YES / NO light up once every
+#   connected peer is at its card or CARD_GRACE s after the host's own card; until then (and always on clients) the
+#   buttons are dimmed with a caption. The host's choice goes to everyone (net_choose) and applies at ANY stage (a
+#   client still in its cinematic jumps to the result). Y = the Morning Show on every peer: each player teleports to
+#   its MORNING_SPOTS slot, heal / perks / uplinks locally, economy.add(13013, "morning") (a team reason: the host's
+#   call pays everybody, clients' calls are ignored), only the host starts the next round; the wrapped Telly pull
+#   passes cost 13 (mp-machines turns it into the host request and re-rolls on the host). N = menu.showResults(team
+#   summary, GOOD NIGHT); dismissing it returns the session to the lobby (mp-menu / net.endGame).
+#   MESSAGES (sys "ending"): client -> host: atCard () · host -> everyone: choose (c: 'y' | 'n'). No game.victory()
+#   broadcast: it stays a local state change on each peer at its card.
 extends RefCounted
 
 const KEY := "deadair.signoff"
@@ -58,6 +73,8 @@ const E := {
 const MORNING_BONUS := 13013
 const TELLY_MORNING_COST := 13
 const SIGNALS := ["hot_mic", "laugh_track", "cold_open"]
+const CARD_GRACE := 25.0             # MP: the host's buttons light up at the latest this long after its own card
+const MORNING_SPOTS := [Vector2(41.2, -9.6), Vector2(41.2, -8.4), Vector2(41.2, -10.8), Vector2(40.0, -9.6)]
 const TAU := PI * 2.0
 const ENDING_GLB := "res://assets/runtime/ending/ending.glb"
 const FONT_FILES := {"logo": "res://assets/fonts/Shrikhand.woff", "hud": "res://assets/fonts/TitanOne.woff"}
@@ -272,6 +289,8 @@ var _tellyWrapped = null
 var _lib: Node3D = null
 var _canvasScript = null
 var _bossLib = null
+var _cardPeers := {}                 # MP host: peer ids whose ending reached the card
+var _cardT := -1.0                   # MP host: real time since the host's card appeared (-1: not yet)
 
 func _init(g, b) -> void:
 	game = g
@@ -302,6 +321,84 @@ func _music(id: String) -> void:
 
 func _post():
 	return _gp(game.render, "post") if game.render != null else null
+
+# ------------------------------------------------------------------------------------------ MP helpers
+func _net():
+	return game.get("net")
+
+func _mp() -> bool:
+	var n = _net()
+	return n != null and n.inGame
+
+func _client() -> bool:
+	return _mp() and _net().isClient
+
+func _host() -> bool:
+	return _mp() and _net().isHost
+
+# The local player's ending hold: keyed MP locks (player.lock / protect) or the plain solo fields.
+func _hold(p, on: bool) -> void:
+	if p == null:
+		return
+	if _mp() and p.has_method("lock") and p.has_method("protect"):
+		p.lock("ending", on)
+		p.protect("ending", on)
+		return
+	_sp(p, "controlLocked", on)
+	_sp(p, "invulnerable", on)
+
+# MP host: every connected in-game peer reached its card (or the grace ran out).
+func _cardReady() -> bool:
+	if not _host():
+		return true
+	if _cardT >= CARD_GRACE:
+		return true
+	for id in _net().peers:
+		if not _cardPeers.has(id):
+			return false
+	return true
+
+# MP: the card's dimmed state + caption (called by the Card every frame while it shows).
+func _cardTick(dt: float) -> void:
+	if not _mp() or _dom == null or stage != "card":
+		return
+	var card = _dom.card
+	if _host():
+		if _cardT >= 0.0:
+			_cardT += dt
+		_cardPeers[_net().localId] = true
+		var ready := _cardReady()
+		card.waiting = not ready
+		var n: int = 0
+		for id in _net().peers:
+			if _cardPeers.has(id):
+				n += 1
+		card.caption = "" if ready else "STANDING BY  %d / %d" % [n, _net().peers.size()]
+	else:
+		card.waiting = true
+		card.caption = "%s IS AT THE DIAL" % _net().nameOf(1).to_upper()
+
+# MP host: a client's ending reached its card.
+func net_atCard() -> void:
+	if not _host():
+		return
+	_cardPeers[int(_net().sender)] = true
+
+# MP: the host's STAY TUNED? answer, on every peer, at any stage of the local sequence.
+func net_choose(c) -> void:
+	var n = _net()
+	if n == null or not n.inGame or int(n.sender) != 1:
+		return
+	var b = boss
+	if not active and not (b != null and b.get("state") == "defeated"):
+		return
+	_play("ui_tune_in", {"vol": 0.8})
+	if active and stage != "card" and b != null and b.has_method("cleanupAfterEnding") and b.get("built"):
+		b.cleanupAfterEnding()       # a client still in its cinematic: the Baron's collapse props go first
+	if str(c) == "y":
+		morningShow()
+	else:
+		results()
 
 # document.createElement('canvas') -> DACanvas (bakeMode: "never" for canvases redrawn every frame, "now" for static
 # ones; texture.needsUpdate is not needed: DACanvas presents what was drawn).
@@ -396,12 +493,23 @@ func play(o: Dictionary = {}) -> bool:
 	var hid = _gp(g.player, "heroId")
 	heroId = hid if hid else (g.heroId if g.heroId else "duke")
 	summary = {"round": round, "kills": _gp(g.rounds, "totalKills", 0), "points": _gp(g.economy, "points", 0)}
+	if _mp():
+		var sm = o.get("summary")
+		if not (sm is Dictionary) or sm.is_empty():
+			sm = _net().teamSummary()
+		summary = sm
+		_cardPeers = {}
+		_cardT = -1.0
+		_lines = null
 	seen = storeGet(KEY) == "1"
 	storeSet(KEY, "1")
 	var p = g.player
 	if p != null:
-		_sp(p, "controlLocked", true)
-		_sp(p, "invulnerable", true)
+		if _mp():
+			_hold(p, true)
+		else:
+			_sp(p, "controlLocked", true)
+			_sp(p, "invulnerable", true)
 	if g.hud != null:
 		_fc(g.hud, "hide")
 	if g.cam != null:
@@ -1264,6 +1372,14 @@ func _creditLines() -> Array:
 			me = h
 			break
 	var others := HEROES.filter(func(h): return h != me)
+	if _mp():
+		# the session's heroes first
+		var inSession := {}
+		for id in _net().peers:
+			inSession[_net().peers[id].get("hero")] = true
+		var a1 := others.filter(func(h): return inSession.has(h.id))
+		var a2 := others.filter(func(h): return not inSession.has(h.id))
+		others = a1 + a2
 	var L := []
 	var add := func(text: String, kind: String, gap: float = 0.0) -> void:
 		L.append({"text": text, "kind": kind, "gap": gap})
@@ -1274,6 +1390,18 @@ func _creditLines() -> Array:
 	for h in others:
 		add.call(String(h.name).to_upper(), "name", 0.35)
 		add.call("as the %s" % String(h.role).to_lower(), "role", 0.05)
+	if _mp():
+		# AT THE CONTROLS: every player of the session, as their hero (host first)
+		var ids: Array = _net().peers.keys()
+		ids.sort_custom(func(a, c): return _net().slotOf(a) < _net().slotOf(c))
+		add.call("AT THE CONTROLS", "head", 1.2)
+		for id in ids:
+			var hn := ""
+			for h in HEROES:
+				if h.id == _net().peers[id].get("hero"):
+					hn = String(h.name)
+			add.call(_net().nameOf(id).to_upper(), "name", 0.35)
+			add.call("as %s" % hn, "role", 0.05)
 	add.call("SPECIAL GUEST STAR", "head", 1.2)
 	add.call("BARON VON STATIC", "name", 0.3)
 	add.call("as himself", "role", 0.05)
@@ -1601,6 +1729,13 @@ func _showCard() -> void:
 	g.victory()
 	var D = _dom
 	_glyphs()
+	if _mp():
+		if _host():
+			_cardT = 0.0
+			_cardPeers[_net().localId] = true
+		else:
+			_net().toHost("ending", "atCard", [])
+		_cardTick(0.0)
 	D.on = true
 	var card: Card = D.card
 	card.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -1611,7 +1746,7 @@ func _showCard() -> void:
 
 # Xbox pad (input.gd routes every pad press here first while the ending runs).
 func padButton(btn: String) -> bool:
-	if not active or game.state == "paused":
+	if not active or game.state == "paused" or game.get("mpPaused") == true:
 		return false
 	if stage == "card":
 		if btn == "a":
@@ -1637,7 +1772,7 @@ func _glyphs() -> void:
 
 # e = { code } (KeyboardEvent.code). Returns true when the key was consumed (preventDefault).
 func _key(e: Dictionary) -> bool:
-	if not active or game.state == "paused":
+	if not active or game.state == "paused" or game.get("mpPaused") == true:
 		return false
 	var k: String = e.get("code", "")
 	if stage == "card":
@@ -1672,8 +1807,15 @@ func _skip() -> void:
 	_enterPortrait()
 	t = E.freeze - 0.4
 
-func _choose(c: String) -> void:
+func _choose(c: String, force := false) -> void:
 	if not active or stage != "card":
+		return
+	if _mp():
+		# MP: the host's call, once every peer reached its card (clients' buttons are dimmed)
+		if _client() or (not force and not _cardReady()):
+			_play("ui_denied", {"vol": 0.5})
+			return
+		_net().everyone("ending", "choose", [c])
 		return
 	_play("ui_tune_in", {"vol": 0.8})
 	if c == "y":
@@ -1685,6 +1827,8 @@ func _choose(c: String) -> void:
 func results() -> void:
 	var g = game
 	var sm = summary if not summary.is_empty() else {"round": round, "kills": 0, "points": 0}
+	if _mp() and not sm.has("players"):
+		sm = _net().teamSummary()
 	_finishSequence()
 	if boss != null:
 		boss.finish()
@@ -1733,8 +1877,11 @@ func _finishSequence() -> void:
 		g.camera.fov = _camFrom.fov
 	var p = g.player
 	if p != null:
-		_sp(p, "controlLocked", false)
-		_sp(p, "invulnerable", false)
+		if _mp() or (p.has_method("isLockKey") and p.isLockKey("ending")):
+			_hold(p, false)
+		else:
+			_sp(p, "controlLocked", false)
+			_sp(p, "invulnerable", false)
 	active = false
 	stage = "done"
 	if _portrait != null:
@@ -1762,8 +1909,12 @@ func morningShow() -> void:
 		_fc(g.menu, "hideAll")
 	g.setState("playing")
 	var p = g.player
-	if p != null:
+	if p != null and _mp():
+		var s: Vector2 = MORNING_SPOTS[clampi(_net().slotOf(_net().localId), 0, MORNING_SPOTS.size() - 1)]
+		_fc(p, "teleport", [s.x, s.y, -PI / 2.0 + 0.25])
+	elif p != null:
 		_fc(p, "teleport", [41.2, -9.6, -PI / 2.0 + 0.25])
+	if p != null:
 		_sp(p, "health", _gp(p, "maxHealth"))
 		_sp(p, "invulnerable", true)
 		var off := func() -> void:
@@ -1795,8 +1946,8 @@ func morningShow() -> void:
 		var eggStep = _gp(g.egg, "step", 0)
 		_fc(tb, "setMode", ["rainbow" if float(eggStep if eggStep != null else 0) >= 4 else "blink"])
 	_music("morning")
-	if g.rounds != null:
-		_fc(g.rounds, "startRound", [rnd + 1])
+	if g.rounds != null and not _client():
+		_fc(g.rounds, "startRound", [rnd + 1])     # MP: the host's round start replicates
 	_music("morning")
 	g.events.emit("game:morning", {"round": rnd + 1})
 	if g.input != null:
@@ -1972,7 +2123,10 @@ func _wrapTelly() -> void:
 			return
 		if not _fc(game.economy, "spend", [TELLY_MORNING_COST, "telly"]):
 			return
-		_fc(telly, "pull", [{"free": true, "forced": _rollTelly()}])
+		if _mp():
+			_fc(telly, "pull", [{"free": true, "forced": _rollTelly(), "cost": TELLY_MORNING_COST, "morning": true}])
+		else:
+			_fc(telly, "pull", [{"free": true, "forced": _rollTelly()}])
 	_sp(it, "prompt", pr)
 	_sp(it, "use", use)
 	_sp(telly, "morning", true)
@@ -2091,7 +2245,7 @@ func debugSeek(to: float):
 func debugChoose(c: String):
 	if stage != "card":
 		debugSeek(E.card + 0.01)
-	_choose("n" if c == "n" else "y")
+	_choose("n" if c == "n" else "y", true)
 	return debugState()
 
 func debugState() -> Dictionary:
@@ -2247,6 +2401,8 @@ class Card extends Control:
 			scaleK = v
 			queue_redraw()
 	var _hover := ""
+	var waiting := false             # MP: the buttons are dimmed (not this peer's call / not everyone is here yet)
+	var caption := ""                # MP: the line under the buttons
 	var _hotK := {"y": 0.0, "n": 0.0}
 	var _btn := {"y": Rect2(), "n": Rect2()}
 	var _box := Rect2()
@@ -2258,6 +2414,12 @@ class Card extends Control:
 	func _process(dt: float) -> void:
 		if modulate.a <= 0.0:
 			return
+		if ending != null:
+			var w0 := waiting
+			var c0 := caption
+			ending._cardTick(dt)
+			if w0 != waiting or c0 != caption:
+				queue_redraw()
 		var changed := false
 		for k in ["y", "n"]:
 			var want := 1.0 if _hover == k else 0.0
@@ -2417,3 +2579,13 @@ class Card extends Control:
 			var td := fontHud.get_descent(bSize)
 			draw_string(fontHud, Vector2(kr.end.x + 1.4 * vh, bc.y - (ta + td) * 0.5 + ta), labels[k], HORIZONTAL_ALIGNMENT_LEFT, -1, bSize, Color("#F6E7C8"))
 			draw_set_transform(c - c * scaleK, 0.0, Vector2(scaleK, scaleK))
+		# MP: not this peer's call (or not everyone tuned in yet): dimmed buttons + a caption under the card
+		if waiting:
+			for k in ["y", "n"]:
+				_rr(_btn[k], 1.6 * vh, Color(29 / 255.0, 19 / 255.0, 48 / 255.0, 0.62))
+		if caption != "":
+			var cs := int(round(2.6 * vh))
+			var cw := fontHud.get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, cs).x
+			var cp := Vector2(c.x - cw * 0.5, box.end.y + 2.4 * vh + fontHud.get_ascent(cs))
+			draw_string(fontHud, cp + Vector2(0.3, 0.3) * vh, caption, HORIZONTAL_ALIGNMENT_LEFT, -1, cs, Color("#7A2A4A"))
+			draw_string(fontHud, cp, caption, HORIZONTAL_ALIGNMENT_LEFT, -1, cs, Color("#FFE9B8"))

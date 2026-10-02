@@ -110,6 +110,14 @@ var _openC := PackedByteArray()        # _open(idx) per cell
 var _doorCells := PackedInt32Array()   # cells with doorOf >= 0
 var _rin := PackedByteArray()          # bit n: the move neighbour n → idx is legal by bounds + height rule
 var _wc := PackedFloat64Array()        # near[idx] ? WALL_COST : 0
+# MP (multi-target field, host only; see the MP paragraph in the header)
+var goals: Array = []                  # [{x, z, cell, id}] the targets the current `front` was seeded from
+var frontOwn := PackedByteArray()      # per cell: index in goals of the target that reached it (255 = none)
+var backOwn := PackedByteArray()
+var _lab := false                      # the running solve labels its cells
+var _multiFront := false               # `front` is a labelled multi-target field
+var _seedOwn := 0
+var _pendingGoals: Array = []
 var _di := PackedInt32Array(DI)
 var _dk := PackedInt32Array(DK)
 var _opp := PackedInt32Array(OPP)
@@ -243,6 +251,7 @@ func _refreshOpen(all: bool) -> void:
 func reset() -> void:
 	doorOpen.clear()
 	override = null
+	_multiFront = false
 	_dirty = true
 	if built:
 		_refreshOpen(false)
@@ -268,8 +277,13 @@ func update(dt: float) -> void:
 		build()
 		if not built:
 			return
+	var net = game.get("net") if game != null else null
+	if net != null and net.inGame and net.isClient:
+		return                          # MP client: no AI runs here (queries still work)
 	_t += dt
-	if not _solving:
+	if not _solving and net != null and net.inGame and override == null:
+		_updateMulti()
+	elif not _solving:
 		var g = override
 		if g == null:
 			var p = game.get("player") if game != null else null
@@ -312,7 +326,49 @@ func _link(a: int, b: int, n: int) -> bool:
 			return false
 	return true
 
+# MP host: one field seeded from every target (zombies.targetsList()); re-solved like the single field.
+func _updateMulti() -> void:
+	var Z = game.get("zombies")
+	var T: Array = Z.targetsList() if Z != null and Z.has_method("targetsList") else game.net.targets()
+	if T.is_empty():
+		return                          # nobody to chase: keep the last field
+	var list: Array = []
+	for p in T:
+		if list.size() >= 254:
+			break
+		var pp: Vector3 = p.pos
+		list.append({"x": pp.x, "z": pp.z, "cell": _cellIndex(pp.x, pp.z), "id": int(game.net.idOf(p))})
+	var changed := _dirty or not _multiFront or list.size() != goals.size()
+	if not changed:
+		for i in list.size():
+			if list[i].id != goals[i].id or list[i].cell != goals[i].cell:
+				changed = true
+				break
+	if _t >= PERIOD and changed:
+		_t = 0.0
+		_dirty = false
+		_startMulti(list)
+
+func _startMulti(list: Array) -> void:
+	back.fill(INF)
+	if backOwn.size() != back.size():
+		backOwn.resize(back.size())
+		frontOwn.resize(back.size())
+		frontOwn.fill(255)
+	backOwn.fill(255)
+	_clearQueue()
+	_pending.x = list[0].x
+	_pending.z = list[0].z
+	_pending.cell = list[0].cell
+	_pendingGoals = list
+	_lab = true
+	for i in list.size():
+		_seedOwn = i
+		_seed(list[i].x, list[i].z, list[i].cell)
+	_solving = true
+
 func _start(x: float, z: float, c: int) -> void:
+	_lab = false
 	back.fill(INF)
 	_clearQueue()
 	_pending.x = x
@@ -325,6 +381,8 @@ func _start(x: float, z: float, c: int) -> void:
 func _seed(x: float, z: float, c: int) -> void:
 	if c >= 0 and _openC[c] != 0:
 		back[c] = 0.0
+		if _lab:
+			backOwn[c] = _seedOwn
 		_push(c, 0.0)
 	else:
 		var cc := _cellXY(x, z)
@@ -339,6 +397,8 @@ func _seed(x: float, z: float, c: int) -> void:
 				var d := Col.hypot2(x0 + (i + 0.5) * CELL - x, z0 + (k + 0.5) * CELL - z)
 				if d <= SEED_R and d < back[idx]:
 					back[idx] = d
+					if _lab:
+						backOwn[idx] = _seedOwn
 					_push(idx, d)
 
 func _step(budgetMs: float) -> void:
@@ -347,6 +407,15 @@ func _step(budgetMs: float) -> void:
 	var tmp := front
 	front = back
 	back = tmp
+	if _lab:
+		var to := frontOwn
+		frontOwn = backOwn
+		backOwn = to
+		goals = _pendingGoals
+		_multiFront = true
+		_lab = false
+	else:
+		_multiFront = false
 	goal.x = _pending.x
 	goal.z = _pending.z
 	goal.cell = _pending.cell
@@ -362,6 +431,8 @@ func _run(budgetMs: float, limit: float) -> bool:
 	var budgetUs := budgetMs * 1000.0
 	var ww := w
 	var pops := 0
+	var lab := _lab
+	var ou := 0
 	while heapN > 0:
 		pops += 1
 		if (pops & CHECK_EVERY) == 0 and Time.get_ticks_usec() - t0 > budgetUs:
@@ -381,6 +452,8 @@ func _run(budgetMs: float, limit: float) -> bool:
 		var rin := _rin[u]
 		if rin == 0:
 			continue
+		if lab:
+			ou = backOwn[u]
 		var v := 0
 		var nd := 0.0
 		var bk := 0
@@ -390,6 +463,8 @@ func _run(budgetMs: float, limit: float) -> bool:
 			nd = du + CELL + _wc[v]
 			if nd < back[v]:
 				back[v] = nd
+				if lab:
+					backOwn[v] = ou
 				heap[_entN] = v
 				heapKey[_entN] = nd
 				bk = int(heapKey[_entN] * 2.0)
@@ -404,6 +479,8 @@ func _run(budgetMs: float, limit: float) -> bool:
 			nd = du + CELL + _wc[v]
 			if nd < back[v]:
 				back[v] = nd
+				if lab:
+					backOwn[v] = ou
 				heap[_entN] = v
 				heapKey[_entN] = nd
 				bk = int(heapKey[_entN] * 2.0)
@@ -418,6 +495,8 @@ func _run(budgetMs: float, limit: float) -> bool:
 			nd = du + CELL + _wc[v]
 			if nd < back[v]:
 				back[v] = nd
+				if lab:
+					backOwn[v] = ou
 				heap[_entN] = v
 				heapKey[_entN] = nd
 				bk = int(heapKey[_entN] * 2.0)
@@ -432,6 +511,8 @@ func _run(budgetMs: float, limit: float) -> bool:
 			nd = du + CELL + _wc[v]
 			if nd < back[v]:
 				back[v] = nd
+				if lab:
+					backOwn[v] = ou
 				heap[_entN] = v
 				heapKey[_entN] = nd
 				bk = int(heapKey[_entN] * 2.0)
@@ -446,6 +527,8 @@ func _run(budgetMs: float, limit: float) -> bool:
 			nd = du + DIAG + _wc[v]
 			if nd < back[v]:
 				back[v] = nd
+				if lab:
+					backOwn[v] = ou
 				heap[_entN] = v
 				heapKey[_entN] = nd
 				bk = int(heapKey[_entN] * 2.0)
@@ -460,6 +543,8 @@ func _run(budgetMs: float, limit: float) -> bool:
 			nd = du + DIAG + _wc[v]
 			if nd < back[v]:
 				back[v] = nd
+				if lab:
+					backOwn[v] = ou
 				heap[_entN] = v
 				heapKey[_entN] = nd
 				bk = int(heapKey[_entN] * 2.0)
@@ -474,6 +559,8 @@ func _run(budgetMs: float, limit: float) -> bool:
 			nd = du + DIAG + _wc[v]
 			if nd < back[v]:
 				back[v] = nd
+				if lab:
+					backOwn[v] = ou
 				heap[_entN] = v
 				heapKey[_entN] = nd
 				bk = int(heapKey[_entN] * 2.0)
@@ -488,6 +575,8 @@ func _run(budgetMs: float, limit: float) -> bool:
 			nd = du + DIAG + _wc[v]
 			if nd < back[v]:
 				back[v] = nd
+				if lab:
+					backOwn[v] = ou
 				heap[_entN] = v
 				heapKey[_entN] = nd
 				bk = int(heapKey[_entN] * 2.0)
@@ -582,6 +671,10 @@ func dir(x: float, z: float, fr = null, gl = null) -> Vector3:
 	var c := _bestCell(x, z, f)
 	if c < 0:
 		return Vector3.ZERO
+	if fr == null and gl == null and _multiFront:
+		var o := frontOwn[c]
+		if o < goals.size():
+			g = goals[o]                # MP: head straight for the target that owns this cell
 	var ci := c % w
 	var ck := (c - ci) / w
 	var cx := x0 + (ci + 0.5) * CELL
@@ -634,6 +727,8 @@ func localField(x: float, z: float, maxDist: float = 15.0) -> LocalField:
 		_lf.bucket.resize(1024)
 		_lf.bucket.fill(-1)
 	var L := _lf
+	var labSave := _lab
+	_lab = false
 	# Solve into L's arrays with the shared loop: the (possibly half-done, time-sliced) player solve state is
 	# parked meanwhile. The arrays are detached from L while in use (no copy-on-write).
 	var park := [back, heap, heapKey, _next, _bucket, heapN, _entN, _cur]
@@ -668,7 +763,23 @@ func localField(x: float, z: float, maxDist: float = 15.0) -> LocalField:
 	heapN = park[5]
 	_entN = park[6]
 	_cur = park[7]
+	_lab = labSave
 	return L
+
+# MP: index in `goals` of the target whose path reaches (x, z) first (-1 without a labelled field / unreachable).
+func ownerAt(x: float, z: float) -> int:
+	if not _multiFront:
+		return -1
+	var c := _bestCell(x, z, front)
+	if c < 0:
+		return -1
+	var o := frontOwn[c]
+	return o if o < goals.size() else -1
+
+# MP: peer id of that target (0 = none).
+func goalIdAt(x: float, z: float) -> int:
+	var o := ownerAt(x, z)
+	return int(goals[o].id) if o >= 0 else 0
 
 func walkable(x: float, z: float) -> bool:
 	if not built:

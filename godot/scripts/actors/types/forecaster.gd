@@ -67,6 +67,7 @@ var range: float = JAB_RANGE
 var windup: float = JAB_WINDUP
 var cd: float = JAB_CD
 var spawnMode := "screen"
+var netModes := ["strafe", "twirl", "jab", "sob", "chase"]   # MP: wire enum of z.flags.mode (zombies_net.gd)
 var points := {"killBonus": Config.T.points.forecaster}
 
 static func clamp01(x: float) -> float:
@@ -531,12 +532,16 @@ static func hitCloud(game, z: Dictionary, dmg_: float, info := {}) -> void:
 	var a := cloudWorldCenter(z)
 	SH.burst(game, info.point if info.get("point") != null else a, {"shape": "puff", "count": 3, "size": 0.08, "speed": 1.4, "life": 0.4, "colors": ["#AEB6C4", "#8C94A6"]})
 	SH.audioPlay(game, "zmb_hit", {"pos": a, "rate": 1.35, "vol": 0.6})
+	var by = info.get("by")
 	if c.hp <= 0:
-		popCloud(game, z)
-	elif game.hud != null and game.hud.has_method("hitmarker"):
-		game.hud.hitmarker(false, false)
+		popCloud(game, z, by)
+	else:
+		SH.netEvent(game, z, "fcHit", [])
+		if SH.localBy(game, by) and game.hud != null and game.hud.has_method("hitmarker"):
+			game.hud.hitmarker(false, false)
 
-static func popCloud(game, z: Dictionary) -> bool:
+# by: the popper's peer id (MP: the kill marker shows on that peer only; null = local / solo).
+static func popCloud(game, z: Dictionary, by = null) -> bool:
 	var f: Dictionary = z.flags
 	var c = f.get("cloud")
 	var m = z.get("model")
@@ -548,12 +553,13 @@ static func popCloud(game, z: Dictionary) -> bool:
 	m.cloud.pivot.visible = false
 	m.disc.visible = false
 	unregisterCloud(game, z)
+	SH.netEvent(game, z, "fcPop", [int(by) if by != null else -1])
 	# Mini rainbow + colour confetti + a white puff.
 	SH.burst(game, a, {"shape": "confetti", "count": 26, "speed": 4, "colors": RAINBOW})
 	SH.burst(game, a, {"shape": "star", "count": 6, "speed": 2.6})
 	SH.burst(game, a, {"shape": "puff", "count": 6, "size": 0.075, "speed": 2.2, "life": 0.5, "colors": ["#F4F6FA", "#D8DEE8"]})
 	SH.audioPlay(game, "fc_cloud_pop", {"pos": a})
-	if game.hud != null and game.hud.has_method("hitmarker"):
+	if SH.localBy(game, by) and game.hud != null and game.hud.has_method("hitmarker"):
 		game.hud.hitmarker(false, true)
 	var rb: MeshInstance3D = m.rainbow
 	rb.position = a
@@ -719,7 +725,9 @@ static func tickCloud(game, z: Dictionary, dt: float) -> void:
 static func launchCloud(game, z: Dictionary) -> void:
 	var f: Dictionary = z.flags
 	var c = f.cloud
-	var p = game.player
+	var p = SH.target(game, z)
+	if p == null:
+		p = game.player
 	var col = SH.colOf(game)
 	c.from = c.pos
 	var target := Vector3(p.pos.x, p.pos.y + FLOAT_H, p.pos.z)
@@ -734,6 +742,7 @@ static func launchCloud(game, z: Dictionary) -> void:
 	c.state = "fly"
 	c.t = 0.0
 	SH.audioPlay(game, "zmb_swipe", {"pos": c.pos, "rate": 0.7, "vol": 0.6})
+	SH.netEvent(game, z, "fcLaunch", [c.from, c.target, c.floor])
 
 static func beginLock(game, z: Dictionary) -> void:
 	var f: Dictionary = z.flags
@@ -940,7 +949,9 @@ static func startJab(game, z: Dictionary) -> void:
 static func doJab(game, z: Dictionary, dt: float) -> void:
 	var f: Dictionary = z.flags
 	var j = f.jab
-	var p = game.player
+	var p = SH.target(game, z)
+	if p == null:
+		p = game.player
 	j.t += dt
 	var dx: float = p.pos.x - z.pos.x
 	var dz: float = p.pos.z - z.pos.z
@@ -952,7 +963,9 @@ static func doJab(game, z: Dictionary, dt: float) -> void:
 		z.cd = JAB.cd
 		var fwd: float = (-sin(z.yaw) * dx - cos(z.yaw) * dz) / maxf(1e-3, dist)
 		if p.alive and dist < JAB.range + 0.35 and absf(p.pos.y - z.pos.y) < 1.3 and fwd > 0.4:
-			if p.hurt(JAB.dmg, z.pos):
+			if SH.isRemote(game, p):
+				game.zombies.hurtTarget(p, JAB.dmg, z, Vector3(dx, 0.0, dz).normalized() * 3.0, "jab")
+			elif p.hurt(JAB.dmg, z.pos):
 				game.events.emit("zombie:attack", {"z": z, "dmg": JAB.dmg, "kind": "jab"})
 				var a := Vector3(dx, 0.0, dz).normalized() * 3.0
 				if p.has_method("knockback"):
@@ -1040,7 +1053,9 @@ static func strafe(game, z: Dictionary, dt: float, dist: float, dx: float, dz: f
 
 static func updateForecaster(game, z: Dictionary, dt: float) -> bool:
 	var f: Dictionary = z.flags
-	var p = game.player
+	var p = SH.target(game, z)
+	if p == null:
+		return false
 	var Zs = game.zombies
 	z.gawkT = 0.0
 	tickCloud(game, z, dt)
@@ -1157,7 +1172,12 @@ static func startDeath(game, z: Dictionary) -> void:
 	if c != null and c.state != "popped" and c.state != "gone":
 		# EE §13: killed with the cloud intact -> the Stray Storm may spawn where the cloud is.
 		var a := cloudWorldCenter(z)
-		game.events.emit("zombie:forecaster_storm", {"pos": a, "z": z})
+		if SH.authority(game):
+			# EE host-only listener; MP: by = the killer (or the last attacker)
+			var ev := {"pos": a, "z": z}
+			if game.get("net") != null and game.net.inGame:
+				ev.by = z.get("killBy") if z.get("killBy") != null else z.get("lastHitBy")
+			game.events.emit("zombie:forecaster_storm", ev)
 		c.state = "drift"
 		c.t = 0.0
 	if m.umbrella == null:
@@ -1234,8 +1254,8 @@ static func hookGrenades(game) -> void:
 	grenadeHooked[gid] = true
 	game.events.on("weapon:grenade", func(e):
 		var pos = e.get("pos") if e is Dictionary else null
-		if pos == null:
-			return
+		if pos == null or not SH.authority(game):
+			return                      # MP: blasts are resolved on the host (weapon:grenade fires on every peer)
 		for z in game.zombies.alive:
 			if z.type != "forecaster" or z.flags.get("cloud") == null:
 				continue
@@ -1243,7 +1263,7 @@ static func hookGrenades(game) -> void:
 			var d := a.distance_to(pos)
 			if d <= 5.0:
 				var rnd: float = game.rounds.round if game.rounds != null else 1.0
-				hitCloud(game, z, (300.0 + 60.0 * rnd) * (1.0 - d / 5.0 * 0.6), {"point": a}))
+				hitCloud(game, z, (300.0 + 60.0 * rnd) * (1.0 - d / 5.0 * 0.6), {"point": a, "by": e.get("by")}))
 
 func hp(r = 1, _game = null) -> float:
 	return SH.jsRound(F.hpMul * hpAt(maxf(1.0, float(r))) + F.hpAdd)
@@ -1324,6 +1344,92 @@ func updateEntry(game, z: Dictionary, dt: float) -> void:
 		f.cloudInit = true
 		f.cloud.pos = hoverTarget(z)
 	tickCloud(game, z, dt)
+
+# MP client puppet (zombies_net.gd): the replicated mode drives the poses; the cloud runs its own timeline from the
+# host's launch (fcLaunch) and strikes the LOCAL player only (victim-side, like the host's own player). Cosmetic cues.
+func puppet(game, z: Dictionary, dt: float) -> void:
+	var f: Dictionary = z.flags
+	if not f.get("cloudInit") and z.get("model") != null and z.model.cloud != null:
+		f.cloudInit = true
+		f.cloud.pos = hoverTarget(z)
+	tickCloud(game, z, dt)
+	var mode = f.mode
+	if f.get("pMode") != mode:
+		match mode:
+			"twirl":
+				f.sparkT = 0.0
+				SH.audioPlay(game, "fc_twirl", {"pos": z.pos})
+			"jab":
+				SH.audioPlay(game, "zmb_swipe", {"pos": z.pos, "rate": 1.2, "vol": 0.7})
+			"sob":
+				f.sobbed = true
+				f.tearT = 0.0
+				f.sob2 = false
+			"chase":
+				if f.get("pMode") == "sob":
+					if z.get("animator") != null:
+						var ap = z.animator.get("p")
+						if ap is Dictionary:
+							ap.arms = "forward"
+					SH.audioPlay(game, "zmb_groan_chase", {"pos": z.pos, "rate": 0.9})
+		f.pMode = mode
+		f.mt = 0.0
+	else:
+		f.mt += dt
+	if mode == "jab":
+		if f.get("jab") == null:
+			f.jab = {"t": 0.0, "hit": false}
+		f.jab.t = f.mt
+	else:
+		f.jab = null
+	if mode == "twirl":
+		f.sparkT -= dt
+		if f.sparkT <= 0 and z.model.rod != null:
+			f.sparkT = 0.06
+			var a := SH.toWorld(z.model.rod, Vector3(0, -0.52, 0))
+			SH.burst(game, a, {"shape": "star", "count": 1, "size": 0.06, "speed": 0.8, "life": 0.45, "colors": ["#FFF3B0", "#9FD8FF", "#FFC23A"]})
+	elif mode == "sob":
+		f.tearT -= dt
+		if f.tearT <= 0 and z.get("head") != null:
+			f.tearT = 0.09
+			var a := SH.worldPos(z.head)
+			a.y += 0.02
+			for s in [-1.0, 1.0]:
+				var b := Vector3(-cos(z.yaw) * 0.08 * s, 0.0, sin(z.yaw) * 0.08 * s) + a
+				b.x += -sin(z.yaw) * 0.14
+				b.z += -cos(z.yaw) * 0.14
+				SH.burst(game, b, {"shape": "goo", "count": 1, "size": 0.03, "speed": 1.6, "life": 0.5, "gravity": 14, "dir": Vector3(-cos(z.yaw) * s, 0.6, sin(z.yaw) * s), "cone": 0.4, "colors": ["#6FC0FF", "#B8E6FF"]})
+		if f.mt > 1.5 and not f.get("sob2"):
+			f.sob2 = true
+			SH.audioPlay(game, "fc_sob", {"pos": z.pos, "rate": 1.08, "vol": 0.8})
+	f.humT -= dt
+	if f.humT <= 0:
+		f.humT = 5.0 + randf() * 5.0
+		if SH.listenerDist(game, z.pos) < 16.0 and not f.sobbed and mode == "strafe":
+			SH.audioPlay(game, "fc_hum", {"pos": z.pos, "rate": 0.95 + randf() * 0.1, "vol": 0.7})
+
+func puppetEvent(game, z: Dictionary, kind: String, args: Array) -> void:
+	var f: Dictionary = z.flags
+	var c = f.get("cloud")
+	match kind:
+		"fcLaunch":
+			if c == null or c.state == "popped" or c.state == "gone" or args.size() < 3:
+				return
+			c.from = c.pos
+			c.target = DAU.v3(args[1])
+			c.floor = DAU.v3(args[2])
+			c.state = "fly"
+			c.t = 0.0
+			SH.audioPlay(game, "zmb_swipe", {"pos": c.pos, "rate": 0.7, "vol": 0.6})
+		"fcHit":
+			if c != null and c.state != "popped" and c.state != "gone":
+				c.punch = 1.0
+				var a := cloudWorldCenter(z)
+				SH.burst(game, a, {"shape": "puff", "count": 3, "size": 0.08, "speed": 1.4, "life": 0.4, "colors": ["#AEB6C4", "#8C94A6"]})
+				SH.audioPlay(game, "zmb_hit", {"pos": a, "rate": 1.35, "vol": 0.6})
+		"fcPop":
+			var by = args[0] if args.size() > 0 and args[0] is int and args[0] >= 0 else null
+			popCloud(game, z, by)
 
 func onDamage(_game, z: Dictionary, amount: float, _info = null) -> float:
 	return amount * F.sobMul if z.flags.get("sobbed") else amount

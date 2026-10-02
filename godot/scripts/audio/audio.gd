@@ -1007,7 +1007,7 @@ func _updateListener() -> void:
 		return
 	var xf: Transform3D = (cam as Camera3D).global_transform
 	var x := xf.origin
-	var pl = game.get("player")
+	var pl = _viewPlayer()
 	var pp = pl.get("pos") if pl != null else null
 	if pp != null:
 		var q := DAU.v3(pp)
@@ -1020,7 +1020,7 @@ func _updateListener() -> void:
 
 func _currentArea():
 	var g = game
-	var pl = g.get("player")
+	var pl = _viewPlayer()
 	if pl != null:
 		var a = pl.get("area")
 		if a != null and a != "":
@@ -1122,8 +1122,8 @@ func _hookEvents() -> void:
 	if ev == null or _hooked:
 		return
 	_hooked = true
-	_on(ev, "zombie:hit", func(p): play("ui_hit_head" if p.get("head") else "ui_hit"))
-	_on(ev, "zombie:kill", func(_p): play("ui_kill"))
+	_on(ev, "zombie:hit", func(p): if _mine(p): play("ui_hit_head" if p.get("head") else "ui_hit"))
+	_on(ev, "zombie:kill", func(p): if _mine(p): play("ui_kill"))
 	_on(ev, "player:step", func(p): _step(p))
 	_on(ev, "player:jump", func(_p): play("jump"))
 	_on(ev, "player:land", func(p): play("land", {"vol": clampf(float(p.get("speed", 6.0) if p.get("speed") != null else 6.0) / 10.0, 0.35, 1.0)}))
@@ -1142,6 +1142,23 @@ func _hookEvents() -> void:
 	_on(ev, "game:start", _evGameStart)
 	_on(ev, "game:over", func(_p): _stopWorld())
 	_on(ev, "state", _evState)
+
+# MP (RECONCILE R7): hit / kill dings only for the local player's own damage (payload `by`; absent in solo).
+func _mine(p: Dictionary) -> bool:
+	var by = p.get("by")
+	if by == null:
+		return true
+	var n = game.get("net")
+	return n == null or int(by) == int(n.localId)
+
+# The player the local camera follows (MP: the spectated teammate while off-air, RECONCILE R12), else game.player.
+func _viewPlayer():
+	var n = game.get("net")
+	if n != null and n.inGame and n.has_method("viewPlayer"):
+		var v = n.viewPlayer()
+		if v != null:
+			return v
+	return game.get("player")
 
 func _evFire(p: Dictionary) -> void:
 	var id = FIRE_CUES.get(p.get("weaponId"))

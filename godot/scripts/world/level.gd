@@ -90,6 +90,7 @@ var _powerT := 0.0
 var _powerDone := true
 var _beaconT := -1.0
 var _rooms := {}
+var _netApply := false                   # MP client: applying a host message (doors / boards may change)
 
 func _init(g) -> void:
 	game = g
@@ -337,17 +338,60 @@ func openDoor(id: String, opts: Dictionary = {}) -> bool:
 	if d == null or d.open:
 		return false
 	var g = game
+	var net = g.get("net")
+	if net != null and net.inGame and net.isClient and not _netApply:
+		return false                     # MP client: doors open only through the host's message (net_openDoor)
 	d.open = true
 	if col != null:
 		col.setEnabled(id, false)
 	if g.nav != null and g.nav.has_method("setDoor"):
 		g.nav.setDoor(id, true)
-	d.play(instant)
+	d.play(instant, opts.get("from"))
 	if not instant and d.cost > 0 and g.audio != null:
 		g.audio.play("crowd_ooh", {"pos": d.pos})
 	if g.events != null:
 		g.events.emit("door:open", {"doorId": id})
+	if net != null and net.inGame and net.isHost:
+		var fp = opts.get("from")
+		net.toAll("level", "openDoor", [id, instant, fp if fp is Vector3 else null])
 	return true
+
+# MP host -> clients: a door opened (the same beat, collider, nav and door:open event).
+func net_openDoor(id, instant = false, from = null) -> void:
+	var net = game.get("net")
+	if net == null or not net.isClient or net.sender != 1 or not (id is String) or not doors.has(id):
+		return
+	_netApply = true
+	openDoor(id, {"instant": instant == true, "from": from if from is Vector3 else null})
+	_netApply = false
+
+# MP host -> clients: window `winId` now has `boards` boards (op 0 tear, 1 repair, 2 blast: every board blown out).
+func net_boards(winId, boards, op = 0) -> void:
+	var net = game.get("net")
+	if net == null or not net.isClient or net.sender != 1 or not (winId is String) or not (boards is int):
+		return
+	var w = windows.get(winId)
+	if w == null:
+		return
+	var n := clampi(boards, 0, 6)
+	_netApply = true
+	var guard := 8
+	while w.boards > n and guard > 0:
+		guard -= 1
+		if not w.breakBoard():
+			break
+	while w.boards < n and guard > 0:
+		guard -= 1
+		if not w.repairBoard():
+			break
+	_netApply = false
+	if op == 2 and game.fx != null:
+		# the Big Shot blast (zombies._arrive on the host)
+		var a: Vector3 = w.pos
+		a.y = float(w.sill) + 0.9
+		game.fx.burst(a, {"shape": "confetti", "count": 18, "colors": [Config.PAL.teak, Config.PAL.walnut, Config.PAL.cream, Config.PAL.skyTop], "speed": 5})
+		game.fx.burst(a, {"shape": "puff", "count": 8, "size": 0.3})
+		game.fx.shake(0.25, 0.3)
 
 func openAllDoors(opts: Dictionary = {}) -> void:
 	var instant: bool = opts.get("instant", true)
