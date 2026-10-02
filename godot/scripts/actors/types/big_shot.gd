@@ -35,6 +35,9 @@
 #   charOpt.gen / mergeAttachments / cloneBare are engine plumbing (not ported). The JS art=0 / missing-bake
 #   primitive placeholder (buildPlaceholderRig) is a placeholder-art path: not ported (SPEC §0.2).
 #   Renames: parameter `round` -> `r`.
+# MP: aims / rushes / flashes at its target; rush contacts any target; netEvent bsFlash (every peer pops it and
+#   judges its own player and camera: victim-side) / bsBonk / bsHit; plug onHit forwards info.by; FULL REEL drop and
+#   remote hits host-only. netModes / puppet / puppetEvent.
 extends RefCounted
 
 const SH = preload("res://scripts/actors/types/sock_hopper.gd")

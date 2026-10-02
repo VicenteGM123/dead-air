@@ -41,6 +41,9 @@
 #   - charOpt.gen pool invalidation and mergeAttachments (draw-call merging, A/B tooling) are engine plumbing: not
 #     ported (SPEC §0.2); pupils stay separate meshes on their pivots.
 #   - Renames: parameter `round` -> `r` (GDScript builtin).
+# MP: targets via zombies.targetOf (static target / victims / isRemote / authority / netEvent / localBy helpers here,
+#   shared by the specials); a leap bites any target in its way (remote ones through zombies.hurtTarget). netModes +
+#   puppet(game, z, dt): client puppets hop on the host's phase (netPh / netH / netBit) and replay the cues.
 extends RefCounted
 
 const LAYER_ZOMBIES := 1                                   # Config.LAYERS.ZOMBIES

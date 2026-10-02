@@ -34,6 +34,9 @@
 #   charOpt.gen / mergeAttachments are engine plumbing (not ported). cloneBare (warm-up clones) not needed. The JS
 #   art=0 / missing-bake placeholder (buildPlaceholder) is a placeholder-art path: not ported (SPEC §0.2).
 #   Renames: parameter `round` -> `r`.
+# MP: casts at its target (zombies.targetOf); netEvent fcLaunch {from, target, floor} / fcHit / fcPop {by}; client
+#   puppets run the cloud locally and strike() judges only the LOCAL player (victim-side); cloud onHit runs on the
+#   host with info.by; the grenade hook and the storm event are host-only. netModes / puppet / puppetEvent.
 extends RefCounted
 
 const SH = preload("res://scripts/actors/types/sock_hopper.gd")

@@ -8,6 +8,7 @@
 # Port notes: the JS module-level `clapBudget` / `clapT` live on this (single, registry-owned) module instance as
 #   _clapBudget / _clapT (leading underscore: not merged into the def). Parameter `round` -> `r` (GDScript builtin).
 #   Without baked art build() leaves z.group null and the manager's spawn fails (the placeholder is not ported).
+# MP: puppet(game, z, dt) runs the same flavour on client puppets (zombies_net.gd).
 extends RefCounted
 
 const HEAR := 16.0        # m: groans/claps farther than this are skipped (the audio engine has a voice budget)
