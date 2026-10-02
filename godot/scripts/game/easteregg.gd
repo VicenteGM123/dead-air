@@ -1466,6 +1466,18 @@ func net_slot(carrier, ids) -> void:
 				_pickup(p, int(carrier))
 	_slotAll(ids)
 
+# MP: a puppet carried by a remote hero copies its hanger's world transform (hidden while the hanger is gone).
+func _followHanger(p: Dictionary) -> void:
+	var hg = p.hanger
+	var root: Node3D = p.root
+	if not (hg is Node3D) or not is_instance_valid(hg) or not (hg as Node3D).is_inside_tree():
+		root.visible = false
+		return
+	root.visible = true
+	var h: Array = HANG[p.key]
+	var local := Transform3D(Basis(Vector3.UP, h[3]).scaled(Vector3.ONE * HANG_SCALE), Vector3(0, -0.25 * HANG_SCALE, 0))
+	root.global_transform = (hg as Node3D).global_transform * local
+
 # MP: a puppet whose local timeline lags the host's (dormant / ghost / tuning / falling / landing) jumps to the floor.
 func _toGround(p: Dictionary) -> void:
 	if not ["dormant", "ghost", "tuning", "falling", "landing"].has(p.state):
@@ -1671,6 +1683,7 @@ func _resetPuppet(p: Dictionary) -> void:
 	_oc(p.blob, "remove")
 	p.blob = null
 	p.hanger = null
+	p.follow = false
 	var model: Node3D = p.model
 	var pivot: Node3D = p.pivot
 	model.scale = Vector3.ONE
@@ -1810,11 +1823,19 @@ func _pickup(p: Dictionary, carrier: int = 0) -> void:
 		hanger.position = Vector3(h[0], h[1], h[2])
 		(belt as Node3D).add_child(hanger)
 		p.hanger = hanger
-		_add(hanger, root)
-		root.position = Vector3(0, -0.25 * HANG_SCALE, 0)
-		root.rotation = Vector3(0, h[3], 0)
-		root.scale = Vector3.ONE * HANG_SCALE
-		_setPuppetLayer(p, 1 if (_mp() and pl != game.player) else 0)     # MP: remote heroes draw on the actors layer
+		p.follow = _mp() and pl != game.player
+		if p.follow:
+			# MP: a remote hero's model is freed when its player leaves: the puppet stays in the scene and follows the
+			# hanger every frame (_followHanger) instead of being parented to it; actors render layer like the hero
+			_add(game.scene, root)
+			_followHanger(p)
+			_setPuppetLayer(p, 1)
+		else:
+			_add(hanger, root)
+			root.position = Vector3(0, -0.25 * HANG_SCALE, 0)
+			root.rotation = Vector3(0, h[3], 0)
+			root.scale = Vector3.ONE * HANG_SCALE
+			_setPuppetLayer(p, 0)
 	else:
 		root.visible = false
 	var ppos = pl.pos if pl != null else null
@@ -1850,6 +1871,7 @@ func _slotAll(only = null) -> void:
 		if p.hanger != null:
 			_free(p.hanger)
 		p.hanger = null
+		p.follow = false
 		pr.visible = true
 		var sl = slots.get(p.key) if slots is Dictionary else null
 		p.to = v3(sl) if sl != null else v3(_g(th, "interact"))
@@ -1879,6 +1901,7 @@ func _dropPuppet(p: Dictionary) -> void:
 	if p.hanger != null:
 		_free(p.hanger)
 	p.hanger = null
+	p.follow = false
 	p.carrier = 0
 	carried = carried.filter(func(id): return id != p.id)
 	var pr: Node3D = p.root
@@ -1903,6 +1926,7 @@ func _placeOnStage(p: Dictionary) -> void:
 	if p.hanger != null:
 		_free(p.hanger)
 	p.hanger = null
+	p.follow = false
 	var root := _areaRoot("studio_b")
 	var pr: Node3D = p.root
 	_add(root, pr)
@@ -2109,7 +2133,9 @@ func _updatePuppets(dt: float) -> void:
 				var sp := Vector2(pv.x, pv.z).length() if pv is Vector3 else 0.0
 				var ph: float = t * (4.0 + sp * 1.4) + p.phase
 				var hanger = p.hanger
-				if hanger is Node3D:
+				if p.get("follow", false):
+					_followHanger(p)
+				if hanger is Node3D and is_instance_valid(hanger):
 					hanger.rotation.x = sin(ph) * (0.08 + sp * 0.05)
 					hanger.rotation.z = sin(ph * 0.5 + 1.0) * (0.06 + sp * 0.03)
 				pivot.position.y = absf(sin(ph)) * 0.02
