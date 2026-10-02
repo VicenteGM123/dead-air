@@ -125,8 +125,9 @@ func _project(cam: Camera3D, pos: Vector3) -> Vector3:
 	var nx := v.x / (-z * tanV * aspect)
 	var ny := v.y / (-z * tanV)
 	if front == 0.0:
-		nx = -nx * 50.0
-		ny = -ny * 50.0
+		# behind the camera: keep the side (turn that way), pin to the bottom edge
+		nx = nx * 50.0
+		ny = -(absf(ny) + 1.0) * 50.0
 	return Vector3((nx * 0.5 + 0.5) * W, (0.5 - ny * 0.5) * H.REF_H, front)
 
 func _buildWorld(n, mp, dt: float) -> void:
@@ -172,7 +173,7 @@ func _buildWorld(n, mp, dt: float) -> void:
 			continue
 		if q == spec or not q.has_method("headPos"):
 			continue
-		var hp: Vector3 = q.headPos() + Vector3(0.0, 0.32, 0.0)
+		var hp: Vector3 = q.headPos() + Vector3(0.0, 0.1, 0.0)
 		var dist := eye.distance_to(hp)
 		if dist > TAG_MAX:
 			continue
@@ -274,8 +275,8 @@ func _drawTags(ci: Control) -> void:
 		var p := Vector2(m.x, m.y)
 		if m.edge:
 			var d := Vector2.from_angle(m.ang)
-			var tip := p + d * 34.0
-			ci.draw_colored_polygon(PackedVector2Array([tip, p + d * 24.0 + d.orthogonal() * 8.0, p + d * 24.0 - d.orthogonal() * 8.0]), Color(c2, 0.9))
+			var tip := p + d * 50.0
+			ci.draw_colored_polygon(PackedVector2Array([tip, p + d * 38.0 + d.orthogonal() * 9.0, p + d * 38.0 - d.orthogonal() * 9.0]), Color(c2, 0.9))
 		if badge:
 			ci.draw_texture_rect(badge, Rect2(p.x - 30, p.y - 30, 60, 60), false, Color(1, 1, 1, bl))
 		_ring(ci, p, 27.0, m.frac, Color(c2, bl), 4.5)
