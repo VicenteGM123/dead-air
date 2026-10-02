@@ -180,7 +180,7 @@ func damageTarget(base: float) -> float:
 		return 0.0
 	if p.downed:
 		var k := 1.0 - clampf(bleedOf(_localId()) / maxf(0.1, bleedTotal), 0.0, 1.0)
-		return 0.45 + 0.3 * k
+		return 0.22 + 0.25 * k
 	return base
 
 func _localId() -> int:
@@ -777,7 +777,7 @@ func _updateFx(rdt: float) -> void:
 		var lift := maxf(0.0, rev)
 		_fxDown.saturation = lerpf(0.45, 0.85, lift)
 		_fxDown.vignette = 0.55 * (1.0 - 0.5 * lift)
-		_fxDown.static = (0.04 + 0.2 * k * k) * (1.0 - lift)
+		_fxDown.static = (0.02 + 0.1 * k * k) * (1.0 - lift)
 		_fxDown.chroma = 1.5 + 2.0 * k
 		R.setFx("mp_down", _fxDown, {"ttl": 0.25})
 	elif R.has_method("hasFx") and R.hasFx("mp_down"):
