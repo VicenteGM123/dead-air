@@ -13,7 +13,8 @@ estilo *Plants vs. Zombies: Garden Warfare*). Todo está hecho con código, en T
 El juego también está migrado tal cual a **Godot 4.7** (`godot/`, todo el código en GDScript) con todos los
 assets 3D generados por código en **Blender** (`blender/`, scripts de Python que exportan a `godot/assets/`).
 Para jugarla: abre `godot/project.godot` en Godot 4.7 y pulsa F5. Detalles en `godot/README.md`,
-`blender/README.md` y `tools/audio/README.md`.
+`blender/README.md` y `tools/audio/README.md`. La versión Godot tiene además **multijugador cooperativo online
+de 1 a 4 jugadores** (MULTIPLAYER en el menú principal; ver `godot/README.md`).
 
 ## Cómo jugar
 

@@ -38,6 +38,39 @@ O desde el editor: *Proyecto → Configuración → application/run/da_params* (
 La API de depuración de la web sigue existiendo: `DAGame.inst.debug.teleport(...)`, `give(...)`, `spawn(...)`,
 `power(true)`, `freeCam(true)`, etc. (ver `scripts/core/debug.gd`).
 
+## Multijugador (cooperativo online, 1-4 jugadores)
+
+En la pantalla de título pulsa cualquier tecla: aparece el menú principal (**SINGLE PLAYER / MULTIPLAYER / OPTIONS /
+CONTROLS / QUIT**). SINGLE PLAYER es el juego de siempre, sin ningún cambio.
+
+**MULTIPLAYER**
+- **NAME**: tu nombre (se guarda).
+- **HOST GAME**: creas la partida. Tus amigos ven en la lista "Tonight's Cast" la dirección que tienen que usar
+  (la de internet, si el router abre el puerto solo con UPnP, y la de la red local).
+- **JOIN GAME**: aparecen solas las partidas de tu red local; para una partida por internet elige ENTER ADDRESS y
+  escribe la IP del anfitrión (con el mando hay un teclado en pantalla).
+- **Sala de espera**: cada uno elige su héroe en el dial de la tele (cada héroe solo puede llevarlo un jugador) y lo
+  sintoniza para quedar listo. Cuando todos están listos, el anfitrión pulsa START: cuenta atrás y a jugar.
+
+**Jugar por internet**: el anfitrión necesita el puerto **UDP 31313** abierto hacia su PC. El juego intenta abrirlo
+solo (UPnP); si tu router no lo permite, ábrelo a mano en el router (redirección de puertos UDP 31313) o usad una red
+privada virtual tipo **Tailscale**, **ZeroTier** o **Radmin VPN** y unid por la IP que os da. Todos deben tener la
+misma versión del juego.
+
+**Reglas en equipo** (al estilo de los zombis de Call of Duty):
+- Puntos por jugador; cada uno paga lo suyo. Puertas, corriente, tablas de las ventanas y máquinas son compartidas.
+- Potenciadores para todo el equipo (FULL REEL rellena la munición de todos, etc.).
+- Si te tumban (sin Instant Replay), quedas en el suelo 30 s: un compañero te levanta manteniendo E / X junto a ti.
+  Si nadie llega, quedas fuera del aire y miras a un compañero hasta la ronda siguiente, en la que vuelves con el
+  revólver y tus puntos (pierdes las mejoras).
+- La partida acaba si caen todos a la vez. Luego volvéis a la sala de espera.
+- Más jugadores = más zombis por ronda; el jefe tiene más vida.
+- La pausa no congela el juego en multijugador (LEAVE GAME para salir).
+
+Parámetros de prueba: `mp=host` / `mp=join mpip=<ip>`, `mpname=`, `mpstart=N` (con `test=1`: el anfitrión empieza solo
+cuando hay N jugadores), `mplag= mpjitter= mploss=` (simulan mala red). Código: `scripts/net/` (red, sala, jugadores
+remotos) y los `*_net.gd` / párrafos `MP:` de cada sistema.
+
 ## Estructura
 
 ```
