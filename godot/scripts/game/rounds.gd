@@ -422,6 +422,9 @@ func update(dt: float) -> void:
 	if _cli():
 		if phase != "active":
 			timer = maxf(0.0, timer - dt)   # display only: the host starts the next round
+		elif g.zombies != null:
+			# mirror of the host's queue: the round's count minus its kills and its living zombies
+			toSpawn = maxi(0, count - killsThisRound - int(g.zombies.roundAlive(token)))
 		return
 	if _bossActive():
 		return

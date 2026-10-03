@@ -28,6 +28,8 @@ var _lid := 0
 var _sid := 0
 var _rrec := {}            # host: by -> {up, t} remote Boom Mic recordings
 var _recFx := {}           # observers: by -> loop handle
+var _E = null              # wonder.gd's easing class
+var _rparts := {}          # observers: by -> {reelA, needle, squigT} a teammate's held wonder model (mp-onair)
 var _hooked := false
 
 func _init(wonder) -> void:
@@ -70,6 +72,7 @@ func reset() -> void:
 				_peerLeft(int(e.get("id", 0))))
 
 func _peerLeft(id: int) -> void:
+	_rparts.erase(id)
 	if _rrec.has(id):
 		_stopRec(id)
 	if _recFx.has(id):
@@ -89,6 +92,87 @@ func update(dt: float) -> void:
 		var rp = actorOf(by)
 		if rp != null:
 			w._hcall(_recFx[by], "setPos", [rp.pos + Vector3(0, 1.3, 0)])
+	_remoteHeld(dt)
+
+# Teammates' held wonder models come alive like ours (wonder.gd _updateHeldModel): Boom Mic reels / VU needle / mic
+# pulse (fast + sound squiggles flying from the zombies in its cone into its mic while it records), Zapper battery
+# swap, Chroma-Key goo wobble and refill, from the streamed reload progress and the boomRecFx recording flag.
+func _remoteHeld(dt: float) -> void:
+	var n = net()
+	if n == null or not n.inGame:
+		return
+	if _E == null:
+		_E = load("res://scripts/game/wonder.gd").E
+	var t := float(game.time.now)
+	for rp in n.remotes():
+		var by := int(rp.peerId)
+		var id := str(rp.weaponId)
+		var wm = rp.weaponModel
+		if not (id == "boom_mic" or id == "zapper" or id == "chroma_key") or wm == null or not is_instance_valid(wm) or not wm.visible:
+			continue
+		var parts = w._partsOf(wm)
+		if not (parts is Dictionary):
+			continue
+		var st = _rparts.get(by)
+		if st == null:
+			st = {"reelA": 0.0, "needle": 0.05, "squigT": 0.0}
+			_rparts[by] = st
+		var u := float(rp.anim.get("reload", 0.0))
+		var rel := u if u > 0.001 else -1.0
+		var rec := _recFx.has(by)
+		var E = _E
+		if id == "zapper":
+			var bat = parts.get("battery")
+			if bat is Node3D:
+				var b2 = DAU.ud(bat).__wbase
+				var z := 0.0
+				var vis := true
+				if rel >= 0.0:
+					if rel < 0.1:
+						z = E.outBack(rel / 0.1) * 0.09
+					elif rel < 0.55:
+						vis = false
+					elif rel < 0.85:
+						z = (1.0 - E.outCubic(w.seg(rel, 0.55, 0.85))) * 0.09
+				bat.position.z = b2.p.z + z
+				bat.visible = vis
+		elif id == "boom_mic":
+			st.reelA += dt * ((18.0 if rp.upgraded else 10.0) if rec else 1.2)
+			var rs := 1.0
+			if rel >= 0.0:
+				rs = 1.0 - E.inBack(rel / 0.3) if rel < 0.3 else (0.0 if rel < 0.5 else E.outBack(w.seg(rel, 0.5, 0.8)))
+			for kf in [["reelL", 1.0], ["reelR", 0.8]]:
+				var o = parts.get(kf[0])
+				if o is Node3D:
+					o.rotation.y = st.reelA * kf[1]
+					o.scale = Vector3.ONE * (maxf(0.001, rs) * DAU.ud(o).__wbase.s.x)
+			var needle = parts.get("needle")
+			if needle is Node3D:
+				var target: float = (0.55 + 0.35 * sin(t * 1.7)) if rec else 0.05 + 0.04 * sin(t * 5.0)
+				st.needle = lerpf(st.needle, target + (sin(t * 31.0) * 0.035 if rec else 0.0), 1.0 - exp(-dt * 18.0))
+				needle.rotation.x = 0.7 - w.clamp01(st.needle) * 1.4
+			var mic = parts.get("mic")
+			if mic is Node3D:
+				mic.scale = Vector3.ONE * (1.0 + (sin(t * 22.0) * 0.04 if rec else 0.0))
+			if rec:
+				st.squigT -= dt
+				if st.squigT <= 0.0:
+					st.squigT = 0.07
+					var B: Dictionary = w.G.boom
+					var ray: Dictionary = rp.aimRay()
+					var zs: Array = w._inCone(ray.origin, ray.dir, float(B.recRange), (float(B.recCone) / 2.0) * DEG, rp)
+					if zs.size() > 0:
+						var to: Vector3 = (mic as Node3D).global_position if mic is Node3D and (mic as Node3D).is_inside_tree() else rp.muzzle()
+						w._squiggle(zs[int(floor(randf() * zs.size()))], to)
+		elif id == "chroma_key":
+			var goo = parts.get("goo")
+			if goo is Node3D:
+				var fill := 1.0
+				if rel >= 0.0:
+					fill = 1.0 - E.inQuad(rel / 0.4) if rel < 0.4 else (0.05 if rel < 0.55 else E.outElastic(w.seg(rel, 0.55, 1.0)))
+				var wob: float = sin(t * 7.0 + by) * 0.035
+				var bs: Vector3 = DAU.ud(goo).__wbase.s
+				goo.scale = Vector3(bs.x * (1.0 + wob), bs.y * maxf(0.05, fill) * (1.0 - wob), bs.z * (1.0 + wob))
 
 func _z(id):
 	if id == null:

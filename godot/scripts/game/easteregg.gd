@@ -360,6 +360,7 @@ var _built := false
 var _emitting := false
 var _bars: Array = []
 var _barFrame := -1
+var _barBy := {}          # MP: peer -> frame of its last bar hit (the per-shot dedupe per shooter)
 var _crumbs: Array = []
 var _crumbT := 0.0
 var _laughs := 0
@@ -1363,6 +1364,7 @@ func net_reqBar(color) -> void:
 	if not _hostOk() or not BARS.has(str(color)):
 		return
 	_barFrame = -1
+	_barBy.erase(int(_net().sender))     # the requester already deduped its own shot events
 	_onBarHit(str(color), {"by": int(_net().sender)})
 
 func net_reqPuppet(id) -> void:
@@ -1618,9 +1620,16 @@ func _onBarHit(color: String, info = {}) -> void:
 		info = {}
 	if IGNORED_CAUSES.has(_g(info, "cause")):
 		return
-	if _barFrame == int(g.time.frame):
+	var hitBy = _g(info, "by") if _mp() else null
+	if hitBy != null:
+		# MP: one bar per shot event PER SHOOTER (two players' hits in the same host frame both count)
+		if int(_barBy.get(int(hitBy), -1)) == int(g.time.frame):
+			return
+		_barBy[int(hitBy)] = int(g.time.frame)
+	elif _barFrame == int(g.time.frame):
 		return          # at most one bar per shot event
-	_barFrame = int(g.time.frame)
+	else:
+		_barFrame = int(g.time.frame)
 	if _client():
 		_req("reqBar", [color])     # MP: the host rings it for everyone
 		return

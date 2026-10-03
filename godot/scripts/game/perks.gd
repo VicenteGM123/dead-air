@@ -481,6 +481,8 @@ var _ringGeo: ArrayMesh = null
 
 var _remote := {}                 # MP: peerId -> {hero, gold, costumes: {perkId -> pieces}} (teammates' costumes)
 var _batch := false               # MP: clearAll() sends one loadout at the end
+var _rGhosts := {}                # MP: peer -> {hero, list (_makeGhosts), t, ghostT, on} teammates' replay afterimages
+var _rWrapped := {}               # MP: teammates' animators wrapped for the skating strides (instance id -> true)
 
 func _init(g) -> void:
 	game = g
@@ -529,7 +531,7 @@ func init() -> void:
 			_syncRemote(int(p.get("id", 0))))
 	ev.on("net:peer", func(p = null):
 		if p is Dictionary and not p.get("joined", true):
-			_remote.erase(int(p.get("id", 0))))
+			_forgetRemote(int(p.get("id", 0))))
 	ev.on("player:hurt", func(_p = null): _onHurt())
 	ev.on("player:land", func(p = null):
 		if has("wobble_up"):
@@ -570,8 +572,9 @@ func reset() -> void:
 	if hero:
 		hero.group.position.y = 0.0
 		hero.group.scale = Vector3.ONE
+	for id in _remote.keys() + _rGhosts.keys():
+		_forgetRemote(id)     # (MP: the avatars are rebuilt for the new game; net:avatar re-dresses them)
 	if _mp():
-		_remote.clear()       # (the avatars are rebuilt for the new game; net:avatar re-dresses them)
 		_batch = false
 		_syncExt()
 
@@ -670,6 +673,8 @@ func _syncRemote(id: int) -> void:
 	var R = _remote.get(id)
 	var pop := true
 	if R == null or not is_same(R.hero, hero):
+		if R != null:
+			_forgetRemote(id)
 		R = {"hero": hero, "gold": g, "costumes": {}}
 		_remote[id] = R
 		pop = false                        # a (re)built avatar: dress it quietly
@@ -691,6 +696,13 @@ func _syncRemote(id: int) -> void:
 					for pc in pieces:
 						sparkles.emit(_wpos(pc.obj), {"count": 14, "colors": ["#FFE27A", "#FFFFFF", "#FF9EDB", "#7FE7FF"], "speed": 2.4, "size": 0.13, "life": 0.7, "gravity": 0.8})
 	hero.group.position.y = SKATE_LIFT if R.costumes.has("roller_boogie") else 0.0
+	# Wobble-Up's jelly rim on the avatar's own materials (restored on loss / leave / new game)
+	if R.costumes.has("wobble_up") and R.get("rim") == null:
+		R.rim = {}
+		_rimInto(hero.group, R.rim)
+	elif not R.costumes.has("wobble_up") and R.get("rim") != null:
+		_restoreRimOf(R.rim)
+		R.rim = null
 
 # Sign-Off reward (GDD §13 Morning Show): all five, gold leaf, permanent, no limit.
 func morningShow() -> Array:
@@ -878,29 +890,36 @@ func _tintRim(on: bool) -> void:
 		return
 	_restoreRim()
 	_rimHero = hero
-	DAU.traverse(hero.group, func(o):
+	_rimInto(hero.group, _rim)
+
+# Tints every hero material under `group` with the jelly rim, remembering the originals in `store`.
+func _rimInto(group: Node, store: Dictionary) -> void:
+	DAU.traverse(group, func(o):
 		if not (o is MeshInstance3D) or DAU.ud(o).get("costume"):
 			return
 		for mat in _materialsOf(o):
-			if not (mat is ShaderMaterial) or _rim.has(mat) or not _hasParam(mat, "uRimColor"):
+			if not (mat is ShaderMaterial) or store.has(mat) or not _hasParam(mat, "uRimColor"):
 				continue
 			var cur = mat.get_shader_parameter("uRimColor")
 			var strength = mat.get_shader_parameter("uRimStrength") if _hasParam(mat, "uRimStrength") else null
-			_rim[mat] = {"color": cur, "strength": strength}
+			store[mat] = {"color": cur, "strength": strength}
 			var c: Color = cur if cur is Color else (Color(cur.x, cur.y, cur.z) if cur is Vector3 else Color.WHITE)
 			var t: Color = c.lerp(JELLY_RIM, 0.42)
 			mat.set_shader_parameter("uRimColor", Vector3(t.r, t.g, t.b) if cur is Vector3 else t))
 
 func _restoreRim() -> void:
-	for mat in _rim:
+	_restoreRimOf(_rim)
+	_rimHero = null
+
+static func _restoreRimOf(store: Dictionary) -> void:
+	for mat in store:
 		if not is_instance_valid(mat):
 			continue
-		var s: Dictionary = _rim[mat]
+		var s: Dictionary = store[mat]
 		mat.set_shader_parameter("uRimColor", s.color)
 		if s.strength != null:
 			mat.set_shader_parameter("uRimStrength", s.strength)
-	_rim.clear()
-	_rimHero = null
+	store.clear()
 
 # ------------------------------------------------------------------------------------------ hits
 func _onHurt() -> void:
@@ -1165,7 +1184,14 @@ func net_replayFx(kind = "", pos = null, _consumed = false) -> void:
 	if net == null or not net.inGame or not (pos is Vector3) or int(net.sender) == int(net.localId):
 		return
 	var g = game
+	var rg = _rGhosts.get(int(net.sender))
 	if str(kind) == "land":
+		if rg != null:
+			rg.on = false
+		var rp = net.playerById(int(net.sender))
+		var neck = _f(_f(_f(rp, "hero"), "slots"), "neck")
+		if _consumed and neck is Node3D and rp.model != null:
+			_dropWhistleAt(neck, rp.model.rotation.y)          # (its Replay-Ade is gone: the whistle drops)
 		_ring(pos, float(Config.T.perks.replay.knock))
 		var up: Vector3 = pos + Vector3(0, 1.0, 0)
 		_m(g.fx, "burst", [up, {"shape": "star", "count": 14, "speed": 5, "size": 0.16, "life": 0.8, "colors": ["#FFE27A", "#FFFFFF", "#7FE7FF"]}])
@@ -1173,6 +1199,19 @@ func net_replayFx(kind = "", pos = null, _consumed = false) -> void:
 		_m(g.audio, "play", ["studio_flash", {"pos": pos, "vol": 0.7}])
 	elif str(kind) == "start":
 		_m(g.audio, "play", ["replay_rewind", {"pos": pos, "vol": 0.7}])
+		# cyan afterimages along its rewind (the hero zips back through the position stream from 0.3 s)
+		var rp = net.playerById(int(net.sender))
+		var hero = _f(rp, "hero")
+		if hero != null and rp.model != null:
+			if rg == null or not is_same(rg.hero, hero):
+				if rg != null:
+					for gh in rg.list:
+						_drop(gh.holder)
+				rg = {"hero": hero, "list": _makeGhosts(hero, rp.weaponModel)}
+				_rGhosts[int(net.sender)] = rg
+			rg.t = 0.0
+			rg.ghostT = 0.0
+			rg.on = true
 
 # THE cleanup path: every temporary state the replay may hold, whatever phase it reached. Idempotent. hard = the
 # run is over (reset / menu / game over / victory): a world speed the replay still holds goes back to 1.
@@ -1213,10 +1252,14 @@ func _ensureGhosts() -> void:
 		return
 	for gh in _ghosts:
 		_drop(gh.holder)
-	_ghosts = []
 	_ghostHero = hero
+	_ghosts = _makeGhosts(hero, _f(p, "weaponModel"))
+
+# 7 afterimages of a hero (the local one, or a teammate's avatar: MP), hidden until spawned.
+func _makeGhosts(hero, wm) -> Array:
+	var ghosts := []
 	for i in 7:
-		var c: Dictionary = cloneHero(hero, [_f(p, "weaponModel")])
+		var c: Dictionary = cloneHero(hero, [wm])
 		var mat := StandardMaterial3D.new()
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		mat.albedo_color = Color(Color("#7FEFFF"), 0.5)
@@ -1237,25 +1280,29 @@ func _ensureGhosts() -> void:
 		e.group = holder
 		e.mat = mat
 		e.t = -1.0
-		_ghosts.append(e)
+		ghosts.append(e)
+	return ghosts
 
 func _spawnGhost() -> void:
 	var p = game.player
+	_spawnGhostIn(_ghosts, p.hero, p.model)
+
+func _spawnGhostIn(ghosts: Array, hero, model: Node3D) -> void:
 	var gh = null
-	for x in _ghosts:
+	for x in ghosts:
 		if x.t < 0:
 			gh = x
 			break
-	if gh == null and _ghosts.size() > 0:
-		gh = _ghosts[0]
-		for x in _ghosts:
+	if gh == null and ghosts.size() > 0:
+		gh = ghosts[0]
+		for x in ghosts:
 			if x.t > gh.t:
 				gh = x
 	if gh == null:
 		return
-	copyPose(p.hero, gh)          # (gh.group is the holder, like the JS {...c, holder, group: holder})
-	gh.holder.position = p.model.position
-	gh.holder.quaternion = p.model.quaternion
+	copyPose(hero, gh)          # (gh.group is the holder, like the JS {...c, holder, group: holder})
+	gh.holder.position = model.position
+	gh.holder.quaternion = model.quaternion
 	gh.holder.visible = true
 	gh.t = 0.0
 	var hue: String = [Config.PAL.gelCyan, "#FFFFFF", Config.PAL.gelMagenta][int(floor(randf() * 3))]
@@ -1263,7 +1310,10 @@ func _spawnGhost() -> void:
 	gh.mat.albedo_color = Color(c.r, c.g, c.b, gh.mat.albedo_color.a)
 
 func _updateGhosts(rdt: float) -> void:
-	for gh in _ghosts:
+	_tickGhosts(_ghosts, rdt)
+
+func _tickGhosts(ghosts: Array, rdt: float) -> void:
+	for gh in ghosts:
 		if gh.t < 0:
 			continue
 		gh.t += rdt
@@ -1358,15 +1408,19 @@ func _dropWhistle() -> void:
 	var neck = _f(_f(hero, "slots"), "neck")
 	if not (neck is Node3D):
 		return
+	_dropWhistleAt(neck, g.player.model.rotation.y)
+
+# The whistle leaves `neck` (a hero's neck slot) and bounces away ahead of a body facing `yaw`.
+func _dropWhistleAt(neck: Node3D, yaw: float) -> void:
+	var g = game
 	var grp: Node3D = load("res://scripts/game/sponsors.gd").loadRuntimeAsset(g, "res://assets/runtime/sponsors/whistle.glb")
 	if grp == null:
 		return
 	grp.rotation_order = EULER_ORDER_XYZ
 	grp.position = _wpos(neck) + Vector3(0, -0.15, 0)
 	g.scene.add_child(grp)
-	var p = g.player
-	var fx := -sin(p.model.rotation.y)
-	var fz := -cos(p.model.rotation.y)
+	var fx := -sin(yaw)
+	var fz := -cos(yaw)
 	_whistles.append({"obj": grp, "v": Vector3(fx * 1.6 + (randf() - 0.5), 2.6, fz * 1.6 + (randf() - 0.5)), "spin": Vector3(7, 3, 5), "t": 0.0, "bounces": 0})
 
 func _updateWhistles(rdt: float) -> void:
@@ -1429,6 +1483,8 @@ func update(dt: float) -> void:
 	_updateSkate(dt, rdt)
 	_updatePops(rdt)
 	_updateGhosts(rdt)
+	if not _remote.is_empty() or not _rGhosts.is_empty():
+		_updateRemotes(rdt)
 	_updateRings(rdt)
 	_updateWhistles(rdt)
 	if has("double_vision") and dt > 0:
@@ -1519,7 +1575,9 @@ func _wrapAnimator(a) -> void:
 		_skatePose(a.rig, dt)       # cosmetic only
 
 func _skatePose(rig, _dt: float) -> void:
-	var S := _skate
+	_skatePoseS(rig, _skate)
+
+func _skatePoseS(rig, S: Dictionary) -> void:
 	var w: float = S.w
 	if w <= 0.001:
 		return
@@ -1574,3 +1632,144 @@ func _skateLoop(on: bool) -> void:
 		S.loop = null
 	if S.loop != null and on:
 		_m(S.loop, "setPos", [game.player.pos])
+
+# ------------------------------------------------------------------------------------------ MP: teammates' looks
+# A teammate's perk looks on its avatar (cosmetic, from its loadout + streamed state): Roller Boogie skating strides
+# (its animator wrapped like ours) + sparkle trail + skate roll at its feet while it sprints, Wobble-Up's jelly spring
+# (kicked by its hits, jumps and landings; the helmet wobbles twice as much), Instant Replay afterimages along its
+# rewind (perks.net_replayFx 'start' .. 'land').
+func _updateRemotes(rdt: float) -> void:
+	var net = _net()
+	if net == null:
+		return
+	for id in _remote.keys():
+		var R: Dictionary = _remote[id]
+		var rp = net.playerById(id)
+		var S = R.get("skate")
+		if S == null:
+			S = {"w": 0.0, "phase": 0.0, "sparkT": 0.0, "loop": null}
+			R.skate = S
+		if rp == null or not is_same(_f(rp, "hero"), R.hero) or rp.model == null:
+			_skateLoopR(S, false, Vector3.ZERO)
+			continue
+		var hero = R.hero
+		var cs: Dictionary = R.costumes
+		var an = rp.animator
+		if cs.has("roller_boogie") and an is Object and not _rWrapped.has(an.get_instance_id()):
+			_wrapRemote(an, int(id))
+		var on: bool = cs.has("roller_boogie") and rp.sprinting and rp.grounded and not rp.inCommercial and rp.model.visible and not rp.downed
+		S.w += ((1.0 if on else 0.0) - S.w) * (1.0 - exp(-rdt * 9.0))
+		if on:
+			S.phase += rdt * 5.2
+		_skateLoopR(S, on, rp.pos)
+		if on:
+			S.sparkT -= rdt
+			if S.sparkT <= 0:
+				S.sparkT = 0.06
+				var foot = hero.slots.footL if sin(S.phase) > 0 else hero.slots.footR
+				if foot is Node3D:
+					var v := _wpos(foot)
+					v.y = rp.pos.y + 0.06
+					_m(game.fx, "burst", [v, {"shape": "star", "count": 1, "speed": 0.4, "size": 0.055, "life": 0.45, "gravity": -0.4, "colors": ["#FF9EDB", "#7FE7FF", "#FFE27A"]}])
+		# Wobble-Up jelly spring
+		var J = R.get("jelly")
+		if J == null:
+			J = {"x": 0.0, "v": 0.0, "hp": rp.health, "gr": rp.grounded}
+			R.jelly = J
+		if cs.has("wobble_up"):
+			if rp.health < J.hp - 0.5:
+				J.v -= 5.5
+			if J.gr and not rp.grounded:
+				J.v += 1.6
+			elif not J.gr and rp.grounded:
+				J.v -= 2.1
+		J.hp = rp.health
+		J.gr = rp.grounded
+		if not cs.has("wobble_up") and absf(J.x) < 1e-3 and absf(J.v) < 1e-3:
+			if hero.group.scale.y != 1.0 and not rp.inCommercial:
+				hero.group.scale = Vector3.ONE
+		else:
+			var n := maxi(1, int(ceil(rdt / (1.0 / 120.0))))
+			var h := rdt / n
+			for i in n:
+				J.v += (-190.0 * J.x - 7.5 * J.v) * h
+				J.x += J.v * h
+			J.x = clampf(J.x, -0.35, 0.35)
+			var y: float = 1.0 + J.x * 0.55
+			var xz := 1.0 / sqrt(maxf(0.3, y))
+			hero.group.scale = Vector3(xz, y, xz)
+			var helm = cs.get("wobble_up")
+			if helm is Array:
+				for pc in helm:
+					if not is_instance_valid(pc.obj) or _popping(pc.obj):
+						continue
+					var hy: float = 1.0 + J.x * 1.3 + sin(game.time.realNow * 9.0) * 0.012
+					var hxz := 1.0 / sqrt(maxf(0.3, hy))
+					pc.obj.scale = Vector3(pc.scale * hxz, pc.scale * hy, pc.scale * hxz)
+	# Instant Replay afterimages
+	for id in _rGhosts.keys():
+		var rg: Dictionary = _rGhosts[id]
+		_tickGhosts(rg.list, rdt)
+		if not rg.get("on", false):
+			continue
+		rg.t += rdt
+		var rp = net.playerById(id)
+		if rp == null or rp.model == null or not is_same(rp.hero, rg.hero) or rg.t > 2.5:
+			rg.on = false
+			continue
+		if rg.t >= 0.3:
+			rg.ghostT -= rdt
+			if rg.ghostT <= 0:
+				rg.ghostT = 0.085
+				_spawnGhostIn(rg.list, rp.hero, rp.model)
+
+func _popping(obj) -> bool:
+	for pp in _pops:
+		if pp.obj == obj:
+			return true
+	return false
+
+# Skating strides on a teammate's animator (after its procedural + weapon pose), from its _remote entry's state.
+func _wrapRemote(a, id: int) -> void:
+	_rWrapped[a.get_instance_id()] = true
+	var orig: Callable = Callable()
+	var uf = a.get("updateFn")
+	if uf is Callable and (uf as Callable).is_valid():
+		orig = uf
+	elif a.has_method("_procUpdate"):
+		orig = Callable(a, "_procUpdate")
+	if not orig.is_valid() or not ("updateFn" in a):
+		return
+	var R0 = _remote.get(id)
+	var hero = R0.hero if R0 != null else null
+	a.updateFn = func(dt, st = {}):
+		orig.call(dt, st)
+		var R = _remote.get(id)
+		if R != null and is_same(R.hero, hero) and R.get("skate") != null:
+			_skatePoseS(a.rig, R.skate)       # cosmetic only
+
+func _skateLoopR(S: Dictionary, on: bool, pos: Vector3) -> void:
+	var a = game.audio
+	if on and S.loop == null and a and a.has_method("loop"):
+		S.loop = a.loop("skate_roll", {"vol": 0.35, "pos": pos})
+	elif not on and S.loop != null:
+		_m(S.loop, "stop", [0.15])
+		S.loop = null
+	if S.loop != null and on:
+		_m(S.loop, "setPos", [pos])
+
+# A teammate's looks go (it left, its avatar was rebuilt, or a new game): rim restored, skate loop stopped, ghosts freed.
+func _forgetRemote(id: int) -> void:
+	var R = _remote.get(id)
+	_remote.erase(id)
+	if R != null:
+		if R.get("rim") != null:
+			_restoreRimOf(R.rim)
+			R.rim = null
+		if R.get("skate") != null:
+			_skateLoopR(R.skate, false, Vector3.ZERO)
+	var rg = _rGhosts.get(id)
+	_rGhosts.erase(id)
+	if rg != null:
+		for gh in rg.list:
+			_drop(gh.holder)

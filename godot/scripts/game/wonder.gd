@@ -1765,7 +1765,10 @@ func _heldModel():
 	return m if m is Node3D and is_instance_valid(m) else null
 
 func _heldParts():
-	var m = _heldModel()
+	return _partsOf(_heldModel())
+
+# The moving parts of a held wonder model (the local one, or a teammate's copy: wonder_net.gd), cached on it.
+func _partsOf(m):
 	if m == null:
 		return null
 	var ud := DAU.ud(m)
@@ -2730,8 +2733,9 @@ func _inCone(origin: Vector3, dir: Vector3, range: float, half: float, actor = n
 		out.append(z)
 	return out
 
-func _squiggle(z) -> void:
+func _squiggle(z, to = null) -> void:
 	var it: Dictionary = pools.squig.spawn()
+	it.tip = to                  # null: into our own mic (_micTip); MP: a teammate's mic
 	var from := _headPos(z)
 	var yaw = _g(z, "yaw")
 	var face := Vector3(-sin(yaw), 0, -cos(yaw)) if yaw != null else Vector3.ZERO
@@ -4414,8 +4418,9 @@ func _updatePools(dt: float) -> void:
 		it.t += d
 		var k := clamp01(it.t / it.dur)
 		var e := E.inQuad(k)
-		var p: Vector3 = (it.from as Vector3).lerp(tip, e)
-		var a: Vector3 = tip - it.from
+		var to: Vector3 = it.tip if it.get("tip") != null else tip
+		var p: Vector3 = (it.from as Vector3).lerp(to, e)
+		var a: Vector3 = to - it.from
 		var len := a.length()
 		if len == 0.0:
 			len = 1.0

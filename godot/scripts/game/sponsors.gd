@@ -108,6 +108,7 @@ var _pendingAd = null             # our lock request in flight {id, cost, paid, 
 var _remoteAds := {}              # peer -> {S, id, t} a teammate's commercial on a set (lights up, tally blinks)
 var _adGrace := 0.0               # MP: s of protection left after our commercial (the world did not wait)
 var _held := false                # MP: we hold the music (audio._music.hold("commercial"))
+var _onair = null                 # MP: the ON AIR look of teammates' commercials (scripts/game/onair.gd; null in solo)
 
 static func AD() -> float:
 	return float(Config.T.perks.adLength) + CARD_HOLD   # 4.2 s
@@ -496,6 +497,8 @@ func init() -> void:
 		var id := int(p.get("id", 0))
 		if _remoteAds.has(id):
 			_stopRemote(id, false)
+		if _onair != null:
+			_onair.forget(id)
 		var net = _net()
 		if net != null and net.isHost and net.inGame:
 			for pid in _locks.keys():
@@ -526,6 +529,9 @@ func reset() -> void:
 	_abortCommercial()
 	for id in _remoteAds.keys():
 		_stopRemote(id, false)
+	if _onair != null and not _mp():
+		_onair.dispose()                # (an MP session is over: its studio dressing goes)
+		_onair = null
 	_locks.clear()
 	_pendingAd = null
 	_adGrace = 0.0
@@ -939,7 +945,11 @@ func _startRemote(by: int, S: Dictionary) -> void:
 	_remoteAds[by] = {"S": S, "id": S.id, "t": 0.0}
 	for l in S.lights:
 		_m(game.lights, "setAnchor", [l.id, {"intensity": l.intensity * 2.2, "enabled": true}])
-	_play("sponsor_jingle_" + S.id, {"pos": S.product, "vol": 0.55})
+	# the jingle as the studio floor hears it: positional at the set, through the monitor speaker (muffled)
+	_play("sponsor_jingle_" + S.id, {"pos": S.product, "vol": 0.6, "tv": true})
+	var oa = _onAir()
+	if oa != null:
+		oa.start(by, S, _adClock(by))
 
 func _stopRemote(by: int, flash: bool) -> void:
 	var r = _remoteAds.get(by)
@@ -947,6 +957,8 @@ func _stopRemote(by: int, flash: bool) -> void:
 	if r == null:
 		return
 	var S: Dictionary = r.S
+	if _onair != null:
+		_onair.stop(by)
 	for l in S.lights:
 		_m(game.lights, "setAnchor", [l.id, {"intensity": l.intensity if S.powered or S.id == "replay_ade" else 0.0}])
 	setTally(S.camProp, _live(S) and not S.soldOut)
@@ -960,13 +972,33 @@ func _updateRemote(rdt: float) -> void:
 		var r: Dictionary = _remoteAds[by]
 		r.t += rdt
 		var S: Dictionary = r.S
-		setTally(S.camProp, int(floorf(r.t / 0.35)) % 2 == 0)          # ON AIR blink
+		if _onair == null:
+			setTally(S.camProp, int(floorf(r.t / 0.35)) % 2 == 0)      # ON AIR blink (onair.gd: lit red, steady)
 		if r.t > AD() + 3.0:
 			_stopRemote(by, false)                                   # (the host's unlocked is late or lost)
+
+# MP: the ON AIR studio dressing + teammates' on-air pantomimes / live feed (built at the first MP update).
+func _onAir():
+	if _onair == null and _mp() and _built:
+		_onair = load("res://scripts/game/onair.gd").new(self)
+	return _onair
+
+# Where a teammate's commercial is now (s) when its set lock reaches us: the performer started it when the same
+# host message reached it (or right away when the host performs), so the offset is half the RTT difference.
+func _adClock(by: int) -> float:
+	var net = _net()
+	var ping := func(id: int) -> float:
+		var P = net.peers.get(id) if net != null else null
+		return 0.0 if P == null or id == 1 else float(P.get("ping", 0)) / 1000.0
+	var t: float = (ping.call(int(net.localId)) - ping.call(by)) * 0.5 if net != null else 0.0
+	return clampf(t, -0.25, 0.5)
 
 func _updateMP(p, rdt: float) -> void:
 	if not _remoteAds.is_empty():
 		_updateRemote(rdt)
+	var oa = _onAir()
+	if oa != null:
+		oa.update(rdt)
 	if _adGrace > 0.0:
 		_adGrace -= rdt
 		if _adGrace <= 0.0 and _ad == null:
@@ -981,6 +1013,8 @@ func _updateMP(p, rdt: float) -> void:
 			game.economy.refund(pa.cost, "refund")
 	if net.isHost:
 		for pid in _locks.keys():
+			if _dbgHeld.has(int(_locks[pid].by)):
+				_locks[pid].t = now                                   # held by a test (debugHold): no timeout
 			if now - float(_locks[pid].t) > AD() + 4.0:
 				push_warning("[sponsors] set %s lock timed out (peer %d)" % [pid, int(_locks[pid].by)])
 				net.everyone("sponsors", "unlocked", [pid, int(_locks[pid].by)])
@@ -1024,13 +1058,30 @@ func debugCommercial(perkId: String) -> bool:
 
 func debugSkip() -> void:
 	debugHoldAt = null
+	_dbgHeldOut(false)
 	if _ad != null:
 		_ad.t = maxf(_ad.t, AD() - 0.01)
 
 # Tests: the running (or next) commercial will not advance past t seconds (null releases it).
 func debugHold(t):
 	debugHoldAt = t
+	_dbgHeldOut(t != null)
 	return _ad.t if _ad != null else null
+
+# MP tests: the host must not time a held commercial's set lock out (AD() + 4 s) -> it keeps that peer's locks fresh.
+var _dbgHeld := {}
+func _dbgHeldOut(on: bool) -> void:
+	if _mp():
+		_net().toHost("sponsors", "debugHeld", [on])
+
+func net_debugHeld(on) -> void:
+	var net = _net()
+	if net == null or not net.isHost:
+		return
+	if on == true:
+		_dbgHeld[int(net.sender)] = true
+	else:
+		_dbgHeld.erase(int(net.sender))
 
 # ------------------------------------------------------------------------------------------ the commercial
 func _startCommercial(S: Dictionary) -> void:
@@ -1392,78 +1443,90 @@ func _updateCameraHead(S: Dictionary, d: float, rdt: float) -> void:
 func _ensureGags() -> void:
 	var g = game
 	if _gags == null:
-		var G := {}
-		var b = _m(g.props, "build", ["product_replay_ade", {}])
-		if b is Node3D:
-			b.scale = Vector3.ONE * 0.19
-			G.bottle = b
-		var peel := buildPeel()
-		if peel:
-			G.peel = peel
-		var spoon = buildSpoon()
-		if spoon:
-			G.spoon = spoon
-		var glove = buildGlove()
-		if glove:
-			G.glove = glove
-		var pot := buildPot()
-		if pot:
-			G.pot = pot
-		var brush := buildBrush()
-		if brush:
-			brush.scale = Vector3.ONE * 1.7
-			G.brush = brush
-		var gun = _m(g.weapons, "buildModel", ["revolver_38", false])
-		if not (gun is Node3D):
-			gun = fallbackGun()
-		if gun:
-			G.gun = gun
-		var sk = _m(g.props, "build", ["costume_skates", {}])
-		if sk is Node3D:
-			resolveRefs(sk, DAU.ud(sk))
-			G.skates = sk
-		for o in G.values():
-			var root = o.grp if o is Dictionary else o
-			if root is Node3D:
-				root.rotation_order = EULER_ORDER_XYZ
-				DAU.traverse(root, func(m):
-					if m is GeometryInstance3D:
-						(m as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
-		_gags = G
+		_gags = _makeGags()
 	var hero = _f(g.player, "hero")
 	if hero and _dupHero != hero:
 		if _dups != null:
 			for d in _dups:
 				DAU.detach(d.holder)
-		_dups = []
 		_dupHero = hero
-		for col in [Config.PAL.gelCyan, Config.PAL.gelMagenta]:
-			var c: Dictionary = PerksLib.cloneHero(hero, [_f(g.player, "weaponModel")])
-			var c3 := Color(col)
-			# flat tinted Lambert (no vertex colours)
-			var mat := StandardMaterial3D.new()
-			mat.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT
-			mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-			mat.albedo_color = Color(c3.r, c3.g, c3.b, 0.8)
-			mat.emission_enabled = true
-			mat.emission = c3 * 0.5
-			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
-			mat.disable_fog = true
-			for m in c.meshes:
-				m.material_override = mat
-				if not PerksLib._isSkinned(m) and PerksLib._radius(m) < 0.025:
-					m.visible = false
-			var holder := DAU.node3d("dup")
-			holder.add_child(c.group)
-			var e := c.duplicate()
-			e.holder = holder
-			e.color = col
-			_dups.append(e)
+		_dups = _makeDups(hero, _f(g.player, "weaponModel"))
+
+# A fresh set of gag props (the local performer's, or a teammate's on-air copy: onair.gd).
+func _makeGags() -> Dictionary:
+	var g = game
+	var G := {}
+	var b = _m(g.props, "build", ["product_replay_ade", {}])
+	if b is Node3D:
+		b.scale = Vector3.ONE * 0.19
+		G.bottle = b
+	var peel := buildPeel()
+	if peel:
+		G.peel = peel
+	var spoon = buildSpoon()
+	if spoon:
+		G.spoon = spoon
+	var glove = buildGlove()
+	if glove:
+		G.glove = glove
+	var pot := buildPot()
+	if pot:
+		G.pot = pot
+	var brush := buildBrush()
+	if brush:
+		brush.scale = Vector3.ONE * 1.7
+		G.brush = brush
+	var gun = _m(g.weapons, "buildModel", ["revolver_38", false])
+	if not (gun is Node3D):
+		gun = fallbackGun()
+	if gun:
+		G.gun = gun
+	var sk = _m(g.props, "build", ["costume_skates", {}])
+	if sk is Node3D:
+		resolveRefs(sk, DAU.ud(sk))
+		G.skates = sk
+	for o in G.values():
+		var root = o.grp if o is Dictionary else o
+		if root is Node3D:
+			root.rotation_order = EULER_ORDER_XYZ
+			DAU.traverse(root, func(m):
+				if m is GeometryInstance3D:
+					(m as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
+	return G
+
+# Double Vision's cyan + magenta duplicates of a hero (frozen pose copies; wm = its held weapon, left out).
+func _makeDups(hero, wm) -> Array:
+	var dups := []
+	for col in [Config.PAL.gelCyan, Config.PAL.gelMagenta]:
+		var c: Dictionary = PerksLib.cloneHero(hero, [wm])
+		var c3 := Color(col)
+		# flat tinted Lambert (no vertex colours)
+		var mat := StandardMaterial3D.new()
+		mat.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT
+		mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+		mat.albedo_color = Color(c3.r, c3.g, c3.b, 0.8)
+		mat.emission_enabled = true
+		mat.emission = c3 * 0.5
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
+		mat.disable_fog = true
+		for m in c.meshes:
+			m.material_override = mat
+			if not PerksLib._isSkinned(m) and PerksLib._radius(m) < 0.025:
+				m.visible = false
+		var holder := DAU.node3d("dup")
+		holder.add_child(c.group)
+		var e := c.duplicate()
+		e.holder = holder
+		e.color = col
+		dups.append(e)
+	return dups
 
 # ------------------------------------------------------------------------------------------ pantomimes
 func _setupPantomime(ad: Dictionary) -> void:
-	var p = game.player
-	var G: Dictionary = _gags if _gags != null else {}
+	_setupPantomimeFor(ad, game.player, _gags if _gags != null else {})
+
+# The gag props of ad.id onto performer p's model / hero slots (p: the local Player, or a RemotePlayer: onair.gd).
+func _setupPantomimeFor(ad: Dictionary, p, G: Dictionary) -> void:
 	var hero = _f(p, "hero")
 	var add := func(obj):
 		if obj == null:
@@ -1689,13 +1752,15 @@ func _pose(rig, _dt: float = 0.0) -> void:
 	var ad = _ad
 	if ad == null:
 		return
-	var g = game
-	var p = g.player
+	_poseCtx(ad, game.player, _gags if _gags != null else {}, _dups, _heroId(), rig)
+
+# The pantomime pose of ad (its id, t, S, faceYaw, face) on performer p (the local Player, or a teammate's
+# RemotePlayer with its own gag set G and duplicates `dups`: onair.gd), hero id ID.
+func _poseCtx(ad: Dictionary, p, G: Dictionary, dups, ID: String, rig) -> void:
 	var J = rig.joints
 	var t: float = ad.t
 	var S: Dictionary = ad.S
 	var m: Node3D = p.model
-	var G: Dictionary = _gags if _gags != null else {}
 	var POSES := _POSES()
 	var W := _smooth(0.0, 0.1, t)
 	var root: Node3D = rig.root
@@ -1715,7 +1780,6 @@ func _pose(rig, _dt: float = 0.0) -> void:
 		if face != null and ad.get("_expr") != name:
 			_m(face, "setExpression", [name, w])
 			ad._expr = name
-	var ID := _heroId()
 	match ad.id:
 		"replay_ade":
 			# logical time: play -> freeze at 1.25 -> rewind back to 0.65 by 1.86 -> land
@@ -1918,11 +1982,11 @@ func _pose(rig, _dt: float = 0.0) -> void:
 				pose.call(sig if sig != null else POSES.thumbsup, k)
 				setJ.call("head", [0.12, 0, 0.1], k)
 			# the duplicates drift apart striking their own poses
-			if t >= 1.2 and _dups != null:
+			if t >= 1.2 and dups != null:
 				var k := _easeOut(_clamp01((t - 1.2) / 0.35))
 				var poses := [DISCO, POSES.fingerguns]
-				for i in _dups.size():
-					var d: Dictionary = _dups[i]
+				for i in dups.size():
+					var d: Dictionary = dups[i]
 					PerksLib.copyPose(p.hero, d)
 					var DJ: Dictionary = d.joints
 					for n in poses[i]:

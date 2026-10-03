@@ -74,6 +74,7 @@ func reset() -> void:
 	_shootQ.clear()
 	_confirm.clear()
 	_nadeSeq = 0
+	_orphans.clear()
 	for id in _arms.keys():
 		_arms[id].dispose()
 	_arms.clear()
@@ -94,11 +95,7 @@ func _dropPeer(id: int) -> void:
 		a.dispose()
 		_arms.erase(id)
 	_confirm.erase(id)
-	for i in range(W._projectiles.size() - 1, -1, -1):
-		var pr: Dictionary = W._projectiles[i]
-		if pr.get("remote") and int(pr.get("by", 0)) == id:
-			W._removeProjectile(pr)
-			W._projectiles.remove_at(i)
+	# its grenades in flight stay: the host blows them up at their fuse (orphanBoom -> nadeFx on every peer)
 
 func update(dt: float) -> void:
 	for id in _arms:
@@ -272,11 +269,33 @@ func onNade(nid, origin, vel, fuse) -> void:
 	if a != null:
 		a.throwNade()
 
+# Host: another player's grenade copy reached its fuse; its thrower left (or stayed silent 2 s past the fuse: dropped
+# without a bye): the host resolves the blast at the copy's position (true = done, the caller removes the copy).
+var _orphans := {}
+func orphanBoom(pr: Dictionary) -> bool:
+	var n = net()
+	if n == null or n.isClient:
+		return false
+	var by := int(pr.get("by", 0))
+	if n.peers.has(by) and float(pr.fuse) > -2.0:
+		return false
+	var nid := int(pr.get("nid", -1))
+	var pos: Vector3 = pr.pos
+	if n.peers.has(by):
+		_orphans["%d:%d" % [by, nid]] = true      # a late nadeBoom for it is ignored
+	n.withSender(by, func(): return W._blastDamage(pos, W._blastBase(1.0), by))
+	var p = game.player
+	W._blastFx(pos, false, (p.pos + Vector3(0, 0.9, 0)).distance_to(pos) if p != null else 99.0, by)
+	n.toAll("weapons", "nadeFx", [by, nid, pos, false])
+	return true
+
 func onNadeBoom(nid, pos, inHand, dmgMul) -> void:
 	var n = net()
 	if n == null or n.isClient or not (pos is Vector3):
 		return
 	var by: int = n.sender
+	if _orphans.erase("%d:%d" % [by, int(nid)]):
+		return
 	var mul := clampf(float(dmgMul) if (dmgMul is float or dmgMul is int) else 1.0, 0.0, 10.0)
 	var hk: Array = n.withSender(by, func(): return W._blastDamage(pos, W._blastBase(mul), by))
 	if int(hk[0]) > 0:
@@ -538,6 +557,7 @@ class RemoteArms extends RefCounted:
 	var reloadPrev := 0.0
 	var reloadCues := 0
 	var pumpT := -1.0
+	var partsU := 0.0           # reload progress the held copy's moving parts last showed
 	var props := {}             # melee / nade / tele models in the left hand
 
 	func _init(n, remote) -> void:
@@ -582,8 +602,16 @@ class RemoteArms extends RefCounted:
 			h = {"holder": holder, "model": model, "def": def,
 				"leftHand": WS.v3a(u.leftHand) if u.get("leftHand") != null else Vector3(0, 0, -0.15),
 				"butt": WS.v3a(u.butt) if u.get("butt") != null else Vector3(0, 0.08, 0.05),
-				"muzzle": (mz as Node3D).position if mz is Node3D else Vector3(0, 0.08, -0.3)}
+				"muzzle": (mz as Node3D).position if mz is Node3D else Vector3(0, 0.08, -0.3),
+				"parts": u.get("parts") if u.get("parts") is Dictionary else {}, "rest": {}}
+			for pk in h.parts:
+				var o = h.parts[pk]
+				if o is Node3D:
+					WS._xyzOrder(o)
+					h.rest[o] = {"pos": o.position, "rot": o.rotation, "scale": o.scale, "visible": o.visible}
 			_cache[k] = h
+		if cur != null and not is_same(cur, h) and partsU > 0.001:
+			_parts(0.0)                 # (a swap mid-reload: the old copy's parts back to rest)
 		if key != "" and key != k:
 			raise = 0.0
 			N.W._play("weapon_swap", {"pos": rp.pos + Vector3(0, 1.2, 0), "vol": 0.8})
@@ -712,6 +740,26 @@ class RemoteArms extends RefCounted:
 				N.W._play(cue, {"pos": rp.pos + Vector3(0, 1.2, 0), "vol": 0.7, "rate": 0.9 if reloadCues == 0 else 1.1})
 				reloadCues += 1
 		reloadPrev = u
+		_parts(u)
+
+	# The held copy's moving parts (mag drop, drum swing, cover, battery, goo, reels) follow the streamed reload, like
+	# weapons.gd _reloadParts on the owner's screen; back to rest when the reload ends.
+	func _parts(u: float) -> void:
+		var h = cur
+		if h == null or h.get("parts") == null or h.parts.is_empty():
+			partsU = 0.0
+			return
+		if u > 0.001:
+			WS.reloadPartsOf(h, u)
+		elif partsU > 0.001:
+			for o in h.rest:
+				if is_instance_valid(o):
+					var r: Dictionary = h.rest[o]
+					o.position = r.pos
+					o.rotation = r.rot
+					o.scale = r.scale
+					o.visible = r.visible
+		partsU = u
 
 	# ---- pose (copy of weapons.gd _pose / _poseLeft on this avatar's replicated state)
 	func pose(r, rdt: float) -> void:

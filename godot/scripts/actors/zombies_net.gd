@@ -1059,11 +1059,24 @@ func clientTick(dt: float) -> void:
 			applying = false
 			continue
 		if M.frozen:
+			if z.get("puppetHold") != true:
+				_snapNewest(z)          # frozen: no interpolation, but stand where the host froze it
 			continue
 		if z.get("puppetHold") != true:
 			_puppet(z, dt, rt, areaNow)
 		M._animate(z, dt)
 	_blockLocal()
+
+# While frozen: place the puppet on the host's newest snapshot (once per new sample; dt 0 = no timers / velocity).
+func _snapNewest(z: Dictionary) -> void:
+	var R = z.get("_ring")
+	if R == null or R.n == 0:
+		return
+	var tn: float = R.t[(R.head - 1 + RN) % RN]
+	if z.get("_frzT") == tn:
+		return
+	z["_frzT"] = tn
+	_puppet(z, 0.0, tn, false)
 
 func _puppet(z: Dictionary, dt: float, rt: float, areaNow: bool) -> void:
 	var R = z.get("_ring")

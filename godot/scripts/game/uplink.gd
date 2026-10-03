@@ -327,6 +327,7 @@ var _crankDenied := false              # another peer won the crank: off until E
 var _lockPending := 0.0                # our hold completed, waiting for net_aligned (s)
 var _reqT := -1.0                      # an insert request is pending (s)
 var _reqData: Array = []
+var _dbgInsert := -1                    # MP debugUpgrade waiting for the alignment (1 free / 0 paid)
 var _userGone := ""                    # host: the user went "down" / "offair" / "left" during the upgrade
 var _stateT := 0.0
 
@@ -857,6 +858,10 @@ func update(dt: float) -> void:
 	_time.value += dt
 	if _reqT >= 0.0:
 		_reqTick(dt)
+	if _dbgInsert >= 0 and aligned:
+		var fr := _dbgInsert == 1
+		_dbgInsert = -1
+		_requestInsert(fr)
 	for m in [beam, aurora] + streams:
 		(m.material_override as ShaderMaterial).set_shader_parameter("uTime", _time.value)
 	_updateSatellite(dt)
@@ -2109,7 +2114,7 @@ func net_aligned() -> void:
 	_lock()
 
 # The user's side of an upgrade: pay (reservation), yank the weapon out of the hands, then ask the host.
-func _requestInsert() -> bool:
+func _requestInsert(free_: bool = false) -> bool:
 	var g = game
 	var W = g.weapons
 	if phase != "idle" or not aligned or disabled or _reqT >= 0.0:
@@ -2118,8 +2123,8 @@ func _requestInsert() -> bool:
 	if s == null:
 		return false
 	var rr: bool = bool(X.g(s, "upgraded", false))
-	var cost: int = int(U.reroll if rr else U.cost)
-	if not (g.economy != null and g.economy.spend(cost, "uplink")):
+	var cost: int = 0 if free_ else int(U.reroll if rr else U.cost)
+	if not free_ and not (g.economy != null and g.economy.spend(cost, "uplink")):
 		return false
 	var hand: Vector3
 	var slot = X.g(X.g(X.g(g.player, "hero"), "slots"), "handR")
@@ -2306,14 +2311,27 @@ func status() -> Dictionary:
 
 func debugAlign() -> bool:
 	if not aligned:
-		_lock()
+		if _mp():
+			_dbgAlignMP()
+		else:
+			_lock()
 	return aligned
+
+# MP debug: the host aligns every peer (net_aligned); a client asks the host (net_lock: needs power, crank free).
+func _dbgAlignMP() -> void:
+	if _hst():
+		game.net.everyone("uplink", "aligned", [])
+	else:
+		game.net.toHost("uplink", "lock", [])
 
 func debugUpgrade(wid = null, opts: Dictionary = {}) -> bool:
 	var W = game.weapons
 	var isFree: bool = opts.get("free", true)
 	if not aligned:
-		_lock()
+		if _mp():
+			_dbgAlignMP()
+		else:
+			_lock()
 	if wid and not W.has(wid):
 		W.give(wid, {"source": "debug"})
 	if wid:
@@ -2327,9 +2345,19 @@ func debugUpgrade(wid = null, opts: Dictionary = {}) -> bool:
 				W._equip(i, false)
 			elif W.has_method("switchTo"):
 				W.switchTo(i)
+	if _mp():
+		# MP: the replicated path (net_insert -> everyone net_start); a client waits for its alignment first
+		if not aligned:
+			_dbgInsert = 1 if isFree else 0
+			return true
+		return _requestInsert(isFree)
 	return _start(isFree)
 
 func debugTake() -> String:
+	if _mp():
+		if phase == "ready":
+			game.net.toHost("uplink", "take", [_useId])   # MP: the replicated take (the user's own request)
+		return phase
 	_takeWeapon()
 	return phase
 

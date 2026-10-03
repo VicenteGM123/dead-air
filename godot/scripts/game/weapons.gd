@@ -2097,6 +2097,10 @@ func _reloadParts(_def: Dictionary, u: float) -> void:
 	var h = _holder()
 	if h == null:
 		return
+	reloadPartsOf(h, u)
+
+# (static: weapons_net.gd plays the same part animation on teammates' held copies from their streamed reload progress)
+static func reloadPartsOf(h: Dictionary, u: float) -> void:
 	var P2: Dictionary = h.parts
 	var rest: Dictionary = h.rest
 	var inOut := func(a: float, b: float, c: float, d: float) -> float: return smooth(a, b, u) * (1.0 - smooth(c, d, u))
@@ -2557,8 +2561,12 @@ func _updateProjectiles(dt: float) -> void:
 		if pr.pool != null:
 			pr.pool.set_({"pos": Vector3(pr.pos.x, g.level.col.floorAt(pr.pos.x, pr.pos.z, pr.pos.y + 0.1) + 0.02, pr.pos.z), "intensity": 0.25 + 0.2 * randf()})
 		if pr.get("remote"):
-			# MP: an observer's copy of another player's grenade: its blast comes with weapons.net_nadeFx
-			if pr.fuse < -2.0:
+			# MP: an observer's copy of another player's grenade: its blast comes with weapons.net_nadeFx (the host
+			# blows it up itself when the thrower is gone or silent 2 s past the fuse: mp.orphanBoom)
+			if pr.fuse <= 0.0 and mp != null and mp.orphanBoom(pr):
+				_removeProjectile(pr)
+				_projectiles.remove_at(i)
+			elif pr.fuse < -2.0:
 				_removeProjectile(pr)
 				_projectiles.remove_at(i)
 		elif pr.fuse <= 0.0:
