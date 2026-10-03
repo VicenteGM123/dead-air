@@ -8,6 +8,8 @@
 #     starts, then it flickers on (FLICKER) and glows red with a red light anchor in front of it (lights.gd pool);
 #   * a floor monitor on a cart (prop bc_cart_monitor) beside the tally camera, facing the crew behind it (first free
 #     spot of the collision world on either side): colour bars when idle, the LIVE FEED while the ad runs.
+#   * the set's tally camera prop moves to layer 1 too (still drawn by the gameplay camera; out of the live feed it
+#     stands in front of, like the performer's own commercial hides it); dispose() puts it back on layer 0.
 # A TEAMMATE'S AD (sponsors.net_locked -> _startRemote -> start(by, S, t0); t0 = where the performer's ad is now,
 #   from the peers' pings, sponsors._adClock):
 #   0.00  the ON AIR box flickers on, the tally camera's tally goes steady red (sponsors' blink is replaced), the set's
@@ -82,6 +84,7 @@ func _buildRig(S: Dictionary) -> void:
 		par.add_child(sign)
 		sign.global_position = Vector3(sp0.x, S.mark.y - 0.2 + SIGN_Y, sp0.z) + face * 0.1
 		sign.rotation = Vector3(0, atan2(-face.x, -face.z), 0)
+		sign.scale = Vector3.ONE * 1.5
 		DAU.setLayerRecursive(sign, LAYER)
 		var parts = DAU.ud(sign).get("parts", {})
 		var lm = DAU.ud(sign).get("lampMats")
@@ -106,6 +109,9 @@ func _buildRig(S: Dictionary) -> void:
 		rig.screen = mesh
 		rig.mat = _screenMat(mesh)
 		_setScreen(rig, _colorBars())
+	# the tally camera itself onto the actors layer: still drawn by the gameplay camera, out of the live feed it
+	# stands in front of (the performer's own commercial hides it the same way: camProp.visible = false)
+	DAU.setLayerRecursive(S.camProp, LAYER)
 	rigs[S.id] = rig
 
 # First free spot for the monitor cart: beside the tally camera (either side, a little ahead or behind), turned
@@ -122,8 +128,17 @@ func _monitorSpot(S: Dictionary):
 				continue
 			if col != null and col.has_method("lineOfSight") and not col.lineOfSight(cam + Vector3(0, 1.2, 0), p + Vector3(0, 1.2, 0)):
 				continue
-			var dir: Vector3 = (S.fwd + S.right * (-side * 0.45)).normalized()
-			return {"pos": p, "dir": dir}
+			# the screen faces open floor of the set's area (the crew's side first, else across the room)
+			for dv in [S.fwd + S.right * (-side * 0.45), S.fwd + S.right * (side * 0.6), S.right * side + S.fwd * 0.2]:
+				var dir: Vector3 = (dv as Vector3).normalized()
+				var front: Vector3 = p + dir * 1.8
+				if Layout.areaAt(front.x, front.z) != S.area:
+					continue
+				if col != null and col.has_method("blockedAt") and col.blockedAt(front.x, front.z, 0.4, p.y, 0.45, 1.5):
+					continue
+				if col != null and col.has_method("lineOfSight") and not col.lineOfSight(p + dir * 0.5 + Vector3(0, 1.2, 0), front + Vector3(0, 1.2, 0)):
+					continue
+				return {"pos": p, "dir": dir}
 	return null
 
 func _screenMat(mesh):
@@ -348,6 +363,9 @@ func dispose() -> void:
 			SP._m(game.lights, "removeAnchor", [rig.light])
 		for k in ["sign", "mon"]:
 			_drop(rig.get(k))
+		var cp = rig.S.get("camProp")
+		if cp is Node3D and is_instance_valid(cp):
+			DAU.setLayerRecursive(cp, Config.LAYERS.WORLD)
 	rigs.clear()
 	if _feed != null:
 		_drop(_feed.vp)
@@ -623,7 +641,7 @@ func _updateFeed(ctx: Dictionary, rdt: float) -> void:
 	cam.global_transform = Transform3D(Basis.looking_at(look - pos, Vector3.UP), pos)
 	cam.fov = rad_to_deg(2.0 * atan(1.36 / S.camD)) * fovMul
 	# overlay: REC blink, timecode, the logo card from T_CARD, the iris to black at the star wipe
-	F.rec.visible = fmod(t, 1.0) < 0.6
+	F.rec.visible = fmod(t + 0.5, 1.0) < 0.65
 	var fr := int(t * 30.0)
 	F.tc.text = "00:00:%02d:%02d" % [int(fr / 30.0), fr % 30]
 	var card: TextureRect = F.card

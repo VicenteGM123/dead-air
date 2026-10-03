@@ -20,6 +20,8 @@
 #   (remote.aimPoint / yaw / pitch), ads / sprint flags, anim.reload, swap raise, the recoil spring of SHOT events and
 #   the melee / throw timelines of MELEE / COOK / WIND / nade; remote.weaponPose is replaced with the same pose (for
 #   systems that chain it under their own animator.override). Reload beat / swap / pump sounds are derived locally.
+#   The held copy's moving parts (mag, drum, cover, battery, goo, reels) follow the streamed reload progress through
+#   weapons.gd's static reloadPartsOf(holder, u) (mp-onair).
 extends RefCounted
 
 const WD = preload("res://scripts/game/weapon_defs.gd")

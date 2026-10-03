@@ -64,6 +64,12 @@
 #   while a teammate holds it or our request is in flight; the host frees locks of a peer that left and any lock older
 #   than AD() + 4 s. machine:commercial_start / _end are emitted only on the performer's peer (with `by`). Sold-out
 #   Replay-Ade and the teaser / camera-head / limit-shake looks stay per player. lockedBy(perkId), performing(peer).
+#   ON AIR (mp-onair, scripts/game/onair.gd, built by _onAir() at the first MP update, disposed by reset() in solo):
+#   the teammates of a performer see the set go on air (ON AIR box, steady red tally, the avatar acting out the same
+#   pantomime with its own gag props, a live feed on a floor monitor + the area's program CRTs, the jingle / announcer
+#   through the monitor speaker); the pose / gag code is shared: _poseCtx(ad, p, G, dups, heroId, rig) (_pose calls it
+#   for the local performer), _setupPantomimeFor(ad, p, G), _makeGags(), _makeDups(hero, wm); _adClock(by) puts the
+#   remote timeline where the performer is (half the RTT difference).
 extends RefCounted
 
 const PerksLib = preload("res://scripts/game/perks.gd")

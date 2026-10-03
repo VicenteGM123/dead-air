@@ -16,6 +16,9 @@
 #                   direct, up) · teleSpawn(tid, by, lid, origin, vel) · teleLand(tid, pos, yaw) · teleSeat(tid, zid,
 #                   seat, stand, dur) · teleBoom(tid)
 #   wfx stream (weapons_net.gd): ZAP (trails for observers), BLOB (cosmetic goo flight for observers).
+# OBSERVER LOOKS (mp-onair, _remoteHeld): teammates' held Boom Mic (reels, VU needle, mic pulse; while it records, sound
+#   squiggles fly from the zombies in its cone into ITS mic: wonder._squiggle(z, to)), Zapper battery swap, Chroma-Key
+#   goo wobble / refill, from the streamed reload progress and boomRecFx.
 extends RefCounted
 
 const WD = preload("res://scripts/game/weapon_defs.gd")

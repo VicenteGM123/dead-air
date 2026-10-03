@@ -53,6 +53,10 @@
 #   player.lock / protect("replay", on) when they exist; the landing shockwave is perks.net_shockwave(pos) (owner ->
 #   host: knockback + stun there) and perks.net_replayFx(kind, pos, consumed) (owner -> others: 'start' rewind sound,
 #   'land' ring + bursts). perk:gain / perk:lose / replay:start / replay:end / player:revive carry `by` in MP.
+#   Teammates' looks (mp-onair, _updateRemotes): Roller Boogie skating strides on their animators (+ sparkle trail,
+#   skate roll at their feet) while they sprint, Wobble-Up jelly rim on their materials + jelly spring (hits, jumps,
+#   landings), Instant Replay afterimages along their rewind ('start' .. 'land') and the whistle drop when their
+#   Replay-Ade is consumed; _forgetRemote(id) undoes them (leave / rebuilt avatar / new game).
 extends RefCounted
 
 const Commercial = preload("res://scripts/ui/commercial.gd")
