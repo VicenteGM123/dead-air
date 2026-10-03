@@ -47,6 +47,10 @@ const REVIVE_TIME := 3.0
 const REVIVE_RANGE := 1.8
 const REVIVE_SLACK := 1.2        # m of tolerance on the host (interpolated positions, latency)
 const REVIVE_GRACE := 1.5
+# host: a revive with no reviveDone / reviveStop after this many s (host realNow) is dropped as silent. The reviver's
+# hold runs on ITS game time, which falls behind real time below 20 fps (MAX_DT clamp): a slow client (10 fps = half
+# speed) needs ~6 s of real time for the 3 s hold, so the limit must be well above REVIVE_TIME (qa-mp-visual).
+const REVIVE_STALE := 15.0
 const RESPAWN_GRACE := 2.5
 const SPAWN_RING := 2.0
 const OFF_T := 0.45              # s of CRT power-off before the view switches to a teammate
@@ -299,7 +303,7 @@ func _hostUpdate() -> void:
 		# the reviver went down / off-air / away / silent: the revive stops, the bleed-out resumes
 		var rp = n.playerById(rv)
 		var stale: bool = rp == null or not _canReviveOthers(rp) or _hdist(rp.pos, e.pos) > REVIVE_RANGE + 1.5 \
-			or (float(e.reviveAt) >= 0.0 and now - float(e.reviveAt) > REVIVE_TIME + 2.5)
+			or (float(e.reviveAt) >= 0.0 and now - float(e.reviveAt) > REVIVE_STALE)
 		if stale:
 			n.everyone("player", "reviveState", [id, 0, bleedOf(id)])
 

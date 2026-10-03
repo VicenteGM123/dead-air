@@ -140,6 +140,8 @@ func _buildWorld(n, mp, dt: float) -> void:
 	var eye := cam.global_position if cam.is_inside_tree() else cam.position
 	var W: float = hud.stageW
 	var spec = game.player.get("spectate") if game.player != null else null
+	if spec == null and game.player != null and game.player.get("offAir") == true:
+		return   # off-air before the ride-along starts: the screen is the power-off black, no world tags over it
 	for q in n.players():
 		if q == game.player:
 			continue
