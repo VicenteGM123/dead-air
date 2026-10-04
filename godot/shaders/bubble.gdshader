@@ -19,6 +19,6 @@ void fragment() {
 	float roll = fract(vP.y * 1.3 - uTime * 0.45);
 	float band = smoothstep(0.0, 0.05, roll) * (1.0 - smoothstep(0.05, 0.18, roll));
 	float a = edge * 1.1 + scan * (0.018 + 0.25 * edge) + band * (0.035 + 0.3 * edge);
-	ALBEDO = uColor * a * uIntensity;
+	ALBEDO = daOut(daIn(uColor) * a * uIntensity);
 	ALPHA = 1.0;
 }

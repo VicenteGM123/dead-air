@@ -101,7 +101,7 @@ func _init(g) -> void:
 	key.light_color = Color("#FFE4C2")
 	key.light_energy = KEY.powered
 	key.light_specular = 1.0
-	key.shadow_enabled = true
+	key.shadow_enabled = not DAU.isCompat()   # web: a shadowed light is an extra pass that Compatibility adds in sRGB (too bright)
 	key.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
 	key.directional_shadow_max_distance = SHADOW_SIZE
 	key.directional_shadow_fade_start = 0.9

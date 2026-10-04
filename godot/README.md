@@ -38,6 +38,23 @@ O desde el editor: *Proyecto → Configuración → application/run/da_params* (
 La API de depuración de la web sigue existiendo: `DAGame.inst.debug.teleport(...)`, `give(...)`, `spawn(...)`,
 `power(true)`, `freeCam(true)`, etc. (ver `scripts/core/debug.gd`).
 
+## Versión web (navegador)
+
+Build de prueba publicada en https://vicentegm123.github.io/dead-air/godot-web/ (carpeta `godot-web/` de la rama
+main). Se exporta con `sh godot/web/export_web.sh [carpeta]` (plantillas web de Godot 4.7.2 instaladas):
+
+- Preset **Web** (`export_presets.cfg`): sin hilos (funciona en GitHub Pages sin cabeceras COOP/COEP), shell propio
+  `web/shell.html`. Como GitHub no admite ficheros de más de 100 MB, los datos van en dos paquetes: `index.pck`
+  (todo menos `assets/props/*.glb`) e `index.props.pck` (los props, exportado como parche con el preset **Web Full**).
+  El shell descarga los dos y `game.gd` monta el segundo (`ProjectSettings.load_resource_pack`) antes de arrancar.
+- En la web Godot solo tiene el renderizador **Compatibility** (WebGL 2). Los shaders tienen ramas
+  `#if CURRENT_RENDERER == RENDERER_COMPATIBILITY` (`daIn` / `daOut` en `shaders/da_common.gdshaderinc`, decodificado
+  de la vista 3D en `post` / `bloom`, cielo con Z invertida en rango -1..1) para que se vea igual que en escritorio;
+  en escritorio (Forward+) no cambia nada. Diferencias: sin sombras proyectadas de la luz principal (Compatibility
+  suma en sRGB las pasadas de luces con sombra y quema la imagen) y sin MSAA en los lienzos 2D.
+- **MULTIPLAYER** aparece en gris con la etiqueta "DESKTOP ONLY" (ENet usa UDP, que los navegadores no permiten) y
+  QUIT no aparece (una pestaña no se puede cerrar).
+
 ## Multijugador (cooperativo online, 1-4 jugadores)
 
 En la pantalla de título pulsa cualquier tecla: aparece el menú principal (**SINGLE PLAYER / MULTIPLAYER / OPTIONS /

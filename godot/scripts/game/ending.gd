@@ -1597,7 +1597,7 @@ func _buildPortrait():
 	var key := DirectionalLight3D.new()
 	key.light_color = Color("#FFE2BE")
 	key.light_energy = 2.0
-	key.shadow_enabled = true
+	key.shadow_enabled = not DAU.isCompat()   # web: a shadowed light is an extra pass that Compatibility adds in sRGB (too bright)
 	key.shadow_bias = 0.0006
 	key.shadow_normal_bias = 0.03
 	key.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL

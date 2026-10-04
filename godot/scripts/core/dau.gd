@@ -136,3 +136,40 @@ static func worldPos(n: Node3D) -> Vector3:
 static func detach(n: Node) -> void:
 	if n and n.get_parent():
 		n.get_parent().remove_child(n)
+
+# ------------------------------------------------------------------------------------------------ web / Compatibility
+# True under the Compatibility (GL / WebGL2) renderer, the only one the web build has.
+static var _compat = null
+static func isCompat() -> bool:
+	if _compat == null:
+		_compat = RenderingServer.get_current_rendering_method() == "gl_compatibility"
+	return _compat
+
+# o.set_instance_shader_parameter("instanceColor", srgb). Under Compatibility the toon / unlit shaders declare
+# instanceColor as a plain material uniform (the per-instance uniform buffer is too small for the level), so the
+# instance gets its own copy of its ShaderMaterials (made once) and the colour is set on those.
+static func setInstanceColor(o: GeometryInstance3D, srgb: Color) -> void:
+	if not isCompat():
+		o.set_instance_shader_parameter("instanceColor", srgb)
+		return
+	if o.material_override is ShaderMaterial:
+		o.material_override = _ownMat(o.material_override, o)
+		(o.material_override as ShaderMaterial).set_shader_parameter("instanceColor", srgb)
+		return
+	if o is MeshInstance3D and (o as MeshInstance3D).mesh != null:
+		var mi := o as MeshInstance3D
+		for s in mi.mesh.get_surface_count():
+			var m = mi.get_surface_override_material(s)
+			if m == null:
+				m = mi.mesh.surface_get_material(s)
+			if m is ShaderMaterial:
+				m = _ownMat(m, o)
+				mi.set_surface_override_material(s, m)
+				(m as ShaderMaterial).set_shader_parameter("instanceColor", srgb)
+
+static func _ownMat(m: ShaderMaterial, o: Object) -> ShaderMaterial:
+	if m.get_meta("_daInstOwn", 0) == o.get_instance_id():
+		return m   # already this node's own copy (a duplicated node shares it until it gets one of its own)
+	var d := m.duplicate() as ShaderMaterial
+	d.set_meta("_daInstOwn", o.get_instance_id())
+	return d

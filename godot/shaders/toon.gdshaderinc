@@ -42,7 +42,13 @@ uniform sampler2D mapCL : source_color, filter_linear_mipmap_anisotropic, repeat
 uniform sampler2D mapRN : source_color, filter_nearest, repeat_enable;
 uniform sampler2D mapCN : source_color, filter_nearest, repeat_disable;
 // three instanceColor (InstancedMesh.setColorAt): node.set_instance_shader_parameter("instanceColor", Color).
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+// Compatibility (web build): per-instance uniforms share a 4096-slot UBO that the level overflows, so instanceColor
+// is a material uniform there (DAU.setInstanceColor gives the few tinted instances their own material copy).
+uniform vec4 instanceColor : source_color = vec4(1.0);
+#else
 instance uniform vec4 instanceColor : source_color = vec4(1.0);
+#endif
 
 #ifdef DA_CHROMA
 uniform float uChHue = 0.0;
@@ -79,10 +85,10 @@ varying vec4 vG;
 vec4 daMapSample(vec2 uv) {
 	vec2 t0 = uv * uMapXf.xy + uMapXf.zw;
 	vec2 st = vec2(t0.x, uMapFlip > 0.5 ? 1.0 - t0.y : t0.y);
-	if (uMapMode == 1) return texture(mapRL, st);
-	if (uMapMode == 2) return texture(mapCL, st);
-	if (uMapMode == 3) return texture(mapRN, st);
-	return texture(mapCN, st);
+	if (uMapMode == 1) return daIn4(texture(mapRL, st));
+	if (uMapMode == 2) return daIn4(texture(mapCL, st));
+	if (uMapMode == 3) return daIn4(texture(mapRN, st));
+	return daIn4(texture(mapCN, st));
 }
 
 void vertex() {
@@ -99,10 +105,10 @@ void fragment() {
 	float viewZ = -VERTEX.z;
 	bool full = daFullColor(CAMERA_VISIBLE_LAYERS);
 
-	vec4 diffuseColor = vec4(uColor, uOpacity);
+	vec4 diffuseColor = vec4(daIn(uColor), uOpacity);
 	if (uMapMode > 0) diffuseColor *= daMapSample(UV);
 	if (uVColor > 0.5) diffuseColor.rgb *= COLOR.rgb;
-	diffuseColor.rgb *= instanceColor.rgb;
+	diffuseColor.rgb *= daIn(instanceColor.rgb);
 	vec3 extraEm = vec3(0.0);
 #ifdef DA_CHROMA
 	{
@@ -194,17 +200,17 @@ void fragment() {
 	}
 
 	// emissive + rim (FRAG_OUT)
-	vec3 em = uEmissive * uEmissiveIntensity + extraEm;
+	vec3 em = daIn(uEmissive) * uEmissiveIntensity + extraEm;
 	float daRim = pow(1.0 - dotNV, uRimPower);
 	vec3 daWN = normalize((INV_VIEW_MATRIX * vec4(N, 0.0)).xyz);
 	daRim *= 0.55 + 0.45 * clamp(daWN.y + 0.6, 0.0, 1.0);
-	vec3 rim = uRimColor * (daRim * uRimStrength * uRimAmbient * 1.6);
+	vec3 rim = daIn(uRimColor) * (daRim * uRimStrength * uRimAmbient * 1.6);
 
 	// pre-power grade / Sign-On wave / fog as an affine map, shared with light()
 	float fogK = daFogF(viewZ, CAMERA_VISIBLE_LAYERS) * uFogK;
 	vec3 K;
 	vec4 g = daGradeSetup(wp, uKeep > 0.5, full, fogK, K);
-	EMISSION = daGrade(indirect + em + rim, g) + K;
+	EMISSION = daOut(daGrade(indirect + em + rim, g) + K);
 
 	vDiff = diffC;
 	vSpecB = specB;

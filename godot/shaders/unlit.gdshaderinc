@@ -17,23 +17,29 @@ uniform sampler2D mapRL : source_color, filter_linear_mipmap_anisotropic, repeat
 uniform sampler2D mapCL : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D mapRN : source_color, filter_nearest, repeat_enable;
 uniform sampler2D mapCN : source_color, filter_nearest, repeat_disable;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+// Compatibility (web build): per-instance uniforms share a 4096-slot UBO that the level overflows, so instanceColor
+// is a material uniform there (DAU.setInstanceColor gives the few tinted instances their own material copy).
+uniform vec4 instanceColor : source_color = vec4(1.0);
+#else
 instance uniform vec4 instanceColor : source_color = vec4(1.0);
+#endif
 
 vec4 daMapSample(vec2 uv) {
 	vec2 t0 = uv * uMapXf.xy + uMapXf.zw;
 	vec2 st = vec2(t0.x, uMapFlip > 0.5 ? 1.0 - t0.y : t0.y);
-	if (uMapMode == 1) return texture(mapRL, st);
-	if (uMapMode == 2) return texture(mapCL, st);
-	if (uMapMode == 3) return texture(mapRN, st);
-	return texture(mapCN, st);
+	if (uMapMode == 1) return daIn4(texture(mapRL, st));
+	if (uMapMode == 2) return daIn4(texture(mapCL, st));
+	if (uMapMode == 3) return daIn4(texture(mapRN, st));
+	return daIn4(texture(mapCN, st));
 }
 
 void fragment() {
 	float viewZ = -VERTEX.z;
-	vec4 c = vec4(uColor * uIntensity, uOpacity);
+	vec4 c = vec4(daIn(uColor) * uIntensity, uOpacity);
 	if (uMapMode > 0) c *= daMapSample(UV);
 	if (uVColor > 0.5) c.rgb *= COLOR.rgb;
-	c.rgb *= instanceColor.rgb;
+	c.rgb *= daIn(instanceColor.rgb);
 	if (uAlphaTest > 0.0 && c.a < uAlphaTest) discard;
 #ifdef DA_GLOW
 	if (!daIsShadowPass(PROJECTION_MATRIX)) {
@@ -42,7 +48,7 @@ void fragment() {
 	}
 #endif
 	c.rgb = mix(c.rgb, daFogColor, daFogF(viewZ, CAMERA_VISIBLE_LAYERS) * uFogK);
-	ALBEDO = c.rgb;
+	ALBEDO = daOut(c.rgb);
 #ifdef DA_TRANSPARENT
 	ALPHA = c.a;
 #endif

@@ -69,6 +69,8 @@ var status := {"text": "", "err": false, "t": 0.0}   # mp card line (host failur
 var name := ""
 var addr := ""
 var _lanSeen := 0
+const WEB_NOTE := "DESKTOP ONLY"
+var WEB: bool = OS.has_feature("web")   # browser build: online multiplayer (ENet/UDP) unavailable
 
 func _init(menu) -> void:
 	m = menu
@@ -120,13 +122,17 @@ func enter(scr: String, fromMode) -> void:
 	_go(scr, true)
 
 func mainItems() -> Array:
-	return [
+	var items := [
 		{"ch": "2", "label": "SINGLE PLAYER", "act": func(): _single()},
-		{"ch": "3", "label": "MULTIPLAYER", "act": func(): _go("mp")},
+		# web build: no ENet/UDP in browsers -> the pill stays (greyed, "DESKTOP ONLY" tag) but only says no
+		{"ch": "3", "label": "MULTIPLAYER", "off": WEB, "act": func(): m._play("ui_denied", {"vol": 0.6}) if WEB else _go("mp")},
 		{"ch": "4", "label": "OPTIONS", "act": func(): _go("options")},
 		{"ch": "5", "label": "CONTROLS", "act": func(): _go("controls")},
 		{"ch": "7", "label": "QUIT", "act": func(): _quit()},
 	]
+	if WEB:
+		items.pop_back()   # a browser tab can't be quit (it would only stop the engine on a black canvas)
+	return items
 
 # Switches the front screen (sounds + camera + hit regions). silent: no clack (entering the menu).
 func _go(scr: String, silent: bool = false) -> void:
@@ -842,7 +848,17 @@ func _drawMain(ci: Control) -> void:
 		var dx: float = (1.0 - m.easeOutBack(p, 1.4)) * 160.0
 		var it: Dictionary = items[i]
 		var warn: bool = it.label == "QUIT" and quitArm > 0.0
-		m._drawPill(ci, PX + dx, PY + i * PSTEP, it.ch, "QUIT? SURE" if warn else it.label, i == sel, warn, a)
+		var off_: bool = it.get("off", false)
+		m._drawPill(ci, PX + dx, PY + i * PSTEP, it.ch, "QUIT? SURE" if warn else it.label, i == sel, warn, a * (0.5 if off_ else 1.0))
+		if off_:
+			# a blue sticker on the pill's right end (the .gpanel tag style)
+			var tls := 18.0 * 0.12
+			var tw: float = m._tw("sign", 18, WEB_NOTE, tls) + 24.0
+			var th: float = m._lh(m._fonts.sign, 18) + 12.0
+			ci.draw_set_transform(Vector2(PX + dx + 640.0 - tw / 2.0 - 10.0, PY + i * PSTEP + 14.0), deg_to_rad(-4.0), Vector2.ONE)
+			m._paintBox(ci, "tag%d" % int(tw), -tw / 2.0, -th / 2.0, tw, th, {"r": 8, "bg": "#2F5BD3"}, a)
+			m._txt(ci, "sign", 18, -tw / 2.0 + 12.0, 0.0, WEB_NOTE, "#F6E7C8", tls, [], a)
+			ci.draw_set_transform_matrix(Transform2D.IDENTITY)
 
 func _drawRowsCard(ci: Control) -> void:
 	var rows := _rows()

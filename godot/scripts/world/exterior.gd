@@ -31,7 +31,11 @@ varying vec3 vDir;
 void vertex() {
 	vDir = normalize(VERTEX);
 	POSITION = PROJECTION_MATRIX * MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	POSITION.z = -POSITION.w * 0.999999;   // Compatibility (web): reversed-Z over a -1..1 depth range, far plane z = -w
+#else
 	POSITION.z = POSITION.w * 0.000001;
+#endif
 }
 void fragment() {
 	float h = vDir.y;
@@ -56,7 +60,11 @@ void vertex() {
 	vTw = 0.6 + 0.4 * sin(TIME * (1.3 + aPhase) + aPhase * 40.0);
 	float size = aSize * (0.8 + 0.3 * vTw);
 	p.xy += (UV * 2.0 - 1.0) * size / VIEWPORT_SIZE * p.w;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	p.z = -p.w * 0.999998;
+#else
 	p.z = p.w * 0.000002;
+#endif
 	POSITION = p;
 }
 void fragment() {

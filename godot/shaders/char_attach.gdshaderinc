@@ -41,15 +41,15 @@ varying vec4 vRFC;           // roughness, fog keep factor, clearcoat keep facto
 
 vec4 daMapSample(vec2 uv) {
 	vec2 st = vec2(uv.x, uMapFlip > 0.5 ? 1.0 - uv.y : uv.y);
-	if (uMapMode == 1) return texture(mapRL, st);
-	if (uMapMode == 2) return texture(mapCL, st);
-	if (uMapMode == 3) return texture(mapRN, st);
-	return texture(mapCN, st);
+	if (uMapMode == 1) return daIn4(texture(mapRL, st));
+	if (uMapMode == 2) return daIn4(texture(mapCL, st));
+	if (uMapMode == 3) return daIn4(texture(mapRN, st));
+	return daIn4(texture(mapCN, st));
 }
 
 void fragment() {
 	float viewZ = -VERTEX.z;
-	vec4 diffuseColor = vec4(uColor, uOpacity);
+	vec4 diffuseColor = vec4(daIn(uColor), uOpacity);
 	if (uMapMode > 0) diffuseColor *= daMapSample(UV);
 	if (uVColor > 0.5) diffuseColor.rgb *= COLOR.rgb;
 
@@ -87,7 +87,7 @@ void fragment() {
 		vec3 cwi = iblIrr * DA_RECIPROCAL_PI;
 		outgoing = rad * ss + ms * cwi + diffC * (1.0 - (ssD + msD)) * cwi;
 	}
-	outgoing += uEmissive * uEmissiveIntensity;
+	outgoing += daIn(uEmissive) * uEmissiveIntensity;
 
 	// MeshPhysicalMaterial clearcoat: outgoing * (1 - cc Fcc) + clearcoat specular (direct in light())
 	float ccKeep = 1.0;
@@ -106,11 +106,11 @@ void fragment() {
 
 	// ATT_FRAG_OUT: fresnel rim
 	float rim = pow(1.0 - dotNV, 2.6);
-	outgoing += uRimColor * rim * uRimStrength * uRimAmbient * 1.5;
+	outgoing += daIn(uRimColor) * rim * uRimStrength * uRimAmbient * 1.5;
 
 	float fogK = daFogF(viewZ, CAMERA_VISIBLE_LAYERS) * uFogK;
 	float fogKeep = 1.0 - fogK;
-	EMISSION = outgoing * fogKeep + daFogColor * fogK;
+	EMISSION = daOut(outgoing * fogKeep + daFogColor * fogK);
 
 	vDiff = diffC;
 	vSpecB = specB;

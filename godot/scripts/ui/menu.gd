@@ -190,6 +190,12 @@ uniform float uUI;
 uniform float uBright;
 uniform float uSeam;
 float h12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+// Compatibility (web): a 3D view arrives sRGB-encoded (the scene shader's linear_to_srgb approximation): decode it.
+vec3 daDec(vec3 c) { return mix(vec3(0.0), pow((max(c, vec3(0.0)) + 0.055) / 1.055, vec3(2.4)), vec3(greaterThan(c, vec3(0.0)))); }
+#else
+vec3 daDec(vec3 c) { return c; }
+#endif
 vec4 tex(sampler2D s, vec2 uv) { return texture(s, vec2(uv.x, 1.0 - uv.y)); }
 void fragment() {
 	vec2 vUv = vec2(UV.x, 1.0 - UV.y);
@@ -200,7 +206,7 @@ void fragment() {
 	float line = floor(uv.y * 240.0);
 	float tj = floor(uTime * 30.0);
 	uv.x += (h12(vec2(line, tj)) - 0.5) * uJitter * 0.05 + sin(uv.y * 26.0 + uTime * 19.0) * uJitter * 0.012;
-	vec3 pic = (uPicLin > 0.5 ? tex(tPicL, uv).rgb : tex(tPicS, uv).rgb) * uPic;
+	vec3 pic = (uPicLin > 0.5 ? daDec(tex(tPicL, uv).rgb) : tex(tPicS, uv).rgb) * uPic;
 	vec4 ui = tex(tUI, uv);
 	pic = mix(pic, ui.rgb, ui.a * uUI);
 	float n = h12(floor(vUv * vec2(220.0, 165.0)) + tj * vec2(17.3, 91.7));
@@ -1818,7 +1824,7 @@ func _lightRig(scene: Node3D, o: Dictionary) -> Dictionary:
 	key.light_color = Color(o.key)
 	key.light_energy = float(o.keyI)
 	key.light_specular = 1.0
-	key.shadow_enabled = true
+	key.shadow_enabled = not DAU.isCompat()   # web: a shadowed light is an extra pass that Compatibility adds in sRGB (too bright)
 	key.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
 	key.directional_shadow_max_distance = 9.0     # the JS shadow camera box -4.5..4.5
 	key.shadow_bias = 0.03

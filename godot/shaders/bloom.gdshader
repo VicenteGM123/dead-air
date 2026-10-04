@@ -34,6 +34,10 @@ void fragment() {
 	vec2 vUv = UV;
 	if (mode == 0) {
 		vec4 texel = texture(colorTexture, vUv);
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+		// the world view is sRGB-encoded under Compatibility (see post.gdshader daCompatIn)
+		texel.rgb = mix(vec3(0.0), pow((max(texel.rgb, vec3(0.0)) + 0.055) / 1.055, vec3(2.4)), vec3(greaterThan(texel.rgb, vec3(0.0))));
+#endif
 		float v = dot(vec3(0.2126, 0.7152, 0.0722), texel.rgb);
 		float alpha = smoothstep(luminosityThreshold, luminosityThreshold + smoothWidth, v);
 		COLOR = mix(vec4(0.0), texel, alpha);

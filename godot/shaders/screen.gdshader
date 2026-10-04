@@ -49,7 +49,7 @@ void fragment() {
 	float inside = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
 	vec2 off = vec2(uChroma * uTexel.x, 0.0);
 	vec2 st = vec2(uv.x, uFlip > 0.5 ? 1.0 - uv.y : uv.y);
-	vec3 col = vec3(texture(tScreen, st + off).r, texture(tScreen, st).g, texture(tScreen, st - off).b);
+	vec3 col = daIn(vec3(texture(tScreen, st + off).r, texture(tScreen, st).g, texture(tScreen, st - off).b));
 	float sl = 0.5 + 0.5 * cos(uv.y * 2.0 * DA_PI * uLines);
 	col *= 1.0 - uScan * (1.0 - sl);
 	col *= 0.95 + 0.05 * sin(uv.y * 7.0 - uTime * 2.3);
@@ -65,5 +65,5 @@ void fragment() {
 	vec3 outc = col + glass * uGloss;
 	if (!daIsShadowPass(PROJECTION_MATRIX) && daOccDrop(vView.z, vDaW, FRAGCOORD.xy, CAMERA_POSITION_WORLD)) discard;
 	outc = mix(outc, daFogColor, daFogF(vView.z, CAMERA_VISIBLE_LAYERS) * uFogK);
-	ALBEDO = outc;
+	ALBEDO = daOut(outc);
 }

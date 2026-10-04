@@ -835,7 +835,11 @@ uniform sampler2D map : source_color, filter_linear_mipmap, repeat_disable;
 uniform float bias = 4.0;
 void vertex() {
 	POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	POSITION.z += bias * 1.2e-7 * POSITION.w;   // Compatibility (web): the reversed-Z depth range is -1..1 (twice as wide)
+#else
 	POSITION.z += bias * 6e-8 * POSITION.w;   // polygonOffset toward the camera (reverse-Z)
+#endif
 }
 void fragment() {
 	vec4 t = texture(map, UV);
@@ -858,7 +862,11 @@ uniform float opacity = 0.5;
 uniform sampler2D alpha_map : filter_linear_mipmap, repeat_disable;
 void vertex() {
 	POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	POSITION.z += 3.0 * 1.2e-7 * POSITION.w;
+#else
 	POSITION.z += 3.0 * 6e-8 * POSITION.w;
+#endif
 }
 void fragment() {
 	vec4 t = texture(alpha_map, UV);

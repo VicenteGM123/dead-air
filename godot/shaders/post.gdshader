@@ -45,10 +45,22 @@ float box(vec2 uv, vec2 px) {
 	return e.x * e.y;
 }
 
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+// Compatibility (web build): the 3D view arrives sRGB-encoded (scene.glsl ends every pass with its linear_to_srgb
+// approximation, even in an HDR 2D viewport), so it is decoded back with that approximation's exact inverse.
+vec3 daCompatIn(vec3 c) {
+	return mix(vec3(0.0), pow((max(c, vec3(0.0)) + 0.055) / 1.055, vec3(2.4)), vec3(greaterThan(c, vec3(0.0))));
+}
+#endif
+
 // the scene target after the UnrealBloomPass additive blend
 vec3 tex(vec2 uv) {
 	vec2 st = vec2(uv.x, 1.0 - uv.y);
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	return daCompatIn(texture(tDiffuse, st).rgb) + texture(tBloom, st).rgb;
+#else
 	return texture(tDiffuse, st).rgb + texture(tBloom, st).rgb;
+#endif
 }
 
 vec3 RRTAndODTFit(vec3 v) {

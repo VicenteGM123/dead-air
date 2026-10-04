@@ -2595,7 +2595,7 @@ void fragment() {
 		cols[i] = linColor
 		var c = _inst(inst, i)
 		if c is GeometryInstance3D:
-			(c as GeometryInstance3D).set_instance_shader_parameter("instanceColor", linColor.linear_to_srgb())
+			DAU.setInstanceColor(c as GeometryInstance3D, linColor.linear_to_srgb())
 
 	static func instGetColor(inst: Node3D, i: int) -> Color:
 		var cols = DAU.ud(inst).get("_instColors")

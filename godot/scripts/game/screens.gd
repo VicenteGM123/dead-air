@@ -230,13 +230,19 @@ uniform vec2 uTexel;
 uniform float uExposure;
 uniform float uSat;
 uniform float uContrast;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+// Compatibility (web): a 3D view arrives sRGB-encoded (the scene shader's linear_to_srgb approximation): decode it.
+vec3 daDec(vec3 c) { return mix(vec3(0.0), pow((max(c, vec3(0.0)) + 0.055) / 1.055, vec3(2.4)), vec3(greaterThan(c, vec3(0.0)))); }
+#else
+vec3 daDec(vec3 c) { return c; }
+#endif
 vec3 daAces( vec3 x ) { return clamp( ( x * ( 2.51 * x + 0.03 ) ) / ( x * ( 2.43 * x + 0.59 ) + 0.14 ), 0.0, 1.0 ); }
 vec3 daToSrgb( vec3 c ) { return mix( c * 12.92, 1.055 * pow( c, vec3( 1.0 / 2.4 ) ) - 0.055, step( vec3( 0.0031308 ), c ) ); }
 void fragment() {
 	vec2 vUv = UV;
-	vec3 c = texture( tSrc, vUv ).rgb;
-	c.r = mix( c.r, texture( tSrc, vUv + vec2( uTexel.x * 1.5, 0.0 ) ).r, 0.4 );
-	c.b = mix( c.b, texture( tSrc, vUv - vec2( uTexel.x * 1.5, 0.0 ) ).b, 0.4 );
+	vec3 c = daDec( texture( tSrc, vUv ).rgb );
+	c.r = mix( c.r, daDec( texture( tSrc, vUv + vec2( uTexel.x * 1.5, 0.0 ) ).rgb ).r, 0.4 );
+	c.b = mix( c.b, daDec( texture( tSrc, vUv - vec2( uTexel.x * 1.5, 0.0 ) ).rgb ).b, 0.4 );
 	c = pow( daAces( max( c, vec3( 0.0 ) ) * uExposure ), vec3( 1.0 / 2.2 ) );
 	float L = dot( c, vec3( 0.299, 0.587, 0.114 ) );
 	c = mix( vec3( L ), c, uSat );

@@ -157,7 +157,7 @@ static func setInstanceColor(node: Node, lin: Color) -> void:
 	var c := lin.linear_to_srgb()
 	DAU.traverse(node, func(o):
 		if o is GeometryInstance3D:
-			(o as GeometryInstance3D).set_instance_shader_parameter("instanceColor", c))
+			DAU.setInstanceColor(o as GeometryInstance3D, c))
 
 static func instanceNode(im: Node, i: int) -> Node3D:
 	if im == null:

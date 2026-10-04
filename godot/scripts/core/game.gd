@@ -152,6 +152,8 @@ var _profOn := false
 
 func _init() -> void:
 	inst = self
+	if OS.has_feature("web"):
+		_mountWebPacks()
 	params = _parseParams()
 	_profOn = params.has("prof")
 	seed_value = int(params.seed) if params.has("seed") and (params.seed is int or params.seed is float) else randi() % 2147483648
@@ -168,6 +170,18 @@ func _ready() -> void:
 			scene = render.get("scene")
 			camera = render.get("camera")
 	boot()
+
+# Web build: the game data is split in two packs (GitHub Pages' 100 MB file limit, godot/web/export_web.sh): the
+# HTML shell (godot/web/shell.html) copies <exe>.props.pck next to the main pack; mount it before anything loads.
+func _mountWebPacks() -> void:
+	for name in ["index.props.pck"]:
+		var ok := false
+		for path in [name, "/" + name, OS.get_executable_path().get_base_dir().path_join(name)]:
+			if FileAccess.file_exists(path) and ProjectSettings.load_resource_pack(path):
+				ok = true
+				break
+		if not ok:
+			push_error("[web] resource pack %s missing: props won't load" % name)
 
 func rand() -> float:
 	return _rng.call()

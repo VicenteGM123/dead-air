@@ -74,12 +74,12 @@ vec4 daPattern(float layer, float scale, out float ok) {
 	if (layer < -0.5) return vec4(1.0, 1.0, 1.0, 0.5);
 	ok = 1.0;
 	vec3 p = vPco / scale;
-	if (vAux.z > 0.5) return texture(uPatterns, vec3(p.xy, layer));
+	if (vAux.z > 0.5) return daIn4(texture(uPatterns, vec3(p.xy, layer)));
 	vec3 w = vPw / max(1e-4, vPw.x + vPw.y + vPw.z);
 	vec4 c = vec4(0.0);
-	if (w.x > 0.01) c += w.x * texture(uPatterns, vec3(p.zy, layer));
-	if (w.y > 0.01) c += w.y * texture(uPatterns, vec3(p.xz, layer));
-	if (w.z > 0.01) c += w.z * texture(uPatterns, vec3(p.xy, layer));
+	if (w.x > 0.01) c += w.x * daIn4(texture(uPatterns, vec3(p.zy, layer)));
+	if (w.y > 0.01) c += w.y * daIn4(texture(uPatterns, vec3(p.xz, layer)));
+	if (w.z > 0.01) c += w.z * daIn4(texture(uPatterns, vec3(p.xy, layer)));
 	return c;
 }
 
@@ -122,7 +122,7 @@ void fragment() {
 	}
 
 	// color_fragment (vertex colour) + FRAG_COLOR: pattern, stitch lines, cavity
-	vec4 diffuseColor = vec4(uColor, 1.0);
+	vec4 diffuseColor = vec4(daIn(uColor), 1.0);
 	diffuseColor.rgb *= vColor;
 	int daM = int(vMat + 0.5);
 	vec4 daA = uMatA[daM];
@@ -218,20 +218,20 @@ void fragment() {
 		indirectSpec = rad * ss + ms * cwi;
 		indirectDiff = diffC * (1.0 - (ssD + msD)) * cwi;
 	}
-	vec3 outgoing = indirectDiff * ao + indirectSpec * ao * ao + uEmissive * uEmissiveIntensity;
+	vec3 outgoing = indirectDiff * ao + indirectSpec * ao * ao + daIn(uEmissive) * uEmissiveIntensity;
 
 	// FRAG_OUT: fresnel rim (brighter on up-facing normals) + fabric fuzz
 	float nv = dotNV;
 	float rim = pow(1.0 - nv, 2.6);
 	rim *= 0.5 + 0.5 * clamp(wN.y + 0.55, 0.0, 1.0);
-	outgoing += uRimColor * rim * uRimStrength * uRimAmbient * 1.1 * mix(1.0, vAO, 0.7);
+	outgoing += daIn(uRimColor) * rim * uRimStrength * uRimAmbient * 1.1 * mix(1.0, vAO, 0.7);
 	float fuzz = daB.z;
 	if (fuzz > 0.0) outgoing += daAlbedo * fuzz * pow(1.0 - nv, 2.0) * 0.22 * uRimAmbient * vAO;
 
 	// fog (three linear fog, as an affine map shared with light())
 	float fogK = daFogF(viewZ, CAMERA_VISIBLE_LAYERS) * uFogK;
 	float fogKeep = 1.0 - fogK;
-	EMISSION = outgoing * fogKeep + daFogColor * fogK;
+	EMISSION = daOut(outgoing * fogKeep + daFogColor * fogK);
 	if (uDebug == 1) EMISSION = vec3(vAO);
 	if (uDebug == 2) EMISSION = vec3(0.5 + vCav * 0.5);
 	if (uDebug == 3) EMISSION = N * 0.5 + 0.5;

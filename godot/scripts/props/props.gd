@@ -254,7 +254,7 @@ func _applyFlags(n: Node, da: Dictionary) -> void:
 		var c := Color(float(ic[0]), float(ic[1]), float(ic[2])).linear_to_srgb()
 		DAU.traverse(n, func(o):
 			if o is GeometryInstance3D:
-				o.set_instance_shader_parameter("instanceColor", c))
+				DAU.setInstanceColor(o as GeometryInstance3D, c))
 
 # Root userData: {"__node": name} -> the node, parts {name: "<node name>"} -> nodes, screens [{node}] -> {mesh}.
 func _resolve(v, byName: Dictionary, top := false):

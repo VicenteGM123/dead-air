@@ -16,6 +16,12 @@ Para jugarla: abre `godot/project.godot` en Godot 4.7 y pulsa F5. Detalles en `g
 `blender/README.md` y `tools/audio/README.md`. La versión Godot tiene además **multijugador cooperativo online
 de 1 a 4 jugadores** (MULTIPLAYER en el menú principal; ver `godot/README.md`).
 
+**[Jugar versión Godot en el navegador](https://vicentegm123.github.io/dead-air/godot-web/)** (build web de prueba,
+`godot-web/`: unos 165 MB de descarga la primera vez; Chrome/Edge/Firefox de escritorio con aceleración gráfica). En el
+navegador Godot solo tiene el renderizador Compatibility (WebGL 2): se ve casi igual, pero sin sombras proyectadas, y el
+multijugador no está disponible (los navegadores no pueden usar UDP/ENet): usa la versión de escritorio para jugar
+online. Se regenera con `sh godot/web/export_web.sh` (necesita las plantillas de exportación web de Godot 4.7.2).
+
 ## Cómo jugar
 
 **Jugar online:** https://vicentegm123.github.io/dead-air/

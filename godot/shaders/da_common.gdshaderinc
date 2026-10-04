@@ -54,6 +54,38 @@ const vec3 uBars[7] = vec3[7](vec3(0.846873224, 0.846873224, 0.846873224), vec3(
 	vec3(0.672443151, 0.0781874210, 0.672443151), vec3(0.775822222, 0.0630100146, 0.0423114114),
 	vec3(0.0423114114, 0.0975873470, 0.775822222));
 
+// ------------------------------------------------------------------------------------------------ renderer output
+// daOut(c): what a material writes to ALBEDO / EMISSION. Forward+: c (linear). Compatibility (the web build) treats
+// those outputs as sRGB (scene.glsl: albedo/emission = srgb_to_linear(x), its cubic approximation), so the linear
+// colour is pre-encoded with the exact inverse of that cubic (3 Newton steps): the lit result stays the same.
+// daIn(c): a source_color uniform / texture sample as linear. Compatibility passes both unconverted (sRGB), Forward+
+// already linearized them.
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+vec3 daIn(vec3 c) {
+	return mix(pow((c + 0.055) / 1.055, vec3(2.4)), c / 12.92, vec3(lessThanEqual(c, vec3(0.04045))));
+}
+vec3 daOut(vec3 x) {
+	x = max(x, vec3(0.0));
+	vec3 c = max(1.055 * pow(x, vec3(0.41666)) - 0.055, vec3(0.0));
+	for (int i = 0; i < 3; i++) {
+		vec3 p = c * (c * (c * 0.305306011 + 0.682171111) + 0.012522878);
+		vec3 d = c * (c * 0.915918033 + 1.364342222) + 0.012522878;
+		c = max(c - (p - x) / d, vec3(0.0));
+	}
+	return c;
+}
+#else
+vec3 daIn(vec3 c) {
+	return c;
+}
+vec3 daOut(vec3 x) {
+	return x;
+}
+#endif
+vec4 daIn4(vec4 c) {
+	return vec4(daIn(c.rgb), c.a);
+}
+
 // ------------------------------------------------------------------------------------------------ camera / passes
 bool daFullColor(uint camLayers) {
 	return (camLayers & DA_CAM_FULLCOLOR) != 0u;
