@@ -441,6 +441,13 @@ static func copyPose(hero, ghost: Dictionary) -> void:
 		if a == null or b == null:
 			continue
 		b.transform = a.transform
+		# baked hand shapes (char_runtime: one 'part:hand<L|R>_<shape>' pivot shown per hand; ':' reads '_' in a
+		# node name): follow the hero's
+		if n == "handL" or n == "handR":
+			for i in mini(a.get_child_count(), b.get_child_count()):
+				var pa: Node = a.get_child(i)
+				if pa is Node3D and String(pa.name).substr(5).begins_with("hand"):
+					(b.get_child(i) as Node3D).visible = (pa as Node3D).visible
 	var r = hero.rig.root
 	if ghost.root and r:
 		ghost.root.transform = r.transform

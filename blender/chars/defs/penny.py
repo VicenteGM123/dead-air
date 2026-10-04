@@ -12,6 +12,7 @@ import math
 
 from ..jsutil import O, nz
 from ._face import EYE_DEFAULTS
+from ._hands import handParts
 from ._sculpt import cartoonMouth, prism
 from .roxy import mergeGeos
 
@@ -32,6 +33,13 @@ MOUTH = O(
 CROWN = O(c=[0, 0.29, 0.02], r=[0.172, 0.186, 0.186])
 # headband plane: over the top of the head from ear to ear, just behind the fringe
 HB = O(n=[0, 0.371, 0.928], p=[0, 0.45, -0.1], half=0.019)
+
+
+# Hand proportions (the old in-body hand; _hands.py builds every shape from them).
+HAND = O(s=1.14, pos=[0, 0.006, 0], wrist=[0.03, 0.036], palm=[0.02, 0.047, 0.044], palmRound=0.019, ball=[0.016, 0.028, 0.02], zk=0.029 / 0.03,
+         fz=[-0.033, -0.011, 0.011, 0.032], fl=[0.064, 0.072, 0.068, 0.056], fr=[0.0098, 0.0094, 0.0086], y0=-0.088, kr=0.0098,
+         thumbR=[0.0142, 0.012, 0.0108], thumbP=[[0.012, -0.028, -0.036], [0.022, -0.053, -0.058], [0.03, -0.075, -0.062]],
+         warm='#F2A987', warmK=0.4, nails=None)
 
 
 def hbD(off):
@@ -361,18 +369,7 @@ def sculpt(sd, ctx):
                 sd.roundCone(a=[0, 0.03, 0], b=[0, -0.19, 0], ra=0.05, rb=0.044)
                 sd.cylinder(pos=[0, -0.2, 0], r=0.05, h=0.03, round=0.014, k=0.012)      # ribbed cuff
             sd.roundCone(mat='skin', a=[0, -0.2, 0], b=[0, -0.24, 0], ra=0.032, rb=0.03, k=0.006)
-        with sd.bone('handL'), sd.frame(scale=1.14, pos=[0, 0.006, 0]):
-            with sd.group(mat='skin', k=0.01, blend=0.012):
-                sd.roundCone(a=[0, 0.012, 0], b=[0.002, -0.03, 0], ra=0.03, rb=0.036, k=0.015)
-                sd.box(pos=[0.002, -0.055, 0], size=[0.02, 0.047, 0.044], round=0.019, k=0.015)
-                sd.ellipsoid(pos=[0.012, -0.045, -0.029], r=[0.016, 0.028, 0.02], k=0.012)
-                fz, fl = [-0.033, -0.011, 0.011, 0.032], [0.064, 0.072, 0.068, 0.056]
-                for i in range(4):
-                    z, l, sp = fz[i], fl[i], (i - 1.5) * 0.003
-                    sd.worm(pts=[[0.002, -0.088, z], [0.008, -0.088 - l * 0.55, z + sp], [0.018, -0.088 - l, z + sp * 1.5]], r=[0.0098, 0.0094, 0.0086], k=0.004, segs=8)
-                    sd.sphere(pos=[-0.008, -0.088, z], r=0.0098, k=0.008)
-                sd.worm(pts=[[0.012, -0.028, -0.036], [0.022, -0.053, -0.058], [0.03, -0.075, -0.062]], r=[0.0142, 0.012, 0.0108], k=0.01, segs=8)
-            sd.paint({'color': '#F2A987', 'soft': 0.02, 'strength': 0.4, 'only': ['skin']}, lambda: sd.sphere(pos=[0.004, -0.07, 0], r=0.11))
+        # hands: rigid parts, one per shape (_hands.py, HAND at the top)
 
 
 def _hband(sd, ctx=None):
@@ -438,6 +435,7 @@ DEF = O(
         hband=O(bone='head', tris=700, voxel=0.0034, sculpt=_hband),
         browL=O(bone='head', tris=380, sculpt=lambda sd, ctx=None: browShape(sd, 1)),
         browR=O(bone='head', tris=380, sculpt=lambda sd, ctx=None: browShape(sd, -1)),
+        **handParts(HAND),
     ),
     attachments=attachments,
 )

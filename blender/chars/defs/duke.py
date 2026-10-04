@@ -18,6 +18,7 @@ import math
 from ..jsutil import O
 from ._face import EYE_DEFAULTS
 from ._sculpt import prism, cartoonMouth, onEllipsoid
+from ._hands import handParts
 
 SKIN = '#F7BE98'
 HAIR = '#7B4527'
@@ -39,6 +40,13 @@ MOUTH = O(
 )
 
 
+# Hand proportions (the v4 hand; _hands.py builds every shape from them).
+HAND = O(s=1.3, pos=[0, 0.006, 0], wrist=[0.034, 0.04], palm=[0.022, 0.05, 0.048], palmRound=0.021, ball=[0.018, 0.03, 0.022], zk=1,
+         fz=[-0.036, -0.012, 0.012, 0.036], fl=[0.066, 0.074, 0.07, 0.058], fr=[0.0108, 0.0104, 0.0098], y0=-0.094, kr=0.011,
+         thumbR=[0.0155, 0.013, 0.0118], thumbP=[[0.012, -0.028, -0.04], [0.022, -0.056, -0.062], [0.03, -0.08, -0.066]],
+         warm='#F2A987', warmK=0.45, nails=None)
+
+
 # ------------------------------------------------------------------------------------------------------------
 # Torso volume shared by the shirt and the collar shell (world coords; Y = rig heights).
 def torsoShapes(sd, Y):
@@ -53,9 +61,10 @@ def headBase(sd, ex):
     smile = 1 if ex == 'smile' else 0
     sd.ellipsoid(pos=SKULL.c, r=SKULL.r)                                                # cranium
     sd.ellipsoid(pos=[0, 0.226, -0.062], r=[0.146, 0.1, 0.1], k=0.06)                   # soft face mask (eyes sit in it)
-    sd.ellipsoid(pos=[0, 0.15, -0.034], r=[0.136, 0.114, 0.14], k=0.07)                 # short round jaw
-    sd.ellipsoid(pos=[0, 0.07, -0.088], r=[0.056, 0.036, 0.048], k=0.05)                # small chin
-    sd.mirrorX(lambda: sd.sphere(pos=[0.078, 0.148 + smile * 0.013, -0.11 - smile * 0.005], r=0.054 + smile * 0.004, k=0.05))  # round cheeks
+    # char-polish: leaner jaw, a firmer chin and smaller, higher cheeks (v4 read too chubby)
+    sd.ellipsoid(pos=[0, 0.152, -0.034], r=[0.12, 0.11, 0.132], k=0.07)                 # jaw
+    sd.ellipsoid(pos=[0, 0.068, -0.088], r=[0.056, 0.04, 0.05], k=0.05)                 # chin
+    sd.mirrorX(lambda: sd.sphere(pos=[0.07, 0.158 + smile * 0.011, -0.112 - smile * 0.005], r=0.044 + smile * 0.004, k=0.05))  # cheeks
     # nose: one big friendly bulb on a soft bridge
     sd.capsule(a=[0, 0.238, -0.158], b=[0, 0.195, -0.19], r=0.018, k=0.02)
     sd.sphere(pos=[0, 0.178, -0.204], r=0.031, k=0.018)
@@ -178,16 +187,17 @@ def sculpt(sd, ctx):
                 sd.ellipsoid(op='sub', k=0.03, pos=[0, 0.2, -0.2], r=[0.142, 0.21, 0.19])                # face opening
                 n = math.hypot(1, 0.675)
                 sd.plane(op='int', k=0.03, n=[0, -1 / n, -0.675 / n], d=-0.24 / n)                         # temple -> nape
-            with sd.group(name='locks', k=0.016, blend=0.03):
+            with sd.group(name='locks', k=0.026, blend=0.03):
                 @sd.mirrorX
                 def _():
                     # top swoop: from the center part, up and forward over the forehead, back along the side; the tip
                     # flicks out at the temple
-                    hairLock(sd, [[2, 54, 0.024], [12, 43, 0.058], [36, 38, 0.058], [64, 28, 0.036], [88, 22, 0.022], [104, 24, 0.042]],
-                             [0.03, 0.05, 0.05, 0.042, 0.028, 0.008], {'flat': 0.55})
+                    # (char-polish: lower lift + flatter: a soft feathered swoop instead of a thick rolled brim)
+                    hairLock(sd, [[8, 52, 0.01], [14, 45, 0.034], [36, 39, 0.04], [64, 29, 0.028], [88, 22, 0.018], [106, 20, 0.016]],
+                             [0.034, 0.054, 0.054, 0.046, 0.03, 0.008], {'flat': 0.44})
                     # side wing: from the temple back over the top of the ear; the tip flicks out behind the ear
-                    hairLock(sd, [[56, 10, 0.008], [76, 2, 0.017], [96, -4, 0.02], [112, -8, 0.04]],
-                             [0.024, 0.036, 0.034, 0.008], {'flat': 0.45})
+                    hairLock(sd, [[56, 12, 0.008], [76, 4, 0.016], [96, -2, 0.018], [114, -6, 0.028]],
+                             [0.026, 0.038, 0.034, 0.006], {'flat': 0.42})
                     # back locks: down from the crown to ear-lobe height, flipped out at the tip
                     hairLock(sd, [[150, 10, 0.02], [150, -25, 0.025], [148, -45, 0.03], [142, -54, 0.05]],
                              [0.045, 0.05, 0.042, 0.008], {'flat': 0.55})
@@ -206,10 +216,17 @@ def sculpt(sd, ctx):
         with sd.group(name='mustache', mat='stache', k=0.02):
             @sd.mirrorX
             def _():
-                P = [[0.0, 0.147, 0.005], [0.02, 0.145, 0.0065], [0.04, 0.139, 0.006], [0.058, 0.136 + lift * 0.5, 0.004], [0.073, 0.141 + lift, 0.0005], [0.084, 0.151 + lift * 1.3, -0.004]]
-                pts = sd.snapAll(G, [[p[0], p[1], -0.25] for p in P], [p[2] for p in P])
+                # char-polish: a clear gap under the nose (it used to merge with the nose bulb and read as a dog's nose),
+                # a fuller 70s chevron whose ends sweep down past the mouth corners
+                P = [[0.0, 0.133, 0.006], [0.022, 0.131, 0.0072], [0.044, 0.126, 0.007], [0.061, 0.118 + lift * 0.5, 0.0055], [0.073, 0.11 + lift, 0.003], [0.081, 0.104 + lift * 1.3, 0.0]]
+                # laid on the lip by a straight -z search (snapping from in front of the face pulled it onto the nose)
+                pts = []
+                for x, y, lf in P:
+                    q = [x, y, surfZ(sd, G, x, y)]
+                    n = sd.normalAt(G, q)
+                    pts.append([q[0] + n[0] * lf, q[1] + n[1] * lf, q[2] + n[2] * lf])
                 ups = [sd.normalAt(G, p) for p in pts]
-                sd.worm(pts=pts, r=[0.0125, 0.0165, 0.0158, 0.0118, 0.0072, 0.0034], flat=0.48, up=ups[0], ups=ups, segs=20)
+                sd.worm(pts=pts, r=[0.0128, 0.0158, 0.0156, 0.0128, 0.0088, 0.0036], flat=0.46, up=ups[0], ups=ups, segs=20)
 
     # ---------------- belt + pants ----------------
     with sd.group(name='pelvis', mat='denim', bone='torso', k=0.03):
@@ -268,19 +285,7 @@ def sculpt(sd, ctx):
                 sd.torus(pos=[0, -0.114, 0], R=0.056, r=0.021)
                 sd.cylinder(pos=[0, -0.114, 0], r=0.063, h=0.021, round=0.013)
             sd.roundCone(mat='skin', a=[0, -0.1, 0], b=[0, -0.255, 0], ra=0.047, rb=0.041, k=0.008)
-        with sd.bone('handL'), sd.frame(scale=1.3, pos=[0, 0.006, 0]):
-            with sd.group(mat='skin', k=0.01, blend=0.012):
-                sd.roundCone(a=[0, 0.012, 0], b=[0.002, -0.03, 0], ra=0.034, rb=0.04, k=0.015)
-                sd.box(pos=[0.002, -0.055, 0], size=[0.022, 0.05, 0.048], round=0.021, k=0.015)
-                sd.ellipsoid(pos=[0.012, -0.045, -0.03], r=[0.018, 0.03, 0.022], k=0.012)
-                fz, fl = [-0.036, -0.012, 0.012, 0.036], [0.066, 0.074, 0.07, 0.058]
-                for i in range(4):
-                    z, l, sp = fz[i], fl[i], (i - 1.5) * 0.003
-                    sd.worm(pts=[[0.002, -0.094, z], [0.008, -0.094 - l * 0.55, z + sp], [0.018, -0.094 - l, z + sp * 1.5]], r=[0.0108, 0.0104, 0.0098], k=0.004, segs=8)
-                    sd.sphere(pos=[-0.008, -0.094, z], r=0.011, k=0.008)
-                sd.worm(pts=[[0.012, -0.028, -0.04], [0.022, -0.056, -0.062], [0.03, -0.08, -0.066]], r=[0.0155, 0.013, 0.0118], k=0.01, segs=8)
-            # warm the hands to the face's rosy skin (they read paler: no AO pockets, full key light)
-            sd.paint({'color': '#F2A987', 'soft': 0.02, 'strength': 0.45, 'only': ['skin']}, lambda: sd.sphere(pos=[0.004, -0.07, 0], r=0.11))
+        # hands: rigid parts, one per shape (_hands.py, HAND at the top)
 
 
 def attachments(b, ctx=None):
@@ -324,6 +329,7 @@ DEF = O(
     parts=O(
         browL=O(bone='head', tris=380, sculpt=lambda sd, ctx=None: browShape(sd, 1)),
         browR=O(bone='head', tris=380, sculpt=lambda sd, ctx=None: browShape(sd, -1)),
+        **handParts(HAND),
     ),
     attachments=attachments,
 )

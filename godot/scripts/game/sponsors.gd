@@ -1776,9 +1776,15 @@ func _poseCtx(ad: Dictionary, p, G: Dictionary, dups, ID: String, rig) -> void:
 		if j == null or e == null:
 			return
 		j.quaternion = Rig.slerp(Rig.quatOf(j), _qe(e), w * W)
+	var heroAn = _f(p.hero, "animator") if p.get("hero") != null else null
 	var pose := func(P: Dictionary, w: float = 1.0) -> void:
 		for n in P:
 			setJ.call(n, P[n], w)
+		# the pose's hand shapes (thumbs up, finger guns ...: Rig.POSE_HANDS, baked hand parts)
+		if w * W >= 0.5 and heroAn != null and heroAn.has_method("hand"):
+			var hs := Rig.poseHands(P)
+			for side in hs:
+				heroAn.hand(side, hs[side])
 	m.position = S.spot
 	m.rotation.y = ad.faceYaw
 	var face = ad.get("face")
@@ -1926,6 +1932,8 @@ func _poseCtx(ad: Dictionary, p, G: Dictionary, dups, ID: String, rig) -> void:
 				setJ.call("elbowR", [0.15, 0, 0])
 				setJ.call("shoulderL", [0.1, 0, 0.1])
 				setJ.call("head", [0.1, 0, 0.22])
+				if heroAn != null and heroAn.has_method("hand"):
+					heroAn.hand("R", "gun")
 				setJ.call("spine", [0, 0.12, 0])
 				expr.call("wink")
 		"roller_boogie":
@@ -2014,6 +2022,10 @@ func _propAtHand(obj, p, slot: String, m: Node3D, offset: Array, tilt: Array, vi
 	if not (s is Node3D):
 		return
 	root.visible = vis > 0
+	# the hand holding a prop closes around it (baked 'grip' hand shape)
+	var an = _f(p.hero, "animator")
+	if vis > 0 and an != null and an.has_method("hand"):
+		an.hand("L" if slot == "handL" else "R", "grip")
 	var v: Vector3 = _gxf(m).affine_inverse() * _wpos(s)
 	root.position = Vector3(v.x + offset[0], v.y + offset[1], v.z + offset[2])
 	root.rotation = Vector3(tilt[0], tilt[1], tilt[2] + roll)

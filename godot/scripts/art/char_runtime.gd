@@ -282,6 +282,15 @@ static func buildCharacter(defOrId, opts: Dictionary = {}) -> Character:
 		parts[name] = pivot
 		if String(name).begins_with("brow"):
 			face.addBrow(pivot, "L" if String(name).ends_with("L") else "R")
+		# hand shapes (hand<L|R>_<shape>, char-polish): one shown per hand, 'open' by default (CharSkeleton.applyHands)
+		var nm := String(name)
+		if nm.length() > 6 and nm.begins_with("hand") and nm[5] == "_":
+			var side := nm[4]
+			var shape := nm.substr(6)
+			if not skel.handSets.has(side):
+				skel.handSets[side] = {}
+			skel.handSets[side][shape] = pivot
+			pivot.visible = shape == "open"
 
 	# Attachments (built by the Blender half; reparented to their joints with their JS local transforms)
 	var rim = def.get("rim")
@@ -354,6 +363,8 @@ static func buildCharacter(defOrId, opts: Dictionary = {}) -> Character:
 		else:
 			style = def.get("animStyle") if def.get("animStyle") != null else ("zombie" if def.get("kind") == "zombie" else "hero")
 		animator = Rig.Animator.new(rig, style)
+		if not skel.handSets.is_empty():
+			skel.handReq = animator.hands
 		var orig := Callable(animator, "_procUpdate")
 		var armOut: float = def.armOut if def.get("armOut") != null else 0.15
 		# [joint, [x, y, z]] pairs resolved once
@@ -486,6 +497,11 @@ class Character extends RefCounted:
 # game's updates (process_priority 1000; the JS skeleton read bone.matrixWorld at render time).
 class CharSkeleton extends Skeleton3D:
 	var joints: Array = []
+	# Hand shapes (char-polish): handSets side -> {shape: part pivot}; handReq = the animator's `hands` (side ->
+	# [shape, process frame]); a request older than the previous frame falls back to 'open'.
+	var handSets := {}
+	var handReq := {}
+	var _handCur := {}
 
 	func _init() -> void:
 		process_priority = 1000
@@ -496,6 +512,22 @@ class CharSkeleton extends Skeleton3D:
 
 	func _process(_delta: float) -> void:
 		sync()
+		if not handSets.is_empty():
+			applyHands()
+
+	func applyHands() -> void:
+		var now := Engine.get_process_frames()
+		for side in handSets:
+			var set_: Dictionary = handSets[side]
+			var want := "open"
+			var r = handReq.get(side)
+			if r is Array and int(r[1]) >= now - 1 and set_.has(r[0]):
+				want = r[0]
+			if _handCur.get(side, "open") == want:
+				continue
+			_handCur[side] = want
+			for shape in set_:
+				(set_[shape] as Node3D).visible = shape == want
 
 	func sync() -> void:
 		for i in joints.size():

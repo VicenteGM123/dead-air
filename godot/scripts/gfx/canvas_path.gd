@@ -362,9 +362,12 @@ class Builder:
 		var n := int(ceil(absf(sweepA) / step))
 		if absf(sweepA) >= TAU - 1e-9:
 			n = maxi(n, 8)
-		if rot == 0.0 and minf(rx, ry) * absf(xf.determinant()) / sc >= 0.05:
+		if rot == 0.0 and absf(sweepA) >= TAU - 1e-9 and minf(rx, ry) * absf(xf.determinant()) / sc >= 0.3 \
+				and (xf * c).length() < 4096.0:
 			# fast path (dot matrices draw thousands of circles): the same points as the loop below, built with
-			# native array transforms (no consecutive duplicates possible at this size, so _addDev has nothing to skip)
+			# native array transforms. Full circles only: n >= 8 steps of >= 0.0499 rad on a radius >= 0.3 device px
+			# put consecutive points >= 0.015 px apart (far above the f32 spacing at < 4096 px), so _addDev would
+			# skip none of them.
 			cur.append_array(xf * (Transform2D(Vector2(1.0, 0.0), Vector2(0.0, 1.0), c) * _arcOffsets(a0, sweepA, n, rx, ry)))
 			return
 		for i in range(1, n + 1):

@@ -178,14 +178,21 @@ static func _makePoses() -> Dictionary:
 	var P := {
 		# disco point to the sky: right arm up and out (~48 deg from vertical, a little forward), clear of the afro; left
 		# hand on the hip, hips kicked, torso and head leaning away from the arm, chin up toward the hand
-		"point": {"shoulderR": [2.7, 0, 0.82], "elbowR": [0.1, 0, 0], "handR": [0, 1.3, 0], "shoulderL": [-0.2, 0, -0.55], "elbowL": [1.75, 0, 0],
+		# (char-polish: the left fist sits ON the hip: upper arm out and twisted so the elbow bends back to the hip, it
+		# used to float in front of the belly)
+		"point": {"shoulderR": [2.7, 0, 0.82], "elbowR": [0.1, 0, 0], "handR": [0, 1.3, 0], "shoulderL": [-0.1, 0.9, -0.75], "elbowL": [1.9, 0, 0],
 			"hips": [0, 0, 0.08], "spine": [0, 0, 0.06], "head": [0.25, -0.15, 0.1]},
 		# double thumbs-up at chest height, hands apart (the old inward version put both hands in front of the chin)
-		"thumbsup": {"shoulderR": [0.8, 0, 0.25], "elbowR": [1.5, 0, 0], "shoulderL": [0.8, 0, -0.25], "elbowL": [1.5, 0, 0], "head": [0.1, 0, 0.12]},
-		"fingerguns": {"shoulderR": [1.45, 0, -0.25], "elbowR": [0.25, 0, 0], "shoulderL": [1.45, 0, 0.25], "elbowL": [0.25, 0, 0], "chest": [0, 0.2, 0]},
+		# (char-polish: wrists bent back so the fists stand upright and the thumbs point straight up)
+		"thumbsup": {"shoulderR": [0.8, 0, 0.25], "elbowR": [1.5, 0, 0], "shoulderL": [0.8, 0, -0.25], "elbowL": [1.5, 0, 0], "head": [0.1, 0, 0.12],
+			"handR": [-0.7, 0, 0], "handL": [-0.7, 0, 0]},
+		# hip-level finger guns aimed at the viewer, elbows bent, a cocky lean back + head tilt (char-polish: the arms used
+		# to stick straight at the camera, hands hiding the chest)
+		"fingerguns": {"shoulderR": [0.65, 0, 0.32], "elbowR": [0.95, 0, 0], "shoulderL": [0.65, 0, -0.32], "elbowL": [0.95, 0, 0], "chest": [0, 0.2, 0],
+			"spine": [-0.04, 0, 0], "head": [-0.06, 0.12, 0.1]},
 		# (wrench) on the shoulder: elbow out to the side at chest height, forearm folded back up, the hand resting palm-up
 		# at the front of the shoulder beside the jaw (outside the hair curtain, not at the face); left hand on the hip
-		"shoulder": {"shoulderR": [0.82, -0.53, 0.95], "elbowR": [2.55, 0, 0], "handR": [-0.9, 0.8, 0], "shoulderL": [-0.2, 0, -0.55], "elbowL": [1.75, 0, 0],
+		"shoulder": {"shoulderR": [0.82, -0.53, 0.95], "elbowR": [2.55, 0, 0], "handR": [-0.9, 0.8, 0], "shoulderL": [-0.1, 0.9, -0.75], "elbowL": [1.9, 0, 0],
 			"head": [0.05, 0.1, 0.06]},
 		"shrug": {"shoulderR": [0.4, 0, -0.9], "elbowR": [1.5, 0, 0], "shoulderL": [0.4, 0, 0.9], "elbowL": [1.5, 0, 0], "head": [0, 0, 0.2]},
 		# upper arm out to the side and slightly up, forearm up: the hand waves beside the head, not over it
@@ -200,6 +207,27 @@ static func _makePoses() -> Dictionary:
 
 static func registerPose(name: String, joints: Dictionary) -> void:
 	POSES[name] = joints
+
+# Hand shapes of the named poses (char-polish): baked heroes carry one rigid hand part per shape (open, thumb, gun,
+# grip, fist; blender/chars/defs/_hands.py) and show the shape requested this frame (animator.hand(side, shape);
+# scripts/art/char_runtime.gd CharSkeleton applies it). A pose blended at weight >= 0.5 requests its shapes.
+static var POSE_HANDS := {
+	"thumbsup": {"L": "thumb", "R": "thumb"},
+	"fingerguns": {"L": "gun", "R": "gun"},
+	"point": {"R": "gun", "L": "fist"},
+	"shoulder": {"L": "fist"},
+	"commercial_skip": {"L": "thumb", "R": "thumb"},
+	"commercial_roxy": {"R": "gun", "L": "fist"},
+	"commercial_penny": {"L": "fist"},
+	"commercial_duke": {"L": "gun", "R": "gun"},
+}
+
+# Hand shapes of a pose given as its joint Dictionary (sponsors.gd poses the rig directly with POSES.<name>).
+static func poseHands(P) -> Dictionary:
+	for k in POSE_HANDS:
+		if is_same(POSES.get(k), P):
+			return POSE_HANDS[k]
+	return {}
 
 # rig.js shares ONE module-level THREE.Euler (_e) between _applyPoses (`_e.set(x, y, z)`, which keeps the Euler's
 # current order) and _alignHand (`_e.set(pitch, yaw, roll, 'YXZ')`). So once any animator has aligned a hand, every
@@ -365,6 +393,7 @@ class Animator extends RefCounted:
 	var updateFn: Callable = Callable()   # assignable `update` (see the header)
 	var postUpdate: Array = []            # Callables (rig, dt) run at the end of update() (weapons IK pose)
 	var _poses := {}
+	var hands := {}                       # side 'L'/'R' -> [shape, process frame] (hand(); POSE_HANDS)
 	var _grounded := true
 	var _hurt := 0.0
 	var squash: Rig.Spring
@@ -403,6 +432,11 @@ class Animator extends RefCounted:
 			_poses.erase(name)
 		else:
 			_poses[name] = weight
+
+	# Request a hand shape for this frame (side 'L' | 'R'; 'open' | 'thumb' | 'gun' | 'grip' | 'fist'). Without a
+	# request in the last frame the hand shows 'open'.
+	func hand(side: String, shape: String) -> void:
+		hands[side] = [shape, Engine.get_process_frames()]
 
 	func kick(amount: float = 1.0) -> void:
 		squash.kick(-3.2 * amount)
@@ -654,6 +688,10 @@ class Animator extends RefCounted:
 			var pose = Rig.POSES.get(name)
 			if pose == null:
 				continue
+			if weight >= 0.5 and Rig.POSE_HANDS.has(name):
+				var hs: Dictionary = Rig.POSE_HANDS[name]
+				for side in hs:
+					hand(side, hs[side])
 			for jn in pose:
 				var obj = J.get(jn)
 				if obj == null:

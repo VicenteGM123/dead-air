@@ -13,6 +13,7 @@ import math
 
 from ..jsutil import O, nz
 from ._face import EYE_DEFAULTS
+from ._hands import handParts
 from ._sculpt import prism, cartoonMouth
 
 SKIN = '#9C603F'
@@ -33,6 +34,13 @@ MOUTH = O(
 # Headband: the plane through the hairline at the forehead (0, 0.37, -0.13) and just in front of the ears; the afro is
 # on its +n side (top / back), the face on its -n side.
 BAND = O(n=[0, 0.607, 0.794], p=[0, 0.37, -0.13], half=0.029)
+
+
+# Hand proportions (the old in-body hand; _hands.py builds every shape from them).
+HAND = O(s=1.14, pos=[0, 0.006, 0], wrist=[0.03, 0.036], palm=[0.02, 0.047, 0.044], palmRound=0.019, ball=[0.016, 0.028, 0.02], zk=0.029 / 0.03,
+         fz=[-0.033, -0.011, 0.011, 0.032], fl=[0.064, 0.072, 0.068, 0.056], fr=[0.0098, 0.0094, 0.0086], y0=-0.088, kr=0.0098,
+         thumbR=[0.0142, 0.012, 0.0108], thumbP=[[0.012, -0.028, -0.036], [0.022, -0.053, -0.058], [0.03, -0.075, -0.062]],
+         warm=None, warmK=0, nails='#D8322B')
 
 
 def bandD(off):
@@ -376,22 +384,7 @@ def sculpt(sd, ctx):
             sd.roundCone(mat='skin', a=[0, -0.08, 0], b=[0, -0.215, 0], ra=0.042, rb=0.038, k=0.01)
         with sd.bone('elbowL'):
             sd.roundCone(mat='skin', a=[0, 0.03, 0], b=[0, -0.235, 0], ra=0.039, rb=0.032, k=0.01)
-        with sd.bone('handL'), sd.frame(scale=1.14, pos=[0, 0.006, 0]):
-            with sd.group(mat='skin', k=0.01, blend=0.012):
-                sd.roundCone(a=[0, 0.012, 0], b=[0.002, -0.03, 0], ra=0.03, rb=0.036, k=0.015)
-                sd.box(pos=[0.002, -0.055, 0], size=[0.02, 0.047, 0.044], round=0.019, k=0.015)
-                sd.ellipsoid(pos=[0.012, -0.045, -0.029], r=[0.016, 0.028, 0.02], k=0.012)
-                fz, fl = [-0.033, -0.011, 0.011, 0.032], [0.064, 0.072, 0.068, 0.056]
-                for i in range(4):
-                    z, l, sp = fz[i], fl[i], (i - 1.5) * 0.003
-                    sd.worm(pts=[[0.002, -0.088, z], [0.008, -0.088 - l * 0.55, z + sp], [0.018, -0.088 - l, z + sp * 1.5]], r=[0.0098, 0.0094, 0.0086], k=0.004, segs=8)
-                    sd.sphere(pos=[-0.008, -0.088, z], r=0.0098, k=0.008)
-                sd.worm(pts=[[0.012, -0.028, -0.036], [0.022, -0.053, -0.058], [0.03, -0.075, -0.062]], r=[0.0142, 0.012, 0.0108], k=0.01, segs=8)
-            # nail polish: red fingertips
-            with sd.paint(color='#D8322B', soft=0.002, strength=0.9, only=['skin']):
-                fz, fl = [-0.033, -0.011, 0.011, 0.032], [0.064, 0.072, 0.068, 0.056]
-                for i in range(4):
-                    sd.sphere(pos=[0.024, -0.088 - fl[i] + 0.004, fz[i] + (i - 1.5) * 0.0045], r=0.0085)
+        # hands: rigid parts, one per shape (_hands.py, HAND at the top)
 
 
 def _band_part(sd, ctx=None):
@@ -471,6 +464,7 @@ DEF = O(
         afro=O(bone='head', tris=5300, voxel=0.0045, sculpt=_afro_part),
         browL=O(bone='head', tris=380, sculpt=lambda sd, ctx=None: browShape(sd, 1)),
         browR=O(bone='head', tris=380, sculpt=lambda sd, ctx=None: browShape(sd, -1)),
+        **handParts(HAND),
     ),
     attachments=attachments,
 )

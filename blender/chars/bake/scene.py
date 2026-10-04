@@ -27,13 +27,21 @@ def buildScene(d):
     partSds = {}
     for name, p in (d.parts or {}).items():
         partSds[name] = buildTree(d, ctx, None, p.sculpt)
+    # parts with ao='self' (alternative hand shapes sharing one place) are left out of the shared AO scene: each one
+    # is shaded against the body + the parts in it + itself (aoScene), never against its sibling shapes
+    shared = [sd] + [partSds[n] for n, p in (d.parts or {}).items() if p.ao != 'self']
+    ao = aoScene(shared)
+    return O(d=d, R=R, ctx=ctx, sd=sd, partSds=partSds, aoRoot=ao, segments=segments, aoShared=shared)
+
+
+def aoScene(sds):
     ao = Group('ao')
     ao.op = 'add'
     ao.k = 0
-    for s in [sd] + list(partSds.values()):
+    for s in sds:
         ao.children.append(_as_add(s.root))
     compileTree(ao)
-    return O(d=d, R=R, ctx=ctx, sd=sd, partSds=partSds, aoRoot=ao, segments=segments)
+    return ao
 
 
 def _as_add(root):

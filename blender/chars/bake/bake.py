@@ -11,7 +11,7 @@ import numpy as np
 
 from ..jsutil import O, jsround
 from ..sdf import makeSampler, FullEvaluator, linear_to_srgb, srgb_to_linear
-from .scene import buildScene, buildTree
+from .scene import buildScene, buildTree, aoScene
 from .mesher import surfaceNets
 from .attrib import sampleMesh, cutBorders, patternCoords
 from .skin import computeSkin
@@ -175,7 +175,10 @@ def bakeChar(d, log=print, voxel=None, tris=None, quick=False):
     partMeshes = {}
     for name, p in (d.parts or {}).items():
         log(" part '%s':" % name)
-        m = bakeTree(partSds[name], d, O(voxel=p.voxel or voxel * 0.8, tris=p.tris or 600, log=log, skin=None, aoTrees=aoTrees))
+        pt = aoTrees
+        if p.ao == 'self':
+            pt = makeRegionTrees(aoScene(scene.aoShared + [partSds[name]]), 0.08, B.get('aoReach', 0.16))
+        m = bakeTree(partSds[name], d, O(voxel=p.voxel or voxel * 0.8, tris=p.tris or 600, log=log, skin=None, aoTrees=pt))
         partMeshes[name] = m
         c = [m.qbox[k] + m.qbox[k + 3] / 2 for k in range(3)]
         parts[name] = O(bone=p.bone or 'head', qbox=m.qbox, pivot=p.pivot or c, tris=m.stats.tris)
