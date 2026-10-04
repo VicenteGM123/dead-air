@@ -178,9 +178,7 @@ static func _makePoses() -> Dictionary:
 	var P := {
 		# disco point to the sky: right arm up and out (~48 deg from vertical, a little forward), clear of the afro; left
 		# hand on the hip, hips kicked, torso and head leaning away from the arm, chin up toward the hand
-		# (char-polish: the left fist sits ON the hip: upper arm out and twisted so the elbow bends back to the hip, it
-		# used to float in front of the belly)
-		"point": {"shoulderR": [2.7, 0, 0.82], "elbowR": [0.1, 0, 0], "handR": [0, 1.3, 0], "shoulderL": [-0.1, 0.9, -0.75], "elbowL": [1.9, 0, 0],
+		"point": {"shoulderR": [2.7, 0, 0.82], "elbowR": [0.1, 0, 0], "handR": [0, 1.3, 0], "shoulderL": [-0.2, 0, -0.55], "elbowL": [1.75, 0, 0],
 			"hips": [0, 0, 0.08], "spine": [0, 0, 0.06], "head": [0.25, -0.15, 0.1]},
 		# double thumbs-up at chest height, hands apart (the old inward version put both hands in front of the chin)
 		# (char-polish: wrists bent back so the fists stand upright and the thumbs point straight up)
@@ -192,7 +190,7 @@ static func _makePoses() -> Dictionary:
 			"spine": [-0.04, 0, 0], "head": [-0.06, 0.12, 0.1]},
 		# (wrench) on the shoulder: elbow out to the side at chest height, forearm folded back up, the hand resting palm-up
 		# at the front of the shoulder beside the jaw (outside the hair curtain, not at the face); left hand on the hip
-		"shoulder": {"shoulderR": [0.82, -0.53, 0.95], "elbowR": [2.55, 0, 0], "handR": [-0.9, 0.8, 0], "shoulderL": [-0.1, 0.9, -0.75], "elbowL": [1.9, 0, 0],
+		"shoulder": {"shoulderR": [0.82, -0.53, 0.95], "elbowR": [2.55, 0, 0], "handR": [-0.9, 0.8, 0], "shoulderL": [-0.2, 0, -0.55], "elbowL": [1.75, 0, 0],
 			"head": [0.05, 0.1, 0.06]},
 		"shrug": {"shoulderR": [0.4, 0, -0.9], "elbowR": [1.5, 0, 0], "shoulderL": [0.4, 0, 0.9], "elbowL": [1.5, 0, 0], "head": [0, 0, 0.2]},
 		# upper arm out to the side and slightly up, forearm up: the hand waves beside the head, not over it
@@ -214,11 +212,9 @@ static func registerPose(name: String, joints: Dictionary) -> void:
 static var POSE_HANDS := {
 	"thumbsup": {"L": "thumb", "R": "thumb"},
 	"fingerguns": {"L": "gun", "R": "gun"},
-	"point": {"R": "gun", "L": "fist"},
-	"shoulder": {"L": "fist"},
+	"point": {"R": "gun"},
 	"commercial_skip": {"L": "thumb", "R": "thumb"},
-	"commercial_roxy": {"R": "gun", "L": "fist"},
-	"commercial_penny": {"L": "fist"},
+	"commercial_roxy": {"R": "gun"},
 	"commercial_duke": {"L": "gun", "R": "gun"},
 }
 
