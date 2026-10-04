@@ -362,11 +362,38 @@ class Builder:
 		var n := int(ceil(absf(sweepA) / step))
 		if absf(sweepA) >= TAU - 1e-9:
 			n = maxi(n, 8)
+		if rot == 0.0 and minf(rx, ry) * absf(xf.determinant()) / sc >= 0.05:
+			# fast path (dot matrices draw thousands of circles): the same points as the loop below, built with
+			# native array transforms (no consecutive duplicates possible at this size, so _addDev has nothing to skip)
+			cur.append_array(xf * (Transform2D(Vector2(1.0, 0.0), Vector2(0.0, 1.0), c) * _arcOffsets(a0, sweepA, n, rx, ry)))
+			return
 		for i in range(1, n + 1):
 			var a := a0 + sweepA * float(i) / n
 			var ca := cos(a) * rx
 			var sa := sin(a) * ry
 			_addDev(xf * (c + Vector2(cr * ca - sr * sa, sr * ca + cr * sa)))
+
+	# Offsets (cos(a) * rx, sin(a) * ry) of the arc points i = 1..n (a = a0 + sweepA * i / n), cached per arc (the
+	# same double expressions as the loop in ellipse(), rounded to Vector2 once).
+	static var _offCache := {}
+	static func _arcOffsets(a0: float, sweepA: float, n: int, rx: float, ry: float) -> PackedVector2Array:
+		var k2 := [a0, sweepA, rx, ry]
+		var byN = _offCache.get(n)
+		if byN == null:
+			byN = {}
+			_offCache[n] = byN
+		var hit = byN.get(k2)
+		if hit != null:
+			return hit
+		var out := PackedVector2Array()
+		out.resize(n)
+		for i in range(1, n + 1):
+			var a := a0 + sweepA * float(i) / n
+			out[i - 1] = Vector2(cos(a) * rx, sin(a) * ry)
+		if byN.size() > 4096:
+			byN.clear()
+		byN[k2] = out
+		return out
 
 	func arcTo(x1: float, y1: float, x2: float, y2: float, r: float) -> void:
 		if r < 0.0:

@@ -51,6 +51,30 @@ static func classify(p: PackedVector2Array, a: int = 0, b: int = -1) -> int:
 	var m := ev.size()
 	if m < 3:
 		return DEGEN
+	# Fast exact path (no atan2): when every turn is significant and of one sign, each turn is in (0, pi) and the
+	# turning number is the count of lower -> upper half-plane transitions of the edge direction; 1 is exactly the
+	# case the atan2 sum below classifies CONVEX. Anything else takes the full test.
+	var fsg := 0
+	var ups := 0
+	var fast := true
+	var fp := ev[m - 1]
+	for k in m:
+		var d := ev[k]
+		var cr := fp.x * d.y - fp.y * d.x
+		if not (absf(cr) > 1e-9 * sqrt((fp.x * fp.x + fp.y * fp.y) * (d.x * d.x + d.y * d.y))):
+			fast = false
+			break
+		var fs := 1 if cr > 0.0 else -1
+		if fsg == 0:
+			fsg = fs
+		elif fs != fsg:
+			fast = false
+			break
+		if fp.y < 0.0 and d.y >= 0.0:
+			ups += 1
+		fp = d
+	if fast and ups == 1:
+		return CONVEX
 	var turn := 0.0
 	var sgn := 0
 	var convex := true
@@ -251,7 +275,40 @@ static func unionTris(P: PackedVector2Array, I: PackedInt32Array) -> Array:
 		polys.append(PackedVector2Array([a, b, c]) if cr > 0.0 else PackedVector2Array([a, c, b]))
 	return sweep(polys, false)
 
+# Exact memo of the pure geometry functions (sweep, stroke): identical inputs give the identical result, so the static
+# parts of animated cards (redrawn every frame: test card grids, outlines, text strokes) skip the GDScript geometry
+# work. Keyed by the native hash of the inputs, verified by a deep compare; bounded (cleared when full). Callers get a
+# fresh outer Array (the packed arrays inside are copy-on-write values).
+const MEMO_MAX := 768
+const MEMO_MAX_PTS := 400000
+static var _memo := {}
+static var _memoPts := 0
+
+static func _memoGet(h: int, key: Array):
+	var e = _memo.get(h)
+	if e != null and e[0] == key:
+		var r: Array = e[1]
+		return r.duplicate()
+	return null
+
+static func _memoPut(h: int, key: Array, res: Array, pts: int) -> void:
+	if _memo.size() >= MEMO_MAX or _memoPts + pts > MEMO_MAX_PTS:
+		_memo.clear()
+		_memoPts = 0
+	_memo[h] = [key.duplicate(true), res.duplicate()]   # (the caller keeps its own key arrays)
+	_memoPts += pts
+
 static func sweep(polys: Array, evenodd: bool) -> Array:
+	var key := [polys, evenodd]
+	var h := hash(key)
+	var hit = _memoGet(h, key)
+	if hit != null:
+		return hit
+	var res := _sweepRaw(polys, evenodd)
+	_memoPut(h, key, res, (res[0] as PackedVector2Array).size())
+	return res
+
+static func _sweepRaw(polys: Array, evenodd: bool) -> Array:
 	var ex0 := PackedFloat64Array()
 	var ey0 := PackedFloat64Array()
 	var ex1 := PackedFloat64Array()
@@ -274,10 +331,9 @@ static func sweep(polys: Array, evenodd: bool) -> Array:
 				ys.append(q.y)
 			prev = q
 	var outP := PackedVector2Array()
-	var outI := PackedInt32Array()
 	var ne := ew.size()
 	if ne < 2:
-		return [outP, outI]
+		return [outP, PackedInt32Array()]
 	ys.sort()
 	var uys := PackedFloat64Array()
 	for y in ys:
@@ -293,6 +349,11 @@ static func sweep(polys: Array, evenodd: bool) -> Array:
 	order.resize(ne)
 	for i in ne:
 		order[i] = int(keys[i].y)
+	# perf: per-edge slope computed once (the same expression the slab loop used per slab and try)
+	var esl := PackedFloat64Array()
+	esl.resize(ne)
+	for i in ne:
+		esl[i] = (ex1[i] - ex0[i]) / (ey1[i] - ey0[i])
 	var active := PackedInt32Array()
 	var ei := 0
 	var yi := 0
@@ -317,33 +378,32 @@ static func sweep(polys: Array, evenodd: bool) -> Array:
 		while ei < ne and ey0[order[ei]] <= ya + 1e-9:
 			active.append(order[ei])
 			ei += 1
-		# drop finished edges
-		var keep := PackedInt32Array()
-		for e in active:
-			if ey1[e] > ya + 1e-9:
-				keep.append(e)
-		active = keep
-		var na := active.size()
+		# drop finished edges (in place, order kept) and take each edge's x at ya (it only depends on ya)
+		var yaE := ya + 1e-9
+		var na := 0
+		xa.resize(active.size())
+		for r in active.size():
+			var e0 := active[r]
+			if ey1[e0] > yaE:
+				active[na] = e0
+				xa[na] = ex0[e0] + (ya - ey0[e0]) * esl[e0]
+				na += 1
+		active.resize(na)
 		if na < 2:
 			ya = yb
 			continue
 		# resolve crossings inside (ya, yb)
+		xb.resize(na)
+		srt.resize(na)
 		var ok := false
 		var tries := 0
 		while not ok:
 			tries += 1
-			xa.resize(na)
-			xb.resize(na)
-			srt.resize(na)
 			for k in na:
 				var e := active[k]
-				var dy := ey1[e] - ey0[e]
-				var sl := (ex1[e] - ex0[e]) / dy
-				var x0 := ex0[e] + (ya - ey0[e]) * sl
-				var x1 := ex0[e] + (yb - ey0[e]) * sl
-				xa[k] = x0
+				var x1 := ex0[e] + (yb - ey0[e]) * esl[e]
 				xb[k] = x1
-				srt[k] = Vector2(x0 + x1, k)
+				srt[k] = Vector2(xa[k] + x1, k)
 			srt.sort()
 			ok = true
 			if tries > 64:
@@ -362,14 +422,13 @@ static func sweep(polys: Array, evenodd: bool) -> Array:
 			if ymin < yb:
 				yb = ymin
 				ok = false
-		# emit spans
+		# emit spans (4 points each; the indices follow from the count, see below)
 		var w := 0
 		var inside := false
 		var lk := -1
 		for k in na:
 			var i3 := int(srt[k].y)
-			var e3 := active[i3]
-			w += ew[e3]
+			w += ew[active[i3]]
 			var now := (w & 1) == 1 if evenodd else w != 0
 			if now and not inside:
 				lk = i3
@@ -379,16 +438,31 @@ static func sweep(polys: Array, evenodd: bool) -> Array:
 				var ra := xa[i3]
 				var rb := xb[i3]
 				if ra - la > 1e-9 or rb - lb > 1e-9:
-					var base := outP.size()
 					outP.append(Vector2(la, ya))
 					outP.append(Vector2(ra, ya))
 					outP.append(Vector2(rb, yb))
 					outP.append(Vector2(lb, yb))
-					outI.append(base); outI.append(base + 1); outI.append(base + 2)
-					outI.append(base); outI.append(base + 2); outI.append(base + 3)
 			inside = now
 		ya = yb
-	return [outP, outI]
+	return [outP, _quadIndices(outP.size() / 4)]
+
+# Indices of n consecutive quads (4 points each): 4q + [0, 1, 2, 0, 2, 3] (cached, sliced natively).
+static var _quadIdx := PackedInt32Array()
+static func _quadIndices(n: int) -> PackedInt32Array:
+	if _quadIdx.size() < n * 6:
+		var q0 := _quadIdx.size() / 6
+		var q1 := maxi(n, q0 * 2 + 64)
+		_quadIdx.resize(q1 * 6)
+		for q in range(q0, q1):
+			var b := q * 4
+			var o := q * 6
+			_quadIdx[o] = b
+			_quadIdx[o + 1] = b + 1
+			_quadIdx[o + 2] = b + 2
+			_quadIdx[o + 3] = b
+			_quadIdx[o + 4] = b + 2
+			_quadIdx[o + 5] = b + 3
+	return _quadIdx.slice(0, n * 6)
 
 # ---------------------------------------------------------------------------------------------------- dashes
 # Splits polylines by a dash pattern (lengths in the same units as the points). Returns [subs, closedFlags]
@@ -454,6 +528,16 @@ static func dash(subs: Array, closed: Array, pattern: PackedFloat64Array, offset
 # (segment quads, join wedges, caps) that all have NEGATIVE signed area, so the nonzero union of the pieces is
 # exactly the stroked area. `tol` = flattening tolerance for round joins/caps (same units as the points).
 static func stroke(subs: Array, closed: Array, hw: float, cap: int, join: int, miterLimit: float, tol: float) -> Array:
+	var key := [subs, closed, hw, cap, join, miterLimit, tol]
+	var h := hash(key)
+	var hit = _memoGet(h, key)
+	if hit != null:
+		return hit
+	var res := _strokeRaw(subs, closed, hw, cap, join, miterLimit, tol)
+	_memoPut(h, key, res, (res[0] as PackedVector2Array).size())
+	return res
+
+static func _strokeRaw(subs: Array, closed: Array, hw: float, cap: int, join: int, miterLimit: float, tol: float) -> Array:
 	var P := PackedVector2Array()
 	var S := PackedInt32Array()
 	if hw <= 0.0:

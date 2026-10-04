@@ -439,6 +439,7 @@ class Def:
 	var opts := ""
 	var atlas = null
 	var draw: Callable
+	var sig: Callable   # optional (w, h, t, o) -> Variant: equal signatures draw identical images (redraw skipped)
 
 static var REG := {}
 static var staticCache := {}   # key -> { def, canvas, texture, opts }
@@ -458,6 +459,8 @@ static func card(id: String, spec: Dictionary, draw: Callable) -> void:
 	d.opts = spec.get("opts", "")
 	d.atlas = spec.get("atlas")
 	d.draw = draw
+	if spec.get("sig") is Callable:
+		d.sig = spec.sig
 	REG[id] = d
 
 ## Cached sub-layer (drawn once per key; cleared by invalidateAll).
@@ -550,6 +553,7 @@ class Handle:
 	var dirty := true
 	var last := 0.0
 	var renderFn: Callable
+	var lastSig = null
 	func tick(time: float) -> bool:
 		last = time
 		var f := int(floorf(time * def.fps + 1e-6)) if def.fps else 0
@@ -557,13 +561,21 @@ class Handle:
 			return false
 		frame = f
 		dirty = false
-		renderFn.call(def, ctx, f / def.fps if def.fps else time, opts)
+		var tq: float = f / def.fps if def.fps else time
+		if def.sig.is_valid():
+			# perf: the card would draw exactly the image it already shows -> keep it (no redraw, no re-upload)
+			var sg = def.sig.call(float(def.w), float(def.h), tq, opts)
+			if lastSig != null and sg == lastSig:
+				return false
+			lastSig = sg
+		renderFn.call(def, ctx, tq, opts)
 		return true
 	func set_(patch: Dictionary) -> void:
 		opts.merge(patch, true)
 		dirty = true
 	func redraw() -> void:
 		dirty = true
+		lastSig = null
 		tick(last)
 
 static func getAnimated(id: String, opts: Dictionary = {}) -> Handle:
@@ -895,13 +907,17 @@ static func dotMatrix(ctx, x: float, y: float, w: float, h: float, drawShapes: C
 	if dotMask.width != cols or dotMask.height != rows:
 		dotMask.width = cols
 		dotMask.height = rows
-	var m = dotMask.userData.ctx
-	m.setTransform(1, 0, 0, 1, 0, 0)
-	m.fillStyle = "#000"
-	m.fillRect(0, 0, cols, rows)
-	m.scale(cols / 64.0, rows / 48.0)
-	drawShapes.call(m)
-	var data: PackedByteArray = m.getImageData(0, 0, cols, rows).data
+	var data: PackedByteArray
+	if o.get("mask") is PackedByteArray:
+		data = o.mask        # perf: the mask the card's signature already drew (_tellyMask)
+	else:
+		var m = dotMask.userData.ctx
+		m.setTransform(1, 0, 0, 1, 0, 0)
+		m.fillStyle = "#000"
+		m.fillRect(0, 0, cols, rows)
+		m.scale(cols / 64.0, rows / 48.0)
+		drawShapes.call(m)
+		data = m.getImageData(0, 0, cols, rows).data
 	var sx := w / cols
 	var sy := h / rows
 	var maxR := minf(sx, sy) * 0.46
@@ -911,9 +927,13 @@ static func dotMatrix(ctx, x: float, y: float, w: float, h: float, drawShapes: C
 	if o.get("split"):
 		for j in rows:
 			shift[j] = (r.call() - 0.5) * sx * 6 if r.call() < 0.12 else 0.0
-	var dots := DAPath2D.new()
-	var halo := DAPath2D.new()
+	# perf: the dots / halo paths (per dot: moveTo(cx + r, cy) + arc(cx, cy, r, 0, TAU)) as rows of [cx, cy, r] for
+	# ctx.fillCircleRows (the same fill as ctx.fill(path), with the flattened geometry cached per row)
+	var dots: Array = []
+	var halo: Array = []
 	for j in rows:
+		var rd := PackedFloat64Array()
+		var rh := PackedFloat64Array()
 		for i in cols:
 			var v := data[(j * cols + i) * 4] / 255.0
 			if v < 0.14:
@@ -921,10 +941,15 @@ static func dotMatrix(ctx, x: float, y: float, w: float, h: float, drawShapes: C
 			var cx := x + (i + 0.5) * sx + shift[j]
 			var cy := y + (j + 0.5) * sy
 			var rad := maxR * (0.5 + 0.5 * v)
-			dots.moveTo(cx + rad, cy)
-			dots.arc(cx, cy, rad, 0, TAU)
-			halo.moveTo(cx + rad * 2.2, cy)
-			halo.arc(cx, cy, rad * 2.2, 0, TAU)
+			rd.append(cx)
+			rd.append(cy)
+			rd.append(rad)
+			rh.append(cx)
+			rh.append(cy)
+			rh.append(rad * 2.2)
+		if not rd.is_empty():
+			dots.append(rd)
+			halo.append(rh)
 	if o.get("dim") != false:
 		ctx.fillStyle = layerPattern(ctx, sx, sy, maxR * 0.42, _or(o.get("dim"), "rgba(127,231,255,0.08)"))
 		ctx.save()
@@ -946,7 +971,7 @@ static func dotMatrix(ctx, x: float, y: float, w: float, h: float, drawShapes: C
 	g.scale(0.25, 0.25)
 	g.translate(-x, -y)
 	g.fillStyle = _or(o.get("glow"), C.crt)
-	g.fill(halo)
+	g.fillCircleRows(halo)
 	ctx.save()
 	ctx.globalCompositeOperation = "lighter"
 	ctx.globalAlpha = 0.55
@@ -958,13 +983,13 @@ static func dotMatrix(ctx, x: float, y: float, w: float, h: float, drawShapes: C
 		ctx.globalCompositeOperation = "lighter"
 		ctx.translate(-sx * 0.6, 0)
 		ctx.fillStyle = "rgba(255,60,200,0.75)"
-		ctx.fill(dots)
+		ctx.fillCircleRows(dots)
 		ctx.translate(sx * 1.2, 0)
 		ctx.fillStyle = "rgba(80,255,140,0.75)"
-		ctx.fill(dots)
+		ctx.fillCircleRows(dots)
 		ctx.restore()
 	ctx.fillStyle = _or(o.get("core"), "#E6FDFF")
-	ctx.fill(dots)
+	ctx.fillCircleRows(dots)
 
 static var dimPatterns := {}
 ## Pattern of unlit dots (the LED panel look), cached per spacing.
@@ -989,8 +1014,39 @@ static func layerPattern(ctx, sx: float, sy: float, r: float, color: String):
 		dimPatterns[key] = tile
 	return ctx.createPattern(tile, "repeat")
 
+# perf: Telly's face mask (dotMatrix's 64x48 CPU drawing of tellyFaceShapes) for (expr, t, look, cols), memoized for
+# the last inputs: the telly_face card's signature draws it, the redraw that follows reuses it.
+static var _tmKey: Array = []
+static var _tmData := PackedByteArray()
+static func _tellyMask(expr: String, t: float, look: Array, cols: int) -> PackedByteArray:
+	var key := [expr, t, look, cols]
+	if key == _tmKey:
+		return _tmData
+	var rows := int(jround(cols * 0.75))
+	if dotMask == null:
+		dotMask = makeCanvas(64, 48)
+		dotMask.userData.ctx = dotMask.getContext("2d", {"willReadFrequently": true})
+	if dotMask.width != cols or dotMask.height != rows:
+		dotMask.width = cols
+		dotMask.height = rows
+	var m = dotMask.userData.ctx
+	m.setTransform(1, 0, 0, 1, 0, 0)
+	m.fillStyle = "#000"
+	m.fillRect(0, 0, cols, rows)
+	m.scale(cols / 64.0, rows / 48.0)
+	tellyFaceShapes(m, expr, t, look, "#fff", "#000")
+	_tmKey = key.duplicate(true)
+	_tmData = dotMask.redBytes()   # dotMatrix reads the red bytes only
+	return _tmData
+
+# Signature of the telly_face card image: the face mask + what else tellyScreen draws from its inputs.
+static func _tellySig(_w: float, _h: float, t: float, o: Dictionary) -> Array:
+	var expr: String = o.expr if TELLY_EXPRS.has(o.get("expr")) else "idle"
+	var glitch := expr == "baron_glitch"
+	return [glitch, int(floorf(t * 12)) + 3 if glitch else 0, _tellyMask(expr, t, _or(o.get("look"), [0, 0]), 64)]
+
 ## Telly's face on a CRT rectangle (background + dots).
-static func tellyScreen(ctx, x: float, y: float, w: float, h: float, expr: String, t: float, look: Array = [0, 0], cols: int = 64) -> void:
+static func tellyScreen(ctx, x: float, y: float, w: float, h: float, expr: String, t: float, look: Array = [0, 0], cols: int = 64, mask = null) -> void:
 	var rows := int(jround(cols * 0.75))
 	var glitch := expr == "baron_glitch"
 	ctx.fillStyle = radial(ctx, x + w / 2, y + h * 0.45, 0, maxf(w, h) * 0.7,
@@ -998,7 +1054,7 @@ static func tellyScreen(ctx, x: float, y: float, w: float, h: float, expr: Strin
 	ctx.fillRect(x, y, w, h)
 	dotMatrix(ctx, x + w * 0.04, y + h * 0.04, w * 0.92, h * 0.92,
 		func(m): tellyFaceShapes(m, expr, t, look, "#fff", "#000"),
-		{"cols": cols, "rows": rows, "split": glitch, "seed": int(floorf(t * 12)) + 3, "core": "#F4E8FF" if glitch else "#E6FDFF", "glow": "#C77DFF" if glitch else C.crt})
+		{"cols": cols, "rows": rows, "split": glitch, "seed": int(floorf(t * 12)) + 3, "core": "#F4E8FF" if glitch else "#E6FDFF", "glow": "#C77DFF" if glitch else C.crt, "mask": mask})
 
 # ---------------------------------------------------------------------------------------------------------
 # Telly the console TV, the white glove, station logo, "13" badge
@@ -3184,8 +3240,10 @@ static func _reg_sources() -> void:
 		ctx.globalAlpha = 0.85
 		badge13(ctx, w * 0.9, h * 0.1, h * 0.055, {"ol": 2}))
 
-	card("telly_face", {"w": 384, "h": 288, "fps": 12, "opts": "expr: %s; look: [x, y] gaze -1..1" % " | ".join(TELLY_EXPRS)}, func(ctx, w, h, t, o):
-		tellyScreen(ctx, 0, 0, w, h, o.expr if TELLY_EXPRS.has(o.get("expr")) else "idle", t, _or(o.get("look"), [0, 0]), 64))
+	card("telly_face", {"w": 384, "h": 288, "fps": 12, "opts": "expr: %s; look: [x, y] gaze -1..1" % " | ".join(TELLY_EXPRS), "sig": _tellySig}, func(ctx, w, h, t, o):
+		var ex: String = o.expr if TELLY_EXPRS.has(o.get("expr")) else "idle"
+		var lk: Array = _or(o.get("look"), [0, 0])
+		tellyScreen(ctx, 0, 0, w, h, ex, t, lk, 64, _tellyMask(ex, t, lk, 64)))
 
 	card("snow", {"w": 512, "h": 384, "fps": 20, "opts": "channel: OSD number for snow channels (3, 6, 10)"}, func(ctx, w, h, t, o):
 		drawSnow(ctx, w, h, int(jround(t * 20)))

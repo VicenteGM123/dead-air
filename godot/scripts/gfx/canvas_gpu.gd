@@ -96,6 +96,10 @@ class RT:
 	var bC := PackedColorArray()
 	var bU := PackedVector2Array()
 	var bTex: RID
+	# last material op (addMaterial): its state key, item and rt.nused right after it (perf: equal ops share the item)
+	var mKey = null
+	var mItem: RID
+	var mUsed := -1
 
 # ------------------------------------------------------------------------------------------------ lifecycle
 static var _inDrawNow := false
@@ -231,6 +235,7 @@ static func newRT(w: int, h: int, msaa: int, aux: bool, origin: Vector2 = Vector
 # Clears the recorded content of a recording/rendered RT so it can be recorded again (same viewport).
 static func resetRT(rt: RT) -> void:
 	rt.bKey = ""
+	rt.mKey = null
 	rt.bP = PackedVector2Array()
 	rt.bI = PackedInt32Array()
 	rt.bC = PackedColorArray()
@@ -786,6 +791,11 @@ static func addDefault(rt: RT, P: PackedVector2Array, I: PackedInt32Array, col: 
 	if I.is_empty():
 		return
 	var key := "d|%d|%d|%d" % [tex.get_id(), filter, repeat]
+	if rt.bKey == key and I.size() > 48 and not rt.bI.is_empty() and rt.bP.size() <= 60000:
+		# big geometry: submit the open batch and continue on the same item, so these indices need no offset loop
+		# (the item draws its triangle arrays in order: the same triangles in the same order as one merged array)
+		flush(rt)
+		rt.bKey = key
 	if rt.bKey != key or rt.bP.size() > 60000:
 		flush(rt)
 		rt.bKey = key
@@ -808,6 +818,14 @@ static func addDefault(rt: RT, P: PackedVector2Array, I: PackedInt32Array, col: 
 
 # One item with a paint material (instance params). Returns the item.
 static func addMaterial(rt: RT, P: PackedVector2Array, I: PackedInt32Array, col: Color, tex: RID, uv: PackedVector2Array, variant: String, mask: RT, params: Dictionary, filter: int, repeat: int, dst: RT = null) -> RID:
+	var key = [variant, params, mask, tex, filter, repeat] if dst == null else null
+	if key != null and rt.mKey != null and rt.bKey == "" and rt.mUsed == rt.nused and rt.mKey == key:
+		# perf: the same material state as the op just before on this RT (nothing drawn in between): one more
+		# triangle array on its item, drawn right after it with the same shader and uniforms
+		if not I.is_empty():
+			var U0 := uv if tex.is_valid() or not uv.is_empty() else PackedVector2Array()
+			RenderingServer.canvas_item_add_triangle_array(rt.mItem, I, P, _colors(col, P.size()), U0, PackedInt32Array(), PackedFloat32Array(), tex)
+		return rt.mItem
 	flush(rt)
 	var it := _item(rt)
 	var material := opMaterial(rt, variant)
@@ -829,6 +847,9 @@ static func addMaterial(rt: RT, P: PackedVector2Array, I: PackedInt32Array, col:
 	if not I.is_empty():
 		var U := uv if tex.is_valid() or not uv.is_empty() else PackedVector2Array()
 		RenderingServer.canvas_item_add_triangle_array(it, I, P, _colors(col, P.size()), U, PackedInt32Array(), PackedFloat32Array(), tex)
+	rt.mKey = key
+	rt.mItem = it
+	rt.mUsed = rt.nused
 	return it
 
 # Texture blitted with blend disabled (putImageData, continuing a previous version). premul = the source holds

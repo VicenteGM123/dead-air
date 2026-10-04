@@ -129,8 +129,21 @@ static func clear(cv, st, P: PackedVector2Array, paint) -> void:
 	_composite(cv, st, c, paint, 1.0, 6)
 
 static func fill(cv, st, P: PackedVector2Array, S: PackedInt32Array, evenodd: bool, paint) -> void:
-	var c := coverage(P, S, evenodd, cv._w, cv._h)
 	var op: int = st.op
+	if op == 0 and S.size() == 1 and P.size() == 4 and int(paint.kind) == 0 and (st.clip == null) and paint.color.a == 1.0 \
+			and st.globalAlpha == 1.0 and _coversAll(P, cv._w, cv._h):
+		# perf: an opaque solid source-over rect over the whole canvas (the dot-matrix mask clear): every pixel gets
+		# coverage 1, so the composite below writes the colour itself (S + d * 0)
+		var col: Color = paint.color
+		var row := PackedColorArray()
+		row.resize(cv._w * cv._h)
+		row.fill(Color(col.r, col.g, col.b, 1.0))
+		cv._px = row.to_byte_array().to_float32_array()
+		cv._hasContent = true
+		cv._cpuDirty = true
+		DACanvasGPU.markDirty(cv)
+		return
+	var c := coverage(P, S, evenodd, cv._w, cv._h)
 	if DACanvasGPU.NONLOCAL.has(op):
 		# non-local ops touch the whole (clipped) canvas: extend the coverage window to the canvas
 		var full := PackedFloat32Array()
@@ -143,6 +156,27 @@ static func fill(cv, st, P: PackedVector2Array, S: PackedInt32Array, evenodd: bo
 	_composite(cv, st, c, paint, st.globalAlpha, op)
 
 # Blends paint over the coverage window with composite op `op` (clip from st).
+# P is exactly the axis-aligned rect (0, 0)-(w, h) (any vertex order).
+static func _coversAll(P: PackedVector2Array, w: int, h: int) -> bool:
+	var fw := float(w)
+	var fh := float(h)
+	var c0 := 0
+	var c1 := 0
+	var c2 := 0
+	var c3 := 0
+	for q in P:
+		if q.x == 0.0 and q.y == 0.0:
+			c0 += 1
+		elif q.x == fw and q.y == 0.0:
+			c1 += 1
+		elif q.x == fw and q.y == fh:
+			c2 += 1
+		elif q.x == 0.0 and q.y == fh:
+			c3 += 1
+		else:
+			return false
+	return c0 == 1 and c1 == 1 and c2 == 1 and c3 == 1
+
 static func _composite(cv, st, c: Array, paint, alpha: float, op: int) -> void:
 	var bx: int = c[0]
 	var by: int = c[1]
@@ -158,8 +192,32 @@ static func _composite(cv, st, c: Array, paint, alpha: float, op: int) -> void:
 		if st.clip.empty:
 			return
 		clipM = st.clip.cpu
-	var src := _sampler(paint)
 	var nonlocal := DACanvasGPU.NONLOCAL.has(op)
+	if op == 0 and int(paint.kind) == 0 and clipM.is_empty():
+		# fast path (solid source-over, no clip: the dot-matrix masks): the loop below with the sampler and _pd
+		# inlined, same arithmetic (the premultiplied source is rounded through a Color exactly as there)
+		var col: Color = paint.color
+		for j in bh:
+			var y2 := by + j
+			var row := j * bw
+			for i in bw:
+				var cvv := minf(1.0, cov[row + i])
+				if cvv <= 0.0:
+					continue
+				var sa := col.a * alpha * cvv
+				var S := Color(col.r * sa, col.g * sa, col.b * sa, sa)
+				var o := ((y2 * W) + bx + i) * 4
+				var ia := 1.0 - S.a
+				px[o] = S.r + px[o] * ia
+				px[o + 1] = S.g + px[o + 1] * ia
+				px[o + 2] = S.b + px[o + 2] * ia
+				px[o + 3] = S.a + px[o + 3] * ia
+		cv._px = px
+		cv._hasContent = true
+		cv._cpuDirty = true
+		DACanvasGPU.markDirty(cv)
+		return
+	var src := _sampler(paint)
 	for j in bh:
 		var y := by + j
 		for i in bw:

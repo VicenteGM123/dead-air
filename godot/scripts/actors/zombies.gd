@@ -844,23 +844,48 @@ func lateUpdate(_dt = null) -> void:
 
 # Boid separation (GDD §5.10: radius 0.6 m) among grounded zombies.
 func _separation() -> void:
+	# perf: the pair loop runs over packed copies of the fields (same arithmetic in the same order, same randf calls)
 	var L := alive
-	for z in L:
-		z.sepX = 0.0
-		z.sepZ = 0.0
-	for i in L.size():
-		var a: Dictionary = L[i]
-		if a.state != "chase" and a.state != "attack":
+	var n := L.size()
+	var px := PackedFloat64Array()
+	var py := PackedFloat64Array()
+	var pz := PackedFloat64Array()
+	var rad := PackedFloat64Array()
+	var sx := PackedFloat64Array()
+	var sz := PackedFloat64Array()
+	var act := PackedByteArray()
+	px.resize(n)
+	py.resize(n)
+	pz.resize(n)
+	rad.resize(n)
+	sx.resize(n)
+	sz.resize(n)
+	act.resize(n)
+	for i in n:
+		var z: Dictionary = L[i]
+		var zp: Vector3 = z.pos
+		px[i] = zp.x
+		py[i] = zp.y
+		pz[i] = zp.z
+		rad[i] = z.radius
+		sx[i] = 0.0
+		sz[i] = 0.0
+		act[i] = 1 if z.state == "chase" or z.state == "attack" else 0
+	for i in n:
+		if act[i] == 0:
 			continue
-		for j in range(i + 1, L.size()):
-			var b: Dictionary = L[j]
-			if b.state != "chase" and b.state != "attack":
+		var ax := px[i]
+		var ay := py[i]
+		var az := pz[i]
+		var ar := rad[i]
+		for j in range(i + 1, n):
+			if act[j] == 0:
 				continue
-			var dx: float = a.pos.x - b.pos.x
-			var dz: float = a.pos.z - b.pos.z
-			var rr := maxf(SEP_R, (a.radius + b.radius) * 0.95)
+			var dx: float = ax - px[j]
+			var dz: float = az - pz[j]
+			var rr := maxf(SEP_R, (ar + rad[j]) * 0.95)
 			var d2 := dx * dx + dz * dz
-			if d2 >= rr * rr or absf(a.pos.y - b.pos.y) > 1.0:
+			if d2 >= rr * rr or absf(ay - py[j]) > 1.0:
 				continue
 			var d := sqrt(d2)
 			if d == 0.0:
@@ -868,10 +893,14 @@ func _separation() -> void:
 			var k := (rr - d) / rr
 			var nx: float = dx / d if d2 > 1e-8 else randf() - 0.5
 			var nz: float = dz / d if d2 > 1e-8 else randf() - 0.5
-			a.sepX += nx * k
-			a.sepZ += nz * k
-			b.sepX -= nx * k
-			b.sepZ -= nz * k
+			sx[i] += nx * k
+			sz[i] += nz * k
+			sx[j] -= nx * k
+			sz[j] -= nz * k
+	for i in n:
+		var z: Dictionary = L[i]
+		z.sepX = sx[i]
+		z.sepZ = sz[i]
 
 func _think(z: Dictionary, dt: float, _index: int) -> void:
 	var g = game
@@ -1509,9 +1538,10 @@ func _lod() -> void:
 		var bodies = _f(m, "bodies") if m != null else null
 		if bodies:
 			var cast: bool = z.onScreen and _idx(order, z) < SHADOW_MAX
+			var want := GeometryInstance3D.SHADOW_CASTING_SETTING_ON if cast else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			for b in bodies:
-				if is_instance_valid(b):
-					b.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if cast else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				if is_instance_valid(b) and b.cast_shadow != want:   # perf: no RS update when unchanged
+					b.cast_shadow = want
 		var cards = _f(m, "cards") if m != null else null
 		if cards is Array and cards.size() > 0:
 			var vis: bool = z.camDist < CARD_LOD

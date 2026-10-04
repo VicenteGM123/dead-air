@@ -2451,7 +2451,16 @@ void fragment() {
 			o.set(k, v)
 
 	# THREE.Color(hex) (linear components).
+	static var _linCache := {}
 	static func lin(c) -> Color:
+		if c is String:
+			# perf: the per-bulb colours are parsed every frame: cache per string (same value)
+			var hit = _linCache.get(c)
+			if hit != null:
+				return hit
+			var cs: Color = DAU.color(c).srgb_to_linear()
+			_linCache[c] = cs
+			return cs
 		var col: Color = DAU.color(c)
 		return col.srgb_to_linear()
 
@@ -2581,6 +2590,8 @@ void fragment() {
 		if cols.size() <= i:
 			cols.resize(i + 1)
 		linColor.a = 1.0
+		if cols[i] is Color and cols[i] == linColor:
+			return   # perf: already applied (this array mirrors what was set)
 		cols[i] = linColor
 		var c = _inst(inst, i)
 		if c is GeometryInstance3D:

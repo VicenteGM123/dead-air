@@ -317,6 +317,22 @@ func toImage() -> Image:
 		return im2
 	return Image.create(_w, _h, false, Image.FORMAT_RGBA8)
 
+# perf (no JS counterpart): getImageData(0, 0, width, height).data of a CPU canvas with only the red bytes filled
+# (the other bytes 0; the same red values): the dot-matrix masks read nothing else.
+func redBytes() -> PackedByteArray:
+	if not _cpu:
+		return getContext("2d").getImageData(0, 0, _w, _h).data
+	var n := _w * _h
+	var out := PackedByteArray()
+	out.resize(n * 4)
+	var px := _px
+	for i in n:
+		var o := i * 4
+		var a := px[o + 3]
+		if a > 0.0:
+			out[o] = clampi(int(px[o] / a * 255.0 + 0.5), 0, 255)
+	return out
+
 func _cpuImage() -> Image:
 	var n := _w * _h
 	var b := PackedByteArray()
@@ -1065,6 +1081,12 @@ class Context2D:
 		var g := _pathOf(path).geo()
 		canvas._fill(_cs.st, g[0], g[1], rule == "evenodd", false, _cs.st.fillColor, false)
 
+	# perf (no JS counterpart): exactly ctx.fill(path) of a path made, for every circle, of moveTo(cx + r, cy) +
+	# arc(cx, cy, r, 0, TAU) (dot matrices: cards.dotMatrix), given as rows of PackedFloat64Array [cx, cy, r, ...].
+	# The flattened + triangulated geometry of each row is cached, so rows that did not change cost a lookup.
+	func fillCircleRows(rows: Array) -> void:
+		canvas._fillCircleRows(_cs.st, rows)
+
 	func stroke(p = null) -> void:
 		var b := _pathOf(p)
 		var pl := b.polylines()
@@ -1320,6 +1342,166 @@ func _imageSource(img) -> Array:
 
 func _shadowOn(st: St) -> bool:
 	return st.shadowColor.a > 0.0 and (st.shadowBlur > 0.0 or st.shadowOffsetX != 0.0 or st.shadowOffsetY != 0.0)
+
+# fillCircleRows (see Context2D): the result of _fill for the path of the circles, built row by row from a cache.
+# Each row entry holds the row's flattened polygons (as the path Builder makes them), the triangles
+# DACanvasGeom.triangulate makes for them when it does not sweep (per polygon: fan / ear clipping), expanded to a
+# plain triangle list, and what decides the sweep (a COMPLEX polygon, both orientations). If the whole path would be
+# swept (or the canvas is a CPU one) the generic path runs instead, so the result is always the generic one.
+const ROW_CACHE_MAX := 4096
+static var _rowCache := {}
+static var _ident := PackedInt32Array()
+
+static func _circleRow(r: PackedFloat64Array, xf: Transform2D) -> Array:
+	var b := DAPath2D.Builder.new()
+	b.setXf(xf)
+	var i := 0
+	while i + 2 < r.size():
+		b.moveTo(r[i] + r[i + 2], r[i + 1])
+		b.arc(r[i], r[i + 1], r[i + 2], 0.0, TAU_, false)
+		i += 3
+	var g := b.geo()
+	var P: PackedVector2Array = g[0]
+	var S: PackedInt32Array = g[1]
+	var np := S.size()
+	var complex := false
+	var pos := false
+	var neg := false
+	var T := PackedVector2Array()
+	for k in np:
+		var a := S[k]
+		var e := S[k + 1] if k + 1 < np else P.size()
+		var c := DACanvasGeom.classify(P, a, e)
+		if c == DACanvasGeom.COMPLEX:
+			complex = true
+			break
+		if c == DACanvasGeom.DEGEN:
+			continue
+		if DACanvasGeom.signedArea(P, a, e) > 0.0:
+			pos = true
+		else:
+			neg = true
+		var poly := P.slice(a, e)
+		var n := e - a
+		if c == DACanvasGeom.CONVEX:
+			for t in range(1, n - 1):
+				T.append(poly[0])
+				T.append(poly[t])
+				T.append(poly[t + 1])
+			continue
+		# SIMPLE: DACanvasGeom.triangulate's per-polygon branch
+		var tri := Geometry2D.triangulate_polygon(poly)
+		if not tri.is_empty():
+			var ta := 0.0
+			var ti := 0
+			while ti < tri.size():
+				var p0 := poly[tri[ti]]
+				ta += absf((poly[tri[ti + 1]] - p0).cross(poly[tri[ti + 2]] - p0))
+				ti += 3
+			var pa := absf(DACanvasGeom.signedArea(poly)) * 2.0
+			if absf(ta - pa) > 1e-3 * pa + 1e-6:
+				tri = PackedInt32Array()
+		if tri.is_empty():
+			var sw := DACanvasGeom.sweep([poly], false)
+			var sp: PackedVector2Array = sw[0]
+			for t in (sw[1] as PackedInt32Array):
+				T.append(sp[t])
+			continue
+		for t in tri:
+			T.append(poly[t])
+	# min / max corners as DACanvasGeom.bbox finds them (the extremes are hull vertices)
+	var mn := Vector2.ZERO
+	var mx := Vector2.ZERO
+	if not P.is_empty():
+		var H := Geometry2D.convex_hull(P) if P.size() > 48 else P
+		if H.is_empty():
+			H = P
+		mn = H[0]
+		mx = H[0]
+		for q in H:
+			if q.x < mn.x: mn.x = q.x
+			if q.y < mn.y: mn.y = q.y
+			if q.x > mx.x: mx.x = q.x
+			if q.y > mx.y: mx.y = q.y
+	return [P, S, T, complex, pos, neg, mn, mx]
+
+func _fillCircleRows(st: St, rows: Array) -> void:
+	var xf := st.xf
+	var ents: Array = []
+	var np := 0
+	var npts := 0
+	var sweepAll := false
+	var pos := false
+	var neg := false
+	for r in rows:
+		var key := [r, xf]
+		var h := hash(key)
+		var e = _rowCache.get(h)
+		if e == null or e[0] != key:
+			if _rowCache.size() >= ROW_CACHE_MAX:
+				_rowCache.clear()
+			e = [key.duplicate(), _circleRow(r, xf)]
+			_rowCache[h] = e
+		var row: Array = e[1]
+		var rS: PackedInt32Array = row[1]
+		if rS.is_empty():
+			continue
+		ents.append(row)
+		np += rS.size()
+		npts += (row[0] as PackedVector2Array).size()
+		if row[3]:
+			sweepAll = true
+		pos = pos or row[4]
+		neg = neg or row[5]
+	if np > 1 and pos and neg:
+		sweepAll = true
+	# the generic path when it would sweep (or draw on the CPU): same geometry through ctx.fill
+	if sweepAll or _cpu:
+		var P0 := PackedVector2Array()
+		var S0 := PackedInt32Array()
+		for row in ents:
+			var base := P0.size()
+			for v in (row[1] as PackedInt32Array):
+				S0.append(base + v)
+			P0.append_array(row[0])
+		_fill(st, P0, S0, false, false, st.fillColor, false)
+		return
+	# _fill without the per-polygon work
+	if npts < 3 or np == 0 or st.globalAlpha <= 0.0:
+		return
+	if st.clip != null and st.clip.empty:
+		return
+	var paint := _paint(st.fillColor, st)
+	if paint == null:
+		return
+	var T := PackedVector2Array()
+	var mn: Vector2 = ents[0][6]
+	var mx: Vector2 = ents[0][7]
+	for row in ents:
+		T.append_array(row[2])
+		var a: Vector2 = row[6]
+		var b: Vector2 = row[7]
+		if a.x < mn.x: mn.x = a.x
+		if a.y < mn.y: mn.y = a.y
+		if b.x > mx.x: mx.x = b.x
+		if b.y > mx.y: mx.y = b.y
+	var opaqueSafe := paint.opaque and st.globalAlpha >= 1.0 and (st.op == 0 or st.op == 6)
+	var overlap := false
+	if np > 1 and not opaqueSafe:
+		var P1 := PackedVector2Array()
+		var S1 := PackedInt32Array()
+		for row in ents:
+			var base1 := P1.size()
+			for v in (row[1] as PackedInt32Array):
+				S1.append(base1 + v)
+			P1.append_array(row[0])
+		overlap = DACanvasGeom.anyOverlap(P1, S1)
+	if _ident.size() < T.size():
+		var n0 := _ident.size()
+		_ident.resize(maxi(T.size(), n0 * 2))
+		for i in range(n0, _ident.size()):
+			_ident[i] = i
+	_gpuOp(st, T, _ident.slice(0, T.size()), paint, overlap, Rect2(mn, mx - mn))
 
 # Core fill: polygons P/S (device), convex = every polygon is convex and they may overlap (pieces).
 func _fill(st: St, P: PackedVector2Array, S: PackedInt32Array, evenodd: bool, convex: bool, style, pieces: bool) -> void:
