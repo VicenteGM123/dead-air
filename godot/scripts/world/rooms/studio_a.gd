@@ -493,7 +493,8 @@ static func feedCamera(game, rt: Runtime, parent: Node, anchorId: String, o: Dic
 	rt.onPower(a.pos, func(on, _instant = false): setMat(tally, mOn if on else mOff))
 	var phase := hashPhase(anchorId)
 	rt.onTick(func(t, _dt, vis):
-		if vis and head != null:
+		# the feed camera (screens.gd) pans a head it drives in step with its picture: skip that one
+		if vis and head != null and not head.has_meta(&"da_feed_head"):
 			head.rotation.y = 0.349 * sin((t / 8.0) * TAU + phase))
 	rt.objects[anchorId] = {"group": g, "parts": {"head": head, "tilt": tilt, "tally": tally, "lensTip": lensTip}}
 	return g

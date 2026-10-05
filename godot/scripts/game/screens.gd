@@ -152,6 +152,7 @@ const TICK := {"near": 6.0, "farDist": 14.0, "mid": 8.0, "far": 4.0}
 const TELE := {"w": 128, "h": 96, "fps": 20.0}
 const ZOOM := {"factor": 2.6, "in": 0.45, "out": 0.6}
 const CAM_PROPS := ["bc_pedestal_camera", "bc_eng_camera"]
+const FEED_HEAD_META := &"da_feed_head"   # set on a prop pan head the feed camera drives (rooms leave it alone)
 const INSERT := {"pos": Vector3(200, 0, 200), "eye": [0.0, 1.34, 1.62], "look": [0.0, 1.13, 0.0], "fov": 34.0}
 const UP := Vector3(0, 1, 0)
 # Godot only: marker bit of the feed cameras' cull mask (see the header). No node lives on this layer.
@@ -1825,6 +1826,10 @@ func _findCamProps() -> void:
 		f.head = P.get("head") if P.get("head") is Node3D else null
 		if f.head != null:
 			f.head.rotation_order = EULER_ORDER_XYZ
+			# the feed owns this pan head from now on: the rooms' own idle pans (newsroom / studio_a tickers, which run
+			# from render pre-passes AFTER lateUpdate) skip it, else the head flipped between their yaw and the feed's
+			# on every feed-render frame (PASS_A 15 fps) and visibly shook "no" (FEED_HEAD_META)
+			f.head.set_meta(FEED_HEAD_META, true)
 		f.headBase = f.head.rotation.y if f.head != null else 0.0
 		f.lens = P.get("lensTip") if P.get("lensTip") is Node3D else null
 		f.tally = P.get("tally")

@@ -585,7 +585,10 @@ func build(g, area: Dictionary, root: Node3D):
 		var cp: Dictionary = DAU.ud(cam).parts
 		var baseYaw: float = cp.head.rotation.y
 		obj(g, "feed_cam_newsroom", {"group": cam, "parts": cp.duplicate(), "setTally": func(on): setLamp(cam, "on" if on else "off", "tally")})
-		rt.tick(func(_dt, _t, _real): cp.head.rotation.y = baseYaw + 0.349 * sin((float(g.time.now) / 8.0) * TAU_))
+		rt.tick(func(_dt, _t, _real):
+			# the feed camera (screens.gd) pans this head in step with its picture once it found it
+			if not cp.head.has_meta(&"da_feed_head"):
+				cp.head.rotation.y = baseYaw + 0.349 * sin((float(g.time.now) / 8.0) * TAU_))
 		var cpos := cam.position
 		cpos.y = 1.6
 		rt.power(cpos, func(on): setLamp(cam, "on" if on else "off", "tally"), {"flicker": false})
