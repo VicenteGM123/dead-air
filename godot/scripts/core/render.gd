@@ -179,7 +179,7 @@ static func makeEnvironment(bg: Color) -> Environment:
 	e.ssil_enabled = false
 	e.sdfgi_enabled = false
 	e.glow_enabled = false
-	e.fog_enabled = false
+	e.fog_enabled = DAU.isCompat()   # Compatibility: always on (out of reach at 1000..2000 m), see _syncFog
 	e.fog_mode = Environment.FOG_MODE_DEPTH
 	e.fog_density = 1.0
 	e.fog_depth_curve = 1.0
@@ -545,7 +545,10 @@ func _syncFog() -> void:
 	RenderingServer.global_shader_parameter_set("daFogColor", Vector3(lin.r, lin.g, lin.b))
 	RenderingServer.global_shader_parameter_set("daFogNear", near)
 	RenderingServer.global_shader_parameter_set("daFogFar", far)
-	env.fog_enabled = far < 999.0
+	# Compatibility (web): the native fog stays on (at 1000..2000 m it touches nothing). Toggling it would switch the
+	# fog specialization of every scene shader at once: walking into a foggy area (Studio A, the yard) recompiled
+	# everything in view (seconds of WebGL program links). Forward+ toggles it as before.
+	env.fog_enabled = far < 999.0 or DAU.isCompat()
 	env.fog_light_color = c
 	env.fog_depth_begin = near
 	env.fog_depth_end = far
