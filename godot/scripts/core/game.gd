@@ -149,6 +149,10 @@ var _pausedFrom := "playing"
 var _booted := false
 var mpPaused := false            # MP pause overlay (pause() in an MP game; game.state stays 'playing')
 var _profOn := false
+var _hitchMs := 0.0              # QA param hitch=<ms>: log every frame longer than that (see _hitch)
+var _hitchLast := 0
+var _hitchCalls := {}
+var _hitchScript := 0.0
 
 func _init() -> void:
 	inst = self
@@ -156,6 +160,8 @@ func _init() -> void:
 		_mountWebPacks()
 	params = _parseParams()
 	_profOn = params.has("prof")
+	if params.has("hitch"):
+		_hitchMs = float(params.hitch) if float(params.hitch) > 1.0 else 100.0
 	seed_value = int(params.seed) if params.has("seed") and (params.seed is int or params.seed is float) else randi() % 2147483648
 	_rng = Rng.mulberry32(seed_value)
 	events = preload("res://scripts/core/events.gd").new()
@@ -293,6 +299,12 @@ func _load() -> void:
 	# The character-select channel sets (heroes, promo cards, props), built once now instead of on the key press.
 	if menu != null and menu.has_method("preloadSteps"):
 		await menu.preloadSteps()
+	_prog(0.9)
+	# Compatibility renderer (web): compile every shader the game will draw now, behind the title (warmup.gd)
+	var Warm = load("res://scripts/gfx/warmup.gd") if ResourceLoader.exists("res://scripts/gfx/warmup.gd") else null
+	if Warm != null and Warm.wanted(self):
+		await frameYield()
+		await Warm.new(self).run()
 	_prog(0.95)
 
 # Resets every system and starts a run (Rounds schedules round 1, or params.round, T.rounds.firstRoundDelay later).
@@ -430,6 +442,8 @@ func _process(delta: float) -> void:
 
 func _tick(delta: float) -> void:
 	var t0 := Time.get_ticks_usec()
+	if _hitchMs > 0.0:
+		_hitch(t0)
 	var realDt := clampf(delta, 0.0, MAX_DT)
 	time.realDt = realDt
 	time.realNow += realDt
@@ -468,6 +482,8 @@ func _tick(delta: float) -> void:
 	if _call("render", "frame", realDt):
 		ready_flag = true
 	_updateStats(realDt, (Time.get_ticks_usec() - t0) / 1000.0)
+	if _hitchMs > 0.0:
+		_hitchScript = (Time.get_ticks_usec() - t0) / 1000.0
 	if _profOn:
 		_prof["_tick"] = _prof.get("_tick", 0.0) + float(Time.get_ticks_usec() - t0)
 		_profReport(realDt)
@@ -517,16 +533,40 @@ func _profReport(_realDt: float) -> void:
 	_profWall0 = now
 	_profFrames = 0
 
+# QA param hitch=<ms> (Godot-only, also in the web build: ?hitch=<ms>): prints every frame whose wall time (tick to
+# tick) exceeds <ms>, with the previous tick's script time and its costliest system calls; the rest of the frame is
+# the engine (drawing: first-use shader / pipeline compiles, texture uploads, other nodes' _process).
+func _hitch(nowUs: int) -> void:
+	if _hitchLast > 0:
+		var d := (nowUs - _hitchLast) / 1000.0
+		if d > _hitchMs:
+			var rows: Array = []
+			for k in _hitchCalls:
+				rows.append([k, _hitchCalls[k] / 1000.0])
+			rows.sort_custom(func(a, b): return a[1] > b[1])
+			var parts: PackedStringArray = []
+			for r in rows.slice(0, 6):
+				if r[1] >= 1.0:
+					parts.append("%s %.0f" % [r[0], r[1]])
+			print("[hitch] t=%.2f frame=%d ms=%.0f script=%.0f state=%s menu=%s | %s" % [nowUs / 1e6, time.frame, d,
+				_hitchScript, state, str(menu.get("mode")) if menu != null else "-", ", ".join(parts)])
+	_hitchLast = nowUs
+	_hitchCalls.clear()
+
 # Calls system[method](arg) if it exists. Returns true when the method exists and was called.
 func _call(name: String, method: String, arg = null) -> bool:
 	var sys = get(name)
 	if sys == null or not (sys is Object) or not sys.has_method(method):
 		return false
-	if _profOn:
+	if _profOn or _hitchMs > 0.0:
 		var t0 := Time.get_ticks_usec()
 		_callRaw(sys, method, arg)
 		var k := name + "." + method
-		_prof[k] = _prof.get(k, 0.0) + float(Time.get_ticks_usec() - t0)
+		var us := float(Time.get_ticks_usec() - t0)
+		if _profOn:
+			_prof[k] = _prof.get(k, 0.0) + us
+		if _hitchMs > 0.0:
+			_hitchCalls[k] = _hitchCalls.get(k, 0.0) + us
 		return true
 	_callRaw(sys, method, arg)
 	return true

@@ -41,6 +41,8 @@
 #   while revived), the own downed ring (replaces the crosshair) and the off-air spectate overlay. While the local
 #   player is downed / off-air the crosshair hides and the ammo / equipment dim / hide (self_modulate / modulate,
 #   never touched in solo).
+# Perk tray: `perkTray` = HudPerks (scripts/ui/hud_perks.gd, built on the first world frame, solo and MP): the owned
+#   sponsor perks as round product stickers right of the round dial (pop-in after the commercial, Replay-Ade pips).
 # Godot port notes (engine plumbing, not behaviour): the DOM/CSS tree is a CanvasLayer (layer 10 = the CSS z-index)
 # of Controls on the reference stage; every CSS-decorated static box (gradients, rounded corners, inset / drop
 # shadows, the inline SVG icons) is rasterized once through Godot's SVG rasterizer from an SVG transcription of its
@@ -54,6 +56,7 @@ extends RefCounted
 const FontsScript = preload("res://scripts/ui/fonts.gd")
 const Hud_ = preload("res://scripts/ui/hud.gd")   # self: inner classes reach the static helpers through it
 const HudTeamScript = preload("res://scripts/ui/hud_team.gd")   # MP overlays (built only in an MP game)
+const HudPerksScript = preload("res://scripts/ui/hud_perks.gd") # perk tray (owned sponsor stickers, bottom left)
 
 const REF_H := 1080.0
 const M := 40.0 # safe margin (reference px)
@@ -824,6 +827,7 @@ var _supp := {}
 var _shown := {"points": -1, "gold": null, "mag": -1, "res": -1, "low": null, "noAmmo": null, "gren": -1, "tele": -1, "teleRow": null, "spread": -1, "dim": null, "want": null}
 var _prompt := {"on": false, "key": "E", "cost": -1, "denied": null, "plug": null, "hold": null, "prog": -1.0, "t": 0.0, "revive": false}
 var team = null             # MP: HudTeam (scripts/ui/hud_team.gd)
+var perkTray = null         # HudPerks (scripts/ui/hud_perks.gd), built on the first world frame
 var _mpDim := -1.0          # MP: last own-element dim applied (-1: never)
 var _hm := 0
 var _hmT := -1.0
@@ -1094,6 +1098,8 @@ func reset() -> void:
 	setPrompt(null)
 	if team != null:
 		team.reset()
+	if perkTray != null:
+		perkTray.reset()
 	show()
 
 func show() -> void:
@@ -1399,6 +1405,9 @@ func update(dt: float) -> void:
 	_updateChyron(dt)
 	_updatePowerups(dt)
 	_updateTeam(dt)
+	if perkTray == null:
+		perkTray = HudPerksScript.new(self)
+	perkTray.update(dt)
 	if _replay:
 		el.rb.queue_redraw()
 

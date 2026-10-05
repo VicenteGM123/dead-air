@@ -380,6 +380,8 @@ var _press = null               # region pressed (JS click = press + release on 
 var layer: CanvasLayer
 var root: Control
 var stage: Control
+var _standby = null             # web: the PLEASE STAND BY card over the first station frames (scripts/ui/standby_card.gd)
+var _pendingStart = null        # { hero, frames }: solo newGame deferred until the stand-by card has been drawn
 var scale := 1.0
 var stageOff := Vector2.ZERO
 var pn := {}                    # panel name -> Control (.mn-pn)
@@ -1321,6 +1323,17 @@ func _overGo() -> void:
 # -------------------------------------------------------------------------------------------- per frame
 func update(dt: float) -> void:
 	_t += dt
+	if _pendingStart != null:
+		_pendingStart.frames += 1
+		if _pendingStart.frames >= 1:
+			var ps: Dictionary = _pendingStart
+			_pendingStart = null
+			game.newGame(ps.hero)
+			_css.flash.set_(0.0)
+			if _standby != null:
+				_standby.started()
+	if _standby != null and _standby.active:
+		_standby.update(dt)
 	for i in range(_timers.size() - 1, -1, -1):
 		var tm: Dictionary = _timers[i]
 		if tm.dead:
@@ -1529,6 +1542,11 @@ func _startGame() -> void:
 		var L = _lobby
 		_lobby = null           # the dial is no longer the lobby (in-game net events are not the lobby's)
 		L.startNow(hero)        # MP: the session's start (seed set by mp-core), same newGame(hero)
+	elif _standbyWanted():
+		# web: cut to the stand-by card, start the run once it is on screen (the first station frames draw under it)
+		_standby.show_()
+		_pendingStart = {"hero": hero, "frames": 0}
+		return
 	else:
 		g.newGame(hero)
 	# transition 'opacity .6s cubic-bezier(.2,.7,.3,1) .12s' (a real-time transition, not the world clock)
@@ -2555,7 +2573,20 @@ func _prebuild(t: float) -> void:
 # Game's progressive boot (behind the title): builds every channel's set (hero, promo card, props) one per frame,
 # so the title -> select press and the channel flips no longer build anything. A coroutine: await it.
 # (The JS also started the WebGL compile of each set and drew it once, alone: engine plumbing, not ported.)
+# The stand-by card covers the stall of the first station frames under the Compatibility renderer (web; params
+# standby=1 / 0 force it on / off).
+func _standbyWanted() -> bool:
+	var p = game.params.get("standby")
+	var on: bool = float(p) != 0.0 if p != null else DAU.isCompat()
+	if not on or not ResourceLoader.exists("res://scripts/ui/standby_card.gd"):
+		return false
+	if _standby == null:
+		_standby = load("res://scripts/ui/standby_card.gd").new(game)
+	return true
+
 func preloadSteps() -> void:
+	if _standbyWanted():
+		_standby.prepare()
 	var S := _ensureSets()
 	for C in CHANNELS:
 		if not S.groups.has(C.hero):

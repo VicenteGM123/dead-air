@@ -3,6 +3,7 @@
 #   - teammates list, bottom right above the tote board: name (cream) · points (amber tape digits) · hero channel chip
 #     (skip 2 / roxy 4 / penny 5 / duke 7 in the hero colour, RECONCILE R8). Downed: the chip turns into the red revive
 #     badge, blinking, with a draining bleed-out ring; off-air: the chip shows colour bars and the row dims.
+#     Their perks: tiny sponsor-colour dots left of the name (hud_perks.gd drawDots, perks.loadoutOf).
 #   - name tags over remote players' heads (RemotePlayer.headPos()), hero colour, scaled / faded with distance, dimmer
 #     when a wall is in between; none for downed (the marker replaces it), off-air, hidden or the spectated player.
 #   - downed-teammate markers, visible through walls: the revive badge + a ring in the hero colour draining with the
@@ -109,7 +110,8 @@ func _buildRows(n, mp) -> void:
 		var pts = E.pointsOf(id) if E != null and E.has_method("pointsOf") else null
 		_rows.append({"name": n.nameOf(id), "pts": int(pts) if (pts is int or pts is float) else -1,
 			"col": _heroCol(n, id, q.heroId), "ch": CHANNEL.get(q.heroId, 0), "state": _stateOf(mp, id, q),
-			"bleed": mp.bleedOf(id) if mp != null else 0.0, "rev": mp.reviveProgress(id) if mp != null else -1.0})
+			"bleed": mp.bleedOf(id) if mp != null else 0.0, "rev": mp.reviveProgress(id) if mp != null else -1.0,
+			"perks": game.perks.loadoutOf(id) if game.get("perks") != null else []})
 
 # Projects a world point to stage px. Returns Vector3(x, y, inFront) (inFront 1 / 0).
 func _project(cam: Camera3D, pos: Vector3) -> Vector3:
@@ -310,6 +312,8 @@ func _drawList(ci: Control) -> void:
 			_text(ci, ps, x, cy, 24.0, Color(DAU.color("#FFB347"), a), 1.0)
 			x -= H.textWidth(_font(), ps, 24.0) + 14.0
 		_text(ci, r.name, x, cy, 22.0, Color(DAU.color(H.CREAM), a), 1.0)
+		if hud.perkTray != null and not r.perks.is_empty():   # their perks: tiny sponsor dots left of the name
+			hud.perkTray.drawDots(ci, r.perks, x - H.textWidth(_font(), r.name, 22.0) - 10.0, cy, a)
 		y -= ROW_H + 4.0
 
 func _drawMe(ci: Control) -> void:
