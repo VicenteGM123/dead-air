@@ -298,14 +298,32 @@ static func _memoPut(h: int, key: Array, res: Array, pts: int) -> void:
 	_memo[h] = [key.duplicate(true), res.duplicate()]   # (the caller keeps its own key arrays)
 	_memoPts += pts
 
+# The memo key is translation-free: the polygons are moved so their first vertex sits at the origin and snapped to
+# 1/SNAP units (device px: invisible), so a shape that only moved since the last frame (a bobbing character's
+# translucent strokes, drifting clouds...) is a hit too; the result is moved back.
+const SNAP := 1024.0
+
 static func sweep(polys: Array, evenodd: bool) -> Array:
-	var key := [polys, evenodd]
+	var o := Vector2.ZERO
+	var np: Array = polys
+	if not polys.is_empty() and (polys[0] as PackedVector2Array).size() > 0:
+		o = (polys[0] as PackedVector2Array)[0]
+		np = []
+		np.resize(polys.size())
+		var xf := Transform2D(0.0, -o)
+		for k in polys.size():
+			var q: PackedVector2Array = xf * (polys[k] as PackedVector2Array)
+			for i in q.size():
+				q[i] = (q[i] * SNAP).round() / SNAP
+			np[k] = q
+	var key := [np, evenodd]
 	var h := hash(key)
-	var hit = _memoGet(h, key)
-	if hit != null:
-		return hit
-	var res := _sweepRaw(polys, evenodd)
-	_memoPut(h, key, res, (res[0] as PackedVector2Array).size())
+	var res = _memoGet(h, key)
+	if res == null:
+		res = _sweepRaw(np, evenodd)
+		_memoPut(h, key, res, (res[0] as PackedVector2Array).size())
+	if o != Vector2.ZERO:
+		res[0] = Transform2D(0.0, o) * (res[0] as PackedVector2Array)
 	return res
 
 static func _sweepRaw(polys: Array, evenodd: bool) -> Array:
