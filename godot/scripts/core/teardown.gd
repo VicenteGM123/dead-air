@@ -73,14 +73,27 @@ static func run(game: Node) -> Dictionary:
 					continue
 				seen[id] = true
 				_object(o, stack, vars)
-	_freeOrphans(game, st)
+	_freeOrphans(game, st, seen)
 	st.objects = seen.size()
 	return st
 
 # Frees the Nodes that are not in the tree: model / effect pools, prop prototypes, detached rooms. The root Window
 # and the Game's ancestors are skipped: the engine is deleting them right now (the Game is deleted as a child).
-static func _freeOrphans(game: Node, st: Dictionary) -> void:
+# Node.get_orphan_node_ids() is empty in release export templates, so the roots of the off-tree Nodes reached by
+# the walk (`seen`) are freed too; without that an exported build aborted on exit (leaked geometry instances).
+static func _freeOrphans(game: Node, st: Dictionary, seen: Dictionary) -> void:
+	var roots := {}
 	for nid in ClassDB.class_call_static("Node", "get_orphan_node_ids"):
+		roots[nid] = true
+	for oid in seen:
+		var o = instance_from_id(oid)
+		if o == null or not is_instance_valid(o) or not (o is Node) or o.is_inside_tree():
+			continue
+		var top: Node = o
+		while top.get_parent() != null:
+			top = top.get_parent()
+		roots[top.get_instance_id()] = true
+	for nid in roots:
 		var n = instance_from_id(nid)
 		if n == null or not is_instance_valid(n) or not (n is Node):
 			continue
