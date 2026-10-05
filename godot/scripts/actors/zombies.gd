@@ -39,7 +39,8 @@
 #   eyes, the Sign-On gawk (stop and look at the nearest TV for 1.5 s), death = topple back with a bounce + circling
 #   stars, then 30 static quads + 12 colour-bar confetti + a fluttering ticket stub; headshot kill = the head pops off
 #   like a cork (30 ms hit-stop), bounces twice and vanishes in static.
-# LOD: far/off-screen zombies animate every 3rd frame, body shadows (8 nearest on screen; the rest keep their blob),
+# LOD: animation rate by camera distance (the 8 nearest on screen within 10 m every frame, the rest on screen within
+#   24 m ~30 Hz, farther or off screen ~15 Hz; staggered by id), body shadows (8 nearest on screen; the rest keep their blob),
 #   ticket/patch cards (< 7 m) and the eye veil + rim (< 13 m). Every mesh is on LAYERS.ZOMBIES. The stun stars and
 #   the ticket stubs are two MultiMesh pools.
 #
@@ -96,6 +97,10 @@ const SHADOW_MAX := 8
 const CARD_LOD := 7.0            # ticket stub / patch cards drawn within this camera distance
 const DETAIL_LOD := 13.0         # eye veil + rim drawn within this distance (the static eye discs always)
 const ANIM_NEAR := 24.0
+const ANIM_FULL := 10.0          # on screen and nearer than this: animated every frame (the ANIM_FULL_N nearest)
+const ANIM_FULL_N := 8           # (a crowd hugging the camera: the rest of it at ANIM_HZ_MID)
+const ANIM_HZ_MID := 30.0        # on screen, ANIM_FULL..ANIM_NEAR
+const ANIM_HZ_FAR := 15.0        # farther or off screen
 const GAWK := 1.5
 const LEVER := Vector3(34, 1, -7)
 const STAR_ASSET := "res://assets/runtime/zombies/star.glb"
@@ -439,6 +444,9 @@ var net = null
 var _zn = null
 var _byId := {}
 var _despawnFx := false
+var _lodK1 := 2                  # animation LOD frame divisors (from the real frame time, see _animate)
+var _lodK2 := 4
+var _shadowIds := {}
 
 func _init(g) -> void:
 	game = g
@@ -791,6 +799,10 @@ func update(dt: float) -> void:
 	var g = game
 	_frame += 1
 	_hitSfx = 0
+	var rdt: float = g.time.realDt
+	if rdt > 0.0:
+		_lodK1 = maxi(1, roundi(1.0 / (ANIM_HZ_MID * rdt)))
+		_lodK2 = maxi(1, roundi(1.0 / (ANIM_HZ_FAR * rdt)))
 	var pu = g.powerups
 	var oneTake := _puActive(pu, "one_take")
 	if oneTake != _oneTake:
@@ -903,32 +915,38 @@ func _separation() -> void:
 		z.sepZ = sz[i]
 
 func _think(z: Dictionary, dt: float, _index: int) -> void:
-	var g = game
+	# perf: typed locals, the state string read once (same arithmetic and call order as the plain version)
 	z.cd = maxf(0.0, z.cd - dt)
 	z.stagger = maxf(0.0, z.stagger - dt)
-	z.anim.hurt = maxf(0.0, z.anim.hurt - dt / 0.25)
-	if z.spawnT > 0.0:
-		z.spawnT = maxf(0.0, z.spawnT - dt)
+	var an: Dictionary = z.anim
+	an.hurt = maxf(0.0, an.hurt - dt / 0.25)
+	var spawnT: float = z.spawnT
+	if spawnT > 0.0:
+		z.spawnT = maxf(0.0, spawnT - dt)
+	var st: String = z.state
+	var chasing := st == "chase" or st == "attack"
 	# Knockback shove (decays).
-	if z.knock.length_squared() > 1e-4 and (z.state == "chase" or z.state == "attack"):
-		_moveCircle(z, z.knock * dt, z.radius, z.height, 0.45)
-		z.knock *= exp(-dt * 9.0)
-	match z.state:
-		"approach", "queue":
-			_approach(z, dt)
-		"tear":
-			_tear(z, dt)
-		"vault":
-			_vault(z, dt)
-		"screen":
-			_screen(z, dt)
-		_:
-			_chase(z, dt)
+	if chasing:
+		var knock: Vector3 = z.knock
+		if knock.length_squared() > 1e-4:
+			_moveCircle(z, knock * dt, z.radius, z.height, 0.45)
+			z.knock = knock * exp(-dt * 9.0)
+		_chase(z, dt)
+	elif st == "approach" or st == "queue":
+		_approach(z, dt)
+	elif st == "tear":
+		_tear(z, dt)
+	elif st == "vault":
+		_vault(z, dt)
+	elif st == "screen":
+		_screen(z, dt)
+	else:
+		_chase(z, dt)
 	if z.dead or z.removed:
 		return
-	if z.state != "chase" and z.state != "attack" and z.def.get("updateEntry") is Callable:
-		z.def.updateEntry.call(g, z, dt)
-
+	st = z.state
+	if st != "chase" and st != "attack" and z.def.get("updateEntry") is Callable:
+		z.def.updateEntry.call(game, z, dt)
 # --- window / fence / gate entry --------------------------------------------------------------------
 func _approach(z: Dictionary, dt: float) -> void:
 	var e: Dictionary = z.entry
@@ -1186,16 +1204,18 @@ func _screen(z: Dictionary, dt: float) -> void:
 
 # --- chase + attack -------------------------------------------------------------------------------------
 func _chase(z: Dictionary, dt: float) -> void:
+	# perf: typed locals (z.pos / z.vel copied where nothing in between moves them); same arithmetic and order
 	var g = game
 	var p = g.player if _zn == null else z.tgt
 	if p == null:
 		_zn.idle(z, dt)                 # MP: nobody to chase (everyone down / off air)
 		return
 	var ppos: Vector3 = p.pos
+	var an: Dictionary = z.anim
 	if z.stun > 0.0:
 		z.stun -= dt
-		z.anim.speed = 0.0
-		z.anim.attack = 0.0
+		an.speed = 0.0
+		an.attack = 0.0
 		if z.state == "attack":
 			z.state = "chase"
 		_fall(z, dt)
@@ -1205,18 +1225,22 @@ func _chase(z: Dictionary, dt: float) -> void:
 	if lure != null and not z.lured and _lureField != null and _lfDist(z.pos.x, z.pos.z) <= lureR:
 		z.lured = true
 	# Type behaviour first (specials may take over).
-	if z.def.get("update") is Callable:
-		var handled: bool = z.def.update.call(g, z, dt) == true
+	var def: Dictionary = z.def
+	var upd = def.get("update")
+	if upd is Callable:
+		var handled: bool = upd.call(g, z, dt) == true
 		if z.dead or z.removed:
 			return
 		if handled:
 			_bookkeep(z, dt)
 			_place(z)
 			return
-	if z.gawkT > 0.0:
-		z.gawkT -= dt
-		if z.gawkT < GAWK:
-			z.anim.speed = 0.0
+	var gawkT: float = z.gawkT
+	if gawkT > 0.0:
+		gawkT -= dt
+		z.gawkT = gawkT
+		if gawkT < GAWK:
+			an.speed = 0.0
 			z.vel *= exp(-dt * 8.0)
 			_fall(z, dt)
 			_place(z)
@@ -1224,10 +1248,11 @@ func _chase(z: Dictionary, dt: float) -> void:
 
 	var lureP = lure if lure != null and z.lured else null
 	var goal: Vector3 = lureP if lureP != null else ppos
-	var dx: float = goal.x - z.pos.x
-	var dz: float = goal.z - z.pos.z
-	var dist := _hypot(dx, dz)
-	var dy: float = goal.y - z.pos.y
+	var zp: Vector3 = z.pos
+	var dx: float = goal.x - zp.x
+	var dz: float = goal.z - zp.z
+	var dist := sqrt(dx * dx + dz * dz)
+	var dy: float = goal.y - zp.y
 
 	if z.state == "attack":
 		_attack(z, dt, dist, dy)
@@ -1237,19 +1262,19 @@ func _chase(z: Dictionary, dt: float) -> void:
 
 	# Mesmerized by a lure (Tiny Tele): kneel in a ring around it.
 	if lureP != null and dist < 2.3:
-		z.anim.down = true
-		z.anim.speed = 0.0
+		an.down = true
+		an.speed = 0.0
 		z.vel *= exp(-dt * 10.0)
 		_turnTo(z, yawTo(dx, dz), dt)
 		_fall(z, dt)
 		_place(z)
 		return
-	z.anim.down = false
+	an.down = false
 
 	# In reach and nothing solid in between (a thin wall between two rooms must not let a swipe through).
-	var rangeV := float(z.def.range)
+	var rangeV := float(def.range)
 	if lureP == null and p.alive and dist < rangeV and absf(dy) < 1.2 and z.cd <= 0.0 and z.spawnT <= 0.0 and \
-			_los(Vector3(z.pos.x, z.pos.y + z.height * 0.6, z.pos.z), Vector3(ppos.x, ppos.y + 1.0, ppos.z)):
+			_los(Vector3(zp.x, zp.y + z.height * 0.6, zp.z), Vector3(ppos.x, ppos.y + 1.0, ppos.z)):
 		z.state = "attack"
 		z.attackT = 0.0
 		z.swung = false
@@ -1258,14 +1283,16 @@ func _chase(z: Dictionary, dt: float) -> void:
 		return
 
 	# Line of sight (refreshed every 0.25 s, staggered).
-	z.losT -= dt
-	if z.losT <= 0.0:
+	var losT: float = z.losT - dt
+	z.losT = losT
+	if losT <= 0.0:
 		z.losT = 0.25
 		if dist < 16.0 and lureP == null:
-			var a := Vector3(z.pos.x, z.pos.y + z.height * 0.85, z.pos.z)
+			var a := Vector3(zp.x, zp.y + z.height * 0.85, zp.z)
 			var b := Vector3(ppos.x, ppos.y + 1.4, ppos.z)
-			z.los = _los(a, b)
-			z.navStraight = z.los and _navDist(z.pos.x, z.pos.z) < dist * 1.3 + 1.0
+			var los := _los(a, b)
+			z.los = los
+			z.navStraight = los and _navDist(zp.x, zp.z) < dist * 1.3 + 1.0
 		else:
 			z.los = false
 			z.navStraight = false
@@ -1275,74 +1302,88 @@ func _chase(z: Dictionary, dt: float) -> void:
 		dir = Vector3(dx, 0, dz).normalized()
 	else:
 		if lureP != null and _lureField != null:
-			dir = _lfDir(z.pos.x, z.pos.z)
+			dir = _lfDir(zp.x, zp.z)
 		else:
-			dir = _navDir(z.pos.x, z.pos.z)
+			dir = _navDir(zp.x, zp.z)
 		if dir.length_squared() < 1e-6 and dist > 1e-3:
 			dir = Vector3(dx / dist, 0, dz / dist)
-	var speed: float = z.speed * (0.25 if z.stagger > 0.0 else 1.0) * (0.0 if z.spawnT > 0.0 else 1.0)
+	var zspeed: float = z.speed
+	var speed: float = zspeed * (0.25 if z.stagger > 0.0 else 1.0) * (0.0 if z.spawnT > 0.0 else 1.0)
 	if lureP == null and dist < rangeV * 0.78:
 		speed = 0.0
 	# Desired velocity + separation.
-	var sepW := maxf(1.2, z.speed * 0.9)
+	var sepW := maxf(1.2, zspeed * 0.9)
 	var cx: float = dir.x * speed + z.sepX * sepW
 	var cz: float = dir.z * speed + z.sepZ * sepW
 	var k := 1.0 - exp(-dt * ACCEL)
-	z.vel.x += (cx - z.vel.x) * k
-	z.vel.z += (cz - z.vel.z) * k
+	var vel: Vector3 = z.vel
+	vel.x += (cx - vel.x) * k
+	vel.z += (cz - vel.z) * k
+	z.vel = vel
 	# Face the movement; face the player when close.
 	var face: float
 	if dist < 2.2 and lureP == null:
-		face = yawTo(dx, dz)
-	elif z.vel.x * z.vel.x + z.vel.z * z.vel.z > 0.04:
-		face = yawTo(z.vel.x, z.vel.z)
+		face = atan2(-dx, -dz)
+	elif vel.x * vel.x + vel.z * vel.z > 0.04:
+		face = atan2(-vel.x, -vel.z)
 	else:
 		face = z.yaw
 	_turnTo(z, face, dt)
 	_move(z, dt)
-	z.anim.speed = _hypot(z.vel.x, z.vel.z)
+	an.speed = sqrt(vel.x * vel.x + vel.z * vel.z)
 	_bookkeep(z, dt)
 	_place(z)
 
 func _move(z: Dictionary, dt: float) -> void:
-	z.vy -= GRAVITY * dt
-	var r := _moveCircle(z, Vector3(z.vel.x * dt, z.vy * dt, z.vel.z * dt), z.radius, z.height, 0.45)
+	var vy: float = z.vy - GRAVITY * dt
+	z.vy = vy
+	var vel: Vector3 = z.vel
+	var r := _moveCircle(z, Vector3(vel.x * dt, vy * dt, vel.z * dt), z.radius, z.height, 0.45)
 	if r.get("onGround", false):
 		z.vy = 0.0
 	z.anim.grounded = true
 
 func _fall(z: Dictionary, dt: float) -> void:
-	z.vel.x *= exp(-dt * 10.0)
-	z.vel.z *= exp(-dt * 10.0)
+	var vel: Vector3 = z.vel
+	vel.x *= exp(-dt * 10.0)
+	vel.z *= exp(-dt * 10.0)
+	z.vel = vel
 	_move(z, dt)
 
 func _attack(z: Dictionary, dt: float, dist: float, dy: float) -> void:
 	var g = game
 	var p = g.player if _zn == null else z.tgt
-	var TI: Dictionary = _Z().tunedIn
-	var wind: float = float(z.def.windup) if z.def.get("windup") else float(TI.windup)
+	var def: Dictionary = z.def
+	# perf: T.zombies.tunedIn only read when the type lacks its own numbers (same values)
+	var wind: float = float(def.windup) if def.get("windup") else float(_Z().tunedIn.windup)
 	var total := wind * 2.5
 	var prev: float = z.attackT
-	z.attackT += dt
-	z.anim.attack = minf(0.99, z.attackT / total)
-	z.anim.speed = 0.0
+	var at: float = prev + dt
+	z.attackT = at
+	var an: Dictionary = z.anim
+	an.attack = minf(0.99, at / total)
+	an.speed = 0.0
 	z.vel *= exp(-dt * 10.0)
-	if z.attackT < wind:
-		_turnTo(z, yawTo(p.pos.x - z.pos.x, p.pos.z - z.pos.z), dt * 1.5)
+	if at < wind:
+		var pp: Vector3 = p.pos
+		var zp: Vector3 = z.pos
+		_turnTo(z, atan2(-(pp.x - zp.x), -(pp.z - zp.z)), dt * 1.5)
 	# Swipe: a small lunge while the arms come down.
-	if z.attackT >= wind and z.attackT < wind + 0.18:
-		var delta := Vector3(-sin(z.yaw) * 1.3 * dt, 0, -cos(z.yaw) * 1.3 * dt)
+	if at >= wind and at < wind + 0.18:
+		var yaw: float = z.yaw
+		var delta := Vector3(-sin(yaw) * 1.3 * dt, 0, -cos(yaw) * 1.3 * dt)
 		if dist > 0.85:
 			_moveCircle(z, delta, z.radius, z.height, 0.45)
-	if prev < wind and z.attackT >= wind:
+	if prev < wind and at >= wind:
 		_play("zmb_swipe", {"pos": z.pos})
-	if not z.swung and z.attackT >= wind + 0.06:
+	if not z.swung and at >= wind + 0.06:
+		var TI: Dictionary = _Z().tunedIn
 		z.swung = true
-		z.cd = float(z.def.cd) if z.def.get("cd") != null else float(TI.cd)
+		z.cd = float(def.cd) if def.get("cd") != null else float(TI.cd)
 		var fwdDot: float = (-sin(z.yaw) * (p.pos.x - z.pos.x) + -cos(z.yaw) * (p.pos.z - z.pos.z)) / maxf(1e-3, dist)
-		var rng: float = float(z.def.range) if z.def.get("range") else 1.3
+		var rng: float = float(def.range) if def.get("range") else 1.3
 		if not (lure != null and z.lured) and p.alive and dist < rng + 0.35 and absf(dy) < 1.3 and fwdDot > 0.3:
-			var dmg = z.def.dmg if z.def.get("dmg") != null else TI.dmg
+			var dmg = def.dmg if def.get("dmg") != null else TI.dmg
 			if _zn != null and p != g.player:
 				# MP: the victim's own peer applies the hit (zombies.net_hurt)
 				var rkb: Vector3 = p.pos - z.pos
@@ -1356,10 +1397,9 @@ func _attack(z: Dictionary, dt: float, dist: float, dy: float) -> void:
 				if p.has_method("knockback"):
 					p.knockback(kb)
 	_fall(z, dt)
-	if z.attackT >= total:
+	if at >= total:
 		z.state = "chase"
-		z.anim.attack = 0.0
-
+		an.attack = 0.0
 # Area, anti-stuck and the straggler rule (chase states only).
 func _bookkeep(z: Dictionary, dt: float) -> void:
 	var g = game
@@ -1420,11 +1460,11 @@ func _restraggle(z: Dictionary) -> void:
 		_zn.outReenter(z)
 
 func _turnTo(z: Dictionary, yaw: float, dt: float) -> void:
-	var d := angDiff(yaw, z.yaw)
+	var zy: float = z.yaw
+	var d := atan2(sin(yaw - zy), cos(yaw - zy))       # angDiff(yaw, z.yaw)
 	var step := d * minf(1.0, dt * TURN)
-	z.yaw += step
+	z.yaw = zy + step
 	z.anim.turn = step / dt if dt > 0.0 else 0.0
-
 # Writes pos/yaw (+ entry pitch / squash) to the model.
 func _place(z: Dictionary, pitch := 0.0, sx := 1.0, sy := 1.0, sz := 1.0) -> void:
 	var G: Node3D = z.group
@@ -1480,18 +1520,23 @@ func _animate(z: Dictionary, dt: float) -> void:
 	var a = z.animator
 	if a == null:
 		return
-	z.animAcc += dt
-	# LOD: far or off-screen zombies animate every 3rd frame (the spring integrator substeps the bigger dt).
-	if z.lod > 0 and (_frame + z.id) % 3 != 0:
+	var step: float = z.animAcc + dt
+	# LOD (z.lod from _lod): 1 = ~30 Hz, 2 = ~15 Hz, staggered by id (the spring integrator substeps the bigger dt).
+	var lod: int = z.lod
+	if lod > 0 and (_frame + z.id) % (_lodK1 if lod == 1 else _lodK2) != 0:
+		z.animAcc = step
 		return
-	var step: float = z.animAcc
 	z.animAcc = 0.0
-	a.update(step, z.anim)
+	var an: Dictionary = z.anim
+	a.update(step, an)
+	var clap := float(an.get("clap", 0.0))
+	# perf: nothing more to pose this frame (no clap / gawk / lure kneel)
+	if clap <= 0.0 and not (z.gawkT > 0.0 and z.gawkAt != null) and not (an.down and lure != null and z.lured):
+		return
 	var J = _f(z.rig, "joints")
 	if J == null or _f(J, "shoulderL") == null:
 		return
 	# Clap (Tuned-In, every 4th step): hands swing together.
-	var clap := float(z.anim.get("clap", 0.0))
 	if clap > 0.0:
 		J.shoulderL.rotation.z += clap * 0.32
 		J.shoulderR.rotation.z -= clap * 0.32
@@ -1513,48 +1558,67 @@ func _lod() -> void:
 	var cam: Camera3D = g.camera
 	if cam == null or not cam.is_inside_tree():
 		return
-	_camPos = cam.global_position
-	var frustum: Array = cam.get_frustum()
+	var cp := cam.global_position
+	_camPos = cp
+	var frustum: Array[Plane] = cam.get_frustum()
 	var list := alive
 	# Shadows: the SHADOW_MAX nearest visible zombies keep their body shadow; the rest rely on the blob.
 	var order := _order
 	order.clear()
-	for z in list:
-		z.camDist = z.pos.distance_to(_camPos)
-		var c := Vector3(z.pos.x, z.pos.y + z.height * 0.5, z.pos.z)
-		var r: float = z.height * 0.8
+	for z: Dictionary in list:
+		var zp: Vector3 = z.pos
+		var cd: float = zp.distance_to(cp)
+		z.camDist = cd
+		var h: float = z.height
+		var c := Vector3(zp.x, zp.y + h * 0.5, zp.z)
+		var r: float = h * 0.8
 		var inside := true
-		for pl in frustum:
-			if (pl as Plane).distance_to(c) > r:
+		for pl: Plane in frustum:
+			if pl.distance_to(c) > r:
 				inside = false
 				break
 		z.onScreen = inside
-		z.lod = 0 if z.onScreen and z.camDist < ANIM_NEAR else 1
-		if z.onScreen:
+		z.lod = 1 if inside and cd < ANIM_NEAR else 2
+		if inside:
 			order.append(z)
-	order.sort_custom(func(a, b): return a.camDist < b.camDist)
-	for z in list:
+	order.sort_custom(_byCamDist)
+	for k in mini(ANIM_FULL_N, order.size()):
+		var zn: Dictionary = order[k]
+		if zn.camDist < ANIM_FULL:
+			zn.lod = 0
+	# perf: membership in the first SHADOW_MAX of `order` by id (was an identity search per zombie)
+	var near := _shadowIds
+	near.clear()
+	for k in mini(SHADOW_MAX, order.size()):
+		near[order[k].id] = true
+	for z: Dictionary in list:
 		var m = z.model
-		var bodies = _f(m, "bodies") if m != null else null
+		if m == null:
+			continue
+		var md: bool = m is Dictionary
+		var bodies = (m.get("bodies") if md else _f(m, "bodies"))
 		if bodies:
-			var cast: bool = z.onScreen and _idx(order, z) < SHADOW_MAX
+			var cast: bool = z.onScreen and near.has(z.id)
 			var want := GeometryInstance3D.SHADOW_CASTING_SETTING_ON if cast else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			for b in bodies:
 				if is_instance_valid(b) and b.cast_shadow != want:   # perf: no RS update when unchanged
 					b.cast_shadow = want
-		var cards = _f(m, "cards") if m != null else null
+		var cards = (m.get("cards") if md else _f(m, "cards"))
 		if cards is Array and cards.size() > 0:
 			var vis: bool = z.camDist < CARD_LOD
 			for c in cards:
 				if is_instance_valid(c):
 					c.visible = vis
-		var det = _f(m, "details") if m != null else null
+		var det = (m.get("details") if md else _f(m, "details"))
 		if det is Array and det.size() > 0:
 			var vis: bool = z.camDist < DETAIL_LOD or _oneTake      # ONE TAKE stars live on the veil
 			for c in det:
 				if is_instance_valid(c):
 					c.visible = vis
 	order.clear()
+
+static func _byCamDist(a, b) -> bool:
+	return a.camDist < b.camDist
 
 # ------------------------------------------------------------------------------------------------ damage
 func damage(z, amount, info: Dictionary = {}) -> bool:
@@ -2019,8 +2083,10 @@ func raycast(origin: Vector3, dir: Vector3, maxDist := 80.0):
 				best = z
 				bestInfo = {"zone": "torso", "head": false, "mul": 1.0}
 			continue
-		var c := Vector3(z.pos.x, z.pos.y + z.height * z.scale * 0.5, z.pos.z)
-		var R: float = z.height * z.scale * 0.62 + 0.35
+		var zp: Vector3 = z.pos
+		var hs: float = z.height * z.scale
+		var c := Vector3(zp.x, zp.y + hs * 0.5, zp.z)
+		var R: float = hs * 0.62 + 0.35
 		if raySphere(origin, dir, c, R) > bd:
 			continue
 		var h = _rayZombie(z, origin, dir, bd)
@@ -2046,7 +2112,6 @@ func _rayZombie(z: Dictionary, o: Vector3, d: Vector3, maxD: float):
 	var zones = z.hitZones
 	var bt := INF
 	var be := INF
-	var bz = null
 	if zones == null:
 		var hc := _worldPos(z.head)
 		var th := raySphere(o, d, hc, z.headR)
@@ -2057,31 +2122,65 @@ func _rayZombie(z: Dictionary, o: Vector3, d: Vector3, maxD: float):
 			return null
 		var isHead := th <= tb
 		return {"dist": minf(th, tb), "head": isHead, "zone": "head" if isHead else "torso", "mul": 1.0}
-	for hz in zones:
-		var bone = hz.get("bone")
+	# perf: the zones compiled once (typed bones / offsets / radii, z._hzc); same tests in the same order
+	var C = z.get("_hzc")
+	if C == null or not is_same(C[0], zones):
+		C = _hzCompile(zones)
+		z["_hzc"] = C
+	var bones: Array = C[1]
+	var o1: PackedVector3Array = C[2]
+	var b2s: Array = C[3]
+	var o2: PackedVector3Array = C[4]
+	var rr: PackedFloat64Array = C[5]
+	var fl: PackedInt32Array = C[6]
+	var sc: float = z.scale
+	var bi := -1
+	for k in bones.size():
+		var bone = bones[k]
 		if bone == null or not is_instance_valid(bone):
 			continue
-		var off = hz.get("offset")
-		var a: Vector3 = _world(bone) * (DAU.v3(off) if off != null else Vector3.ZERO)
+		var bn: Node3D = bone
+		var a: Vector3 = (bn.global_transform if bn.is_inside_tree() else _world(bn)) * o1[k]
 		var t: float
-		var r: float = float(hz.r) * z.scale
-		if hz.get("shape") == "capsule":
-			var o2 = hz.get("offset2")
-			var b2 = hz.get("bone2")
-			var bn: Node3D = b2 if b2 != null else bone
-			var b: Vector3 = _world(bn) * (DAU.v3(o2) if o2 != null else Vector3.ZERO)
+		var r: float = rr[k] * sc
+		var f: int = fl[k]
+		if (f & 1) != 0:
+			var b2 = b2s[k]
+			var bn2: Node3D = b2 if b2 != null else bn
+			var b: Vector3 = (bn2.global_transform if bn2.is_inside_tree() else _world(bn2)) * o2[k]
 			t = rayCapsule(o, d, a, b, r)
 		else:
 			t = raySphere(o, d, a, r)
 		# Head wins near-ties (the head sphere overlaps the neck end of the torso).
-		var te := t - 0.06 if hz.get("head") else t
+		var te := t - 0.06 if (f & 2) != 0 else t
 		if te < be:
 			be = te
 			bt = t
-			bz = hz
-	if bz == null or bt > maxD:
+			bi = k
+	if bi < 0 or bt > maxD:
 		return null
+	var bz: Dictionary = zones[bi]
 	return {"dist": bt, "zone": bz.get("zone"), "head": _t(bz.get("head", false)), "mul": bz.mul if bz.get("mul") != null else 1.0}
+
+# [zones, bones, offsets, bones2 (null = bone), offsets2, radii, flags (1 capsule, 2 head)] of a hitZones Array.
+static func _hzCompile(zones: Array) -> Array:
+	var bones: Array = []
+	var b2s: Array = []
+	var o1 := PackedVector3Array()
+	var o2 := PackedVector3Array()
+	var rr := PackedFloat64Array()
+	var fl := PackedInt32Array()
+	for hz in zones:
+		bones.append(hz.get("bone"))
+		var off = hz.get("offset")
+		o1.append(DAU.v3(off) if off != null else Vector3.ZERO)
+		var cap: bool = hz.get("shape") == "capsule"
+		b2s.append(hz.get("bone2") if cap else null)
+		var of2 = hz.get("offset2")
+		o2.append(DAU.v3(of2) if (cap and of2 != null) else Vector3.ZERO)
+		rr.append(float(hz.r))
+		fl.append((1 if cap else 0) | (2 if hz.get("head") else 0))
+	return [zones, bones, o1, b2s, o2, rr, fl]
 
 func inRadius(pos: Vector3, r: float, out: Array = []) -> Array:
 	out.clear()
@@ -2265,7 +2364,8 @@ func _col():
 # level.col.moveCircle: see the port notes (result Dictionary, the moved feet in "pos", stored back into owner.pos).
 # owner = the object whose pos the JS passed (z / the player): collision.gd remembers "grounded" on it.
 func _moveCircle(owner, delta: Vector3, radius: float, height: float, stepUp := 0.45) -> Dictionary:
-	var col = _col()
+	var L = game.level
+	var col = L.get("col") if L != null else null
 	if col == null:
 		owner.pos = owner.pos + delta
 		return {"onGround": false}

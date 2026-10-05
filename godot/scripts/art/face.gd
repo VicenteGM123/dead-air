@@ -110,6 +110,10 @@ class FaceController extends RefCounted:
 			bl = blinkPhase * 2.0 if blinkPhase < 0.5 else maxf(0.0, 2.0 - blinkPhase * 2.0)
 			if blinkPhase >= 1.0:
 				blinkPhase = -1.0
+		# perf: nothing to drive (the sculpted zombies: no eyes / brows / morphs): the timers and their randf() calls
+		# above are all that matters
+		if eyes.is_empty() and brows.is_empty() and (mesh == null or _morphList.is_empty()):
+			return
 		var X: Dictionary = EXPR.get(expr, {})
 		var w := exprW
 		var k := 1.0 - exp(-dt * 14.0)

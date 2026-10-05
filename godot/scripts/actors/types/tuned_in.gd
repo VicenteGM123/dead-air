@@ -63,17 +63,21 @@ func release(_game, z: Dictionary) -> void:
 
 # Flavour only: returns false so the manager steers and swipes.
 func update(game, z: Dictionary, dt: float) -> bool:
+	# perf: typed locals (same arithmetic, same order of randf() / audio calls)
 	var f: Dictionary = z.flags
 	var p = game.player
-	var d := Vector2(p.pos.x - z.pos.x, p.pos.z - z.pos.z).length()
+	var pp: Vector3 = p.pos
+	var zp: Vector3 = z.pos
+	var d := Vector2(pp.x - zp.x, pp.z - zp.z).length()
 	# Global clap limiter (~3 per second).
 	_clapT += dt
 	if _clapT > 0.33:
 		_clapT = 0.0
 		_clapBudget = mini(1, _clapBudget + 1)
 
-	f.groanT -= dt
-	if f.groanT <= 0.0:
+	var groanT: float = f.groanT - dt
+	f.groanT = groanT
+	if groanT <= 0.0:
 		f.groanT = 3.0 + randf() * 5.0
 		if d < HEAR:
 			_play(game, "zmb_groan", {"pos": z.pos, "rate": 0.9 + randf() * 0.25, "vol": 0.8})
@@ -84,22 +88,26 @@ func update(game, z: Dictionary, dt: float) -> bool:
 		if z.animator is Object and z.animator.has_method("kick"):
 			z.animator.kick(0.35)
 	# Every 4th footstep (half gait cycle) the hands clap together.
+	var an: Dictionary = z.anim
 	var a = z.animator
 	var ph = a.get("phase") if a is Object else null
 	if ph is float or ph is int:
 		var half := int(floorf(float(ph) / PI))
 		if half != f.lastPhase:
 			f.lastPhase = half
-			if z.anim.speed > 0.4:
-				f.step += 1
-				if f.step % 4 == 0:
+			if an.speed > 0.4:
+				var step: int = f.step + 1
+				f.step = step
+				if step % 4 == 0:
 					f.clapT = 0.22
 					if d < HEAR * 0.75 and _clapBudget > 0:
 						_clapBudget -= 1
 						_play(game, "zmb_clap", {"pos": z.pos, "vol": 0.7})
-	if f.clapT > 0.0:
-		f.clapT = maxf(0.0, f.clapT - dt)
-	z.anim.clap = sin((1.0 - f.clapT / 0.22) * PI) if f.clapT > 0.0 else 0.0
+	var clapT: float = f.clapT
+	if clapT > 0.0:
+		clapT = maxf(0.0, clapT - dt)
+		f.clapT = clapT
+	an.clap = sin((1.0 - clapT / 0.22) * PI) if clapT > 0.0 else 0.0
 	return false
 
 # MP client puppet (zombies_net.gd): the same flavour (groans, claps, the clap pose) for the local listener; the

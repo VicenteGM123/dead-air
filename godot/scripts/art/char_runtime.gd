@@ -365,7 +365,6 @@ static func buildCharacter(defOrId, opts: Dictionary = {}) -> Character:
 		animator = Rig.Animator.new(rig, style)
 		if not skel.handSets.is_empty():
 			skel.handReq = animator.hands
-		var orig := Callable(animator, "_procUpdate")
 		var armOut: float = def.armOut if def.get("armOut") != null else 0.15
 		# [joint, [x, y, z]] pairs resolved once
 		var offs = null
@@ -374,11 +373,13 @@ static func buildCharacter(defOrId, opts: Dictionary = {}) -> Character:
 			for n in def.poseOffset:
 				if J.has(n):
 					offs.append([J[n], def.poseOffset[n]])
-		var fc = face
-		animator.updateFn = func(dt: float, st: Dictionary) -> void:
-			orig.call(dt, st)
-			CharRuntime.applyRestOffsets(J, armOut, offs)
-			fc.update(dt)
+		# the wrapper is Animator.charUpdate: procedural pose + applyRestOffsets(J, armOut, offs) + face.update(dt)
+		# (perf: on the fast path the rest offsets are folded into the pose's single joint write)
+		animator.restOn = true
+		animator.restArmOut = armOut
+		animator.restOffs = offs
+		animator.face = face
+		animator.updateFn = Callable(animator, "charUpdate")
 	elif def.get("createAnimator") is Callable:
 		animator = (def.createAnimator as Callable).call(rig, {"face": face})
 
@@ -496,7 +497,12 @@ class Character extends RefCounted:
 # Skeleton3D whose bone poses follow the rig's Node3D joints (bone i = joints[i]); synced every frame after all the
 # game's updates (process_priority 1000; the JS skeleton read bone.matrixWorld at render time).
 class CharSkeleton extends Skeleton3D:
-	var joints: Array = []
+	var joints: Array[Node3D] = []
+	# perf: lazy = sync only on frames the animator `anim` updated (its `stamp`) or right after (re)entering the
+	# tree; set for pooled zombie models, whose joints are only written by their animator's update().
+	var lazy := false
+	var anim: Object = null
+	var _fresh := true
 	# Hand shapes (char-polish): handSets side -> {shape: part pivot}; handReq = the animator's `hands` (side ->
 	# [shape, process frame]); a request older than the previous frame falls back to 'open'.
 	var handSets := {}
@@ -510,8 +516,14 @@ class CharSkeleton extends Skeleton3D:
 	func _ready() -> void:
 		set_process(true)
 
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_ENTER_TREE:
+			_fresh = true
+
 	func _process(_delta: float) -> void:
-		sync()
+		if not lazy or _fresh or anim == null or int(anim.get("stamp")) == Engine.get_process_frames():
+			_fresh = false
+			sync()
 		if not handSets.is_empty():
 			applyHands()
 
@@ -529,9 +541,8 @@ class CharSkeleton extends Skeleton3D:
 			for shape in set_:
 				(set_[shape] as Node3D).visible = shape == want
 
+	# perf: one pose write per bone (set_bone_pose = position / rotation / scale of the joint's local transform)
 	func sync() -> void:
-		for i in joints.size():
-			var j: Node3D = joints[i]
-			set_bone_pose_position(i, j.position)
-			set_bone_pose_rotation(i, j.quaternion)
-			set_bone_pose_scale(i, j.scale)
+		var js := joints
+		for i in js.size():
+			set_bone_pose(i, js[i].transform)

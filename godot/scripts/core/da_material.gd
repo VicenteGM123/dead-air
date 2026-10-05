@@ -146,6 +146,11 @@ var additive: bool:
 		_setVariant("additive", v)
 
 func setParam(n: String, v) -> void:
+	# perf: an unchanged value is not re-sent (each set queues a material update in the RenderingServer); the twin
+	# always receives the same values (materials.gd copies them when it is created)
+	var cur = get_shader_parameter(n)
+	if cur != null and typeof(cur) == typeof(v) and cur == v:
+		return
 	set_shader_parameter(n, v)
 	if twin != null:
 		twin.set_shader_parameter(n, v)

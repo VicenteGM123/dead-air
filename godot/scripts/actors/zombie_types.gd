@@ -656,6 +656,14 @@ static func buildBakedZombie(def: Dictionary, artId: String, game):
 		return null
 	var group: Node3D = _f(c, "group")
 	var rig = _f(c, "rig")
+	# perf: the skeleton copies the joints only on frames the animator ran (animation LOD) or on (re)entering the tree
+	var sm = _f(c, "skinnedMesh")
+	var skel = sm.get_parent() if sm is Node else null
+	if skel != null and "lazy" in skel and "stamp" in anim:
+		skel.lazy = true
+		skel.anim = anim
+		if "posStatic" in anim:
+			anim.posStatic = true
 	var eyes := zombieEyeMaterial()
 	var cards: Array = []
 	var bodies: Array = []

@@ -439,6 +439,7 @@ class Animator extends RefCounted:
 		_lagX.kick(4.0 * amount)
 
 	func update(dt: float, st: Dictionary = {}) -> void:
+		stamp = Engine.get_process_frames()
 		if updateFn.is_valid():
 			updateFn.call(dt, st)
 		else:
@@ -448,6 +449,422 @@ class Animator extends RefCounted:
 				(fn as Callable).call(rig, dt)
 
 	func _procUpdate(dt: float, st: Dictionary = {}) -> void:
+		if _fast < 0:
+			_fastInit()
+		if _fast == 1:
+			_procFast(dt, st, false)
+		else:
+			_procSlow(dt, st)
+
+	# ---- perf: fast path of the procedural pose (humanoid rigs: rig.base = the 17 JOINTS in order) --------------
+	# The pose is accumulated in typed locals with the same arithmetic in the same order as the generic path
+	# (_procSlow; Vector3 components are float32 exactly like the Node3D fields they stand for) and every joint is
+	# written once at the end instead of reset + read-modify-write per layer. Style params / wobble cached as floats
+	# (p.arms is read every update: the Forecaster switches it at run time).
+	# With restOn (char_runtime: rest offsets + face folded in, see charUpdate) and no named pose / override /
+	# hand alignment this frame, the rest offsets are added to the locals before the single write.
+	var _fast := -1                       # -1 not checked yet, 0 generic path, 1 fast path
+	var _jn: Array[Node3D] = []
+	var _jbase := PackedVector3Array()
+	var _rootN: Node3D = null
+	var _pCycle := 0.0
+	var _pCycleK := 0.0
+	var _pBob := 0.0
+	var _pSquash := 0.0
+	var _pLegSwing := 0.0
+	var _pLegRun := 0.0
+	var _pKnee := 0.0
+	var _pArm := 0.0
+	var _pArmRun := 0.0
+	var _pElbow := 0.0
+	var _pLean := 0.0
+	var _pTwist := 0.0
+	var _pSway := 0.0
+	var _pBreathe := 0.0
+	var _pHeadLag := 0.0
+	var _pWobble := 0.0
+	var _pAlign := false
+	var _wAmp := 1.0
+	var _wTilt := 0.0
+	var _wArmL := 0.0
+	var _wArmR := 0.0
+	var _wSpeed := 1.0
+	var _dLeg := 0.0
+	var stamp := -1                       # process frame of the last update() (CharSkeleton lazy sync)
+	# posStatic: only update() (its override / poses) moves the joints other than the hips (pooled zombie models): their
+	# rest positions are re-checked only after an update that ran such external code
+	var posStatic := false
+	var _posTouched := true
+	# char_runtime wrapper state (charUpdate): rest offsets (def.armOut / def.poseOffset) + the face
+	var restOn := false
+	var restArmOut := 0.0
+	var restOffs = null                   # [[Node3D, [x, y, z]], ...] (generic path) | null
+	var _offV := PackedVector3Array()     # the same offsets per JOINTS index (fast path)
+	var _offMask := 0
+	var face = null
+
+	func _fastInit() -> void:
+		_fast = 0
+		var J = rig.joints
+		var B: Array = rig.base
+		if not (J is Dictionary) or B.size() != Rig.JOINTS.size() or not (rig.root is Node3D):
+			return
+		var jn: Array[Node3D] = []
+		var jb := PackedVector3Array()
+		for i in B.size():
+			var e: Array = B[i]
+			if not (e[0] is Node3D) or not is_same(e[0], J.get(Rig.JOINTS[i])):
+				return
+			jn.append(e[0])
+			jb.append(e[1])
+		_jn = jn
+		_jbase = jb
+		_rootN = rig.root
+		_pCycle = float(p.cycle)
+		_pCycleK = float(p.cycleK)
+		_pBob = float(p.bob)
+		_pSquash = float(p.squash)
+		_pLegSwing = float(p.legSwing)
+		_pLegRun = float(p.legRun)
+		_pKnee = float(p.knee)
+		_pArm = float(p.arm)
+		_pArmRun = float(p.armRun)
+		_pElbow = float(p.elbow)
+		_pLean = float(p.lean)
+		_pTwist = float(p.twist)
+		_pSway = float(p.sway)
+		_pBreathe = float(p.breathe)
+		_pHeadLag = float(p.headLag)
+		_pWobble = float(p.wobble)
+		_pAlign = Rig.truthy(p.alignHand)
+		_wAmp = float(wob.amp)
+		_wTilt = float(wob.tilt)
+		_wArmL = float(wob.armL)
+		_wArmR = float(wob.armR)
+		_wSpeed = float(wob.speed)
+		_dLeg = float(rig.dims.leg) if rig.dims is Dictionary and rig.dims.get("leg") != null else 0.0
+		_offV.resize(jn.size())
+		_offMask = 0
+		if restOffs is Array:
+			for o in restOffs:
+				var k := jn.find(o[0])
+				if k < 0:
+					_fast = 0
+					return
+				var e: Array = o[1]
+				_offV[k] = Vector3(e[0], e[1], e[2])
+				_offMask |= 1 << k
+		_fast = 1
+
+	# char_runtime's update wrapper (updateFn): the procedural pose, the rest offsets, the face.
+	func charUpdate(dt: float, st: Dictionary = {}) -> void:
+		if _fast < 0:
+			_fastInit()
+		if _fast == 1:
+			_procFast(dt, st, true)
+		else:
+			_procSlow(dt, st)
+			CharRuntime.applyRestOffsets(rig.joints, restArmOut, restOffs)
+		if face != null:
+			face.update(dt)
+
+	static func _lerpV(r: Vector3, x: float, y: float, z: float, a: float) -> Vector3:
+		return Vector3(r.x + (x - r.x) * a, r.y + (y - r.y) * a, r.z + (z - r.z) * a)
+
+	static func _n(v) -> float:
+		if v is float:
+			return v
+		if v == null:
+			return 0.0
+		return Rig.num(v)
+
+	func _procFast(dt: float, st: Dictionary, rest: bool) -> void:
+		t += dt
+		var tt := t
+		var speed := _n(st.get("speed"))
+		var gv = st.get("grounded", true)
+		var grounded: bool = not (gv is bool and gv == false)
+		var dn := 1.0 - exp(-dt * 10.0)
+		var arms = p.arms
+		var armsFwd: bool = arms == "forward"
+		var hipsP: Vector3 = _jbase[0]
+		var rHips := Vector3.ZERO
+		var rSpine := Vector3.ZERO
+		var rChest := Vector3.ZERO
+		var rHead := Vector3.ZERO
+		var rShL := Vector3.ZERO
+		var rElL := Vector3.ZERO
+		var rShR := Vector3.ZERO
+		var rElR := Vector3.ZERO
+		var rHipL := Vector3.ZERO
+		var rKnL := Vector3.ZERO
+		var rFtL := Vector3.ZERO
+		var rHipR := Vector3.ZERO
+		var rKnR := Vector3.ZERO
+		var rFtR := Vector3.ZERO
+		var rootRot := Vector3.ZERO
+
+		var moving := clampf(speed / 1.2, 0.0, 1.0) if grounded else 0.0
+		move += (moving - move) * dn
+		run += (clampf(speed / 4.6, 0.0, 1.5) - run) * dn
+		aimW += ((1.0 if Rig.truthy(st.get("aiming")) else 0.0) - aimW) * (1.0 - exp(-dt * 14.0))
+		air += ((0.0 if grounded else 1.0) - air) * (1.0 - exp(-dt * 12.0))
+		var w := move
+		var rn := run
+		var ai := air
+
+		if grounded and not _grounded:
+			squash.kick(-3.4)
+		if not grounded and _grounded:
+			squash.kick(1.8)
+		_grounded = grounded
+		var hurt := _n(st.get("hurt"))
+		if hurt > _hurt + 0.3:
+			squash.kick(-2.6)
+			_lagX.kick(-5)
+		_hurt = hurt
+
+		var cycle: float = (_pCycle + _pCycleK * speed) / _wSpeed
+		phase += (-1.0 if Rig.truthy(st.get("back")) else 1.0) * dt * (speed / cycle) * PI * 2.0 * (1.0 if grounded else 0.25)
+		var ph := phase
+		var sn := sin(ph)
+		var cs := cos(ph)
+
+		# Legs.
+		var legA: float = (_pLegSwing + _pLegRun * rn) * w * _wAmp
+		var kneeA: float = (_pKnee + 0.9 * rn) * w
+		rHipL.x = sn * legA
+		rHipR.x = -sn * legA
+		rKnL.x = -(0.08 + maxf(0.0, cs) * kneeA) - 0.06 * w
+		rKnR.x = -(0.08 + maxf(0.0, -cs) * kneeA) - 0.06 * w
+		rFtL.x = -(rHipL.x + rKnL.x) * 0.7
+		rFtR.x = -(rHipR.x + rKnR.x) * 0.7
+
+		# Body bounce.
+		var pass_ := pow(absf(cs), 0.7)
+		var bob: float = w * _pBob * (0.6 + rn * 0.6) * (pass_ - 0.5)
+		hipsP.y += bob
+		_bobVel = (bob - _prevBob) / maxf(dt, 1e-4)
+		_prevBob = bob
+		var contact := pow(1.0 - absf(cs), 5.0) * w
+		var sq := squash.update(dt, 0.0)
+		var sy: float = 1.0 + sq - contact * _pSquash
+		var rootScale := Vector3(1.0 / sqrt(sy), sy, 1.0 / sqrt(sy))
+
+		# Torso.
+		var lean := _pLean
+		var sway := _pSway
+		var twist := _pTwist
+		rSpine.x = -(0.03 + lean * (0.4 + rn)) * w - (lean * 0.6 if armsFwd else 0.0)
+		var turn := _n(st.get("turn"))
+		rSpine.z = clampf(-turn * 0.05, -0.2, 0.2) + cs * sway * w * 0.5
+		rHips.y = -sn * twist * 0.6 * w
+		rChest.y = sn * twist * w * (0.5 + rn)
+		rHips.z = cs * sway * w
+		var legYaw := _n(st.get("legYaw")) * w
+		rHips.y += legYaw
+		rSpine.y -= legYaw
+		var breatheP := _pBreathe
+		var breathe := 1.0 + breatheP + breatheP * sin(tt * PI * 2.0 * 0.3)
+		var chestScale := Vector3(1.0 + (breathe - 1.0) * 0.5, breathe, 1.0 + (breathe - 1.0) * 0.7)
+
+		# Arms.
+		var armA: float = (_pArm + _pArmRun * rn) * w
+		if armsFwd:
+			var sw := sin(tt * 1.4 * _wSpeed + seed) * 0.12
+			rShL = Vector3(PI / 2.0 - 0.22 + sw + sn * armA + _wArmL, 0, 0.12)
+			rShR = Vector3(PI / 2.0 - 0.22 - sw - sn * armA + _wArmR, 0, -0.12)
+			rElL.x = 0.12 + sin(tt * 2.1 + seed) * 0.08
+			rElR.x = 0.12 + cos(tt * 2.3 + seed) * 0.08
+		else:
+			var flop := sin(tt * 5.0 + seed) * 0.25 if arms == "floppy" else 0.0
+			rShL = Vector3(-sn * armA + flop, 0, 0.1 + 0.05 * (1.0 - w))
+			rShR = Vector3(sn * armA - flop, 0, -0.1 - 0.05 * (1.0 - w))
+			var elbow := _pElbow
+			rElL.x = 0.15 + (elbow + rn * 0.5) * w + maxf(0.0, -sn) * 0.3 * w
+			rElR.x = 0.15 + (elbow + rn * 0.5) * w + maxf(0.0, sn) * 0.3 * w
+			var idle := (1.0 - w) * sin(tt * 1.9) * 0.03
+			rShL.x += idle
+			rShR.x -= idle
+
+		# Air pose.
+		if ai > 0.01:
+			rHipL.x += 0.55 * ai
+			rKnL.x -= 0.9 * ai
+			rHipR.x += 0.15 * ai
+			rKnR.x -= 0.45 * ai
+			rShL.z += 0.45 * ai
+			rShR.z -= 0.45 * ai
+
+		# Aiming.
+		var pitch := _n(st.get("aimPitch"))
+		var yaw := _n(st.get("aimYaw"))
+		rSpine.y += yaw
+		if aimW > 0.001:
+			var a := aimW
+			var lift := pitch * 0.85
+			rShR = _lerpV(rShR, PI / 2.0 + lift - 0.28, 0, -0.05, a)
+			rElR.x = lerpf(rElR.x, 0.3, a)
+			rShL = _lerpV(rShL, PI / 2.0 + lift - 0.55, 0, 0.62, a)
+			rElL.x = lerpf(rElL.x, 0.85, a)
+			rChest.x += pitch * 0.25 * a
+		rHead.x += pitch * 0.35 + (1.0 - aimW) * 0.04
+		rHead.y += yaw * 0.25
+
+		# Recoil / reload / melee layers.
+		var rec := _n(st.get("recoil"))
+		if rec > 0.0:
+			rChest.x += rec * 0.1
+			rShR.x += rec * 0.35
+			rShL.x += rec * 0.25
+		var rl := _n(st.get("reload"))
+		var rarc := sin(PI * rl) if rl > 0.0 and rl < 1.0 else 0.0
+		if rarc > 0.0:
+			rShL.x -= rarc * 1.0
+			rElL.x += rarc * 0.6
+			rShR.x -= rarc * 0.35
+			rHead.x -= rarc * 0.25
+		var ml := _n(st.get("melee"))
+		if ml > 0.0 and ml < 1.0:
+			var wind := Rig.smooth(0, 0.25, ml)
+			var strike := Rig.smooth(0.25, 0.45, ml)
+			var back := Rig.smooth(0.55, 1, ml)
+			var k := wind * (1.0 - back)
+			rChest.y += (0.45 * wind - 0.9 * strike) * (1.0 - back)
+			rShR.x = lerpf(rShR.x, lerpf(2.7, 0.9, strike), k)
+			rShR.z -= 0.5 * k
+			rElR.x = lerpf(rElR.x, lerpf(1.4, 0.2, strike), k)
+			rSpine.x -= 0.15 * strike * (1.0 - back)
+
+		# Zombie attack.
+		var at := _n(st.get("attack"))
+		if at > 0.0 and at < 1.0:
+			var up := Rig.smooth(0, 0.4, at) * (1.0 - Rig.smooth(0.4, 0.6, at))
+			var down := Rig.smooth(0.4, 0.6, at) * (1.0 - Rig.smooth(0.75, 1, at))
+			rShL.x += 1.1 * up - 0.9 * down
+			rShR.x += 1.1 * up - 0.9 * down
+			rSpine.x += 0.2 * up - 0.35 * down
+			rootScale.y *= 1.0 - 0.08 * up
+
+		# Hurt.
+		var hu := hurt
+		if hu > 0.0:
+			rSpine.x += hu * 0.28
+			rHead.x += hu * 0.3
+			hipsP.z += hu * 0.06
+
+		# Climb.
+		var cl := _n(st.get("climb"))
+		if cl > 0.0:
+			var c := sin(cl * PI * 6.0)
+			rShL = _lerpV(rShL, 2.6 + c * 0.35, 0, 0.2, 1)
+			rShR = _lerpV(rShR, 2.6 - c * 0.35, 0, -0.2, 1)
+			rHipL.x += maxf(0.0, c) * 1.1
+			rKnL.x -= maxf(0.0, c) * 1.4
+			rHipR.x += maxf(0.0, -c) * 1.1
+			rKnR.x -= maxf(0.0, -c) * 1.4
+
+		# Dance.
+		var da := _n(st.get("dance"))
+		if da > 0.0:
+			var b := sin(tt * PI * 4.0)
+			rHips.z += b * 0.12 * da
+			hipsP.x += b * 0.04 * da
+			rChest.z -= b * 0.1 * da
+			rShR.x += (2.6 if b > 0.0 else 0.4) * da * 0.6
+			rShR.z -= 0.3 * da
+			rKnL.x -= maxf(0.0, b) * 0.4 * da
+			rKnR.x -= maxf(0.0, -b) * 0.4 * da
+
+		# Down.
+		if Rig.truthy(st.get("down")):
+			hipsP.y -= _dLeg * 0.55
+			rHipL.x += 1.4
+			rKnL.x -= 2.2
+			rHipR.x += 0.3
+			rKnR.x -= 1.6
+			rSpine.x -= 0.35
+			rHead.x -= 0.3
+
+		# Head lag springs.
+		var headLagP := _pHeadLag
+		var wobble := _pWobble
+		var lx := _lagX.update(dt, -_bobVel * 0.06 * headLagP)
+		var lz := _lagZ.update(dt, -turn * 0.03 * headLagP + (sin(tt * 0.9 + seed) * 0.12 * wobble if wobble != 0.0 else 0.0))
+		headLag.x = lx
+		headLag.z = lz
+		rHead.x += lx
+		rHead.z += lz + _wTilt
+
+		# Dead.
+		var de := _n(st.get("dead"))
+		if de > 0.0:
+			rootRot.x = (PI / 2.0) * Rig.easeOutBounce(minf(1.0, de))
+			rShL.x = lerpf(rShL.x, 2.6, de)
+			rShR.x = lerpf(rShR.x, 2.6, de)
+
+		var ovOn: bool = override is Callable and (override as Callable).is_valid()
+		var alignOn: bool = _pAlign and aimW > 0.001 and not (ml > 0.0 and ml < 1.0)
+		# rest offsets folded in (nothing reads the joints between the pose and them on this path)
+		var restNow: bool = rest and _poses.is_empty() and not ovOn and not alignOn
+		var om := 0
+		if restNow:
+			if restArmOut != 0.0:
+				var fl := maxf(0.0, 1.0 - absf(rShL.x) / 1.3)
+				var fr := maxf(0.0, 1.0 - absf(rShR.x) / 1.3)
+				rShL.z -= restArmOut * fl
+				rShR.z += restArmOut * fr
+			om = _offMask
+		var O := _offV
+
+		# Single write per joint (positions other than the hips only when something else moved them).
+		var jn := _jn
+		var jb := _jbase
+		var R := _rootN
+		if R.rotation != rootRot:
+			R.rotation = rootRot
+		if R.position != Vector3.ZERO:
+			R.position = Vector3.ZERO
+		R.scale = rootScale
+		var n: Node3D = jn[0]
+		if n.position != hipsP:
+			n.position = hipsP
+		n.rotation = rHips if (om & 1) == 0 else rHips + O[0]
+		if not posStatic or _posTouched:
+			for i in range(1, 17):
+				n = jn[i]
+				if n.position != jb[i]:
+					n.position = jb[i]
+		jn[1].rotation = rSpine if (om & 2) == 0 else rSpine + O[1]
+		n = jn[2]
+		n.rotation = rChest if (om & 4) == 0 else rChest + O[2]
+		n.scale = chestScale
+		jn[3].rotation = Vector3.ZERO if (om & 8) == 0 else O[3]
+		jn[4].rotation = rHead if (om & 16) == 0 else rHead + O[4]
+		jn[5].rotation = rShL if (om & 32) == 0 else rShL + O[5]
+		jn[6].rotation = rElL if (om & 64) == 0 else rElL + O[6]
+		jn[7].rotation = Vector3.ZERO if (om & 128) == 0 else O[7]
+		jn[8].rotation = rShR if (om & 256) == 0 else rShR + O[8]
+		jn[9].rotation = rElR if (om & 512) == 0 else rElR + O[9]
+		jn[10].rotation = Vector3.ZERO if (om & 1024) == 0 else O[10]
+		jn[11].rotation = rHipL if (om & 2048) == 0 else rHipL + O[11]
+		jn[12].rotation = rKnL if (om & 4096) == 0 else rKnL + O[12]
+		jn[13].rotation = rFtL if (om & 8192) == 0 else rFtL + O[13]
+		jn[14].rotation = rHipR if (om & 16384) == 0 else rHipR + O[14]
+		jn[15].rotation = rKnR if (om & 32768) == 0 else rKnR + O[15]
+		jn[16].rotation = rFtR if (om & 65536) == 0 else rFtR + O[16]
+
+		_posTouched = ovOn or alignOn or not _poses.is_empty()
+		_applyPoses()
+		if alignOn:
+			_alignHand(pitch, yaw, rarc)
+		if ovOn:
+			(override as Callable).call(rig, dt)
+		if rest and not restNow:
+			CharRuntime.applyRestOffsets(rig.joints, restArmOut, restOffs)
+
+	# The generic path (any rig): reset to rest, then each layer reads and writes the joints.
+	func _procSlow(dt: float, st: Dictionary = {}) -> void:
 		var J: Dictionary = rig.joints
 		var D: Dictionary = rig.dims
 		t += dt
@@ -718,7 +1135,10 @@ class FnAnimator extends RefCounted:
 	var kickFn: Callable = Callable()
 	var postUpdate: Array = []
 
+	var stamp := -1                       # process frame of the last update() (CharSkeleton lazy sync)
+
 	func update(dt: float, st: Dictionary = {}) -> void:
+		stamp = Engine.get_process_frames()
 		if updateFn.is_valid():
 			updateFn.call(dt, st)
 		for fn in postUpdate:
