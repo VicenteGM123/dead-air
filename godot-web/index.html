@@ -111,9 +111,9 @@ body {
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":73706712,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":73735872,"index.wasm":38820072},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 GODOT_CONFIG['onProgress'] = (current, total) => window.daOnProgress && window.daOnProgress(current, total);
-const GODOT_THREADS_ENABLED = false;
+const GODOT_THREADS_ENABLED = true;
 const engine = new Engine(GODOT_CONFIG);
 
 (function () {
@@ -163,41 +163,69 @@ const engine = new Engine(GODOT_CONFIG);
 		initializing = false;
 	}
 
+	// DEAD AIR: two builds of one game share index.pck / index.props.pck (godot/web/export_web.sh):
+	//   index.html     threaded (audio mixed off the main thread, background loading); needs a cross-origin isolated
+	//                  page: GitHub Pages sends no COOP/COEP headers, so web/coi-sw.js (a service worker) adds them;
+	//                  it is registered on the first visit and the page reloads once it is in control.
+	//   index-st.html  single-threaded fallback (no service worker possible: private windows, old browsers, http).
+	// URL params become game params (index.html?hitch=150&dynres=0 -> -- hitch=150 dynres=0), like the JS game's.
+	const COI_KEY = 'deadair-coi-reload';
+	function storage(op, v) {
+		try {
+			if (op === 'get') {
+				return window.sessionStorage.getItem(COI_KEY);
+			}
+			if (op === 'set') {
+				window.sessionStorage.setItem(COI_KEY, v);
+			} else {
+				window.sessionStorage.removeItem(COI_KEY);
+			}
+		} catch (e) {
+			return op === 'get' ? '1' : null;   // no storage: never risk a reload loop
+		}
+		return null;
+	}
+	function singleThreaded() {
+		window.location.replace(`index-st.html${window.location.search}${window.location.hash}`);
+	}
+	if (GODOT_THREADS_ENABLED && !window.crossOriginIsolated) {
+		setStatusMode('progress');
+		if (window.isSecureContext && 'serviceWorker' in navigator && storage('get') !== '1') {
+			storage('set', '1');
+			navigator.serviceWorker.register('coi-sw.js').then((reg) => {
+				const reload = () => window.location.reload();
+				if (navigator.serviceWorker.controller) {
+					reload();   // already installed (this load bypassed it, e.g. a hard reload)
+					return;
+				}
+				navigator.serviceWorker.addEventListener('controllerchange', reload);
+				const sw = reg.installing || reg.waiting || reg.active;
+				if (sw && sw.state === 'activated') {
+					reload();
+				}
+				window.setTimeout(singleThreaded, 6000);
+			}).catch((err) => {
+				console.warn('[dead-air] service worker unavailable, single-threaded build:', err);
+				singleThreaded();
+			});
+		} else {
+			singleThreaded();
+		}
+		return;
+	}
+	storage('remove');
+
 	const missing = Engine.getMissingFeatures({
 		threads: GODOT_THREADS_ENABLED,
 	});
 
 	if (missing.length !== 0) {
-		if (GODOT_CONFIG['serviceWorker'] && GODOT_CONFIG['ensureCrossOriginIsolationHeaders'] && 'serviceWorker' in navigator) {
-			let serviceWorkerRegistrationPromise;
-			try {
-				serviceWorkerRegistrationPromise = navigator.serviceWorker.getRegistration();
-			} catch (err) {
-				serviceWorkerRegistrationPromise = Promise.reject(new Error('Service worker registration failed.'));
-			}
-			// There's a chance that installing the service worker would fix the issue
-			Promise.race([
-				serviceWorkerRegistrationPromise.then((registration) => {
-					if (registration != null) {
-						return Promise.reject(new Error('Service worker already exists.'));
-					}
-					return registration;
-				}).then(() => engine.installServiceWorker()),
-				// For some reason, `getRegistration()` can stall
-				new Promise((resolve) => {
-					setTimeout(() => resolve(), 2000);
-				}),
-			]).then(() => {
-				// Reload if there was no error.
-				window.location.reload();
-			}).catch((err) => {
-				console.error('Error while registering service worker:', err);
-			});
-		} else {
-			// Display the message as usual
-			const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
-			displayFailureNotice(missingMsg + missing.join('\n'));
+		if (GODOT_THREADS_ENABLED) {
+			singleThreaded();
+			return;
 		}
+		const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
+		displayFailureNotice(missingMsg + missing.join('\n'));
 	} else {
 		setStatusMode('progress');
 		window.daOnProgress = function (current, total) {
@@ -209,13 +237,15 @@ const engine = new Engine(GODOT_CONFIG);
 				statusProgress.removeAttribute('max');
 			}
 		};
-		// DEAD AIR: engine.startGame() plus extra resource packs. GitHub refuses files over 100 MB, so the game data is
-		// split in <exe>.pck + <exe>.props.pck (godot/web/export_web.sh); the extra packs are copied into the virtual
-		// file system next to the main pack and game.gd mounts them (ProjectSettings.load_resource_pack) before booting.
+		// engine.startGame() plus the extra resource pack: GitHub refuses files over 100 MB, so the game data is split
+		// in index.pck + index.props.pck; the extra pack is copied into the virtual file system next to the main pack
+		// and game.gd mounts it (ProjectSettings.load_resource_pack) before booting.
 		const exe = GODOT_CONFIG['executable'];
-		const mainPack = GODOT_CONFIG['mainPack'] || `${exe}.pck`;
-		const extraPacks = [`${exe}.props.pck`];
-		Promise.all(extraPacks.map((p) => fetch(p, { method: 'HEAD' }).then((r) => {
+		const mainPack = 'index.pck';
+		const extraPacks = ['index.props.pck'];
+		const userArgs = [];
+		new URLSearchParams(window.location.search).forEach((v, k) => userArgs.push(v === '' ? k : `${k}=${v}`));
+		Promise.all([mainPack].concat(extraPacks).map((p) => fetch(p, { method: 'HEAD' }).then((r) => {
 			const n = parseInt(r.headers.get('content-length') || '0', 10);
 			if (r.ok && n > 0) {
 				GODOT_CONFIG['fileSizes'][p] = n;
@@ -224,8 +254,8 @@ const engine = new Engine(GODOT_CONFIG);
 		}).catch(() => false))).then((found) => Promise.all([
 			engine.init(exe),
 			engine.preloadFile(mainPack, mainPack),
-		].concat(extraPacks.filter((p, i) => found[i]).map((p) => engine.preloadFile(p, p))))).then(() => engine.start({
-			'args': ['--main-pack', mainPack].concat(GODOT_CONFIG['args'] || []),
+		].concat(extraPacks.filter((p, i) => found[i + 1]).map((p) => engine.preloadFile(p, p))))).then(() => engine.start({
+			'args': ['--main-pack', mainPack].concat(GODOT_CONFIG['args'] || []).concat(userArgs.length ? ['--'].concat(userArgs) : []),
 		})).then(() => {
 			setStatusMode('hidden');
 		}, displayFailureNotice);

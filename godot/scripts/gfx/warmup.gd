@@ -75,6 +75,10 @@ func run() -> void:
 	_roomVis = roomVis
 	_sceneVis = sceneVis
 	_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	_prebuild()
+	_extras = _buildExtras()
+	_items = _collect()
+	_total = Layout.AREAS.size() + 1 + 4 * int(ceil(_items.size() / float(CHUNK))) + 1
 	await _stationPass()
 	await _galleryPass()
 	await _canvasPass()
@@ -82,8 +86,13 @@ func run() -> void:
 		if is_instance_valid(n):
 			n.queue_free()
 	_made.clear()
+	for n in _extras:
+		if is_instance_valid(n) and not n.is_inside_tree():
+			n.free()
+	_extras.clear()
+	_borrowed.clear()
+	_releaseZombies()
 	_vp.queue_free()
-	_prebuild()
 	stats.ms = Time.get_ticks_msec() - t0
 	print("[warmup] %d frames, %d proxies, %d canvas materials in %d ms" % [stats.frames, stats.proxies, stats.canvas, stats.ms])
 
@@ -97,6 +106,8 @@ func _room():
 	return null
 
 var _view: SubViewport
+var _items: Array = []
+var _total := 1
 var _mainMode := SubViewport.UPDATE_ALWAYS
 var _room_n = null
 var _roomVis := false
@@ -113,6 +124,8 @@ func _frame() -> void:
 	_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	await RenderingServer.frame_post_draw
 	stats.frames += 1
+	if game.has_method("_prog"):
+		game._prog(0.6 + 0.35 * minf(1.0, float(stats.frames) / _total))   # the title's loading bar (0.6 -> 0.95)
 	_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	game.scene.visible = _sceneVis
 	if _room_n != null and is_instance_valid(_room_n):
@@ -150,6 +163,8 @@ func _collect() -> Array:
 	var seen := {}
 	var out: Array = []
 	var roots: Array = [game.scene]
+	roots.append_array(_extras)
+	roots.append_array(_borrowed)
 	var ZT = load("res://scripts/actors/zombie_types.gd") if ResourceLoader.exists("res://scripts/actors/zombie_types.gd") else null
 	if ZT != null and ZT.get("pools") is Dictionary:
 		for list in ZT.pools.values():
@@ -162,7 +177,7 @@ func _collect() -> Array:
 			var e: Array = stack.pop_back()
 			var n: Node = e[0]
 			var drawn: bool = e[1]
-			if n is Node3D:
+			if n is Node3D and n != game.scene:
 				drawn = drawn and (n as Node3D).visible
 			if n is GeometryInstance3D and not drawn:
 				_collectGeom(n, seen, out)
@@ -275,7 +290,7 @@ static func _hiddenMat() -> Material:
 	return _hidden
 
 func _galleryPass() -> void:
-	var items := _collect()
+	var items := _items
 	if items.is_empty():
 		return
 	var n := items.size()
@@ -359,6 +374,64 @@ func _canvasPass() -> void:
 	await _frame()
 
 # ------------------------------------------------------------------------------------------------ CPU prebuilds
+var _extras: Array = []      # off-tree models built only for the gallery (freed at the end)
+var _borrowed: Array = []    # off-tree models of other systems shown to the gallery (left alone)
+var _zombies: Array = []     # zombie records built for the gallery (released into their pools at the end)
+
+func _releaseZombies() -> void:
+	var ZT = load("res://scripts/actors/zombie_types.gd")
+	for z in _zombies:
+		if z.def.get("release") is Callable:
+			z.def.release.call(game, z)
+		elif z.get("model") is Dictionary:
+			ZT.releaseModel(z.model)
+	_zombies.clear()
+
+# Models the game builds on first use, off-tree: built once here so their GLB loads / material conversions are
+# cached (props.gd keeps the scenes) and their shaders go through the gallery. Perk costumes (+ gold leaf).
+func _buildExtras() -> Array:
+	var out: Array = []
+	var props = game.get("props")
+	if props == null or not props.has_method("build"):
+		return out
+	var P = load("res://scripts/game/perks.gd") if ResourceLoader.exists("res://scripts/game/perks.gd") else null
+	var costumes = P.COSTUMES if P != null and "COSTUMES" in P else {}
+	if costumes is Dictionary:
+		for id in costumes.values():
+			for v in [str(id), str(id) + "_gold"]:
+				var n = props.build(v, {}) if props.has_method("_variant") and props._variant(v, {}) != null else null
+				if n is Node3D:
+					out.append(n)
+	# one model of every zombie type that is not pooled yet (later rounds' specials): built as a spawn would and
+	# released into its type's pool afterwards (_releaseZombies), so the first one of each kind spawns hitch-free
+	var Z = game.get("zombies")
+	var ZT = load("res://scripts/actors/zombie_types.gd") if ResourceLoader.exists("res://scripts/actors/zombie_types.gd") else null
+	if Z != null and ZT != null and Z.has_method("_record"):
+		ZT.getType("tuned_in")
+		for id in ZT.ZOMBIE_TYPES.keys():
+			if id == "tuned_in":
+				continue
+			var def: Dictionary = ZT.getType(id)
+			if def.get("fallback", false):
+				ZT.prewarmModels(game, id, 1)
+			elif def.get("build") is Callable:
+				var z: Dictionary = Z._record(def, 1, {})
+				def.build.call(game, z)
+				if z.get("group") is Node3D:
+					_zombies.append(z)
+					if not (z.group as Node).is_inside_tree():
+						_borrowed.append(z.group)
+	# the commercial's gag props (sponsors.gd builds them on the first commercial)
+	var sp = game.get("sponsors")
+	if sp != null and sp.has_method("_ensureGags"):
+		sp._ensureGags()
+		var gg = sp.get("_gags")
+		if gg is Dictionary:
+			for v in gg.values():
+				if v is Node3D and not (v as Node).is_inside_tree():
+					_borrowed.append(v)
+	return out
+
 func _prebuild() -> void:
 	if ResourceLoader.exists("res://scripts/ui/commercial.gd"):
 		var CO = load("res://scripts/ui/commercial.gd")

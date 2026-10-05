@@ -299,7 +299,7 @@ func _load() -> void:
 	# The character-select channel sets (heroes, promo cards, props), built once now instead of on the key press.
 	if menu != null and menu.has_method("preloadSteps"):
 		await menu.preloadSteps()
-	_prog(0.9)
+	_prog(0.6)
 	# Compatibility renderer (web): compile every shader the game will draw now, behind the title (warmup.gd)
 	var Warm = load("res://scripts/gfx/warmup.gd") if ResourceLoader.exists("res://scripts/gfx/warmup.gd") else null
 	if Warm != null and Warm.wanted(self):

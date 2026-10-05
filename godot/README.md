@@ -43,10 +43,27 @@ La API de depuración de la web sigue existiendo: `DAGame.inst.debug.teleport(..
 Build de prueba publicada en https://vicentegm123.github.io/dead-air/godot-web/ (carpeta `godot-web/` de la rama
 main). Se exporta con `sh godot/web/export_web.sh [carpeta]` (plantillas web de Godot 4.7.2 instaladas):
 
-- Preset **Web** (`export_presets.cfg`): sin hilos (funciona en GitHub Pages sin cabeceras COOP/COEP), shell propio
-  `web/shell.html`. Como GitHub no admite ficheros de más de 100 MB, los datos van en dos paquetes: `index.pck`
-  (todo menos `assets/props/*.glb`) e `index.props.pck` (los props, exportado como parche con el preset **Web Full**).
-  El shell descarga los dos y `game.gd` monta el segundo (`ProjectSettings.load_resource_pack`) antes de arrancar.
+- Dos builds del motor con los mismos datos: `index.html` (preset **Web**, **con hilos**: el audio se mezcla fuera del
+  hilo principal y las cargas van en segundo plano) e `index-st.html` (preset **Web ST**, sin hilos, de reserva). La
+  build con hilos necesita aislamiento cross-origin (cabeceras COOP/COEP) y GitHub Pages no las envía: el shell
+  `web/shell.html` registra el service worker `web/coi-sw.js` (copiado junto a `index.html`), que las añade, y recarga
+  la página una vez; si no se puede (ventana privada, navegador antiguo, http) redirige a `index-st.html`. Los
+  parámetros de la URL pasan al juego como en la versión JS (`index.html?hitch=150&dynres=0`).
+- Como GitHub no admite ficheros de más de 100 MB, los datos van en dos paquetes: `index.pck` (todo menos
+  `assets/props/*.glb`) e `index.props.pck` (los props, exportado como parche con el preset **Web Full**). El shell
+  descarga los dos y `game.gd` monta el segundo (`ProjectSettings.load_resource_pack`) antes de arrancar.
+- Audio: `audio/general/default_playback_type.web = Stream` (el modo "Sample" por defecto de Godot en la web no aplica
+  los efectos de bus ni la automatización de volumen de `audio.gd`, y se quedaba mudo). El navegador desbloquea el
+  audio con el primer clic o tecla.
+- Calentamiento de shaders (`scripts/gfx/warmup.gd`): Compatibility compila cada variante de shader la primera vez que
+  se dibuja, en el hilo principal (segundos de pantalla congelada en WebGL). Tras la carga, detrás del título, se
+  dibuja la estación desde arriba área por área en un SubViewport pequeño, más una galería con un ejemplar de cada
+  shader oculto (pools de zombis, FX, disfraces de perks, atrezo del anuncio) bajo las combinaciones de luces, y los
+  materiales 2D. Solo con Compatibility (`warm=0` lo desactiva, `warm=1` lo fuerza en Forward+).
+- Al sintonizar una partida, la pantalla pasa de la zambullida al test card **PLEASE STAND BY** con una barra de
+  progreso (`scripts/ui/standby_card.gd`) mientras se dibujan los primeros fotogramas de la estación (solo con
+  Compatibility; `standby=1/0`). Parámetro de diagnóstico `hitch=<ms>`: registra cada fotograma más largo que eso con
+  el tiempo de script y las llamadas más costosas.
 - En la web Godot solo tiene el renderizador **Compatibility** (WebGL 2). Los shaders tienen ramas
   `#if CURRENT_RENDERER == RENDERER_COMPATIBILITY` (`daIn` / `daOut` en `shaders/da_common.gdshaderinc`, decodificado
   de la vista 3D en `post` / `bloom`, cielo con Z invertida en rango -1..1) para que se vea igual que en escritorio;

@@ -20,7 +20,8 @@ de 1 a 4 jugadores** (MULTIPLAYER en el menú principal; ver `godot/README.md`).
 `godot-web/`: unos 165 MB de descarga la primera vez; Chrome/Edge/Firefox de escritorio con aceleración gráfica). En el
 navegador Godot solo tiene el renderizador Compatibility (WebGL 2): se ve casi igual, pero sin sombras proyectadas, y el
 multijugador no está disponible (los navegadores no pueden usar UDP/ENet): usa la versión de escritorio para jugar
-online. Se regenera con `sh godot/web/export_web.sh` (necesita las plantillas de exportación web de Godot 4.7.2).
+online. La primera visita recarga la página una vez (un service worker activa la build con hilos). Se regenera con
+`sh godot/web/export_web.sh` (necesita las plantillas de exportación web de Godot 4.7.2).
 
 ## Cómo jugar
 
