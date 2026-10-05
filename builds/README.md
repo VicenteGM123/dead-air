@@ -6,8 +6,8 @@ sistema en la misma carpeta y únelos.
 
 | Sistema | Trozos | ZIP unido |
 |---|---|---|
-| Windows 10/11 (64 bits) | [DeadAir-windows.zip.001](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-windows.zip.001) + [DeadAir-windows.zip.002](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-windows.zip.002) | 156 MB |
-| Linux x86_64 | [DeadAir-linux.zip.001](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-linux.zip.001) + [DeadAir-linux.zip.002](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-linux.zip.002) | 147 MB |
+| Windows 10/11 (64 bits) | [DeadAir-windows.zip.001](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-windows.zip.001) + [DeadAir-windows.zip.002](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-windows.zip.002) | 167 MB |
+| Linux x86_64 | [DeadAir-linux.zip.001](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-linux.zip.001) + [DeadAir-linux.zip.002](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-linux.zip.002) | 157 MB |
 
 ## Unir los trozos
 
@@ -22,8 +22,10 @@ información → Ejecutar de todas formas**); en Linux `./DeadAir.x86_64`. Multi
 anfitrión, o una red virtual tipo Tailscale / ZeroTier.
 
 SHA-256 de los ZIP unidos:
-- `DeadAir-windows.zip`: `50ab860e989734c6f1d84d753bde6b19d6785c676304b22df15008d251e37b36`
-- `DeadAir-linux.zip`: `1ad5498b981b5320227de20590db139b18f17b4f089457866208798efb269567`
+- `DeadAir-windows.zip`: `f084f6d74ae736a3748999d320d8138a371dfcd28dd03602f289a3e90677d53e`
+- `DeadAir-linux.zip`: `f3937eca39a3e58745d6712b5f3fbee544eb4b511c25fe80a6b1161b0316e903`
 
 Se generan con los presets "Windows Desktop" y "Linux" de `godot/export_presets.cfg`
-(`godot --headless --export-release "Windows Desktop" DeadAir.exe`, con las plantillas de exportación de Godot 4.7.2).
+(`godot --export-release "Windows Desktop" DeadAir.exe`, con las plantillas de exportación de Godot 4.7.2). Los presets
+llevan el *shader baker* activado (shaders Vulkan precompilados dentro del ejecutable): hay que exportar con el editor
+usando una GPU / Vulkan (sin `--headless`, que no los precompila) y borrando antes `godot/.godot/exported`.

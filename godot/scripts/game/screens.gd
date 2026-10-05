@@ -381,6 +381,8 @@ var _flinchPending := false
 var _teles: Array = []
 var _telePool: Array = []
 var _inUse := {}                 # animated card key -> [handle, nearest on-camera distance this frame]
+var _tickLate := {}              # animated card keys whose redraw waited for this frame (lateUpdate budget)
+const TICK_BUDGET_US := 6000
 var _handles := {}               # card id -> animated handle
 var _cardCache := {}             # card id -> { anim, tex } | null (static textures resolved once)
 var _variants := {}              # material -> feed variant | null
@@ -519,7 +521,22 @@ func lateUpdate(_dt = 0.0) -> void:
 	var t0 := Time.get_ticks_usec()
 	# Cheap ticking: a card redraws its canvas + re-uploads only when its frame index changes; far away (small on
 	# screen) the time is quantised so it redraws at most TICK.mid / TICK.far times per second.
-	for key in _inUse:
+	# Port-only frame budget: once this frame's redraws took TICK_BUDGET_US, the remaining cards wait for the next
+	# frame (and go first then), so several cards turning over together (power-on, a spin past the wall) cost one
+	# frame each instead of one long frame.
+	var order: Array = _inUse.keys()
+	if not _tickLate.is_empty():
+		var first: Array = []
+		var rest: Array = []
+		for key in order:
+			(first if _tickLate.has(key) else rest).append(key)
+		order = first + rest
+		_tickLate.clear()
+	var over := false
+	for key in order:
+		if over:
+			_tickLate[key] = true
+			continue
 		var pair: Array = _inUse[key]
 		var h = pair[0]
 		var d: float = pair[1]
@@ -527,6 +544,7 @@ func lateUpdate(_dt = 0.0) -> void:
 		var rate: float = 0.0 if d < TICK.near else (TICK.mid if d < TICK.farDist else TICK.far)
 		if _tickHandle(h, floorf(t * rate) / rate if rate > 0.0 else t):
 			stats.redraws += 1
+			over = Time.get_ticks_usec() - t0 > TICK_BUDGET_US
 	stats.tickMs += (Time.get_ticks_usec() - t0) / 1000.0
 	_updateFeedProps()
 	if insertRoot != null and insertSpin != 0.0:
@@ -966,6 +984,17 @@ func _texFor(src, e: Entry):
 		var t = feedTexture(s.substr(5), e.group == "scr_mc_feeds")
 		return t if t != null else _card("station_id" if e.group == "scr_mc_feeds" else "static", e)
 	return _card(s, e)
+
+# The animated cards the screens switch to later (power-on, overrides, MC wall) built now: a card's first draw
+# also paints its cached layers and shapes its text (hullabaloo: ~50 ms), which otherwise lands on the power-on
+# frame. Run behind the loading card by gfx/warmup.gd.
+const PREWARM_CARDS := ["station_id", "color_bars", "hullabaloo", "stand_by", "right_back", "baron", "flinch"]
+func prewarmCards() -> void:
+	if game.cards == null:
+		return
+	for id in PREWARM_CARDS:
+		_card(id, null)
+	_cardsCall("animated", ["signoff_film", {"owner": "screens"}])
 
 func _card(id: String, e):
 	if id == "static":

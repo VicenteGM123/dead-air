@@ -27,6 +27,9 @@ window/stretch/aspect="expand"
 [rendering]
 
 renderer/rendering_method.web="gl_compatibility"
+rendering_device/driver.windows="vulkan"
+limits/global_shader_variables/buffer_size=262144
+limits/global_shader_variables/buffer_size.web=65536
 anti_aliasing/quality/msaa_3d=2
 lights_and_shadows/directional_shadow/size=2048
 lights_and_shadows/directional_shadow/soft_shadow_filter_quality=5

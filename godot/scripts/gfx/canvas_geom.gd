@@ -215,14 +215,25 @@ static func _appendTris(outP: PackedVector2Array, outI: PackedInt32Array, p: Pac
 		outI.append(base + t)
 
 # Fan-triangulates every polygon (all known convex: stroke pieces, rects).
+# The indices depend only on the polygon sizes (starts + point count): memoized (stroke pieces of the same path
+# shape every frame); the returned index array is shared, callers only read it.
+static var _fanMemo := {}
 static func fanAll(pts: PackedVector2Array, starts: PackedInt32Array) -> Array:
+	var n := pts.size()
+	var h := hash(starts) ^ n
+	var e = _fanMemo.get(h)
+	if e != null and e[1] == n and e[0] == starts:
+		return [pts, e[2]]
 	var outI := PackedInt32Array()
 	var np := starts.size()
 	for k in np:
 		var a := starts[k]
-		var b := starts[k + 1] if k + 1 < np else pts.size()
+		var b := starts[k + 1] if k + 1 < np else n
 		if b - a >= 3:
 			fanIndices(outI, a, b - a)
+	if _fanMemo.size() >= 1024:
+		_fanMemo.clear()
+	_fanMemo[h] = [starts.duplicate(), n, outI]
 	return [pts, outI]
 
 # True when the bounding boxes of two polygons of the Geo intersect (sort-and-sweep on x).
@@ -298,32 +309,51 @@ static func _memoPut(h: int, key: Array, res: Array, pts: int) -> void:
 	_memo[h] = [key.duplicate(true), res.duplicate()]   # (the caller keeps its own key arrays)
 	_memoPts += pts
 
-# The memo key is translation-free: the polygons are moved so their first vertex sits at the origin and snapped to
-# 1/SNAP units (device px: invisible), so a shape that only moved since the last frame (a bobbing character's
-# translucent strokes, drifting clouds...) is a hit too; the result is moved back.
+# The memo keys are rigid-motion free: _canon moves the input so its first vertex sits at the origin and its first
+# edge points along +x, snapped to 1/SNAP units (device px; strokes: 1/64 of their flattening tolerance), so a shape that only moved or turned since
+# the last frame (a bobbing character's strokes, drifting clouds, hopping letters...) is a hit too; the result is
+# moved back (union / triangulation / stroke geometry commute with rigid motions).
 const SNAP := 1024.0
 
+# [back: Transform2D, canonical copy of `arrs`] (back == IDENTITY and arrs itself when there is nothing to move).
+static func _canon(arrs: Array, snap: float = SNAP) -> Array:
+	var first := PackedVector2Array()
+	for a in arrs:
+		if (a as PackedVector2Array).size() > 0:
+			first = a
+			break
+	if first.is_empty():
+		return [Transform2D.IDENTITY, arrs]
+	var o := first[0]
+	var ang := 0.0
+	for i in range(1, first.size()):
+		var d := first[i] - o
+		if d.length_squared() > 1e-6:
+			ang = d.angle()
+			break
+	var back := Transform2D(ang, o)
+	var fwd := back.affine_inverse()
+	var out: Array = []
+	out.resize(arrs.size())
+	for k in arrs.size():
+		var q: PackedVector2Array = fwd * (arrs[k] as PackedVector2Array)
+		for i in q.size():
+			q[i] = (q[i] * snap).round() / snap
+		out[k] = q
+	return [back, out]
+
 static func sweep(polys: Array, evenodd: bool) -> Array:
-	var o := Vector2.ZERO
-	var np: Array = polys
-	if not polys.is_empty() and (polys[0] as PackedVector2Array).size() > 0:
-		o = (polys[0] as PackedVector2Array)[0]
-		np = []
-		np.resize(polys.size())
-		var xf := Transform2D(0.0, -o)
-		for k in polys.size():
-			var q: PackedVector2Array = xf * (polys[k] as PackedVector2Array)
-			for i in q.size():
-				q[i] = (q[i] * SNAP).round() / SNAP
-			np[k] = q
+	var cn := _canon(polys)
+	var back: Transform2D = cn[0]
+	var np: Array = cn[1]
 	var key := [np, evenodd]
 	var h := hash(key)
 	var res = _memoGet(h, key)
 	if res == null:
 		res = _sweepRaw(np, evenodd)
 		_memoPut(h, key, res, (res[0] as PackedVector2Array).size())
-	if o != Vector2.ZERO:
-		res[0] = Transform2D(0.0, o) * (res[0] as PackedVector2Array)
+	if back != Transform2D.IDENTITY:
+		res[0] = back * (res[0] as PackedVector2Array)
 	return res
 
 static func _sweepRaw(polys: Array, evenodd: bool) -> Array:
@@ -546,13 +576,17 @@ static func dash(subs: Array, closed: Array, pattern: PackedFloat64Array, offset
 # (segment quads, join wedges, caps) that all have NEGATIVE signed area, so the nonzero union of the pieces is
 # exactly the stroked area. `tol` = flattening tolerance for round joins/caps (same units as the points).
 static func stroke(subs: Array, closed: Array, hw: float, cap: int, join: int, miterLimit: float, tol: float) -> Array:
-	var key := [subs, closed, hw, cap, join, miterLimit, tol]
+	var cn := _canon(subs, 64.0 / maxf(tol, 1e-9))
+	var back: Transform2D = cn[0]
+	var ns: Array = cn[1]
+	var key := [ns, closed, hw, cap, join, miterLimit, tol]
 	var h := hash(key)
-	var hit = _memoGet(h, key)
-	if hit != null:
-		return hit
-	var res := _strokeRaw(subs, closed, hw, cap, join, miterLimit, tol)
-	_memoPut(h, key, res, (res[0] as PackedVector2Array).size())
+	var res = _memoGet(h, key)
+	if res == null:
+		res = _strokeRaw(ns, closed, hw, cap, join, miterLimit, tol)
+		_memoPut(h, key, res, (res[0] as PackedVector2Array).size())
+	if back != Transform2D.IDENTITY:
+		res[0] = back * (res[0] as PackedVector2Array)
 	return res
 
 static func _strokeRaw(subs: Array, closed: Array, hw: float, cap: int, join: int, miterLimit: float, tol: float) -> Array:

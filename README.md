@@ -29,13 +29,13 @@ Versión de escritorio de la versión Godot, lista para jugar sin instalar Godot
 (ver [`builds/README.md`](builds/README.md)). Cada ZIP va partido en dos trozos (GitHub no admite archivos de más
 de 100 MB): descarga los dos, únelos y descomprime.
 
-- **Windows 10/11 (64 bits)**, 156 MB:
+- **Windows 10/11 (64 bits)**, 167 MB:
   [trozo 1](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-windows.zip.001) +
   [trozo 2](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-windows.zip.002) +
   [UNIR-windows.bat](https://github.com/VicenteGM123/dead-air/raw/main/builds/UNIR-windows.bat)
   (o `copy /b DeadAir-windows.zip.001+DeadAir-windows.zip.002 DeadAir-windows.zip`). Ejecuta `DeadAir.exe`; si
   SmartScreen avisa: **Más información → Ejecutar de todas formas**.
-- **Linux x86_64**, 147 MB:
+- **Linux x86_64**, 157 MB:
   [trozo 1](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-linux.zip.001) +
   [trozo 2](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-linux.zip.002), luego
   `cat DeadAir-linux.zip.0* > DeadAir-linux.zip`, descomprime y `./DeadAir.x86_64`.

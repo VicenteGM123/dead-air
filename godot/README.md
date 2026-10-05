@@ -10,13 +10,13 @@ Builds de escritorio exportadas, listas para jugar sin instalar Godot y **con mu
 (ver [`builds/README.md`](../builds/README.md)). Cada ZIP va partido en dos trozos (GitHub no admite archivos de más
 de 100 MB): descarga los dos, únelos y descomprime.
 
-- **Windows 10/11 (64 bits)**, 156 MB:
+- **Windows 10/11 (64 bits)**, 167 MB:
   [trozo 1](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-windows.zip.001) +
   [trozo 2](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-windows.zip.002) +
   [UNIR-windows.bat](https://github.com/VicenteGM123/dead-air/raw/main/builds/UNIR-windows.bat)
   (o `copy /b DeadAir-windows.zip.001+DeadAir-windows.zip.002 DeadAir-windows.zip`). Ejecuta `DeadAir.exe`; si
   SmartScreen avisa: **Más información → Ejecutar de todas formas**.
-- **Linux x86_64**, 147 MB:
+- **Linux x86_64**, 157 MB:
   [trozo 1](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-linux.zip.001) +
   [trozo 2](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-linux.zip.002), luego
   `cat DeadAir-linux.zip.0* > DeadAir-linux.zip`, descomprime y `./DeadAir.x86_64`.
@@ -81,8 +81,11 @@ main). Se exporta con `sh godot/web/export_web.sh [carpeta]` (plantillas web de 
 - Calentamiento de shaders (`scripts/gfx/warmup.gd`): Compatibility compila cada variante de shader la primera vez que
   se dibuja, en el hilo principal (segundos de pantalla congelada en WebGL). Tras la carga, detrás del título, se
   dibuja la estación desde arriba área por área en un SubViewport pequeño, más una galería con un ejemplar de cada
-  shader oculto (pools de zombis, FX, disfraces de perks, atrezo del anuncio) bajo las combinaciones de luces, y los
-  materiales 2D. Solo con Compatibility (`warm=0` lo desactiva, `warm=1` lo fuerza en Forward+).
+  shader oculto (pools de zombis, FX, disfraces de perks, atrezo del anuncio, armas, materiales encendidos tras el
+  Sign-On) bajo las combinaciones de luces, y los materiales 2D. También en escritorio (Forward+): ahí cada combinación
+  nueva de shader + formato de vértice compila sus pipelines Vulkan al aparecer la primera instancia; el calentamiento
+  las deja compiladas (0 compilaciones de pipelines bloqueantes en la partida) y los presets de escritorio llevan el
+  *shader baker* (SPIR-V precompilado). `warm=0` lo desactiva, `warm=1` lo fuerza; nunca con `--headless`.
 - Al sintonizar una partida, la pantalla pasa de la zambullida al test card **PLEASE STAND BY** con una barra de
   progreso (`scripts/ui/standby_card.gd`) mientras se dibujan los primeros fotogramas de la estación (solo con
   Compatibility; `standby=1/0`). Parámetro de diagnóstico `hitch=<ms>`: registra cada fotograma más largo que eso con

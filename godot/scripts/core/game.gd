@@ -295,12 +295,17 @@ func _load() -> void:
 	# zombies.reset() fills the model pools that newGame's reset would otherwise build; it is idempotent.
 	await frameYield()
 	_call("zombies", "reset")
+	# the navigation grid, otherwise built by nav.update on the first playing frame (~30 ms hitch): built now, it is
+	# rebuilt by telly.reset inside newGame (the tune-in frame, under the stand-by card) with the same result
+	if nav != null and nav.has_method("build") and not nav.built:
+		await frameYield()
+		nav.build()
 	_prog(0.35)
 	# The character-select channel sets (heroes, promo cards, props), built once now instead of on the key press.
 	if menu != null and menu.has_method("preloadSteps"):
 		await menu.preloadSteps()
 	_prog(0.6)
-	# Compatibility renderer (web): compile every shader the game will draw now, behind the title (warmup.gd)
+	# compile every shader / pipeline the game will draw now, behind the title (warmup.gd; web and desktop)
 	var Warm = load("res://scripts/gfx/warmup.gd") if ResourceLoader.exists("res://scripts/gfx/warmup.gd") else null
 	if Warm != null and Warm.wanted(self):
 		await frameYield()

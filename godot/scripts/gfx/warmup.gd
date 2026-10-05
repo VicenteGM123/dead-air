@@ -21,11 +21,19 @@
 #   3. 2D pass: the default CanvasItem material and every CanvasItem material of the tree, each drawn with every
 #      kind of canvas command (rect, nine-patch, primitive, polygon, multimesh: the canvas shader specializes per
 #      command).
-#   4. prebuilds of lazy CPU work: the commercial overlay's bezel canvas (scripts/ui/commercial.gd).
+#   4. prebuilds of lazy CPU work: the commercial overlay's bezel canvas (scripts/ui/commercial.gd), the animated TV
+#      cards the screens switch to at power-on (screens.prewarmCards).
 # Everything it creates is freed at the end (a few materials excepted, see _keepMat); the game state is untouched.
 # Related: render.gd keeps the native fog enabled under Compatibility (toggling it re-specializes every shader).
-# API: Warmup.new(game).run() (coroutine: await it). Params: warm=0 skips it, warm=1 forces it under Forward+
-#   (by default it only runs under the Compatibility renderer: Forward+ precompiles its pipelines itself).
+# Forward+ (the desktop builds: Vulkan / D3D12) runs it too: there a new (shader, vertex format, pass) combination
+# compiles its pipelines when the first instance of it enters the scene (RenderingServer "surface" pipeline
+# compilations: the ubershader pipeline the first draw waits for; only the specialized ones compile in the
+# background), and a new shader compiles its SPIR-V/DXIL variants on first use when the export carries no baked
+# shaders and the shader cache is cold (first run). Under Forward+ the light-type passes are skipped (clustered
+# lighting: no per-light specialization), the gallery proxies cast shadows (the shadow pipelines compile too) and
+# each one gets a mirrored twin (a negative scale flips the cull mode: another pipeline).
+# API: Warmup.new(game).run() (coroutine: await it). Params: warm=0 skips it, warm=1 forces it on (by default it
+# runs whenever something is rendered: never under the headless display server, the tests stay as they were).
 extends RefCounted
 
 const CELL := 1.6            # gallery grid cell (m)
@@ -48,7 +56,7 @@ static func wanted(g) -> bool:
 	var p = g.params.get("warm")
 	if p != null:
 		return float(p) != 0.0
-	return DAU.isCompat()
+	return DisplayServer.get_name() != "headless"
 
 func run() -> void:
 	var r = game.render
@@ -90,8 +98,16 @@ func run() -> void:
 	_extras = _buildExtras()
 	_models = _collectModels()
 	_items = _collect()
+	# the sign-on switch states (fixtures' lit materials, ON AIR boxes): collected powered too, then put back as
+	# level.reset leaves them (setPower(false, instant))
+	var lv = game.get("level")
+	if lv != null and lv.has_method("setPower") and not bool(lv.get("powered")):
+		lv.setPower(true, {"instant": true})
+		_items.append_array(_collect())
+		lv.setPower(false, {"instant": true})
+	_items.append_array(_overrideItems())
 	_combos = _lightCombos()
-	_total = Layout.AREAS.size() + 1 + _combos.size() * (int(ceil(_items.size() / float(CHUNK))) + int(ceil(_models.size() / float(MCHUNK)))) + 1
+	_total = Layout.AREAS.size() + 2 + _combos.size() * (int(ceil(_items.size() / float(CHUNK))) + int(ceil(_models.size() / float(MCHUNK)))) + 1
 	await _stationPass()
 	await _galleryPass()
 	await _canvasPass()
@@ -164,21 +180,36 @@ func _stationPass() -> void:
 		var rc = a.get("rect")
 		if rc is Array and rc.size() >= 4:
 			await _shoot(float(rc[0]), float(rc[1]), float(rc[2]), float(rc[3]))
-	# the whole site, exterior included
-	if fp != null:
-		await _shoot(float(fp.x0) - 40.0, float(fp.z0) - 40.0, float(fp.x1) + 40.0, float(fp.z1) + 40.0, 120.0)
-	else:
-		await _shoot(-60.0, -80.0, 100.0, 60.0, 120.0)
+	# the whole site, exterior included; then once more through the CCTV feed cameras' Environment (screens.gd:
+	# linear tone mapping, no glow; first used by the feeds at power-on)
+	var envs: Array = [null]
+	var scr = game.get("screens")
+	if scr != null and scr.has_method("_feedEnv"):
+		var fe = scr._feedEnv()
+		if fe is Environment:
+			envs.append(fe)
+	for env in envs:
+		_cam.environment = env
+		if fp != null:
+			await _shoot(float(fp.x0) - 40.0, float(fp.z0) - 40.0, float(fp.x1) + 40.0, float(fp.z1) + 40.0, 120.0)
+		else:
+			await _shoot(-60.0, -80.0, 100.0, 60.0, 120.0)
+	_cam.environment = null
 
 # ------------------------------------------------------------------------------------------------ gallery
 # Distinct (shader, instancing, vertex format) combinations of the hidden geometry under game.scene and of the
 # off-tree models built for the gallery (the characters are drawn whole instead: _collectModels).
+var _seen := {}
 func _collect() -> Array:
-	var seen := {}
+	var seen := _seen
 	var out: Array = []
 	var roots: Array = [game.scene]
 	roots.append_array(_extras)
 	roots.append_array(_borrowed)
+	# the parts the drawn models keep hidden until some pose / gag shows them (a hero's grip hand, ...)
+	for e in _models:
+		if is_instance_valid(e.node):
+			roots.append(e.node)
 	# visible geometry too: the station shots are top-down, so whatever they cannot see (the sky's moon, things
 	# under a ceiling, ...) would otherwise compile on its first frame in view
 	for root in roots:
@@ -187,11 +218,62 @@ func _collect() -> Array:
 			var n: Node = stack.pop_back()
 			if n is GeometryInstance3D:
 				_collectGeom(n, seen, out)
+			if n.has_meta("userData"):
+				var u: Dictionary = n.get_meta("userData")
+				if u.get("lampMats") is Dictionary:
+					_collectLamp(n, u.lampMats, seen, out)
+				if u.get("power") is Dictionary and u.get("parts") is Dictionary:
+					_collectSetPower(u.power, u.parts, seen, out)
 			for c in n.get_children():
 				if c is Viewport:
 					continue
 				stack.append(c)
 	return out
+
+# A prop's lamp part swaps to its userData.lampMats.on / .off material when the power comes on or the prop is used
+# (rooms, signon, screens): both drawn on the prop's meshes (converted and cached in place by newsroom.lampMat, as
+# the rooms do on first use).
+func _collectLamp(prop: Node, lm: Dictionary, seen: Dictionary, out: Array) -> void:
+	if not ResourceLoader.exists("res://scripts/world/rooms/newsroom.gd"):
+		return
+	var NR = load("res://scripts/world/rooms/newsroom.gd")
+	for k in ["on", "off"]:
+		_collectWith(prop, NR.lampMat(game, lm, k), seen, out)
+
+# A sponsor set's / camera prop's userData.power {on, off} materials for its sign / tally / softbox / bulbs parts
+# (sponsors.setSponsorSetPower, setTally: lit at Sign-On).
+const SET_PARTS := [["sign", "sign"], ["tally", "tally"], ["diffuser", "soft"], ["bulbs", "bulbs"]]
+func _collectSetPower(power: Dictionary, parts: Dictionary, seen: Dictionary, out: Array) -> void:
+	var sp = game.get("sponsors")
+	if sp == null or not sp.has_method("_asMat"):
+		return
+	for k in ["on", "off"]:
+		var M = power.get(k)
+		if not (M is Dictionary):
+			continue
+		for pr in SET_PARTS:
+			var part = parts.get(pr[0])
+			var m = sp._asMat(M.get(pr[1]))
+			for o in (part if part is Array else [part]):
+				if o is Node:
+					_collectWith(o, m, seen, out)
+
+# Every mesh surface under `root` drawn with material m (one proxy per new material / vertex format).
+func _collectWith(root: Node, m, seen: Dictionary, out: Array) -> void:
+	if not (m is Material) or root == null:
+		return
+	var stack: Array = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh is ArrayMesh:
+			var mesh: ArrayMesh = (n as MeshInstance3D).mesh
+			for i in mesh.get_surface_count():
+				var key := "L%s|%d" % [_matKey(m), mesh.surface_get_format(i)]
+				if not seen.has(key):
+					seen[key] = true
+					out.append({"kind": "mesh", "mesh": mesh, "surface": i, "mat": m, "overlay": null, "transparency": 0.0})
+		for c in n.get_children():
+			stack.append(c)
 
 static func _matKey(m) -> String:
 	var k := ""
@@ -285,13 +367,20 @@ func _proxy(it: Dictionary, at: Vector3, parent: Node3D) -> void:
 		mmi.material_override = it.mat
 		aabb = mm.mesh.get_aabb()
 		node = mmi
-	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Forward+: the shadow-pass pipelines of every material compile too (Compatibility: an extra light pass, skipped)
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if DAU.isCompat() else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	node.layers = _cam.cull_mask & 0x3
 	var s := 1.0 / maxf(0.05, maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z)))
 	node.transform = Transform3D(Basis().scaled(Vector3(s, s, s)), at - aabb.get_center() * s)
 	node.extra_cull_margin = 2.0
 	parent.add_child(node)
 	stats.proxies += 1
+	# Forward+: a mirrored instance (negative scale: posed / flipped props) flips the cull mode, its own pipeline
+	if not DAU.isCompat():
+		var tw := node.duplicate() as GeometryInstance3D
+		tw.transform = Transform3D(Basis().scaled(Vector3(-s, s, s)), at - Vector3(-aabb.get_center().x, aabb.get_center().y, aabb.get_center().z) * s)
+		parent.add_child(tw)
+		stats.proxies += 1
 
 static var _stand: ArrayMesh = null
 static func _standIn() -> ArrayMesh:
@@ -335,14 +424,6 @@ func _galleryPass() -> void:
 		root.position = origin
 		game.scene.add_child(root)
 		_made.append(root)
-		var chunks: Array = []
-		for i in n:
-			if i % CHUNK == 0:
-				var ch := Node3D.new()
-				ch.visible = false
-				root.add_child(ch)
-				chunks.append(ch)
-			_proxy(items[i], Vector3((i % cols + 0.5) * CELL - span / 2.0, 0.0, (i / cols + 0.5) * CELL - span / 2.0), chunks[-1])
 		if combo & 1:
 			var om := OmniLight3D.new()
 			om.omni_range = wide * 1.5 + 10.0
@@ -360,11 +441,16 @@ func _galleryPass() -> void:
 		_cam.keep_aspect = Camera3D.KEEP_HEIGHT
 		_cam.size = span + 2.0
 		_cam.position = origin + Vector3(0, 30.0, 0)
-		# a few shaders per frame, so no single frame stalls for long
-		for ch in chunks:
-			ch.visible = true
+		# CHUNK proxies at a time, made right before their frame and freed after it (few shaders per frame, so no
+		# single frame stalls for long; and few proxies alive at once: under Forward+ every instance of a shader with
+		# instance uniforms holds slots of the global shader-uniform buffer, which the whole gallery would overflow)
+		for c0 in range(0, n, CHUNK):
+			var ch := Node3D.new()
+			root.add_child(ch)
+			for i in range(c0, mini(n, c0 + CHUNK)):
+				_proxy(items[i], Vector3((i % cols + 0.5) * CELL - span / 2.0, 0.0, (i / cols + 0.5) * CELL - span / 2.0), ch)
 			await _frame()
-			ch.visible = false
+			ch.free()
 		# the real models, MCHUNK per frame, at full size around the same spot (same lights)
 		if mn > 0:
 			_cam.size = mspan + 4.0
@@ -392,6 +478,8 @@ func _galleryPass() -> void:
 # Light-type specializations worth compiling: omni always (the 8 pooled area lights, fx.flashLight); spot only when
 # the station has spot lights (it has none today: every SpotLight3D combo would be wasted programs).
 func _lightCombos() -> Array:
+	if not DAU.isCompat():
+		return [0]       # Forward+: clustered lights, the shaders do not specialize per light type
 	var spot := false
 	var stack: Array = [game.scene]
 	while not stack.is_empty() and not spot:
@@ -465,6 +553,7 @@ func _collectModels() -> Array:
 					add.call(d.get("holder"), true)
 					for m in d.get("meshes", []):
 						_keepMat(m.material_override)
+						_override(m.material_override)
 		if ResourceLoader.exists("res://scripts/game/perks.gd"):
 			var PL = load("res://scripts/game/perks.gd")
 			var c: Dictionary = PL.cloneHero(first, [])
@@ -479,6 +568,33 @@ func _collectModels() -> Array:
 				m.material_override = mat
 			add.call(c.group, true)
 			_keepMat(mat)
+			_override(mat)
+	return out
+
+# Override materials the game puts on copies of whatever model is at hand at run time (the Double Vision tint on the
+# player's hero and its attachments, the Instant Replay and weapon ghosts): besides the copies drawn above, each one
+# is drawn on one mesh of every vertex format of the collected geometry (a pipeline is per shader + vertex format).
+var _overrides: Array = []
+func _override(m) -> void:
+	if m is Material and not _overrides.has(m):
+		_overrides.append(m)
+
+func _overrideItems() -> Array:
+	var fmts := {}
+	for it in _items:
+		if it.kind == "mesh" and it.mesh is ArrayMesh:
+			var f: int = (it.mesh as ArrayMesh).surface_get_format(it.surface)
+			if not fmts.has(f):
+				fmts[f] = it
+	var out: Array = []
+	for m in _overrides:
+		for f in fmts:
+			var key := "O%s|%d" % [_matKey(m), f]
+			if _seen.has(key):
+				continue
+			_seen[key] = true
+			var it: Dictionary = fmts[f]
+			out.append({"kind": "mesh", "mesh": it.mesh, "surface": it.surface, "mat": m, "overlay": null, "transparency": 0.0})
 	return out
 
 # A StandardMaterial3D's shader lives only as long as a material with its feature set exists: the ones of the
@@ -633,10 +749,26 @@ func _buildExtras() -> Array:
 		var gm = WM.buildModel("revolver_38", false, null, game)
 		if gm is Node3D:
 			var gmat = W.ghostMaterial("#5FF4FF")
+			_override(gmat)
 			DAU.traverse(gm, func(o):
 				if o is GeometryInstance3D:
 					(o as GeometryInstance3D).material_override = gmat)
 			out.append(gm)
+	# every gun (plain and upgraded) and the hand props (melee, grenade, Tiny Tele): built on a purchase / at newGame
+	if WM != null:
+		var WDf = load("res://scripts/game/weapon_defs.gd") if ResourceLoader.exists("res://scripts/game/weapon_defs.gd") else null
+		var gids: Array = WDf.GUN_IDS if WDf != null and "GUN_IDS" in WDf else []
+		for id in gids:
+			for up in [false, true]:
+				var wmod = WM.buildModel(id, up, null, game)
+				if wmod is Node3D:
+					out.append(wmod)
+		var hand: Array = [WM.buildGrenadeModel(game), WM.buildTeleModel(game)]
+		for hid in ["skip", "roxy", "penny"]:
+			hand.append(WM.buildMeleeProp(hid, game))
+		for n in hand:
+			if n is Node3D:
+				out.append(n)
 	# one model of every zombie type that is not pooled yet (later rounds' specials): built as a spawn would and
 	# released into its type's pool afterwards (_releaseZombies), so the first one of each kind spawns hitch-free
 	var Z = game.get("zombies")
@@ -679,6 +811,10 @@ func _buildExtras() -> Array:
 	return out
 
 func _prebuild() -> void:
+	# the animated TV cards the screens switch to at power-on / on overrides (their first draw is the costly one)
+	var scr = game.get("screens")
+	if scr != null and scr.has_method("prewarmCards"):
+		scr.prewarmCards()
 	if ResourceLoader.exists("res://scripts/ui/commercial.gd"):
 		var CO = load("res://scripts/ui/commercial.gd")
 		var ov = CO.getOverlay() if CO != null else null
