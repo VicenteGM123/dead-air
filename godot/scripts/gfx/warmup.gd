@@ -208,6 +208,14 @@ func _collectGeom(o: GeometryInstance3D, seen: Dictionary, out: Array) -> void:
 		var mi := o as MeshInstance3D
 		if mi.mesh == null:
 			return
+		# geometry rebuilt every frame while it shows (Big Shot's film spaghetti and cable, ...): empty until then, so
+		# its material is drawn on a stand-in with the same vertex channels (position, normal, uv, indexed)
+		if mi.mesh.get_surface_count() == 0 and mi.material_override != null:
+			var k0 := "E%s" % _matKey(mi.material_override)
+			if not seen.has(k0):
+				seen[k0] = true
+				out.append({"kind": "mesh", "mesh": _standIn(), "surface": 0, "mat": mi.material_override, "overlay": null, "transparency": 0.0})
+			return
 		for i in mi.mesh.get_surface_count():
 			var m = mi.get_active_material(i)
 			if m == null:
@@ -284,6 +292,19 @@ func _proxy(it: Dictionary, at: Vector3, parent: Node3D) -> void:
 	node.extra_cull_margin = 2.0
 	parent.add_child(node)
 	stats.proxies += 1
+
+static var _stand: ArrayMesh = null
+static func _standIn() -> ArrayMesh:
+	if _stand == null:
+		var arr := []
+		arr.resize(Mesh.ARRAY_MAX)
+		arr[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3(-0.5, 0, -0.5), Vector3(0.5, 0, -0.5), Vector3(0, 0, 0.5)])
+		arr[Mesh.ARRAY_NORMAL] = PackedVector3Array([Vector3.UP, Vector3.UP, Vector3.UP])
+		arr[Mesh.ARRAY_TEX_UV] = PackedVector2Array([Vector2(0, 0), Vector2(1, 0), Vector2(0.5, 1)])
+		arr[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 2, 1])
+		_stand = ArrayMesh.new()
+		_stand.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	return _stand
 
 static var _hidden: Material = null
 static func _hiddenMat() -> Material:
@@ -403,6 +424,8 @@ func _collectModels() -> Array:
 					break
 	for z in _zombies:
 		add.call(z.get("group"), false)
+	for n in _typeModels:
+		add.call(n, false)
 	# screens.gd gives every zombie's materials their feed variant on zombie:spawn (a new Shader with the skin swap
 	# + the eye overlay material): done now for the pooled models, so the first spawn neither builds nor compiles them
 	var scr = game.get("screens")
@@ -413,6 +436,8 @@ func _collectModels() -> Array:
 					scr._prepZombie(m)
 		for z in _zombies:
 			scr._prepZombie(z)
+		for n in _typeModels:
+			scr._prepZombie({"group": n})
 	var Z = game.get("zombies")
 	var heads = Z.get("_heads") if Z != null else null
 	if heads is Dictionary:
@@ -566,6 +591,7 @@ func _canvasPass() -> void:
 var _extras: Array = []      # off-tree models built only for the gallery (freed at the end)
 var _borrowed: Array = []    # off-tree models of other systems shown to the gallery (left alone)
 var _zombies: Array = []     # zombie records built for the gallery (released into their pools at the end)
+var _typeModels: Array = []  # pooled models of the special types' warmup() samples (drawn, left in their pools)
 
 func _releaseZombies() -> void:
 	var ZT = load("res://scripts/actors/zombie_types.gd")
@@ -628,6 +654,19 @@ func _buildExtras() -> Array:
 				def.build.call(game, z)
 				if z.get("group") is Node3D:
 					_zombies.append(z)
+			# the type's own samples (the JS Game.precompile list): [its pooled model, then fresh copies of the parts
+			# it only shows later: death flare / film, umbrella, bolts, buttons...]
+			if def.get("warmup") is Callable:
+				var smp = def.warmup.call(game)
+				if smp is Array:
+					for i in smp.size():
+						var n = smp[i]
+						if not (n is Node3D) or (n as Node).is_inside_tree():
+							continue
+						if i == 0:
+							_typeModels.append(n)
+						else:
+							out.append(n)
 	# the commercial's gag props (sponsors.gd builds them on the first commercial)
 	var sp = game.get("sponsors")
 	if sp != null and sp.has_method("_ensureGags"):
