@@ -4,9 +4,9 @@ docs/STYLE_GUIDE.md ("more cartoon, like Plants vs Zombies"): SIMPLIFY + EXAGGER
   - Face: eyes at ~49 % of the skull height (short jaw, small chin, round cheeks), big eyes set INTO a soft face
     mask (no carved sockets: the lids hug the eyeball), thin friendly brows arching at the outer third, a D-shaped
     grin with one corner higher, a slim mustache whose ends lift with the smile and taper into the cheeks.
-  - Molded-toy feathered hair built from SEPARATE overlapping locks: a convex crown, two top swoops meeting at the
-    center part, two side wings over the ears; every lock ends in a tapered tip flicked back at the temple / ear,
-    and the back ends at ear-lobe height in three flipped tips (the neck shows). Width <= 1.2x the skull.
+  - Molded-toy 70s hair: two soft top swoops meeting at the center part over ONE smooth volume (crown + fuller
+    sides over the ears + back falling to ear-lobe height, the neck shows); no rolled locks or tubes from any
+    angle (duke-hair). Width <= 1.2x the skull.
   - 70s shirt: a real collar stand hugging the neck + two narrow dagger points to mid-chest (no notch), painted V
     neckline with a small 3-lobe chest-hair tuft, bold 5 cm stripes, one smooth shoulder line, clean cuffs.
   - Bell-bottoms: slim hips, straight to the knee, confident cone flare (hem r ~0.15).
@@ -176,7 +176,7 @@ def sculpt(sd, ctx):
         sd.paint({'color': '#F4A088', 'soft': 0.035, 'strength': 0.5, 'only': ['skin']}, lambda: sd.mirrorX(lambda: sd.sphere(pos=[0.088, 0.152, -0.14], r=0.024)))
         sd.paint({'color': '#F0A088', 'soft': 0.015, 'strength': 0.4, 'only': ['skin']}, lambda: sd.mirrorX(lambda: sd.ellipsoid(pos=[0.18, 0.195, 0.02], r=[0.02, 0.05, 0.035])))
 
-        # ---- hair: convex crown + separate overlapping locks with flicked tips ----
+        # ---- hair: one smooth volume (crown + sides + back) + two soft top swoops ----
         with sd.group(name='hair', mat='hair'):
             # crown: ONE convex dome over the skull; the bottom edge runs from the temples (high) to the nape at
             # ear-lobe height (a tilted plane), so the ears and the neck show
@@ -184,6 +184,10 @@ def sculpt(sd, ctx):
                 return [x * 1.4, -1, 0.9]
             with sd.group(name='crown', k=0.05, flow=flow):
                 sd.ellipsoid(pos=[0, 0.31, 0.025], r=[0.174, 0.215, 0.19])
+                # duke-hair: smooth 70s volume instead of rolled back locks / side wings: a soft fill over the
+                # ears and a fuller back that falls to ear-lobe height (one continuous surface, no tubes)
+                sd.mirrorX(lambda: sd.ellipsoid(pos=[0.112, 0.258, 0.05], r=[0.07, 0.062, 0.13], k=0.06))     # sides
+                sd.ellipsoid(pos=[0, 0.218, 0.078], r=[0.156, 0.112, 0.12], k=0.07)                         # back / nape
                 sd.ellipsoid(op='sub', k=0.03, pos=[0, 0.2, -0.2], r=[0.142, 0.21, 0.19])                # face opening
                 n = math.hypot(1, 0.675)
                 sd.plane(op='int', k=0.03, n=[0, -1 / n, -0.675 / n], d=-0.24 / n)                         # temple -> nape
@@ -195,14 +199,6 @@ def sculpt(sd, ctx):
                     # (char-polish: lower lift + flatter: a soft feathered swoop instead of a thick rolled brim)
                     hairLock(sd, [[8, 52, 0.01], [14, 45, 0.034], [36, 39, 0.04], [64, 29, 0.028], [88, 22, 0.018], [106, 20, 0.016]],
                              [0.034, 0.054, 0.054, 0.046, 0.03, 0.008], {'flat': 0.44})
-                    # side wing: from the temple back over the top of the ear; the tip flicks out behind the ear
-                    hairLock(sd, [[56, 12, 0.008], [76, 4, 0.016], [96, -2, 0.018], [114, -6, 0.028]],
-                             [0.026, 0.038, 0.034, 0.006], {'flat': 0.42})
-                    # back locks: down from the crown to ear-lobe height, flipped out at the tip
-                    hairLock(sd, [[150, 10, 0.02], [150, -25, 0.025], [148, -45, 0.03], [142, -54, 0.05]],
-                             [0.045, 0.05, 0.042, 0.008], {'flat': 0.55})
-                hairLock(sd, [[180, 10, 0.02], [180, -25, 0.026], [180, -46, 0.032], [180, -57, 0.052]],
-                         [0.05, 0.055, 0.045, 0.008], {'flat': 0.55})
 
             # sideburns: clean rounded strips on the skin in front of the ears
             @sd.mirrorX
