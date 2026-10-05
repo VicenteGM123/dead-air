@@ -4,6 +4,29 @@ Migración 1:1 del juego web (`src/`, Three.js) a **Godot 4.7**. Todo el código
 los assets 3D se generan en **Blender** con scripts de Python (`../blender/`). El sonido se renderiza a partir de las
 recetas originales de audio (`../tools/audio/`).
 
+## Descargar (Windows / Linux)
+
+Builds de escritorio exportadas, listas para jugar sin instalar Godot y **con multijugador online**
+(ver [`builds/README.md`](../builds/README.md)). Cada ZIP va partido en dos trozos (GitHub no admite archivos de más
+de 100 MB): descarga los dos, únelos y descomprime.
+
+- **Windows 10/11 (64 bits)**, 156 MB:
+  [trozo 1](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-windows.zip.001) +
+  [trozo 2](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-windows.zip.002) +
+  [UNIR-windows.bat](https://github.com/VicenteGM123/dead-air/raw/main/builds/UNIR-windows.bat)
+  (o `copy /b DeadAir-windows.zip.001+DeadAir-windows.zip.002 DeadAir-windows.zip`). Ejecuta `DeadAir.exe`; si
+  SmartScreen avisa: **Más información → Ejecutar de todas formas**.
+- **Linux x86_64**, 147 MB:
+  [trozo 1](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-linux.zip.001) +
+  [trozo 2](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-linux.zip.002), luego
+  `cat DeadAir-linux.zip.0* > DeadAir-linux.zip`, descomprime y `./DeadAir.x86_64`.
+
+Multijugador: el anfitrión necesita el puerto **UDP 31313** abierto (o usad Tailscale / ZeroTier). Necesita una
+gráfica con Vulkan.
+
+Para regenerarlas: presets "Windows Desktop" y "Linux" de `export_presets.cfg` (`godot --headless --export-release
+"Linux" DeadAir.x86_64`; exporta desde una copia del proyecto, no desde el repo, para no reimportar los assets).
+
 ## Cómo jugar
 
 1. Instala **Godot 4.7** (versión estándar, no hace falta la de .NET).

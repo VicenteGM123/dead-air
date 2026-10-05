@@ -23,6 +23,26 @@ multijugador no está disponible (los navegadores no pueden usar UDP/ENet): usa 
 online. La primera visita recarga la página una vez (un service worker activa la build con hilos). Se regenera con
 `sh godot/web/export_web.sh` (necesita las plantillas de exportación web de Godot 4.7.2).
 
+## Descargar (Windows / Linux)
+
+Versión de escritorio de la versión Godot, lista para jugar sin instalar Godot y **con multijugador online**
+(ver [`builds/README.md`](builds/README.md)). Cada ZIP va partido en dos trozos (GitHub no admite archivos de más
+de 100 MB): descarga los dos, únelos y descomprime.
+
+- **Windows 10/11 (64 bits)**, 156 MB:
+  [trozo 1](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-windows.zip.001) +
+  [trozo 2](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-windows.zip.002) +
+  [UNIR-windows.bat](https://github.com/VicenteGM123/dead-air/raw/main/builds/UNIR-windows.bat)
+  (o `copy /b DeadAir-windows.zip.001+DeadAir-windows.zip.002 DeadAir-windows.zip`). Ejecuta `DeadAir.exe`; si
+  SmartScreen avisa: **Más información → Ejecutar de todas formas**.
+- **Linux x86_64**, 147 MB:
+  [trozo 1](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-linux.zip.001) +
+  [trozo 2](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-linux.zip.002), luego
+  `cat DeadAir-linux.zip.0* > DeadAir-linux.zip`, descomprime y `./DeadAir.x86_64`.
+
+Multijugador: el anfitrión necesita el puerto **UDP 31313** abierto (o usad Tailscale / ZeroTier). Necesita una
+gráfica con Vulkan.
+
 ## Cómo jugar
 
 **Jugar online:** https://vicentegm123.github.io/dead-air/
