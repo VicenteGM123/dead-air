@@ -14,13 +14,14 @@ El juego también está migrado tal cual a **Godot 4.7** (`godot/`, todo el cód
 assets 3D generados por código en **Blender** (`blender/`, scripts de Python que exportan a `godot/assets/`).
 Para jugarla: abre `godot/project.godot` en Godot 4.7 y pulsa F5. Detalles en `godot/README.md`,
 `blender/README.md` y `tools/audio/README.md`. La versión Godot tiene además **multijugador cooperativo online
-de 1 a 4 jugadores** (MULTIPLAYER en el menú principal; ver `godot/README.md`).
+de 1 a 4 jugadores** (MULTIPLAYER en el menú principal; ver `godot/README.md`): en el navegador y en escritorio con un
+**código de sala** (sin cuentas ni servidores propios), y en escritorio también por IP / red local.
 
 **[Jugar versión Godot en el navegador](https://vicentegm123.github.io/dead-air/godot-web/)** (build web de prueba,
 `godot-web/`: unos 165 MB de descarga la primera vez; Chrome/Edge/Firefox de escritorio con aceleración gráfica). En el
-navegador Godot solo tiene el renderizador Compatibility (WebGL 2): se ve casi igual, pero sin sombras proyectadas, y el
-multijugador no está disponible (los navegadores no pueden usar UDP/ENet): usa la versión de escritorio para jugar
-online. La primera visita recarga la página una vez (un service worker activa la build con hilos). Se regenera con
+navegador Godot solo tiene el renderizador Compatibility (WebGL 2): se ve casi igual, pero sin sombras proyectadas. El
+**multijugador funciona en el navegador** con códigos de sala (MULTIPLAYER → HOST GAME da un código tipo `WZTV-4K2P`;
+los demás JOIN GAME y lo escriben), y se puede jugar mezclando navegador y escritorio. La primera visita recarga la página una vez (un service worker activa la build con hilos). Se regenera con
 `sh godot/web/export_web.sh` (necesita las plantillas de exportación web de Godot 4.7.2).
 
 ## Descargar (Windows / Linux)
@@ -29,19 +30,20 @@ Versión de escritorio de la versión Godot, lista para jugar sin instalar Godot
 (ver [`builds/README.md`](builds/README.md)). Cada ZIP va partido en dos trozos (GitHub no admite archivos de más
 de 100 MB): descarga los dos, únelos y descomprime.
 
-- **Windows 10/11 (64 bits)**, 167 MB:
+- **Windows 10/11 (64 bits)**, 169 MB:
   [trozo 1](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-windows.zip.001) +
   [trozo 2](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-windows.zip.002) +
   [UNIR-windows.bat](https://github.com/VicenteGM123/dead-air/raw/main/builds/UNIR-windows.bat)
   (o `copy /b DeadAir-windows.zip.001+DeadAir-windows.zip.002 DeadAir-windows.zip`). Ejecuta `DeadAir.exe`; si
   SmartScreen avisa: **Más información → Ejecutar de todas formas**.
-- **Linux x86_64**, 157 MB:
+- **Linux x86_64**, 159 MB:
   [trozo 1](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-linux.zip.001) +
   [trozo 2](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-linux.zip.002), luego
   `cat DeadAir-linux.zip.0* > DeadAir-linux.zip`, descomprime y `./DeadAir.x86_64`.
 
-Multijugador: el anfitrión necesita el puerto **UDP 31313** abierto (o usad Tailscale / ZeroTier). Necesita una
-gráfica con Vulkan.
+Multijugador: **ONLINE · CODE** (por defecto) no necesita abrir puertos: el anfitrión comparte un código de sala y los
+demás lo escriben (también contra la versión del navegador). **DIRECT IP · LAN** es el modo de siempre (puerto **UDP
+31313** abierto en el anfitrión, o Tailscale / ZeroTier). Necesita una gráfica con Vulkan.
 
 ## Cómo jugar
 

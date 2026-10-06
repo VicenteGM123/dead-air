@@ -15,6 +15,11 @@ run/da_params=""
 
 general/default_playback_type.web=0
 
+[dead_air]
+
+net/signal_servers="peerjs:wss://0.peerjs.com/,mqtt:wss://broker.hivemq.com:8884/mqtt"
+net/ice_servers=""
+
 [display]
 
 window/size/viewport_width=1920

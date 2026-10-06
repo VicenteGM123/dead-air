@@ -10,19 +10,19 @@ Builds de escritorio exportadas, listas para jugar sin instalar Godot y **con mu
 (ver [`builds/README.md`](../builds/README.md)). Cada ZIP va partido en dos trozos (GitHub no admite archivos de más
 de 100 MB): descarga los dos, únelos y descomprime.
 
-- **Windows 10/11 (64 bits)**, 167 MB:
+- **Windows 10/11 (64 bits)**, 169 MB:
   [trozo 1](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-windows.zip.001) +
   [trozo 2](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-windows.zip.002) +
   [UNIR-windows.bat](https://github.com/VicenteGM123/dead-air/raw/main/builds/UNIR-windows.bat)
   (o `copy /b DeadAir-windows.zip.001+DeadAir-windows.zip.002 DeadAir-windows.zip`). Ejecuta `DeadAir.exe`; si
   SmartScreen avisa: **Más información → Ejecutar de todas formas**.
-- **Linux x86_64**, 157 MB:
+- **Linux x86_64**, 159 MB:
   [trozo 1](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-linux.zip.001) +
   [trozo 2](https://github.com/VicenteGM123/dead-air/raw/main/builds/DeadAir-linux.zip.002), luego
   `cat DeadAir-linux.zip.0* > DeadAir-linux.zip`, descomprime y `./DeadAir.x86_64`.
 
-Multijugador: el anfitrión necesita el puerto **UDP 31313** abierto (o usad Tailscale / ZeroTier). Necesita una
-gráfica con Vulkan.
+Multijugador: con **código de sala** (por defecto, sin abrir puertos, también contra el navegador) o por **IP / LAN**
+(puerto **UDP 31313** abierto en el anfitrión, o Tailscale / ZeroTier). Necesita una gráfica con Vulkan.
 
 Para regenerarlas: presets "Windows Desktop" y "Linux" de `export_presets.cfg` (`godot --headless --export-release
 "Linux" DeadAir.x86_64`; exporta desde una copia del proyecto, no desde el repo, para no reimportar los assets).
@@ -95,7 +95,7 @@ main). Se exporta con `sh godot/web/export_web.sh [carpeta]` (plantillas web de 
   de la vista 3D en `post` / `bloom`, cielo con Z invertida en rango -1..1) para que se vea igual que en escritorio;
   en escritorio (Forward+) no cambia nada. Diferencias: sin sombras proyectadas de la luz principal (Compatibility
   suma en sRGB las pasadas de luces con sombra y quema la imagen) y sin MSAA en los lienzos 2D.
-- **MULTIPLAYER** aparece en gris con la etiqueta "DESKTOP ONLY" (ENet usa UDP, que los navegadores no permiten) y
+- **MULTIPLAYER** funciona con códigos de sala (WebRTC; el modo IP / LAN con ENet/UDP no existe en el navegador) y
   QUIT no aparece (una pestaña no se puede cerrar).
 
 ## Multijugador (cooperativo online, 1-4 jugadores)
@@ -105,17 +105,41 @@ CONTROLS / QUIT**). SINGLE PLAYER es el juego de siempre, sin ningún cambio.
 
 **MULTIPLAYER**
 - **NAME**: tu nombre (se guarda).
-- **HOST GAME**: creas la partida. Tus amigos ven en la lista "Tonight's Cast" la dirección que tienen que usar
-  (la de internet, si el router abre el puerto solo con UPnP, y la de la red local).
-- **JOIN GAME**: aparecen solas las partidas de tu red local; para una partida por internet elige ENTER ADDRESS y
-  escribe la IP del anfitrión (con el mando hay un teclado en pantalla).
+- **CONNECTION** (solo escritorio; en el navegador siempre es por código): **ONLINE · CODE** o **DIRECT IP · LAN**.
+- Con **ONLINE · CODE** (por defecto):
+  - **HOST GAME**: creas una sala y en la lista "Tonight's Cast" aparece en grande su código (**SHARE THIS CODE**,
+    p. ej. `WZTV-4K2P`; C, el botón Y del mando o un clic lo copian al portapapeles). Pásaselo a tus amigos.
+  - **JOIN GAME → ENTER CODE**: escribe el código (teclado, Ctrl+V en escritorio, o el teclado en pantalla con el
+    mando). Sin letras ambiguas: no hay I, L, O, 0 ni 1.
+  - Funciona igual en el navegador y en escritorio, y se pueden mezclar.
+- Con **DIRECT IP · LAN** (escritorio):
+  - **HOST GAME**: creas la partida. Tus amigos ven en la lista "Tonight's Cast" la dirección que tienen que usar
+    (la de internet, si el router abre el puerto solo con UPnP, y la de la red local).
+  - **JOIN GAME**: aparecen solas las partidas de tu red local; para una partida por internet elige ENTER ADDRESS y
+    escribe la IP del anfitrión (con el mando hay un teclado en pantalla).
 - **Sala de espera**: cada uno elige su héroe en el dial de la tele (cada héroe solo puede llevarlo un jugador) y lo
   sintoniza para quedar listo. Cuando todos están listos, el anfitrión pulsa START: cuenta atrás y a jugar.
 
-**Jugar por internet**: el anfitrión necesita el puerto **UDP 31313** abierto hacia su PC. El juego intenta abrirlo
-solo (UPnP); si tu router no lo permite, ábrelo a mano en el router (redirección de puertos UDP 31313) o usad una red
-privada virtual tipo **Tailscale**, **ZeroTier** o **Radmin VPN** y unid por la IP que os da. Todos deben tener la
-misma versión del juego.
+**Cómo funcionan los códigos (ONLINE · CODE)**: conexión directa entre jugadores con **WebRTC** (topología en
+estrella: cada invitado se conecta solo al anfitrión, que reenvía lo demás). Para encontrarse se usan servicios
+públicos y gratuitos, sin cuenta: el servidor en la nube de **PeerJS** (`wss://0.peerjs.com`) y, a la vez como
+respaldo, un broker **MQTT** público por WebSocket (`wss://broker.hivemq.com:8884/mqtt`); solo transportan los
+mensajes de conexión (oferta / respuesta / candidatos ICE), nunca la partida. Las direcciones se descubren con los
+servidores **STUN** de Google (`stun.l.google.com:19302`) y, si existe, con el relé **TURN** gratuito "Open Relay" de
+Metered (`openrelay.metered.ca`, credenciales públicas). Limitaciones: si los dos jugadores están detrás de un NAT
+estricto (simétrico: algunas redes móviles 4G/5G, redes de empresa o universidad, CG-NAT) y el relé TURN gratuito no
+responde, la conexión falla con "COULDN'T LINK UP · A FIREWALL OR STRICT NAT?": probad otra red, o el modo DIRECT IP
+con Tailscale / ZeroTier. Si los servicios públicos cambian o caen, se pueden cambiar en `project.godot`
+(`dead_air/net/signal_servers`, `dead_air/net/ice_servers` como JSON) o con los parámetros `mpsignal=` / `mpice=`.
+Mensajes de error: "NO SUCH ROOM" (código mal escrito o sala cerrada), "CAN'T REACH THE SIGNAL SERVER" (sin internet o
+servicios caídos), "COULDN'T LINK UP" (NAT / cortafuegos), "WRONG VERSION", "LOBBY FULL", "SHOW ALREADY ON AIR".
+En escritorio WebRTC lo aporta la extensión oficial **webrtc-native** (`addons/webrtc/`, Windows y Linux x86_64); el
+navegador lo trae de serie.
+
+**Jugar por IP (DIRECT IP · LAN)**: el anfitrión necesita el puerto **UDP 31313** abierto hacia su PC. El juego
+intenta abrirlo solo (UPnP); si tu router no lo permite, ábrelo a mano en el router (redirección de puertos UDP 31313)
+o usad una red privada virtual tipo **Tailscale**, **ZeroTier** o **Radmin VPN** y unid por la IP que os da. Todos
+deben tener la misma versión del juego.
 
 **Reglas en equipo** (al estilo de los zombis de Call of Duty):
 - Puntos por jugador; cada uno paga lo suyo. Puertas, corriente, tablas de las ventanas y máquinas son compartidas.
@@ -128,8 +152,11 @@ misma versión del juego.
 - La pausa no congela el juego en multijugador (LEAVE GAME para salir).
 
 Parámetros de prueba: `mp=host` / `mp=join mpip=<ip>`, `mpname=`, `mpstart=N` (con `test=1`: el anfitrión empieza solo
-cuando hay N jugadores), `mplag= mpjitter= mploss=` (simulan mala red). Código: `scripts/net/` (red, sala, jugadores
-remotos) y los `*_net.gd` / párrafos `MP:` de cada sistema.
+cuando hay N jugadores), `mplag= mpjitter= mploss=` (simulan mala red); WebRTC: `mpnet=rtc mpcode=<código>`,
+`mpsignal=peerjs:ws://127.0.0.1:9000/,mqtt:ws://127.0.0.1:8883/mqtt` (servidores de señalización propios, p. ej. el
+paquete npm `peer`), `mpice=none|stun`, `mpturn=0`, `mplog=<s>` (escribe los jugadores en la consola). Código:
+`scripts/net/` (red, sala, jugadores remotos; `net_rtc.gd` + `net_signal.gd` = transporte WebRTC) y los `*_net.gd` /
+párrafos `MP:` de cada sistema.
 
 ## Estructura
 
