@@ -24,8 +24,8 @@ anfitrión, o una red virtual tipo Tailscale / ZeroTier). Cada ZIP incluye la li
 (`libwebrtc_native...dll/.so`, extensión oficial godotengine/webrtc-native): déjala junto al ejecutable.
 
 SHA-256 de los ZIP unidos:
-- `DeadAir-windows.zip`: `4d6f2f1ed469b6713e245163e3b72ad51312ca1be79de3cffa22e93d00d2e6f6`
-- `DeadAir-linux.zip`: `1529e709c8f9d2f5e573554935ccf908108601310cf89417fe9b48549258f39d`
+- `DeadAir-windows.zip`: `f118bcd588047f4699f89048079f9186e7bf9c2595984df4b9dd34e2d6009a32`
+- `DeadAir-linux.zip`: `97858201b82b81aaa99c3e4b5efed06c78ebc3e0532d9fcf16643a8e1bbbd1fd`
 
 Se generan con los presets "Windows Desktop" y "Linux" de `godot/export_presets.cfg`
 (`godot --export-release "Windows Desktop" DeadAir.exe`, con las plantillas de exportación de Godot 4.7.2). Los presets
