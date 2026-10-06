@@ -1694,6 +1694,12 @@ func reset() -> void:
 			items[TAPE_ID] = _wrapItem(TAPE_ID, reel)
 		else:
 			push_warning("[telly] tape reel unavailable")
+	# audio.reset() (earlier in INIT_ORDER) stops every world voice, the hum loop made in init() included: a new one
+	# for this run (_placeAt moves it and sets its level)
+	if hum == null or not bool(_field(hum, "playing", false)):
+		if hum != null:
+			_invoke(hum, "stop", [0.05])
+		hum = _invoke(gm.audio, "loop", ["telly_hum", {"pos": Vector3(0, -50, 0), "vol": 0.0}])
 	var start := "telly_home_green" if gm.rand() < 0.5 else "telly_home_newsroom"
 	_placeAt(start if homes.has(start) else homes.keys()[0])
 	for h in homes.values():

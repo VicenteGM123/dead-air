@@ -87,6 +87,7 @@ const MAX_VOICES := 96
 const MAX_HRTF := 8
 const LOOKAHEAD := 0.4
 const START_LAG := 0.012
+const LATE_MAX := 1.0          # a sub-player whose start a frame stall delayed by more than this is dropped (stale)
 const SURF_ARP := [0, 7, 12, 10]      # music.js telly_surf_arp: root, fifth, octave, flat seventh
 
 const BUS_NAMES := {"master": "Master", "music": "Music", "sfx": "SFX", "ambience": "Ambience", "ui": "UI", "tv": "TV"}
@@ -154,6 +155,7 @@ class Voice extends RefCounted:
 	var _arpI := 0
 	var _beat = null             # ee_tracking_tones: second sine's pitch (Param)
 	var _fade = null             # ee_tracking_tones: the recipe's 0.15 s fade-in (Param)
+	var _late := 0.0             # how far a frame stall pushed this voice's start (its end moved with it)
 
 	var playing: bool:
 		get:
@@ -207,6 +209,16 @@ class Voice extends RefCounted:
 			return
 		var hz := 440.0 + 2.5 * clampf(float(d) if d != null else 0.0, 0.0, 12.0)
 		_beat.setTargetAtTime(hz / 440.0, audio.now(), 0.05)
+
+	# A sub-player still waiting for its start (a frame stall can outlast a short cue's whole length: the voice must
+	# not be disposed before it was ever heard; WebAudio would have played it on the audio thread).
+	func waiting(now: float) -> bool:
+		if stopped or disposed:
+			return false
+		for s in subs:
+			if not s.started and (looping or now - float(s.at) <= LATE_MAX):
+				return true
+		return false
 
 	func update(now: float) -> void:
 		if disposed:
@@ -854,7 +866,7 @@ func _schedule(now: float) -> void:
 	var keep: Array = []
 	for v in voices:
 		v.update(now)
-		if now > v.end + 0.15:
+		if now > v.end + 0.15 and not v.waiting(now):
 			v.dispose()
 		else:
 			keep.append(v)
@@ -914,6 +926,15 @@ func _tickSub(v: Voice, s: Dictionary, now: float, g: float) -> bool:
 	if not s.started:
 		if now < float(s.at):
 			return true
+		# started late (a frame stall since it was scheduled): play it from its start, the voice's end moving with it,
+		# unless it is stale
+		var late := now - float(s.at)
+		if v.stopped or (late > LATE_MAX and not v.looping and v.end != INF):
+			node.queue_free()
+			return false
+		if late > v._late + 0.02 and not v.looping:
+			v.end += late - v._late
+			v._late = late
 		s.started = true
 		node.play()
 	elif not node.playing and not v.disposed:
@@ -1019,6 +1040,12 @@ func _updateListener() -> void:
 	_lpos = x
 	if is_instance_valid(_listener) and _listener.is_inside_tree():
 		_listener.global_transform = Transform3D(xf.basis, x)
+		# The world renders inside render.gd's SubViewport chain (WorldView): a SubViewport is no 3D audio listener by
+		# default, and AudioStreamPlayer3D only mixes for viewports that are, so without this every positional voice
+		# is silent (computed, started, never heard).
+		var vp := _listener.get_viewport()
+		if vp != null and not vp.audio_listener_enable_3d:
+			vp.audio_listener_enable_3d = true
 		if not _listener.is_current():
 			_listener.make_current()
 
