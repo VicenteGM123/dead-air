@@ -11,7 +11,10 @@
 #   THE STATION?). Tuning in needs game.loaded (always true past the title) and a lobby that is not still on air.
 #   Roster (a TV GUIDE card right of the TV, "Tonight's Cast"): up to 4 rows (channel badge, name, hero, ON AIR lamp =
 #   ready, ping, HOST / YOU tags), empty channels dashed; for the host the addresses to share (UPnP external IP:port
-#   on a Dymo tape, the LAN address under it); joins / leaves toast at its foot.
+#   on a Dymo tape, the LAN address under it) — or, in a WebRTC session (net.transport 'rtc'), SHARE THIS CODE: the
+#   room code big on the Dymo (C / pad Y / a click copies it to the clipboard) and the room's state (opening / open /
+#   signal server unreachable, retrying); a client's foot reads ROOM <code> · HOSTED BY <name>; joins / leaves toast at
+#   its foot.
 #   START (host, everyone ready, or the host alone): Enter / E / A / Start / a click on the Dymo -> net.startGame().
 #   mp-core broadcasts lobby.phase 'starting' (+ lobby.countdown): every TV plays a 3-2-1 film leader (ui_round_dial
 #   ticks), then the 'start' message -> menu.mpStart(hero) -> goLive(): the dive into the screen on every peer, then
@@ -23,6 +26,7 @@ extends RefCounted
 
 const HudScript = preload("res://scripts/ui/hud.gd")
 
+const RtcScript = preload("res://scripts/net/net_rtc.gd")
 const RX := 1440.0                 # roster card (stage px)
 const RY := 150.0
 const RW := 450.0
@@ -43,6 +47,8 @@ var upnp := {"state": "pending", "ip": "", "port": 0}
 var toast := {"text": "", "t": 99.0}
 var msg := {"w1": "", "w2": "", "t": 99.0}   # a transient Dymo line (denied reasons)
 var _names := {}                   # peer id -> name (the SIGNED OFF toast of a peer already gone)
+var copiedT := 99.0                # since the room code was copied (COPIED! flash)
+var _copyRect := Rect2()           # the code's Dymo (click = copy), set by draw
 
 func _init(menu) -> void:
 	m = menu
@@ -195,6 +201,26 @@ func _port() -> int:
 	var p = n.get("port") if n != null else null
 	return int(p) if p != null else 31313
 
+# WebRTC session: the room {code, state, reason} ({} for ENet / no session).
+func room() -> Dictionary:
+	var n = _net()
+	if n == null or n.get("transport") != "rtc" or not (n.get("room") is Dictionary):
+		return {}
+	var r: Dictionary = n.get("room")
+	return r if str(r.get("code", "")) != "" else {}
+
+func _copyCode() -> bool:
+	var r := room()
+	if r.is_empty():
+		return false
+	var c: String = RtcScript.formatCode(str(r.code))
+	DisplayServer.clipboard_set(c)
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("try{navigator.clipboard&&navigator.clipboard.writeText(%s)}catch(e){}" % JSON.stringify(c), true)
+	copiedT = 0.0
+	m._play("ui_prompt", {"vol": 0.6})
+	return true
+
 # net.upnp {state: off | working | ok | failed, externalIp} or the net:upnp payload {ok, ip}.
 func _upnp(u: Dictionary) -> void:
 	if u.has("state"):
@@ -309,6 +335,8 @@ func key(e: Dictionary) -> bool:
 	if live or cd >= 0.0:
 		e.stop = e.code == "Escape"
 		return true   # the countdown / the dive own the keys
+	if e.code == "KeyC" and _copyCode():
+		return true
 	if e.code != "Escape":
 		return false
 	e.stop = true
@@ -325,7 +353,9 @@ func key(e: Dictionary) -> bool:
 	m._leaveSession("mp")
 	return true
 
-func pad(_btn: String) -> bool:
+func pad(btn: String) -> bool:
+	if btn == "y" and not (live or cd >= 0.0) and _copyCode():
+		return true
 	return live or cd >= 0.0   # swallowed while counting down; else the dial's own mapping (B = Esc, A / Start = E)
 
 # 'start' landed (menu.mpStart): the dive into the screen, then startNow().
@@ -367,6 +397,9 @@ func onNet(ev: String, p) -> void:
 			armLeave = -1.0
 		"net:upnp":
 			_upnp(d)
+		"net:room":
+			if str(d.get("state", "")) == "failed":
+				m._play("ui_denied", {"vol": 0.4})
 		"net:hero":
 			# the host refused our hero (someone was faster): no READY goes out
 			if d.get("ok") == false and want.t < 2.0 and want.ready:
@@ -402,6 +435,7 @@ func update(dt: float) -> void:
 		_names[p.id] = p.name
 	toast.t += dt
 	msg.t += dt
+	copiedT += dt
 	if deny > 0.0:
 		deny = maxf(0.0, deny - dt)
 	if armLeave > 0.0:
@@ -422,6 +456,8 @@ func update(dt: float) -> void:
 	# the Dymo's words (and so its width) follow the lobby state: keep the click regions in step
 	m._hits.clear()
 	m._selectHits()
+	if _copyRect.size.x > 0.0 and not room().is_empty():
+		m._hits.append({"id": "roomcode", "rect": _copyRect, "click": func(): _copyCode()})
 
 # The Dymo under the TV: [w1, key cap, w2] (menu._selbarLayout / _drawSelect).
 func dymo() -> Dictionary:
@@ -488,7 +524,10 @@ func draw(ci: Control) -> void:
 			_drawOpen(ci, r, a)
 		y += ROW + 8.0
 	y += 4.0
-	if isHost():
+	_copyRect = Rect2()
+	if isHost() and not room().is_empty():
+		_drawShareCode(ci, X, y, a)
+	elif isHost():
 		_drawShare(ci, X, y, a)
 	else:
 		var hn := "?"
@@ -496,6 +535,10 @@ func draw(ci: Control) -> void:
 			if p.host:
 				hn = str(p.name).to_upper()
 		var s := "HOSTED BY %s" % hn
+		var rm := room()
+		if not rm.is_empty():
+			s = "ROOM %s · %s" % [RtcScript.formatCode(str(rm.code)), s]
+			_copyRect = Rect2(X + 18.0, y, RW - 36.0, 32.0)
 		m._txt(ci, "sign", 14, X + 26.0, y + 16.0, s, "#8A6428", 14.0 * 0.12, [], a)
 	# toast (joins / leaves) under the card
 	if toast.t < 3.0:
@@ -609,6 +652,45 @@ func _drawShare(ci: Control, X: float, y: float, a: float) -> void:
 		var fk := "tape" if line2.begins_with("LAN") else "sign"
 		var sz := 26.0 if fk == "tape" else 12.0
 		m._txt(ci, fk, sz, X + 26.0, y + 104.0, line2, line2col, 0.0 if fk == "tape" else 12.0 * 0.08, [], a)
+
+# Host of a WebRTC room: SHARE THIS CODE, the code on a big Dymo tape (click / C / pad Y copies it), a COPY key cap,
+# and the room's state under it.
+func _drawShareCode(ci: Control, X: float, y: float, a: float) -> void:
+	var r := room()
+	var cap := "SHARE THIS CODE"
+	m._txt(ci, "sign", 14, X + 26.0, y + 12.0, cap, "#8A6428", 14.0 * 0.12, [], a)
+	var st := str(r.get("state", ""))
+	var main: String = RtcScript.formatCode(str(r.get("code", "")))
+	var dw: float = minf(m._tw("hud", 40, main, 40.0 * 0.08) + 48.0, RW - 150.0)
+	var tex: Texture2D = m._svgTex("ldymoC%d" % int(dw), func(): return HudScript.svgTexture(m._dymoSvg(dw, 64.0)))
+	var cx := X + 22.0 + dw / 2.0
+	var cy := y + 60.0
+	ci.draw_set_transform(Vector2(cx, cy), deg_to_rad(-1.5), Vector2.ONE)
+	if tex:
+		ci.draw_texture_rect(tex, Rect2(-dw / 2.0 - 14, -32 - 10, dw + 28, 64 + 30), false, Color(1, 1, 1, a * (0.55 if st == "failed" else 1.0)))
+	var emb := [[0.0, -1.0, 0.0, "rgba(0,0,0,.9)"], [0.0, 1.0, 0.0, "rgba(255,255,255,.35)"], [0.0, 2.0, 3.0, "rgba(0,0,0,.5)"]]
+	m._txt(ci, "hud", 40, -dw / 2.0 + 24.0, 0.0, main, "#F2F0EA", 40.0 * 0.08, emb, a)
+	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
+	_copyRect = Rect2(X + 18.0, cy - 36.0, RW - 36.0, 72.0)
+	# COPY key cap (the pad's Y glyph in pad mode) right of the tape
+	var copied := copiedT < 1.8
+	var lbl := "COPIED!" if copied else "COPY"
+	var kx := X + 22.0 + dw + 22.0
+	if m._padMode():
+		m._drawPadGlyph(ci, "Y", kx, cy - 12.0)
+	else:
+		m._paintBox(ci, "lkcC", kx, cy - 30.0, 44.0, 36.0, {"r": 9, "bg": {"lin": 180, "stops": [["#4A3A30", 0.0], ["#2A1E18", 1.0]]},
+			"shadows": [[0, 3, 0, 0, "#140C08"]], "insets": [[0, 1, 0, 0, "rgba(255,255,255,.2)"]]}, a)
+		m._txt(ci, "hud", 18, kx + (44.0 - m._tw("hud", 18, "C", 1.0)) / 2.0, cy - 12.0, "C", "#F6E7C8", 1.0, [], a)
+	m._txt(ci, "sign", 12, kx, cy + 20.0, lbl, "#3F8A3A" if copied else "#5A3A22", 12.0 * 0.1, [], a)
+	var line2 := "FRIENDS: MULTIPLAYER › JOIN GAME › ENTER THE CODE"
+	var col := "#5A3A22"
+	if st == "opening":
+		line2 = "OPENING THE ROOM" + ".".repeat(1 + int(t * 2.0) % 3)
+	elif st == "failed":
+		line2 = "CAN'T REACH THE SIGNAL SERVER · RETRYING" + ".".repeat(1 + int(t * 2.0) % 3)
+		col = "#B5472A"
+	m._txt(ci, "sign", 12, X + 26.0, y + 112.0, line2, col, 12.0 * 0.08, [], a)
 
 func _heroName(id: String) -> String:
 	var H = m._heroesLib()

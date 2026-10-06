@@ -460,7 +460,7 @@ func init() -> void:
 	game.events.on("state", func(p): _onState(p if p else {}))
 	game.events.on("input:device", func(_p): _refreshGlyphs())
 	# MP: the session's events (scripts/net, mp-core) drive the front cards, the lobby and SIGNAL LOST
-	for ev in ["net:lobby", "net:peer", "net:status", "net:lan", "net:upnp", "net:hero"]:
+	for ev in ["net:lobby", "net:peer", "net:status", "net:lan", "net:upnp", "net:hero", "net:room"]:
 		var evn: String = ev
 		game.events.on(evn, func(p): _onNet(evn, p))
 
@@ -1135,7 +1135,8 @@ func _onEvent(event: InputEvent) -> bool:
 		if code == "":
 			return false
 		var e := {"code": code, "repeat": k.echo, "shiftKey": k.shift_pressed, "stop": false,
-			"char": String.chr(k.unicode) if k.unicode >= 32 else ""}   # typed text (the MP name / address cards)
+			"ctrlKey": k.ctrl_pressed or k.meta_pressed,   # (Ctrl+V pastes a room code / address)
+			"char": String.chr(k.unicode) if k.unicode >= 32 and not (k.ctrl_pressed or k.meta_pressed) else ""}   # typed text (the MP name / address cards)
 		_onKey(e)
 		return e.stop
 	if event is InputEventMouseButton:

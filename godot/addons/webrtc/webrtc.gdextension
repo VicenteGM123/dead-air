@@ -1,0 +1,15 @@
+; WebRTC for the desktop builds (official godotengine/webrtc-native 1.2.2-stable, MIT; only the Windows / Linux x86_64
+; libraries are kept). The browser build has WebRTC built in (excluded there). Used by scripts/net/net_rtc.gd.
+[configuration]
+
+entry_symbol = "webrtc_extension_init"
+compatibility_minimum = 4.3
+
+exclude_tags = ["web", "no-webrtc"]
+
+[libraries]
+
+linux.debug.x86_64 = "res://addons/webrtc/lib/libwebrtc_native.linux.template_debug.x86_64.so"
+linux.release.x86_64 = "res://addons/webrtc/lib/libwebrtc_native.linux.template_release.x86_64.so"
+windows.debug.x86_64 = "res://addons/webrtc/lib/libwebrtc_native.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://addons/webrtc/lib/libwebrtc_native.windows.template_release.x86_64.dll"

@@ -1,5 +1,6 @@
 # Net: online co-op sessions, lobby, messaging and remote players (MP_SPEC §3 + scratchpad RECONCILE; Godot high-level
-# multiplayer over ENet/UDP). The system `game.net` (constructed by Game like every system, initialized right after
+# multiplayer over ENet/UDP — desktop, IP / LAN — or WebRTC with a ROOM CODE — browser + desktop, net_rtc.gd).
+# The system `game.net` (constructed by Game like every system, initialized right after
 # `input`). Game calls update(realDt) FIRST in every state (received messages are dispatched there, remote players
 # interpolate + animate there) and lateUpdate(realDt) LAST in every state (the local player's state stream is sent
 # there, 30 Hz). The @rpc functions live on the Node "Net" (scripts/net/net_node.gd, /root/Game/Net on every peer).
@@ -41,6 +42,14 @@
 #   reason 'host_left' ('disconnected' when the transport dropped without a bye). 'failed' reasons: 'connect',
 #   'timeout' (no welcome), 'port' (host could not bind). kick(id) (host).
 # discover(on) LAN listener (net:lan {list} on changes).
+# TRANSPORTS: opts.transport 'enet' (default: IP / LAN, UDP port) or 'rtc' (WebRTC, net_rtc.gd + net_signal.gd):
+#   host({transport: 'rtc', code?}) opens a room on the public signaling services (room {code, state: 'opening' |
+#   'open' | 'failed', reason}; event net:room {code, state, reason}; no LAN beacon / UPnP); join(code, 0, {transport:
+#   'rtc', name, hero}) finds the room, sets up the WebRTC connection to the host, then the same hello / welcome
+#   handshake. Extra 'failed' reasons: 'signal' (no signaling service reachable), 'notfound' (no such room), 'ice'
+#   (the peer-to-peer connection failed: strict NAT / firewall), 'nortc' (no WebRTC in this build); a room may also
+#   answer 'rejected' version | full | started before any connection. rtcAvailable() -> bool. Everything else (lobby,
+#   messages, streams, relay) is transport-independent.
 # setHero(heroId) -> bool (lobby; unique heroes, the host rejects a taken one: net:hero {hero, ok:false}),
 #   setReady(on) -> bool (only when game.loaded), setName(name), canStart() -> bool (host: every other player loaded +
 #   ready, or the host alone).
@@ -92,7 +101,11 @@
 # QA / TEST PARAMS (with test=1 Game.boot calls autoBoot(): no menus): mp=host|join, mpip (an address, or 'lan' = the
 #   first LAN game heard), mpport, mpname, mpstart=N (the host starts once N players are connected, loaded and ready;
 #   everyone auto-readies), mpcountdown=<s>, mpjoindelay=<s>, mpversion=<v> (protocol override: mismatch tests), mpmax=<n>,
-#   mpupnp=0|1 (default 0 with test=1), mplan=0|1 (beacon), mplanport, mpdiscover=1 (listen for beacons). Simulated
+#   mpupnp=0|1 (default 0 with test=1), mplan=0|1 (beacon), mplanport, mpdiscover=1 (listen for beacons). WebRTC:
+#   mpnet=rtc (host / join over WebRTC), mpcode=<room code> (host: use this code; join: the code to join),
+#   mpsignal=<kind:url,...> (signaling servers, e.g. peerjs:ws://127.0.0.1:9000/,mqtt:ws://127.0.0.1:8883/ — also the
+#   project setting dead_air/net/signal_servers), mpice=none | stun | default (ICE servers), mpturn=0 (no TURN). Simulated
+#   mplog=<s> prints the players line every s s in a game (QA; the browser console on the web). Simulated
 #   network conditions on the RECEIVE side: mplag=<ms one way>, mpjitter=<ms>, mploss=<0..1> (drops unreliable
 #   packets only; reliable ones are delayed, never dropped or reordered).
 extends RefCounted
@@ -100,6 +113,7 @@ extends RefCounted
 const NetNodeScript = preload("res://scripts/net/net_node.gd")
 const LanScript = preload("res://scripts/net/net_lan.gd")
 const UpnpScript = preload("res://scripts/net/net_upnp.gd")
+const RtcScript = preload("res://scripts/net/net_rtc.gd")
 const RemotePlayerScript = preload("res://scripts/net/remote_player.gd")
 const HEROES_PATH := "res://scripts/actors/heroes.gd"
 
@@ -125,7 +139,9 @@ const NAME_MAX := 16
 
 var game
 var node: Node = null
-var peer: ENetMultiplayerPeer = null
+var peer: MultiplayerPeer = null      # ENetMultiplayerPeer | WebRTCMultiplayerPeer
+var transport := "enet"               # 'enet' | 'rtc' (the current / last session)
+var room := {"code": "", "state": "off", "reason": ""}   # WebRTC room (host: opening | open | failed; client: the code)
 var active := false
 var inGame := false
 var isHost := false
@@ -151,6 +167,7 @@ var sim := {"lag": 0.0, "jitter": 0.0, "loss": 0.0}
 var _mp: MultiplayerAPI = null
 var _lan = null
 var _upnp = null
+var _rtc = null                # net_rtc.gd while a WebRTC session sets up / runs
 var _streams := {"p": "net"}
 var _remotes := {}             # id -> RemotePlayer
 var _queue: Array = []         # received, not yet dispatched: [releaseT, kind, from, a, b, c]
@@ -158,7 +175,7 @@ var _queueSwap: Array = []
 var _lastRel := {}             # (from * 8 + kind) -> last release time (keeps per-sender order under jitter)
 var _pending := {}             # host: connected peers that have not said hello yet: id -> connect time
 var _rejecting := {}           # host: id -> time after which the rejected peer is force-disconnected
-var _closing: Array = []       # [[ENetMultiplayerPeer, closeAt]]
+var _closing: Array = []       # [[MultiplayerPeer, closeAt]]
 var _joinInfo := {}            # client: {name, hero} for the hello
 var _connectT := 0.0
 var _connectFrames := 0
@@ -192,6 +209,8 @@ var _warned := {}
 var _argCache := {}
 var _heroIds: Array = []
 var _defaultHero := "duke"
+var _logEvery := 0.0           # mplog=<s>: print the players line every s seconds in a game (QA, browser console)
+var _logT := 0.0
 
 func _init(g) -> void:
 	game = g
@@ -219,6 +238,7 @@ func init() -> void:
 	sim.lag = maxf(0.0, _num(P.get("mplag"), 0.0) / 1000.0)
 	sim.jitter = maxf(0.0, _num(P.get("mpjitter"), 0.0) / 1000.0)
 	sim.loss = clampf(_num(P.get("mploss"), 0.0), 0.0, 1.0)
+	_logEvery = maxf(0.0, _num(P.get("mplog"), 0.0))
 	node = NetNodeScript.new()
 	node.name = "Net"
 	node.net = self
@@ -246,11 +266,14 @@ func autoBoot() -> bool:
 	var lanOn := _truthy(P.get("mplan")) if P.has("mplan") else true
 	if P.get("mpdiscover"):
 		discover(true)
+	var tr := "rtc" if str(P.get("mpnet", "enet")) == "rtc" else "enet"
 	if str(mode) == "host":
 		_auto = {"mode": "host", "start": int(P.get("mpstart", 0)) if (P.get("mpstart") is int) else 0}
-		return host({"name": str(P.get("mpname", "HOST")), "hero": hero, "upnp": upnpOn, "lan": lanOn})
+		return host({"name": str(P.get("mpname", "HOST")), "hero": hero, "upnp": upnpOn, "lan": lanOn, "transport": tr,
+			"code": str(P.get("mpcode", ""))})
 	if str(mode) == "join":
-		_auto = {"mode": "join", "ip": str(P.get("mpip", "127.0.0.1")), "hero": hero, "name": str(P.get("mpname", "PLAYER"))}
+		_auto = {"mode": "join", "ip": str(P.get("mpip", "127.0.0.1")), "hero": hero, "name": str(P.get("mpname", "PLAYER")),
+			"transport": tr, "code": str(P.get("mpcode", ""))}
 		_autoJoinT = _num(P.get("mpjoindelay"), 0.0)
 		if str(_auto.ip) == "lan":
 			discover(true)
@@ -267,8 +290,11 @@ func shutdown() -> void:
 		else:
 			_sendTo(1, "net", "bye", ["left"])
 		_disconnectAllLater()
-		if peer.host != null:
-			peer.host.flush()
+		if peer is ENetMultiplayerPeer and (peer as ENetMultiplayerPeer).host != null:
+			(peer as ENetMultiplayerPeer).host.flush()
+	if _rtc != null:
+		_rtc.close()
+		_rtc = null
 	if peer != null:
 		_closing.append([peer, 0.0])
 		if _mp != null and is_instance_valid(_mp) and _mp.multiplayer_peer == peer:
@@ -277,7 +303,7 @@ func shutdown() -> void:
 	active = false
 	inGame = false
 	for c in _closing:
-		var p: ENetMultiplayerPeer = c[0]
+		var p: MultiplayerPeer = c[0]
 		if p != null:
 			p.poll()
 			p.close()
@@ -311,6 +337,10 @@ func update(dt: float = 0.0) -> void:
 			_autoJoin()
 	if not active:
 		return
+	if _rtc != null:
+		_rtc.poll(now)
+		if not active:
+			return
 	if _startPending:
 		_startPendingT -= dt
 		if _startPendingT <= 0.0:
@@ -323,9 +353,17 @@ func update(dt: float = 0.0) -> void:
 	if inGame and not _remotes.is_empty():
 		for id in _remotes:
 			_remotes[id].update(dt)
+	if _logEvery > 0.0 and inGame:
+		_logT += dt
+		if _logT >= _logEvery:
+			_logT = 0.0
+			var parts: Array = []
+			for p in players():
+				parts.append("%d:%s(%.1f,%.1f)" % [idOf(p), str(p.get("heroId")) if p.get("heroId") != null else "?", p.pos.x, p.pos.z])
+			print("[net] players %s ping %s" % [" ".join(parts), JSON.stringify(peers.keys().map(func(k): return int(peers[k].ping)))])
 	_bwT += dt
 	if _bwT >= 1.0 and peer != null:
-		var h: ENetConnection = peer.host
+		var h: ENetConnection = (peer as ENetMultiplayerPeer).host if peer is ENetMultiplayerPeer else null
 		if h != null:
 			bandwidth.up = int(h.pop_statistic(ENetConnection.HOST_TOTAL_SENT_DATA) / _bwT)
 			bandwidth.down = int(h.pop_statistic(ENetConnection.HOST_TOTAL_RECEIVED_DATA) / _bwT)
@@ -406,15 +444,27 @@ func _clientTick(now: float) -> void:
 func host(opts: Dictionary = {}) -> bool:
 	if active:
 		leave()
-	var p := ENetMultiplayerPeer.new()
-	if opts.get("port") is int:
-		port = int(opts.port)
-	var err := p.create_server(port, maxPlayers - 1 + EXTRA_CONNECTIONS)
-	if err != OK:
-		_status("failed", "port")
-		return false
-	if p.host != null:
-		p.host.compress(ENetConnection.COMPRESS_RANGE_CODER)
+	var rtc := str(opts.get("transport", "enet")) == "rtc"
+	var p: MultiplayerPeer = null
+	if rtc:
+		_rtc = RtcScript.new(self)
+		p = _rtc.host(str(opts.get("code", "")))
+		if p == null:
+			_rtc = null
+			_status("failed", "nortc")
+			return false
+	else:
+		var ep := ENetMultiplayerPeer.new()
+		if opts.get("port") is int:
+			port = int(opts.port)
+		var err := ep.create_server(port, maxPlayers - 1 + EXTRA_CONNECTIONS)
+		if err != OK:
+			_status("failed", "port")
+			return false
+		if ep.host != null:
+			ep.host.compress(ENetConnection.COMPRESS_RANGE_CODER)
+		p = ep
+	transport = "rtc" if rtc else "enet"
 	_attach(p)
 	active = true
 	isHost = true
@@ -429,32 +479,53 @@ func host(opts: Dictionary = {}) -> bool:
 	peers[1] = me
 	_phase = "lobby"
 	_refreshLobby()
-	if opts.get("lan", true) != false and _lan != null:
+	if rtc:
+		room = {"code": _rtc.code, "state": _rtc.roomState, "reason": ""}
+	if opts.get("lan", true) != false and _lan != null and not rtc:
 		_lan.startBeacon(lanPort)
-	if opts.get("upnp", true) != false and _upnp != null:
+	if opts.get("upnp", true) != false and _upnp != null and not rtc:
 		_upnp.start(port)
 		upnp = {"state": _upnp.state, "externalIp": ""}
 	_status("hosting", "")
 	_emit("net:lobby", {"lobby": lobby})
+	if rtc:
+		_emit("net:room", room.duplicate())
 	return true
 
 func join(ip: String, port_: int = DEFAULT_PORT, opts: Dictionary = {}) -> bool:
 	if active:
 		leave()
-	var p := ENetMultiplayerPeer.new()
-	var err := p.create_client(ip, port_)
-	if err != OK:
-		_status("failed", "connect")
-		return false
-	if p.host != null:
-		p.host.compress(ENetConnection.COMPRESS_RANGE_CODER)
-	port = port_
-	_attach(p)
+	var rtc := str(opts.get("transport", "enet")) == "rtc"
+	if rtc:
+		# WebRTC: `ip` is the room code; the multiplayer peer is attached once the host answered (_rtcAttach)
+		_rtc = RtcScript.new(self)
+		if not _rtc.join(ip):
+			var why := "nortc" if not RtcScript.available() else "signal"
+			_rtc = null
+			_status("failed", why)
+			return false
+		transport = "rtc"
+		room = {"code": _rtc.code, "state": "joining", "reason": ""}
+		peer = null
+		_queue.clear()
+		_lastRel.clear()
+		localId = 0
+	else:
+		var p := ENetMultiplayerPeer.new()
+		var err := p.create_client(ip, port_)
+		if err != OK:
+			_status("failed", "connect")
+			return false
+		if p.host != null:
+			p.host.compress(ENetConnection.COMPRESS_RANGE_CODER)
+		port = port_
+		transport = "enet"
+		_attach(p)
+		localId = p.get_unique_id()
 	active = true
 	isHost = false
 	isClient = true
 	authority = false
-	localId = p.get_unique_id()
 	sender = localId
 	_welcomed = false
 	_loadedSent = false
@@ -478,19 +549,18 @@ func leave() -> void:
 			toAll("net", "bye", ["host_left"])
 		else:
 			_sendTo(1, "net", "bye", ["left"])
-		var h: ENetConnection = peer.host
-		if h != null:
-			h.flush()
+		if peer is ENetMultiplayerPeer and (peer as ENetMultiplayerPeer).host != null:
+			(peer as ENetMultiplayerPeer).host.flush()
 		_disconnectAllLater()
 	_endSession("left", "")
 
 # Every ENet connection (the host's clients, or a client's host) disconnects once its queued packets went out.
 func _disconnectAllLater() -> void:
-	if peer == null or _mp == null:
-		return
+	if not (peer is ENetMultiplayerPeer) or _mp == null:
+		return   # WebRTC: the connections close with the peer after CLOSE_GRACE (_pollClosing)
 	for id in _mp.get_peers():
 		if isHost or id == 1:
-			var pp: ENetPacketPeer = peer.get_peer(id)
+			var pp: ENetPacketPeer = (peer as ENetMultiplayerPeer).get_peer(id)
 			if pp != null:
 				pp.peer_disconnect_later()
 
@@ -667,7 +737,10 @@ func _hasPeer(id: int) -> bool:
 func _peerUp(id: int) -> bool:
 	if peer == null or not _hasPeer(id) or (not isHost and id != 1):
 		return false
-	var pp: ENetPacketPeer = peer.get_peer(id)
+	if peer is WebRTCMultiplayerPeer:
+		var w := peer as WebRTCMultiplayerPeer
+		return w.has_peer(id) and w.get_peer(id).get("connected") == true
+	var pp: ENetPacketPeer = (peer as ENetMultiplayerPeer).get_peer(id)
 	return pp != null and pp.get_state() == ENetPacketPeer.STATE_CONNECTED
 
 # Host: forwards a client's message / stream to the session members (relay with the original sender id).
@@ -854,7 +927,7 @@ func _onPong(from: int, t) -> void:
 	p.ping = int(round(rtt)) if int(p.ping) == 0 else int(round(lerpf(float(p.ping), rtt, 0.35)))
 
 # ------------------------------------------------------------------------------------------------ transport
-func _attach(p: ENetMultiplayerPeer) -> void:
+func _attach(p: MultiplayerPeer) -> void:
 	peer = p
 	_epochMs = Time.get_ticks_msec()
 	_queue.clear()
@@ -886,7 +959,7 @@ func _detachPeer() -> void:
 func _pollClosing(now: float) -> void:
 	for i in range(_closing.size() - 1, -1, -1):
 		var c: Array = _closing[i]
-		var p: ENetMultiplayerPeer = c[0]
+		var p: MultiplayerPeer = c[0]
 		if p.get_connection_status() == MultiplayerPeer.CONNECTION_DISCONNECTED:
 			_closing.remove_at(i)   # already closed (a client's transport closes itself when the host lets go)
 		elif now >= float(c[1]):
@@ -898,9 +971,9 @@ func _pollClosing(now: float) -> void:
 				p.get_packet()
 
 func _tunePeer(id: int) -> void:
-	if peer == null:
+	if not (peer is ENetMultiplayerPeer):
 		return
-	var pp: ENetPacketPeer = peer.get_peer(id)
+	var pp: ENetPacketPeer = (peer as ENetMultiplayerPeer).get_peer(id)
 	if pp != null:
 		# loading a game blocks a frame for seconds: be patient before declaring a peer dead (default min 5 s)
 		pp.set_timeout(32, 15000, 30000)
@@ -945,6 +1018,8 @@ func _onTransport(from: int, what) -> void:
 		if isHost:
 			_pending.erase(from)
 			_rejecting.erase(from)
+			if _rtc != null:
+				_rtc.forget(from)
 		if peers.has(from) and from != localId:
 			_dropPeer(from)
 
@@ -970,6 +1045,10 @@ func _endSession(st: String, reason: String) -> void:
 	if _upnp != null:
 		_upnp.stop()
 		upnp = {"state": "off", "externalIp": ""}
+	if _rtc != null:
+		_rtc.close()
+		_rtc = null
+	room = {"code": "", "state": "off", "reason": ""}
 	_detachPeer()
 	active = false
 	inGame = false
@@ -1000,6 +1079,29 @@ func _endSession(st: String, reason: String) -> void:
 		game.setState("menu")
 	_status(st, reason)
 
+# ---- WebRTC transport callbacks (net_rtc.gd)
+func rtcAvailable() -> bool:
+	return RtcScript.available()
+
+# Host: the room's signaling state / code changed.
+func _rtcRoom(code: String, st: String, reason: String) -> void:
+	room = {"code": code, "state": st, "reason": reason}
+	_emit("net:room", room.duplicate())
+
+# Client: the host answered with our peer id: the WebRTC client peer goes live (connected_to_server -> hello).
+func _rtcAttach(p: MultiplayerPeer, id: int) -> void:
+	_attach(p)
+	localId = id
+	sender = id
+	room.state = "connecting"
+	_connectT = _now()
+	_connectFrames = 0
+
+# Client: the room could not be found / joined.
+func _rtcFail(st: String, reason: String) -> void:
+	if active and isClient and not _welcomed:
+		_endSession(st, reason)
+
 func _autoJoin() -> void:
 	_autoJoinT = -1.0
 	var ip := str(_auto.get("ip", "127.0.0.1"))
@@ -1009,6 +1111,9 @@ func _autoJoin() -> void:
 			return
 		var g0: Dictionary = lan[0]
 		join(str(g0.ip), int(g0.port), {"name": _auto.get("name"), "hero": _auto.get("hero")})
+		return
+	if _auto.get("transport") == "rtc":
+		join(str(_auto.get("code", "")), 0, {"name": _auto.get("name"), "hero": _auto.get("hero"), "transport": "rtc"})
 		return
 	join(ip, port, {"name": _auto.get("name"), "hero": _auto.get("hero")})
 
@@ -1040,8 +1145,8 @@ func net_hello(info) -> void:
 
 func _reject(id: int, reason: String) -> void:
 	_sendTo(id, "net", "reject", [{"reason": reason}])
-	if peer != null:
-		var pp: ENetPacketPeer = peer.get_peer(id)
+	if peer is ENetMultiplayerPeer:
+		var pp: ENetPacketPeer = (peer as ENetMultiplayerPeer).get_peer(id)
 		if pp != null:
 			pp.peer_disconnect_later()
 	_rejecting[id] = _now() + REJECT_GRACE
@@ -1558,6 +1663,7 @@ func net_stream_p(from: int, data) -> void:
 # ------------------------------------------------------------------------------------------------ helpers
 func _status(st: String, reason: String) -> void:
 	status = st
+	print("[net] status %s%s (%s)" % [st, " " + reason if reason != "" else "", transport])   # (browser console / stdout)
 	_emit("net:status", {"status": st, "reason": reason})
 
 func _emit(name: String, payload) -> void:
