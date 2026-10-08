@@ -1,0 +1,1 @@
+PHAROS · La última luz — build web (Godot 4.7.2.stable, preset "Web", WebGL 2, sin hilos) de `ca41c9d` generada con `pharos/tools/export_web.sh`; no editar a mano. Se juega en https://vicentegm123.github.io/dead-air/pharos/web/

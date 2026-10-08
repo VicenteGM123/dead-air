@@ -140,3 +140,11 @@ de Controles de la pausa enseña las dos distribuciones, teclado y mando.
 
 Un navegador moderno con WebGL2 (Chrome o Edge actualizados). Con gráficos integrados, el juego baja la resolución
 interna solo para mantener la fluidez. En Opciones (menú de pausa) hay un preajuste de calidad.
+
+## Otro juego en este repositorio: PHAROS — La última luz
+
+Defensa de una isla griega (Delos) contra las criaturas de la Noche, al estilo de *Thronefall*: de día construyes la
+aldea alrededor del faro y de noche peleas con Fanós, el autómata del faro. Godot 4.7, todo generado por código.
+Detalles en [`pharos/README.md`](pharos/README.md);
+**[jugar en el navegador](https://vicentegm123.github.io/dead-air/pharos/web/)** (build en `pharos/web/`, unos 17 MB de
+descarga).
