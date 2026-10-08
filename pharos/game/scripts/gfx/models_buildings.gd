@@ -535,7 +535,7 @@ static func _vine_canopy(mb: MeshBuilder, rng: RandomNumberGenerator, a: Vector3
 		if r >= 0.3:
 			for k in 1 + rng.randi() % 2:
 				var g := p + Vector3(rng.randf_range(-0.5, 0.5) * rr, -rr * 0.62 - 0.2, rng.randf_range(-0.4, 0.4) * rr)
-				mb.cyl(g, 0.22, 0.0, 0.085, 5, GRAPES if k == 0 else GRAPES_DARK, false, rng.randf())
+				mb.cyl(g, 0.27, 0.0, 0.11, 5, GRAPES if k == 0 else GRAPES_DARK, false, rng.randf())
 
 
 # --- farm ----------------------------------------------------------------------------------------------------
