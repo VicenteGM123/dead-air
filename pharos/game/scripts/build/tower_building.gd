@@ -44,9 +44,10 @@ func _physics_process(delta: float) -> void:
 	targets.sort_custom(func(a, b): return _priority(a) < _priority(b))
 	cd = rate_stat()
 	var muzzle := anchor("muzzle", Vector3(0, height + 1.2, 0))
-	for i in mini(shots, targets.size()):
-		var t: Unit = targets[i]
-		Game.projectiles.arrow(muzzle, t, dmg_stat(), self)
+	# Level 3 always looses two arrows: at two creatures, or both at a lone one.
+	for i in shots:
+		var t: Unit = targets[i % targets.size()]
+		Game.projectiles.arrow(muzzle + Vector3(0, 0.12 * float(i), 0), t, dmg_stat(), self)
 	var d: Vector3 = targets[0].global_position - global_position
 	_aim_yaw = Unit.yaw_to(d)
 	if archer:

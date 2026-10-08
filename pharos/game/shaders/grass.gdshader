@@ -1,8 +1,11 @@
-// Instanced grass clumps (MultiMesh). Mesh UV.y = height fraction t (0 root, 1 tip), UV.x > 0.5 marks the seed
-// heads. Per instance: COLOR.rgb = tip colour, INSTANCE_CUSTOM.rgb = root colour, INSTANCE_CUSTOM.a = seed flag.
-// Lit like the facet it grows on (NORMAL = the instance's up, which Grass aligns to the facet normal), with the
-// same Compatibility pass compensation as lowpoly.gdshader. Wind waves roll south with the meltemi; blades
-// near the hero bend away; the clump shrinks to nothing with distance (no alpha).
+// Instanced grass tufts and meadow flowers (MultiMesh). Mesh UV.y = height fraction t (0 root, 1 tip), UV.x > 0.5
+// marks head triangles. Per instance: COLOR.rgb = blade tip colour, COLOR.a = flower palette index (0..1),
+// INSTANCE_CUSTOM.rgb = root colour (the ground under it), INSTANCE_CUSTOM.a = head mode: < 0.25 no heads
+// (collapsed), < 0.75 seed heads (straw; exactly 0.6 = sown crop, which fades much further away), else flowers
+// (palette colour).
+// Lit like the ground it grows on (NORMAL = the instance's up, which Grass aligns to the smoothed ground normal),
+// with the same Compatibility pass compensation as lowpoly.gdshader. Wind waves roll south with the meltemi;
+// blades near the hero bend away; the clump shrinks to nothing with distance (no alpha).
 shader_type spatial;
 render_mode cull_disabled, depth_draw_opaque, specular_disabled;
 
@@ -17,20 +20,42 @@ uniform float fade_far = 72.0;
 
 varying vec3 v_root;
 varying vec3 v_tip;
+varying vec3 v_head;
 varying float v_t;
-varying float v_seed;
+varying float v_mode;
 varying float v_gust;
 varying vec3 v_base;
 varying float v_fogf;
 
+// Late-spring meadow flowers of the Cyclades: chamomile, crown daisy, poppy, anemone (violet and pink), Silene,
+// borage blue, and the pale yellow of the dunes' horned poppy.
+const vec3 FLOWERS[8] = vec3[8](
+	vec3(0.957, 0.945, 0.890), // chamomile white
+	vec3(0.949, 0.788, 0.298), // crown daisy yellow
+	vec3(0.878, 0.290, 0.227), // poppy red
+	vec3(0.604, 0.498, 0.820), // anemone violet
+	vec3(0.878, 0.478, 0.620), // anemone / cistus pink
+	vec3(0.902, 0.561, 0.690), // Silene pink
+	vec3(0.420, 0.545, 0.850), // borage blue
+	vec3(0.930, 0.860, 0.420)  // horned poppy pale yellow
+);
+
 void vertex() {
 	float t = UV.y;
 	vec3 root_wp = MODEL_MATRIX[3].xyz;
-	v_seed = 0.0;
+	v_mode = 0.0;
+	v_head = vec3(0.0);
 	if (UV.x > 0.5) {
-		v_seed = 1.0;
-		if (INSTANCE_CUSTOM.a < 0.5) {
+		float m = INSTANCE_CUSTOM.a;
+		if (m < 0.25) {
 			VERTEX = vec3(0.0);
+		} else if (m < 0.75) {
+			v_mode = 1.0;
+			v_head = ph_srgb_to_linear(COLOR.rgb) * vec3(1.08, 1.0, 0.82);
+		} else {
+			v_mode = 2.0;
+			int idx = clamp(int(COLOR.a * 7.0 + 0.5), 0, 7);
+			v_head = ph_srgb_to_linear(FLOWERS[idx]);
 		}
 	}
 	vec2 guv = (root_wp.xz - ground_rect.xy) / ground_rect.zw;
@@ -45,7 +70,9 @@ void vertex() {
 	w.y -= k * 0.08 * t;
 	VERTEX += inverse(mat3(MODEL_MATRIX)) * w;
 	float cam_d = length((MODELVIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz);
-	VERTEX.y *= 1.0 - smoothstep(fade_near, fade_far, cam_d);
+	// Crops (head mode 0.6) are landmarks of the farmland: they shrink away much further out than the meadow.
+	float reach = abs(INSTANCE_CUSTOM.a - 0.6) < 0.05 ? 1.7 : 1.0;
+	VERTEX *= 1.0 - smoothstep(fade_near * reach, fade_far * reach, cam_d);
 	NORMAL = vec3(0.0, 1.0, 0.0);
 	v_t = t;
 	v_gust = gust * t * (1.0 - g_night);
@@ -54,9 +81,10 @@ void vertex() {
 void fragment() {
 	vec3 n = FRONT_FACING ? NORMAL : -NORMAL;
 	vec3 wn = normalize((INV_VIEW_MATRIX * vec4(n, 0.0)).xyz);
-	vec3 albedo = mix(v_root, v_tip, smoothstep(0.0, 1.0, v_t)) * (1.0 + 0.08 * v_gust);
-	if (v_seed > 0.5) {
-		albedo = v_tip * vec3(1.08, 1.0, 0.82);
+	// Dark only right at the root (contact), then quickly the blade colour, lightest at the tip.
+	vec3 albedo = mix(v_root, v_tip, smoothstep(0.0, 0.5, v_t)) * (1.0 + 0.08 * v_gust);
+	if (v_mode > 0.5) {
+		albedo = v_head;
 	}
 	vec3 base = albedo * ph_ambient(wn);
 	float f = ph_fog(VERTEX);

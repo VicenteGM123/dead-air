@@ -580,19 +580,31 @@ func _build_end(victory: bool) -> void:
 	btns.alignment = BoxContainer.ALIGNMENT_CENTER
 	btns.add_theme_constant_override("separation", 18)
 	col.add_child(_center(btns))
+	var end_btns: Array = []
+	# After a defeat the island can be replayed from the dusk of the lost night (Game.main.retry_night()).
+	if not victory and Game.main and Game.main.has_method("can_retry") and Game.main.can_retry():
+		var retry := W.Btn.new("Reintentar la noche", 24)
+		retry.activated.connect(func() -> void:
+			if ui:
+				ui.call("retry_night"))
+		btns.add_child(retry)
+		end_btns.append(retry)
 	var again := W.Btn.new("Jugar de nuevo", 24)
 	again.activated.connect(func() -> void:
 		if ui:
 			ui.call("restart", true))
 	btns.add_child(again)
+	end_btns.append(again)
 	var to_title := W.Btn.new("Título", 24)
 	to_title.activated.connect(func() -> void:
 		if ui:
 			ui.call("restart", false))
 	btns.add_child(to_title)
-	again.focus_neighbor_right = again.get_path_to(to_title)
-	to_title.focus_neighbor_left = to_title.get_path_to(again)
-	again.focus_neighbor_left = again.get_path_to(to_title)
-	to_title.focus_neighbor_right = to_title.get_path_to(again)
-	_end.set_meta("focus", again)
+	end_btns.append(to_title)
+	for k in end_btns.size():
+		var b: Control = end_btns[k]
+		var nb: Control = end_btns[(k + 1) % end_btns.size()]
+		b.focus_neighbor_right = b.get_path_to(nb)
+		nb.focus_neighbor_left = nb.get_path_to(b)
+	_end.set_meta("focus", end_btns[0])
 	_end.set_meta("fit", col)

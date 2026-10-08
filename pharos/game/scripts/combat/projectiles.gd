@@ -60,16 +60,20 @@ func arrow(from: Vector3, target: Unit, dmg: float, source: Node3D) -> void:
 		"t": 0.0, "dur": clampf(dist / 28.0, 0.15, 0.75), "dmg": dmg, "source": source, "arc": dist * 0.1})
 
 
-func orb(from: Vector3, target: Unit, dmg: float, source: Node3D) -> void:
-	var to := target.global_position + Vector3(0, 0.8, 0)
+## A shadow orb lobbed at where `target` will be (plus `aim_offset`, for spread shots). Returns its record
+## ("to" = landing point, "dur" = flight time), so the shooter can mark the landing spot.
+func orb(from: Vector3, target: Unit, dmg: float, source: Node3D, aim_offset: Vector3 = Vector3.ZERO) -> Dictionary:
+	var to := target.global_position + Vector3(0, 0.8, 0) + aim_offset
 	if not target.is_building and "vel" in target:
 		to += (target.get("vel") as Vector3) * 0.35
 	var dist := from.distance_to(to)
 	var n := _take("orb")
 	n.global_position = from
-	_items.append({"kind": "orb", "node": n, "from": from, "to": to, "target": target, "t": 0.0, "dur": clampf(dist / 11.0, 0.2, 1.6),
-		"dmg": dmg, "source": source, "arc": dist * 0.06})
+	var it := {"kind": "orb", "node": n, "from": from, "to": to, "target": target, "t": 0.0, "dur": clampf(dist / 11.0, 0.2, 1.6),
+		"dmg": dmg, "source": source, "arc": dist * 0.06}
+	_items.append(it)
 	Sfx.play("hydra_spit", from, -10.0, randf_range(1.2, 1.5))
+	return it
 
 
 func clear() -> void:

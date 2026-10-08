@@ -85,8 +85,10 @@ static func crop_of(block: int, k: int, lowest: int, highest: int = 99) -> int:
 		T_W:
 			return CROP_WHEAT
 		T_SW:
-			# Vines on the upper benches, olives lower down.
-			return CROP_VINE if k >= int(ceil((lowest + highest) * 0.5)) else CROP_OLIVE
+			# Vines on the upper benches, olives in the middle, barley on the lowest bench.
+			if k >= int(ceil((lowest + highest) * 0.5)):
+				return CROP_VINE
+			return CROP_WHEAT if k <= lowest and highest - lowest >= 2 else CROP_OLIVE
 		T_SE:
 			return CROP_ORCHARD
 	return CROP_NONE
@@ -107,9 +109,15 @@ const TEMENOS_YAW := 0.3
 const SPRING := Vector2(23.2, 21.0)
 const WELL := Vector2(1.6, -11.0)
 const SACRED_BASIN := Vector2(28.7, -23.7)
-const THRESHING := Vector2(-25.5, -25.5)
+const THRESHING := Vector2(-27.2, -27.2)
 const BEEHIVES := Vector2(27.0, 32.0)
 const HERM := Vector2(-6.5, 20.5)
+## Landmark trees whose places changed when the build plots were untangled (seed 7): a pomegranate in the west
+## garden by house 2, the south-lane cypress marker past the barracks (out of the opening view), and the spring's
+## plane tree east of the basin (so its crown never hides a plot from the gameplay camera).
+const POMEGRANATE_W := Vector2(-13.5, 10.5)
+const CYPRESS_S := Vector2(15.5, 22.5)
+const SPRING_PLANE := Vector2(26.6, 21.2)
 const HORN := Vector2(-4.5, 6.0)
 const ISLET := Vector2(47.0, 44.0)
 
@@ -122,13 +130,13 @@ const FOOTPRINTS := [
 	[Vector2(-7.0, 16.0), 2.0], # fig at the herm corner
 	[Vector2(-8.7, 20.0), 0.8], # cypress behind the herm
 	[Vector2(-6.5, 20.5), 1.2], # herm
-	[Vector2(-14.0, 3.4), 1.3], # pomegranate W pocket
+	[POMEGRANATE_W, 1.3], # pomegranate in the west garden
 	[Vector2(20.3, -0.4), 0.8], # cypress E marker
-	[Vector2(10.6, 18.3), 0.8], # cypress S marker
+	[CYPRESS_S, 0.8], # cypress S marker
 	[Vector2(23.2, 21.0), 1.5], # spring basin
-	[Vector2(24.6, 19.4), 3.6], # spring plane
+	[SPRING_PLANE, 3.6], # spring plane
 	[Vector2(27.0, 32.0), 1.5], # beehives
-	[Vector2(-25.5, -25.5), 3.6], # threshing floor
+	[THRESHING, 3.6], # threshing floor
 	[Vector2(28.7, -23.7), 1.5], # sacred basin
 ]
 
@@ -180,7 +188,7 @@ const DUNE_SAND := Color("D9CC98")
 const STRAW_TIP := Color("D9C88E")
 
 ## Grass tip colour per zone.
-const TIP_MEADOW := Color("B2C177")
+const TIP_MEADOW := Color("A8BF62")
 const TIP_WILD := Color("BDB77A")
 const TIP_LUSH := Color("9DB45E")
 const TIP_DUNE := Color("A9B98A")
@@ -188,17 +196,28 @@ const TIP_CLIFF := Color("B8B07A")
 
 # --- grass ---------------------------------------------------------------------------------------------------
 
-## Clumps per m2 and instance y-scale range per zone (mesh height 0.35 m; y 1.2 = 0.42 m).
-const GRASS_VILLAGE := [3.5, 0.70, 0.90]
-const GRASS_MEADOW := [5.0, 0.85, 1.05]
-const GRASS_OLIVE := [3.5, 0.80, 1.00]
-const GRASS_VINE := [1.0, 0.80, 1.00]
-const GRASS_WHEAT := [2.5, 0.80, 1.00]
-const GRASS_WILD := [3.5, 0.95, 1.20]
-const GRASS_CLIFF := [1.2, 0.85, 1.05]
-const GRASS_DUNE := [0.8, 1.05, 1.20]
-const GRASS_GULLY := [5.0, 1.00, 1.20]
-const GRASS_TEMENOS := [3.5, 0.85, 1.05]
+## Tufts per m2 and instance y-scale range per zone (mesh height 0.32 m; y 1.2 = 0.38 m). The village and the
+## open meadows get a thick, short carpet; the vines' benches stay mostly bare soil between the rows.
+const GRASS_VILLAGE := [12.0, 0.65, 0.90]
+const GRASS_MEADOW := [10.0, 0.80, 1.05]
+const GRASS_OLIVE := [7.0, 0.80, 1.00]
+const GRASS_VINE := [2.5, 0.75, 0.95]
+const GRASS_WHEAT := [3.0, 0.80, 1.00]
+const GRASS_WILD := [5.0, 0.90, 1.20]
+const GRASS_CLIFF := [2.5, 0.85, 1.05]
+const GRASS_DUNE := [1.2, 1.00, 1.20]
+const GRASS_GULLY := [11.0, 1.00, 1.25]
+const GRASS_TEMENOS := [10.0, 0.80, 1.05]
+## The darker fringe along the lanes (0.6-1.8 m from the ribbon edge) and the extra tufts at the foot of walls,
+## trees and rocks (times the props' grass-mask boost).
+const GRASS_FRINGE := 9.0
+const GRASS_SKIRT := 5.0
+## Sown beds (Grass grows them as tall stalks): ear colour of wheat and of the paler barley, green-gold stalk root.
+const WHEAT_TIP := Color("D9BE66")
+const BARLEY_TIP := Color("D6CB8C")
+const STALK_ROOT := Color("8E914C")
+## Cooler, deeper green that some tufts lean towards (variety within a patch).
+const TIP_COOL := Color("7F9F5C")
 
 
 ## Linear-light luminance of an sRGB colour.

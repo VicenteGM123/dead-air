@@ -264,6 +264,19 @@ func restart(play: bool) -> void:
 		Game.main.restart()
 
 
+## Defeat screen, "Reintentar la noche": back to the day before the lost night (Game.main.retry_night()).
+func retry_night() -> void:
+	if _starting:
+		return
+	menus.call("close_all")
+	get_tree().paused = false
+	Game.paused = false
+	banners.call("clear")
+	if Game.main and Game.main.has_method("retry_night"):
+		Game.main.retry_night()
+	_update_touch()
+
+
 func _lock_hero(on: bool) -> void:
 	var h := Game.hero
 	if h == null or not is_instance_valid(h):

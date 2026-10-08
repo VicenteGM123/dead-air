@@ -69,7 +69,7 @@ const INFO := {
 	"thyme_cushion": {"h": 0.45, "h0": 0.0, "r": 0.46, "obstacle": 0.0, "ao": 0.25},
 	"sea_lily": {"h": 0.3, "h0": 0.0, "r": 0.38, "obstacle": 0.0, "ao": 0.0},
 	"grapevine_row": {"h": 1.05, "h0": 0.55, "r": 2.45, "obstacle": 0.0, "ao": 0.2},
-	"wheat_patch": {"h": 0.75, "h0": 0.0, "r": 1.5, "obstacle": 0.0, "ao": 0.15},
+	"wheat_patch": {"h": 0.62, "h0": 0.0, "r": 1.5, "obstacle": 0.0, "ao": 0.15},
 	"terrace_wall": {"h": 0.6, "h0": 0.0, "r": 1.5, "obstacle": 0.0, "ao": 0.45},
 	"threshing_floor": {"h": 0.35, "h0": 0.0, "r": 3.2, "obstacle": 0.0, "ao": 0.0},
 	"beehives": {"h": 0.77, "h0": 0.0, "r": 1.2, "obstacle": 1.0, "ao": 0.3},
@@ -139,6 +139,7 @@ const ALMOND_BARK := Color("5E4A3C")
 const ALMOND := Color("8FA868")
 const ALMOND_LOW := Color("6F8A50")
 const ALMOND_TOP := Color("A3BA7C")
+const ALMOND_FRUIT := Color("B9C98C")
 const BLOSSOM := Color("F6E6EA")
 const BLOSSOM_LOW := Color("EBB8C8")
 const POMEG_BARK := Color("7A5E48")
@@ -174,13 +175,13 @@ const MYRTLE := Color("5E8048")
 const VINE_BARK := Color("6B5040")
 const GRAPE := Color("9FB04A")
 const SOIL_TOP := Color("B8936E")
-const WHEAT := Color("D8B95E")
-const WHEAT_LIT := Color("E9D38C")
-const WHEAT_STALK := Color("B4964A")
+const WHEAT := Color("D2B45A")
+const WHEAT_LIT := Color("E3CB7E")
+const WHEAT_STALK := Color("A39A4E")
 const WHEAT_BASE := Color("B5B060")
-const BARLEY := Color("D4BF74")
-const BARLEY_LIT := Color("E4D296")
-const BARLEY_STALK := Color("B49E5C")
+const BARLEY := Color("CFC07A")
+const BARLEY_LIT := Color("E0D396")
+const BARLEY_STALK := Color("A2A05C")
 const THYME := Color("7E8A55")
 const THYME_LOW := Color("5F6A40")
 const THYME_TOP := Color("96A266")
@@ -524,10 +525,9 @@ static func almond_tree(seed_value: int) -> ArrayMesh:
 
 
 ## Prunus dulcis, the orchard tree: an upright vase; a dark rough trunk forks at 0.9 m into 3–4 ascending branches
-
-
-## carrying six rounded, separated lumps (an airy crown with sky between them), still flowering in late spring:
-## kind = seed % 2: 0 two white-pink lumps and 14 blossoms, 1 one lump and 10 (≈3.8 m tall, ≈3.4 m wide, ≤ 240 tris).
+## carrying six rounded, separated lumps (an airy crown with sky between them). In early May the blossom is long
+## gone: light yellow-green leaves (one or two paler lumps of new growth) and a sprinkle of young velvety fruit.
+## kind = seed % 2: 0 two pale lumps and 12 fruits, 1 one and 8 (≈3.8 m tall, ≈3.4 m wide, ≤ 240 tris).
 static func add_almond_tree(mb: MeshBuilder, rng: RandomNumberGenerator, s: float = 1.0, variant: int = 0) -> void:
 	var fork := Vector3(rng.randf_range(-0.08, 0.08), 0.9, rng.randf_range(-0.08, 0.08)) * s
 	mb.limb(Vector3(0, -0.15 * s, 0), fork, 0.16 * s, 0.12 * s, 5, ALMOND_BARK, false)
@@ -557,13 +557,13 @@ static func add_almond_tree(mb: MeshBuilder, rng: RandomNumberGenerator, s: floa
 	for i in lumps.size():
 		var L: Array = lumps[i]
 		if i in white:
-			_lump4(mb, rng, L[0], L[1], 6, BLOSSOM, BLOSSOM_LOW, null, 0.14)
+			green_faces.append_array(_lump4(mb, rng, L[0], L[1], 6, ALMOND_TOP, ALMOND, null, 0.14))
 		else:
 			green_faces.append_array(_lump4(mb, rng, L[0], L[1], 6, ALMOND, ALMOND_LOW, null, 0.14))
 	var up := _upper(green_faces, 0.0)
-	for i in (14 if variant == 0 else 10):
+	for i in (12 if variant == 0 else 8):
 		var f: Array = up[rng.randi() % up.size()]
-		_dot(mb, rng, f[0] + (f[1] as Vector3) * 0.02, 0.065 * s, BLOSSOM if i % 3 != 0 else BLOSSOM_LOW.lightened(0.25))
+		_dot(mb, rng, f[0] + (f[1] as Vector3) * 0.02, 0.05 * s, ALMOND_FRUIT if i % 3 != 0 else ALMOND_FRUIT.darkened(0.12))
 
 
 static func pomegranate(seed_value: int) -> ArrayMesh:
@@ -756,12 +756,13 @@ static func add_tamarisk(mb: MeshBuilder, rng: RandomNumberGenerator, s: float =
 		mb.limb(f, c - Vector3(0, 0.06, 0) * s, 0.06 * s, 0.025 * s, 3, TAMARISK_TWIG, false)
 		if i in pink:
 			# A plume lump: muted pink body, pink top and a few upright racemes.
-			var pf := _blob_f(mb, rng, c, _scaled(prof, r), 6, 0.2, TAMARISK_PINK.lerp(TAMARISK, 0.4), TAMARISK_LOW, -0.2, TAMARISK_PINK, 0.72, 0.35)
-			var up := _upper(pf, 0.6)
-			for k in 3:
+			# Spring bloom: a green feathery lump crowned with a spray of slim pink racemes (no pink plates).
+			var pf := _blob_f(mb, rng, c, _scaled(prof, r), 6, 0.2, TAMARISK, TAMARISK_LOW, -0.2, TAMARISK_TOP, 0.72, 0.35)
+			var up := _upper(pf, 0.55)
+			for k in 6:
 				var f2: Array = up[rng.randi() % up.size()]
 				var n2: Vector3 = f2[1]
-				_spindle(mb, f2[0] - n2 * 0.05 * s, (n2 + Vector3.UP).normalized(), rng.randf_range(0.32, 0.45) * s, 0.085 * s, 3, TAMARISK_PINK_TOP, TAMARISK_PINK_LOW)
+				_spindle(mb, f2[0] - n2 * 0.08 * s, (n2 + Vector3.UP * 1.2).normalized(), rng.randf_range(0.42, 0.6) * s, 0.12 * s, 3, TAMARISK_PINK_TOP, TAMARISK_PINK)
 		else:
 			_blob_f(mb, rng, c, _scaled(prof, r), 6, 0.2, TAMARISK, TAMARISK_LOW, -0.2, TAMARISK_TOP, 0.72, 0.35)
 		# Weeping sprays hang from the outer rim of the lower lumps.
@@ -1281,37 +1282,79 @@ static func _grass_blades(mb: MeshBuilder, rng: RandomNumberGenerator, n: int, s
 		mb.limb(base, tip, 0.035 * h / 0.4 * width, 0.0, 3, col, false)
 
 
-## The single instanced mesh of the grass system (scripts/world/grass.gd): five splayed blades and two seed-head
-
-
-## triangles, 7 triangles / 21 vertices, non-indexed, ≤ 0.35 m tall. Built from raw arrays because it needs UVs:
-## UV = (seed-head flag, t) with t = 0 at the root and 1 at the tip; normals all (0, 1, 0); colours white (the
-## shader takes the root colour from INSTANCE_CUSTOM and the tip from the instance colour). The seed only jitters
-## the blade angles.
+## The instanced meadow tuft of the grass system (scripts/world/grass.gd): eight single-triangle blades of mixed
+## length fanned out from a tight base (short ones form the carpet, long ones the tufts' tips) and two head
+## triangles at the tips of the two longest blades, which the shader shows as seed heads or flowers or hides.
+## 10 triangles / 30 vertices, non-indexed, <= 0.32 m tall. Raw arrays because it needs UVs: UV = (head flag,
+## t) with t = 0 at the root and 1 at the tip; normals (0, 1, 0); colours white (the shader takes the root
+## colour from INSTANCE_CUSTOM and the tip from the instance colour). The seed only jitters the blades.
 static func grass_clump(seed_value: int) -> ArrayMesh:
 	var rng := make_rng(seed_value, 41)
 	var v := PackedVector3Array()
 	var uv := PackedVector2Array()
-	var heights := [0.30, 0.24, 0.20, 0.27, 0.18]
-	var splays := [15.0, 25.0, 35.0, 20.0, 30.0]
+	var heights := [0.32, 0.17, 0.25, 0.12, 0.28, 0.15, 0.21, 0.11]
+	var splays := [12.0, 38.0, 22.0, 48.0, 16.0, 42.0, 30.0, 52.0]
 	var apex: Array[Vector3] = []
 	var perp: Array[Vector3] = []
-	for i in 5:
-		var a := deg_to_rad(72.0 * float(i) + rng.randf_range(-20.0, 20.0))
+	for i in 8:
+		var a := deg_to_rad(45.0 * float(i) + 17.0 * float(i % 3) + rng.randf_range(-14.0, 14.0))
 		var d := Vector3(cos(a), 0, sin(a))
 		var p := Vector3(-d.z, 0, d.x)
-		var base := d * rng.randf_range(0.03, 0.1)
+		var base := d * rng.randf_range(0.02, 0.08) - Vector3(0, 0.015, 0)
 		var h: float = heights[i]
 		var tip := base + d * h * tan(deg_to_rad(splays[i])) + Vector3(0, h, 0)
-		v.append_array([base - p * 0.05, tip, base + p * 0.05])
+		var w := 0.04 if h > 0.2 else 0.046
+		v.append_array([base - p * w, tip, base + p * w])
 		uv.append_array([Vector2(0, 0), Vector2(0, 1), Vector2(0, 0)])
 		apex.append(tip)
 		perp.append(p)
-	for i in [0, 3]:
+	for i in [0, 4]:
 		var t: Vector3 = apex[i]
 		var p: Vector3 = perp[i]
-		v.append_array([t - p * 0.0225, t + Vector3(0, 0.05, 0), t + p * 0.0225])
+		v.append_array([t - p * 0.026 - Vector3(0, 0.012, 0), t + Vector3(0, 0.045, 0), t + p * 0.026 - Vector3(0, 0.012, 0)])
 		uv.append_array([Vector2(1, 1), Vector2(1, 1), Vector2(1, 1)])
+	return _grass_arrays(v, uv)
+
+
+## Meadow flowers for the grass system: three sprigs of different heights, each a thin stem and a flat
+## four-point head facing up (two triangles), plus two short leaves. 11 triangles, <= 0.24 m tall, same UV
+## convention as grass_clump (heads have UV.x = 1); the shader colours the heads from a palette index.
+static func grass_flowers(seed_value: int) -> ArrayMesh:
+	var rng := make_rng(seed_value, 43)
+	var v := PackedVector3Array()
+	var uv := PackedVector2Array()
+	var hs := [0.22, 0.16, 0.12]
+	for i in 3:
+		var a := TAU * float(i) / 3.0 + rng.randf_range(-0.4, 0.4)
+		var d := Vector3(cos(a), 0, sin(a))
+		var p := Vector3(-d.z, 0, d.x)
+		var base := d * rng.randf_range(0.04, 0.09) - Vector3(0, 0.015, 0)
+		var h: float = hs[i]
+		var top := base + d * rng.randf_range(0.02, 0.05) + Vector3(0, h, 0)
+		v.append_array([base - p * 0.014, top, base + p * 0.014])
+		uv.append_array([Vector2(0, 0), Vector2(0, 1), Vector2(0, 0)])
+		var r: float = [0.052, 0.046, 0.04][i]
+		var rot := rng.randf() * TAU
+		var q: Array[Vector3] = []
+		for k in 4:
+			var ang := rot + TAU * float(k) / 4.0
+			var rr := r if k % 2 == 0 else r * 0.8
+			q.append(top + Vector3(cos(ang) * rr, 0.004 * float(k % 2), sin(ang) * rr))
+		v.append_array([q[0], q[1], q[2], q[0], q[2], q[3]])
+		for k in 6:
+			uv.append(Vector2(1, 1))
+	for i in 2:
+		var a := rng.randf() * TAU
+		var d := Vector3(cos(a), 0, sin(a))
+		var p := Vector3(-d.z, 0, d.x)
+		var base := -Vector3(0, 0.015, 0)
+		var tip := d * 0.09 + Vector3(0, 0.07, 0)
+		v.append_array([base - p * 0.03, tip, base + p * 0.03])
+		uv.append_array([Vector2(0, 0), Vector2(0, 0.5), Vector2(0, 0)])
+	return _grass_arrays(v, uv)
+
+
+static func _grass_arrays(v: PackedVector3Array, uv: PackedVector2Array) -> ArrayMesh:
 	var n := PackedVector3Array()
 	var c := PackedColorArray()
 	for i in v.size():
@@ -1651,72 +1694,60 @@ static func wheat_patch(seed_value: int) -> ArrayMesh:
 	return mb.commit()
 
 
-## A 3 × 3 m tile of ripening wheat (kind 0) or paler barley (kind 1) for the terrace strips: a wind-ruffled slab
-
-
-## ~0.6 m tall with blunt corners so tiles abut seamlessly, striped stalk sides over a green-gold foot, ear tufts
-## breaking its top and a few poppies along one edge (≤ 160 tris). Reads as a flat golden field from above and as a
-## standing crop from the low title camera.
+## A 3 × 2.5 m bed of ripening wheat (kind 0) or paler barley (kind 1) for the terrace strips: five sown ridges
+## along local X (the contour) with dark green-gold furrows between them, each ridge a ragged gable of stalks
+## (green-gold foot, golden ears on top, tapering at both ends), a few ear tufts above the line and poppies along
+## the +Z (downhill) edge. Reads as a striped field from the gameplay camera and as a standing crop from the low
+## title camera (<= 170 tris, <= 0.62 m tall).
 static func add_wheat_patch(mb: MeshBuilder, rng: RandomNumberGenerator, variant: int = 0) -> void:
-	var col := WHEAT if variant == 0 else BARLEY
+	var ear := WHEAT if variant == 0 else BARLEY
 	var lit := WHEAT_LIT if variant == 0 else BARLEY_LIT
-	var stalk := WHEAT_STALK if variant == 0 else BARLEY_STALK
-	var top_h := rng.randf_range(0.55, 0.62)
-	var g: Array = []
-	for i in 4:
-		var row: Array[Vector3] = []
-		for j in 4:
-			var x := -1.5 + float(i)
-			var z := -1.5 + float(j)
-			var edge := i == 0 or i == 3 or j == 0 or j == 3
-			if (i == 0 or i == 3) and (j == 0 or j == 3):
-				x -= signf(x) * 0.18
-				z -= signf(z) * 0.18
-			var yy := top_h + rng.randf_range(-0.05, 0.05) - (0.03 if edge else 0.0)
-			row.append(Vector3(x, yy, z))
-		g.append(row)
-	for i in 3:
-		for j in 3:
-			var a: Vector3 = g[i][j]
-			var b: Vector3 = g[i][j + 1]
-			var c: Vector3 = g[i + 1][j + 1]
-			var d: Vector3 = g[i + 1][j]
-			var hi := (a.y + b.y + c.y + d.y) * 0.25 > top_h - 0.01
-			mb.tri(a, b, c, lit if hi and (i + j) % 2 == 0 else col)
-			mb.tri(a, c, d, lit if hi else col.darkened(0.03))
-	# Sides: walk the outline; each 1 m edge gets two stalk facets with a ragged top over one green-gold foot band.
-	var ring: Array[Vector3] = []
-	for i in 4:
-		ring.append(g[i][0])
-	for j in range(1, 4):
-		ring.append(g[3][j])
-	for i in range(2, -1, -1):
-		ring.append(g[i][3])
-	for j in range(2, 0, -1):
-		ring.append(g[0][j])
-	var band := 0.1
-	var facet := 0
-	for e in ring.size():
-		var p0: Vector3 = ring[e]
-		var p1: Vector3 = ring[(e + 1) % ring.size()]
-		var pm := p0.lerp(p1, 0.5)
-		pm.y += rng.randf_range(0.0, 0.05)
-		_wall(mb, Vector3(p0.x, -0.1, p0.z), Vector3(p1.x, -0.1, p1.z), band + 0.1, band + 0.1, WHEAT_BASE)
-		_wall(mb, Vector3(p0.x, band, p0.z), Vector3(pm.x, band, pm.z), p0.y - band, pm.y - band, col if facet % 2 == 0 else stalk)
-		_wall(mb, Vector3(pm.x, band, pm.z), Vector3(p1.x, band, p1.z), pm.y - band, p1.y - band, stalk if facet % 2 == 0 else col)
-		facet += 1
-	# Ear tufts poking out of the top, and poppies along the +Z edge.
-	for i in 12:
-		var u := rng.randf_range(0.1, 2.9)
-		var w := rng.randf_range(0.1, 2.9)
-		var p := _grid_at(g, u, w)
-		var tilt := Vector3(rng.randf_range(-0.3, 0.3), 0, rng.randf_range(-0.3, 0.3))
-		mb.push(Transform3D(Basis.from_euler(tilt), p + Vector3(0, -0.04, 0)))
-		mb.cyl(Vector3.ZERO, rng.randf_range(0.16, 0.22), 0.045, 0.0, 3, lit, false, rng.randf() * TAU)
-		mb.pop()
+	var foot := WHEAT_STALK if variant == 0 else BARLEY_STALK
+	var xs := [-1.42, -0.5, 0.5, 1.42]
+	for r in 5:
+		var zc := -1.0 + 0.5 * float(r) + rng.randf_range(-0.03, 0.03)
+		var tops: Array[Vector3] = []
+		for k in 4:
+			var end := k == 0 or k == 3
+			var h := (rng.randf_range(0.36, 0.42) if end else rng.randf_range(0.5, 0.6))
+			tops.append(Vector3(xs[k] + (rng.randf_range(-0.06, 0.06) if not end else 0.0), h, zc + rng.randf_range(-0.04, 0.04)))
+		for k in 3:
+			var a: Vector3 = tops[k]
+			var b: Vector3 = tops[k + 1]
+			for side in [-1.0, 1.0]:
+				var a0 := Vector3(a.x, -0.04, zc + side * 0.24)
+				var b0 := Vector3(b.x, -0.04, zc + side * 0.24)
+				var am := Vector3(a.x, a.y * 0.45, lerpf(zc + side * 0.24, a.z, 0.45))
+				var bm := Vector3(b.x, b.y * 0.45, lerpf(zc + side * 0.24, b.z, 0.45))
+				var top_col := lit if side > 0.0 else ear
+				if side < 0.0:
+					mb.quad(a0, am, bm, b0, foot)
+					mb.quad(am, a, b, bm, top_col)
+				else:
+					mb.quad(a0, b0, bm, am, foot)
+					mb.quad(am, bm, b, a, top_col)
+		# Blunt ends.
+		for k in [0, 3]:
+			var t: Vector3 = tops[k]
+			var sx := -1.0 if k == 0 else 1.0
+			var l := Vector3(t.x + sx * 0.04, -0.04, zc - 0.24)
+			var rr := Vector3(t.x + sx * 0.04, -0.04, zc + 0.24)
+			if k == 0:
+				mb.tri(l, rr, t, foot)
+			else:
+				mb.tri(rr, l, t, foot)
+		# Ear tufts breaking the ridge line.
+		for i in 2:
+			var u := rng.randf_range(0.15, 2.85)
+			var kk := clampi(int(u), 0, 2)
+			var p: Vector3 = (tops[kk] as Vector3).lerp(tops[kk + 1], u - float(kk))
+			var tilt := Vector3(rng.randf_range(-0.3, 0.3), 0, rng.randf_range(-0.3, 0.3))
+			mb.push(Transform3D(Basis.from_euler(tilt), p + Vector3(0, -0.05, 0)))
+			mb.cyl(Vector3.ZERO, rng.randf_range(0.13, 0.18), 0.04, 0.0, 3, lit, false, rng.randf() * TAU)
+			mb.pop()
 	for i in 2 + rng.randi() % 3:
-		var p := _grid_at(g, rng.randf_range(0.4, 2.6), rng.randf_range(2.65, 2.85))
-		_dot(mb, rng, p + Vector3(0, 0.02, 0), 0.05, Pal.POPPY, Vector3(1, 0.8, 1))
+		var p := Vector3(rng.randf_range(-1.2, 1.2), 0.0, rng.randf_range(1.3, 1.42))
+		_dot(mb, rng, p + Vector3(0, 0.16, 0), 0.05, Pal.POPPY, Vector3(1, 0.8, 1))
 
 
 ## Bilinear height on a 4 × 4 grid of top vertices (u, w in 0..3 along i, j).

@@ -23,6 +23,9 @@ var _dead_t := 0.0
 var _leash_from := Vector3.ZERO
 var _blocking_wall: Unit = null
 var _land_s := 0.0 # lane distance of the beach landing: before it, a walker is still wading ashore
+var _landed := false
+var spawn_time := 1.0 # seconds rising from the sea (or from the ground, for the Hydra's brood)
+var hold := 0.0 # seconds standing still on purpose (the Hydra's roar)
 
 
 func setup(t: String, lane_index: int, lateral_offset: float) -> void:
@@ -46,18 +49,22 @@ func _ready() -> void:
 	rig = ModelsCreatures.make(type)
 	add_child(rig)
 	rig.event.connect(_on_rig_event)
-	var spawn_pos := _lane_point(0.0)
+	# Usually at the sea end of the lane; the Hydra's brood starts further in (s set before add_child).
+	var spawn_pos := _lane_point(s)
 	global_position = spawn_pos
 	state = S.SPAWN
 	invuln = 0.9
 	rig.play("spawn")
 	rig.set_dissolve(0.85)
-	if Game.has_blessing("poseidon"):
-		apply_slow(0.45, 6.0)
-	if Game.fx:
-		Game.fx.splash(Vector3(global_position.x, 0.0, global_position.z), 1.0 + radius)
-	if randf() < 0.5 or is_heavy:
-		Sfx.play("enemy_spawn", global_position, -6.0 if not is_heavy else 0.0, randf_range(0.85, 1.1))
+	if not _on_land(spawn_pos):
+		if Game.fx:
+			Game.fx.splash(Vector3(global_position.x, 0.0, global_position.z), 1.0 + radius)
+		if randf() < 0.5 or is_heavy:
+			Sfx.play("enemy_spawn", global_position, -6.0 if not is_heavy else 0.0, randf_range(0.85, 1.1))
+	elif Game.fx:
+		# Called up on land: the creature condenses out of a puff of night.
+		Game.fx.smoke(spawn_pos + Vector3(0, 0.6, 0), 5, Color(0.25, 0.2, 0.45, 0.8))
+		Game.fx.motes(spawn_pos + Vector3(0, 0.9, 0), 5, Pal.NYX_GLOW)
 
 
 func _lane_point(at_s: float) -> Vector3:
@@ -95,12 +102,19 @@ func _physics_process(delta: float) -> void:
 		rig.set_dissolve(0.85 * (1.0 - k))
 		s += speed * delta * 0.5
 		_step_to(_lane_point(s), delta, smul * 0.5)
-		if _t >= 1.0:
+		if _t >= spawn_time:
 			state = S.WALK
 			rig.set_dissolve(0.0)
+			_on_spawned()
 		_finish_frame(delta)
 		return
-	if stun > 0.0:
+	if not _landed and (s >= _land_s or _on_land(global_position)):
+		_landed = true
+		# Poseidon: the creatures that come out of the sea are slowed as they set foot on the beach.
+		if Game.has_blessing("poseidon"):
+			apply_slow(0.45, 6.0)
+	if stun > 0.0 or hold > 0.0:
+		hold = maxf(0.0, hold - delta)
 		_vel = _vel.lerp(Vector3.ZERO, 1.0 - exp(-delta * 10.0))
 		_finish_frame(delta)
 		return
@@ -125,38 +139,49 @@ func _physics_process(delta: float) -> void:
 				state = S.WALK
 			else:
 				var reach := _reach(target)
-				var dist := flat_dist(target.global_position)
+				var dist := _dist_to(target)
 				if dist <= reach:
 					state = S.ATTACK
 				else:
-					var gp := target.global_position
+					var aim := _aim_point(target)
+					var gp := aim
 					if data.get("ranged", false):
 						# Keep shooting distance (but never back off into the sea).
-						gp = target.global_position + (global_position - target.global_position).normalized() * (reach * 0.85)
+						gp = aim + (global_position - aim).normalized() * (reach * 0.85)
 						if not _on_land(gp):
-							gp = target.global_position
+							gp = aim
 					_step_to(gp, delta, smul)
 		S.ATTACK:
 			if not _target_ok():
 				target = null
 				state = S.WALK
 			else:
-				var dir := target.global_position - global_position
+				var dir := _aim_point(target) - global_position
 				dir.y = 0.0
 				facing = lerp_angle(facing, Unit.yaw_to(dir), 1.0 - exp(-delta * 10.0))
 				_vel = _vel.lerp(Vector3.ZERO, 1.0 - exp(-delta * 10.0))
-				if flat_dist(target.global_position) > _reach(target) + 0.6 and not rig.is_busy():
+				if _dist_to(target) > _reach(target) + 0.6 and not rig.is_busy():
 					state = S.CHASE
 				elif attack_cd <= 0.0 and not rig.is_busy():
 					attack_cd = data["rate"] * randf_range(0.9, 1.1)
 					rig.play(_attack_anim())
 					# Ranged creatures loose their orb on "release" (a rig may also call it "impact": both count once).
 					expect_event("release" if data.get("ranged", false) else "impact", 0.56)
+					_on_attack_started()
 	_finish_frame(delta)
 
 
 func _attack_anim() -> String:
 	return "attack"
+
+
+## Hooks for special creatures (the Hydra): right after an attack starts, and when the creature has risen.
+func _on_attack_started() -> void:
+	pass
+
+
+func _on_spawned() -> void:
+	pass
 
 
 func _finish_frame(delta: float) -> void:
@@ -179,6 +204,14 @@ func _step_to(goal: Vector3, delta: float, smul: float) -> void:
 	var want := Vector3.ZERO
 	if d.length() > 0.15:
 		want = d.normalized() * speed * smul
+	# Keres swerve around Fanós' lantern on their way to the village (he has to chase them, or let a tower shoot).
+	if is_flying and state != S.ATTACK and is_instance_valid(Game.hero) and Game.hero.alive and not (target is Hero):
+		var away: Vector3 = global_position - Game.hero.global_position
+		away.y = 0.0
+		var dd := away.length()
+		if dd < 4.5 and dd > 0.01:
+			want += away / dd * speed * smul * (1.0 - dd / 4.5) * 1.3
+			want = want.limit_length(speed * smul * 1.15)
 	_vel = _vel.lerp(want, 1.0 - exp(-delta * 6.0))
 	global_position += _vel * delta
 
@@ -188,7 +221,24 @@ func _apply_knock(step: Vector3) -> void:
 
 
 func _reach(t: Unit) -> float:
+	if t is WallBuilding:
+		# Walls are struck anywhere along their line, from close up (claws on the palisade, not at arm's length).
+		return radius + 0.25 + float(data["range"]) * 0.6
 	return radius + t.radius + float(data["range"])
+
+
+## Where to go for (and face) a target: the nearest point of a wall's line, the centre of anything else.
+func _aim_point(t: Unit) -> Vector3:
+	if t is WallBuilding:
+		return (t as WallBuilding).closest_point(global_position)
+	return t.global_position
+
+
+## Distance to a target as _reach() counts it: to a wall's line, to anything else's centre.
+func _dist_to(t: Unit) -> float:
+	if t is WallBuilding:
+		return (t as WallBuilding).line_dist(global_position)
+	return flat_dist(t.global_position)
 
 
 func _target_ok() -> bool:
@@ -210,9 +260,12 @@ func _think() -> void:
 		return
 	if state == S.ATTACK and _target_ok() and target.is_building:
 		return
-	# Walls on our lane hold the line for walkers.
+	# Walls on our lane hold the line for walkers (also when we reach one off the lane's line, say after biting a
+	# tower beside the road: then our lane position lags behind where we really are).
 	if not is_flying:
 		var w := WallBuilding.blocking(lane, s - 1.0, s + 2.6)
+		if w == null:
+			w = WallBuilding.facing(lane, global_position, radius + 2.0)
 		if w:
 			target = w
 			state = S.CHASE if state != S.ATTACK else state
@@ -226,7 +279,8 @@ func _think() -> void:
 			continue
 		if u is WallBuilding and (is_flying or not _wall_relevant(u)):
 			continue
-		if u is Building and u.type == "dock":
+		# Piers stand in the water: walkers leave them alone, Keres do not.
+		if u is Building and u.type == "dock" and not is_flying:
 			continue
 		var d: float = u.flat_dist(global_position) - u.radius
 		var limit := _aggro_for(u, aggro)
@@ -239,6 +293,8 @@ func _think() -> void:
 			score += 1.5 if u.is_building else 0.0
 		if u is PharosBuilding:
 			score -= 1.0
+		if is_flying and _is_hearth(u):
+			score -= 6.0
 		if score < best_score:
 			best_score = score
 			best = u
@@ -251,9 +307,25 @@ func _think() -> void:
 		target = null
 
 
-## How far this creature looks for `u` (buildings draw them from a little further away).
+## How far this creature looks for `u` (buildings draw them from a little further away). Keres fly over Fanós and
+## the hoplites to dive at the village: they only turn on someone who gets right in their way.
 func _aggro_for(u: Unit, aggro: float) -> float:
-	return aggro + (2.0 if u.is_building else 0.0)
+	if is_flying and _is_hearth(u):
+		return HEARTH_SENSE
+	if u.is_building:
+		return aggro + 2.0
+	if is_flying:
+		return minf(aggro, 1.5)
+	return aggro
+
+
+## Keres are drawn to the hearths of Delos (houses, olive groves, piers) from this far off, over walls and past
+## Fanós: the towers (and Fanós, if he gives chase) are what keeps them from the village's income.
+const HEARTH_SENSE := 18.0
+
+
+static func _is_hearth(u: Unit) -> bool:
+	return u is Building and (u.type == "house" or u.type == "farm" or u.type == "dock")
 
 
 func _on_land(p: Vector3) -> bool:
@@ -295,7 +367,7 @@ func _do_impact() -> void:
 			Game.fx.ring(center, float(data["aoe"]), Color(0.6, 0.5, 1.0, 0.7), 0.4)
 			Game.fx.dust(center, 10, 1.5)
 		return
-	if flat_dist(target.global_position) <= _reach(target) + 0.8:
+	if _dist_to(target) <= _reach(target) + 0.8:
 		target.take_damage(float(data["dmg"]) * mult, self, 0.6, "claw")
 
 

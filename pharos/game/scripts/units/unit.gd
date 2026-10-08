@@ -47,7 +47,8 @@ func take_damage(amount: float, from: Node3D = null, knockback: float = 0.0, kin
 	hp -= amount
 	last_hit = now()
 	if rig:
-		rig.hit_flash()
+		# Big creatures only blush at small blows (a boss under four towers' arrows must not strobe white).
+		rig.hit_flash(1.0 if not is_heavy else clampf(amount / maxf(max_hp * 0.05, 1.0), 0.18, 1.0))
 	if knockback > 0.0 and from and not is_building:
 		var d := global_position - from.global_position
 		d.y = 0.0
@@ -87,6 +88,15 @@ func die() -> void:
 
 func _on_death() -> void:
 	pass
+
+
+## A blinding blow (the lens flash, the beam) cuts short the swing under way: the blow it was winding up never
+## lands (the rig switches to its flinch, so its own event mark cannot fire either).
+func interrupt() -> void:
+	_pending_ev = ""
+	_ev_done.clear()
+	if rig and rig.action != "" and rig.action != "death" and rig.action != "spawn":
+		rig.play("hit")
 
 
 func apply_slow(amount: float, seconds: float) -> void:

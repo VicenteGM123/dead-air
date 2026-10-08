@@ -101,7 +101,13 @@ func _physics_process(delta: float) -> void:
 	dodge_cd = maxf(0.0, dodge_cd - delta)
 	_update_light(delta)
 	if state == S.DEAD:
-		respawn_t -= delta
+		match Game.phase:
+			Game.Phase.NIGHT, Game.Phase.DUSK:
+				respawn_t -= delta
+			Game.Phase.DEFEAT:
+				return # the Faro has fallen: nothing is left to relight him
+			_:
+				respawn_t = 0.0 # dawn (or the end of the island) relights him at once
 		respawn_tick.emit(respawn_t)
 		if respawn_t <= 0.0:
 			_respawn()
@@ -140,7 +146,7 @@ func _physics_process(delta: float) -> void:
 				state = S.NORMAL
 		S.DODGE:
 			var p := rig.ap()
-			var sp := lerpf(14.0, 4.0, p)
+			var sp := lerpf(14.0, 4.0, p) * (1.3 if Game.has_blessing("hermes") else 1.0)
 			_move(dodge_dir * sp, delta, 40.0)
 			invuln = maxf(invuln, 0.02) if p < 0.8 else invuln
 			if not rig.is_busy():
@@ -272,6 +278,8 @@ func _on_rig_event(ev: String) -> void:
 
 func _strike(reach: float, half_angle: float, dmg: float, knockback: float, stun_s: float, kind: String, origin: Vector3 = Vector3.INF) -> int:
 	var hits := 0
+	var total := 0.0
+	_stunned_this_swing = 0
 	var from := global_position if not origin.is_finite() else origin
 	var fwd := _attack_dir
 	for e in Game.query(1, from, reach, false):
@@ -283,13 +291,18 @@ func _strike(reach: float, half_angle: float, dmg: float, knockback: float, stun
 			continue
 		_hit_this_swing[e] = true
 		var dealt: float = e.take_damage(dmg, self, knockback, kind)
-		if stun_s > 0.0:
-			_stun(e, stun_s)
+		if stun_s > 0.0 and e.alive:
+			# The lens flash blinds everything but the boss out of its swing; the anchor slam only staggers the small.
+			if _stun(e, stun_s, kind == "flash" or (kind == "slam" and not e.is_heavy)):
+				_stunned_this_swing += 1
 		if dealt > 0.0:
 			hits += 1
-			add_favor(dealt * float(Data.HERO.get("favor_per_dmg", 0.55)))
+			total += dealt * (float(Data.HERO.get("favor_boss", 1.0)) if e is Enemy and (e as Enemy).data.get("boss", false) else 1.0)
 			if Game.fx:
 				Game.fx.hit_spark(e.global_position + Vector3(0, 1.0, 0), fwd)
+	# Llama: one swing counts at most favor_swing_cap times its own damage, however big the crowd it sweeps.
+	if total > 0.0:
+		add_favor(minf(total, dmg * float(Data.HERO.get("favor_swing_cap", 1.5))) * float(Data.HERO.get("favor_per_dmg", 0.3)))
 	if hits > 0:
 		Game.hitstop(0.05 if kind != "slam" else 0.08)
 		Sfx.play("hit_%d" % (randi() % 3 + 1), global_position, -1.0, randf_range(0.85, 1.0))
@@ -309,9 +322,11 @@ func _slam(dmg: float) -> void:
 		Game.fx.dust(g, 14, 1.4)
 
 
-## The lens flares: blinding light in a cone, creatures reel back stunned.
+## The lens flares: blinding light in a cone, creatures reel back stunned (and drop the blow they were winding up).
 func _flash() -> void:
 	var hits := _strike(4.2, 62.0, Data.HERO["bash_dmg"] * dmg_mult(), 3.6, 1.4, "flash")
+	if _stunned_this_swing > 0:
+		add_favor(float(Data.HERO.get("favor_flash", 0.0))) # a flash that stuns feeds the Llama a little extra
 	Sfx.play("bash", global_position, -2.0, 1.1)
 	Sfx.play("favor_ready", global_position, -8.0, 1.6)
 	Game.shake(0.22 if hits > 0 else 0.1)
@@ -322,16 +337,25 @@ func _flash() -> void:
 
 
 var _beam_hit := {}
+var _stunned_this_swing := 0
 
 
-## Big creatures shrug stuns off sooner (the Hydra most of all), so they cannot be locked in place.
-func _stun(e: Unit, seconds: float) -> void:
+## Big creatures shrug stuns off sooner (the Hydra most of all), so they cannot be locked in place. A blinding
+## stun (`breaks` true) also cuts short the swing the creature had started; the Hydra's blows are never cut short.
+## Returns true when the creature was stunned.
+func _stun(e: Unit, seconds: float, breaks: bool = false) -> bool:
 	var k := 1.0
-	if e is Enemy and (e as Enemy).data.get("boss", false):
+	var boss: bool = e is Enemy and bool((e as Enemy).data.get("boss", false))
+	if boss:
 		k = 0.3
 	elif e.is_heavy:
 		k = 0.5
+	if e.invuln > 0.0 and e is Enemy and (e as Enemy).state == Enemy.S.SPAWN:
+		return false # still rising from the sea
 	e.stun = maxf(e.stun, seconds * k)
+	if breaks and not boss:
+		e.interrupt()
+	return true
 
 
 ## Special: Fanós becomes the lighthouse; the beam sweeps all around and burns what it touches.
@@ -351,7 +375,8 @@ func _beam_tick() -> void:
 			continue
 		_beam_hit[e] = true
 		e.take_damage(dmg, self, 2.5, "beam")
-		_stun(e, 1.5)
+		if e.alive:
+			_stun(e, 1.5, true)
 		Sfx.play("zap", e.global_position, -6.0, randf_range(0.9, 1.2))
 		if Game.fx:
 			Game.fx.hit_spark(e.global_position + Vector3(0, 1.0, 0), dir, 1.4)
@@ -395,7 +420,29 @@ func _try_move(step: Vector3) -> void:
 			vel = Vector3.ZERO
 			return
 	p = Obstacles.push_out(p, radius)
+	p = _push_out_of_big(p)
 	global_position = Vector3(p.x, global_position.y, p.z)
+
+
+## Fanós cannot walk into the body of a Cyclops or of the Hydra (small creatures he simply shoulders past).
+func _push_out_of_big(p: Vector3) -> Vector3:
+	for e in Game.units[1]:
+		if not is_instance_valid(e) or not e.alive or not e.is_heavy or e.is_flying:
+			continue
+		var c: Vector3 = e.global_position
+		var rr: float = e.radius * 0.85 + radius
+		var dx := p.x - c.x
+		var dz := p.z - c.z
+		var d2 := dx * dx + dz * dz
+		if d2 < rr * rr:
+			var d := sqrt(d2)
+			if d < 0.001:
+				dx = -sin(facing)
+				dz = -cos(facing)
+				d = 1.0
+			p.x = c.x + dx / d * rr
+			p.z = c.z + dz / d * rr
+	return p
 
 
 func _face(dir: Vector3, delta: float, rate: float) -> void:
@@ -459,6 +506,34 @@ func _respawn() -> void:
 			Game.fx.coin_fly(Game.pharos.anchor("fire", Vector3(0, 9, 0)), global_position + Vector3(0, 2.0, 0))
 	Sfx.play("blessing", global_position, -6.0)
 	Game.register(self, team)
+
+
+## Retry from the start of the night: Fanós stands again by the lighthouse, whole, with the Llama he had at dusk.
+func reset_for_retry(llama: float) -> void:
+	_falls = 0
+	_fall_night = -1
+	_release_interaction()
+	if not alive or state == S.DEAD:
+		_respawn()
+	else:
+		max_hp = max_hp_stat()
+		hp = max_hp
+		state = S.NORMAL
+		teleport(spawn_point)
+		facing = PI
+		rig.play("relight")
+	knock = Vector3.ZERO
+	stun = 0.0
+	slow = 0.0
+	slow_t = 0.0
+	combo = 0
+	combo_queued = false
+	bash_cd = 0.0
+	dodge_cd = 0.0
+	_calm_t = 0.0
+	input_enabled = true
+	favor = clampf(llama, 0.0, favor_max())
+	favor_changed.emit(favor, favor_max())
 
 
 func teleport(p: Vector3) -> void:

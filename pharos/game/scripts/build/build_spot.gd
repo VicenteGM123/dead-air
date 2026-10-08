@@ -172,7 +172,7 @@ func _complete() -> void:
 		add_child(building)
 		Game.stats["built"] += 1
 		Sfx.play("build_done", global_position)
-		Game.say(Data.BUILDINGS[type]["name"], "construida" if type != "pharos" else "", "build")
+		Game.say(Data.BUILDINGS[type]["name"], String(Data.BUILDINGS[type].get("built", "")), "build")
 	else:
 		building.upgrade()
 		Sfx.play("upgrade", global_position)
@@ -183,6 +183,41 @@ func _complete() -> void:
 	if Game.fx:
 		Game.fx.ring(global_position, maxf(2.0, building.footprint + 0.5), Color(1.0, 0.9, 0.6, 0.8), 0.5)
 	built.emit(self)
+
+
+## Retry from the start of a night: the plot as it stood at dusk (its level and the coins already paid toward
+## the next one).
+func get_state() -> Dictionary:
+	return {"level": level(), "paid": paid}
+
+
+## Puts the plot back as get_state() saw it: the building at that level, rebuilt and whole, its squad back.
+func set_state(st: Dictionary) -> void:
+	var lv := int(st.get("level", 0))
+	paid = int(st.get("paid", 0))
+	_hold_t = 0.0
+	_pay_t = 0.0
+	_denied_t = 0.0
+	if building and building.level > lv:
+		_remove_building()
+	if lv > 0:
+		force_build(lv)
+		building.restore()
+		building.repair_full()
+		if building is BarracksBuilding:
+			(building as BarracksBuilding).revive_squad()
+	_update_visibility(true)
+	_marker.visible = is_unlocked() and building == null
+
+
+func _remove_building() -> void:
+	if building is BarracksBuilding:
+		for sol in (building as BarracksBuilding).soldiers:
+			if is_instance_valid(sol):
+				sol.queue_free()
+	Obstacles.remove_owner(building)
+	building.queue_free()
+	building = null
 
 
 ## Place a building directly (start of game / tests).

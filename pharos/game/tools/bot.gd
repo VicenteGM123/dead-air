@@ -3,14 +3,19 @@ extends Node
 ## marked beaches say the next night will strike, upgrades the lighthouse when it opens useful plots, and blows the
 ## horn when the coins run out; by night it fights on the most dangerous front and falls back to heal when hurt.
 ##
-##   godot --headless --path . -- bot=1 speed=3 [build=greedy|econ|defense|lazy|none] [fight=2|1|0] [bless=id,id]
-##       [rseed=N] [quit=1]
-##   build: greedy = balanced human (default) · econ = economy first · defense = defenses only · lazy = spends at
-##          most half of its coins each day · none = never builds.
+##   godot --headless --path . -- bot=1 speed=3 [build=greedy|econ|defense|lazy|miser|none] [fight=2|1|0]
+##       [bless=id,id] [rseed=N] [quit=1] [retry=N] [human=1]
+##   build: greedy = balanced human (default) · econ = economy first · defense = defenses only · lazy = careless:
+##          spends its coins on whatever plots it walks past, no plan · miser = spends at most half of its coins
+##          each day · none = never builds.
 ##   fight: 2 = good player (combo, lens flash, beam, retreats to heal) · 1 = casual (combo + beam, nearest enemy,
-##          never retreats) · 0 = never fights (stays by the horn).
+##          never retreats) · 0 = never fights (stays by the horn). Fight 1 and 2 dash out of the Hydra's violet
+##          ground marks once they have seen them (~0.25 s).
+##   human=1: no hidden information: only sees creatures within 30 m and waits at the plaza between groups.
+##   retry=N: on a defeat, press "Reintentar la noche" up to N times (checks that the dusk state comes back).
 ##   tests: checks=1 (verify every blessing's numbers, then quit) · info=1 (dump lanes and plots, then quit)
 ##          prebuild=barracks:2,wall:1 (force-build those plots) · debug=1 (log hero and hoplites every 3 s)
+##          crittest=<name> (run res://tools/crit_<name>.gd instead of playing)
 ##          plus main.gd's startnight=N, village=1, pl=N, coins=N, hpmult=X.
 ## Logs one "[bot] NIGHT" line per night and a final "[bot] RESULT" line; "[bot] WARN" lines flag suspected bugs
 ## (creatures stuck or walking past a standing wall, Fanós stuck, nights that never end, dawn not restoring the
@@ -53,6 +58,9 @@ var _last_side := 1.0
 var _prog_best := INF
 var _prog_t := 0.0
 var _stuck_t := 0.0
+var _retries := 0
+var _human := false
+var _retry_expect := {}
 
 
 func _ready() -> void:
@@ -61,8 +69,15 @@ func _ready() -> void:
 	_speed = float(Game.arg("speed", "3"))
 	_fight = int(Game.arg("fight", "2"))
 	_plan = Game.arg("build", "greedy")
+	_retries = int(Game.arg("retry", "0"))
+	_human = Game.arg("human", "0") == "1"
 	if Game.arg("rseed", "") != "":
 		seed(int(Game.arg("rseed")))
+	var crit := "res://tools/crit_%s.gd" % String(Game.arg("crittest", ""))
+	if Game.arg("crittest", "") != "" and ResourceLoader.exists(crit):
+		add_child(load(crit).new())
+		set_physics_process(false)
+		return
 	Game.time_scale_target = _speed
 	Game.phase_changed.connect(_on_phase)
 	hero.damaged.connect(_on_hero_hurt)
@@ -88,6 +103,7 @@ func _ready() -> void:
 	if Game.arg("info", "0") == "1":
 		_dump_info()
 	if Game.arg("checks", "0") == "1":
+		set_physics_process(false)
 		_checks()
 		return
 	Game.message.connect(_on_message)
@@ -107,7 +123,9 @@ func _on_phase(p: int) -> void:
 			_day_spent = 0
 			_econ_spent = 0
 			_day_coins = Game.coins
-			_budget = Game.coins if _plan != "lazy" else Game.coins / 2
+			_budget = Game.coins if _plan != "miser" else Game.coins / 2
+			if not _retry_expect.is_empty():
+				_check_retry()
 		Game.Phase.NIGHT:
 			_begin_night()
 		Game.Phase.DAWN:
@@ -117,6 +135,10 @@ func _on_phase(p: int) -> void:
 		Game.Phase.VICTORY, Game.Phase.DEFEAT:
 			if p == Game.Phase.DEFEAT and Game.phase == Game.Phase.DEFEAT:
 				_end_night(true)
+				if _retries > 0:
+					_retries -= 1
+					_retry_later()
+					return
 			_summary(p == Game.Phase.VICTORY)
 
 
@@ -141,6 +163,39 @@ func _check_dawn() -> void:
 		print("[bot] WARN dawn: Fanós not healed (%.0f/%.0f)" % [hero.hp, hero.max_hp])
 
 
+## retry=N: wait for the defeat screen, then press "Reintentar la noche" (through the UI when there is one).
+func _retry_later() -> void:
+	var snap: Dictionary = main._snap
+	_retry_expect = {"coins": snap.get("coins", -1), "night": snap.get("night", -1), "levels": [], "favor": snap.get("favor", 0.0)}
+	for st in snap.get("spots", []):
+		_retry_expect["levels"].append(int(st["level"]))
+	await get_tree().create_timer(3.0).timeout
+	print("[bot] RETRY night %d (coins back to %d)" % [int(_retry_expect["night"]) + 1, int(_retry_expect["coins"])])
+	if Game.hud and Game.hud.has_method("retry_night"):
+		Game.hud.retry_night()
+	else:
+		main.retry_night()
+
+
+## After a retry: the island must be exactly as it stood at dusk.
+func _check_retry() -> void:
+	var bad: Array = []
+	if Game.coins != int(_retry_expect["coins"]):
+		bad.append("coins %d != %d" % [Game.coins, int(_retry_expect["coins"])])
+	if Game.night != int(_retry_expect["night"]):
+		bad.append("night %d != %d" % [Game.night, int(_retry_expect["night"])])
+	var lv: Array = _retry_expect["levels"]
+	for i in mini(lv.size(), main.spots.size()):
+		if main.spots[i].level() != int(lv[i]):
+			bad.append("%s level %d != %d" % [main.spots[i].type, main.spots[i].level(), int(lv[i])])
+	if absf(hero.favor - float(_retry_expect["favor"])) > 0.01:
+		bad.append("llama %.1f != %.1f" % [hero.favor, float(_retry_expect["favor"])])
+	if Game.enemy_count() != 0 or not hero.alive or not Game.pharos.alive:
+		bad.append("enemies=%d hero_alive=%s pharos_alive=%s" % [Game.enemy_count(), str(hero.alive), str(Game.pharos.alive)])
+	print("[bot] RETRY check %s" % ("ok" if bad.is_empty() else "FAIL " + ", ".join(bad)))
+	_retry_expect = {}
+
+
 func _pick_blessing() -> void:
 	if Game.phase != Game.Phase.BLESSING or main._offered.is_empty():
 		return
@@ -158,7 +213,7 @@ func _begin_night() -> void:
 	_seen.clear()
 	_n = {"night": Game.night, "pharos_max": Game.pharos.max_hp, "pharos_min": Game.pharos.hp, "hero_min": hero.hp,
 		"deaths0": Game.stats["deaths"], "kills0": Game.stats["kills"], "shots": 0, "swings": 0, "lost": 0,
-		"coins": Game.coins, "spawned": 0, "slowed": 0, "hydra_summons": 0}
+		"coins": Game.coins, "spawned": 0, "slowed": 0, "hydra_summons": 0, "bolts0": Game.stats["bolts"], "dead_t": 0.0}
 	for sp in main.spots:
 		if sp.building and sp.building.alive and not sp.building.destroyed.is_connected(_on_destroyed):
 			sp.building.destroyed.connect(_on_destroyed)
@@ -210,6 +265,11 @@ func _end_night(defeat: bool = false) -> void:
 		int(_n["shots"]), int(_n["swings"]), int(_n["coins"]), built]
 	print(line)
 	print("[bot]   n%d building damage %s lost_types=%s" % [int(_n["night"]), str(_n.get("bdmg", {})), str(_n.get("lost_types", []))])
+	var lost_inc := 0
+	for t in _n.get("lost_types", []):
+		if t == "house" or t == "farm" or t == "dock":
+			lost_inc += int(Data.building_level(t, 1).get("income", 0))
+	print("[bot]   n%d beams=%d hero_dead=%.0fs econ_lost=%d" % [int(_n["night"]), Game.stats["bolts"] - int(_n.get("bolts0", 0)), float(_n.get("dead_t", 0.0)), lost_inc])
 	_results.append(line)
 	_n = {}
 
@@ -264,6 +324,8 @@ func _physics_process(delta: float) -> void:
 			_watch(delta)
 		_:
 			hero.touch_move = Vector2.ZERO
+	if Game.arg("hlog", "0") == "1":
+		_hydra_log()
 	_log_t -= delta
 	if _log_t <= 0.0 and Game.phase == Game.Phase.NIGHT:
 		_log_t = 15.0 if Game.arg("debug", "0") != "1" else 3.0
@@ -281,6 +343,10 @@ func _physics_process(delta: float) -> void:
 				h.s, h.state, h.target.display_name if is_instance_valid(h.target) else "-"])
 		if Game.arg("debug", "0") == "1":
 			print("[bot]      hero pos=(%.1f,%.1f) state=%d move=%s" % [hero.global_position.x, hero.global_position.z, hero.state, str(hero.touch_move)])
+			for u in Game.units[1]:
+				if is_instance_valid(u) and u.alive and u is Enemy and (u as Enemy).is_flying:
+					var k: Enemy = u
+					print("[bot]      ker pos=(%.1f,%.1f) s=%.1f state=%d target=%s hp=%.0f" % [k.global_position.x, k.global_position.z, k.s, k.state, k.target.display_name if is_instance_valid(k.target) else "-", k.hp])
 			for sp in main.spots:
 				if sp.building is BarracksBuilding:
 					for so in (sp.building as BarracksBuilding).soldiers:
@@ -289,6 +355,21 @@ func _physics_process(delta: float) -> void:
 							st.global_position.x, st.global_position.z, st.post().x, st.post().z,
 							(str(st.target.type) + "@%.1f" % st.target.flat_dist(st.global_position)) if is_instance_valid(st.target) and st.target is Enemy else "-",
 							st.attack_cd, str(st.rig.is_busy())])
+
+
+var _h_action := ""
+
+
+## hlog=1: one line per Hydra action (with the frame number, to pick screenshot frames).
+func _hydra_log() -> void:
+	var h: Node = main.waves.boss
+	if not is_instance_valid(h):
+		return
+	var a: String = (h as Enemy).rig.action
+	if a != _h_action:
+		_h_action = a
+		print("[hlog] frame=%d t=%.1f action=%s hero_d=%.1f hydra=(%.1f,%.1f) zones=%d" % [Engine.get_process_frames(), _game_t - _night_start_t, a,
+			(h as Enemy).flat_dist(hero.global_position), (h as Node3D).global_position.x, (h as Node3D).global_position.z, h.danger_zones().size()])
 
 
 # --- day ---------------------------------------------------------------------------------------------------
@@ -333,7 +414,7 @@ func _affordable(sp: BuildSpot) -> bool:
 	var c := sp.cost() - sp.paid
 	if c > Game.coins:
 		return false
-	if _plan == "lazy" and _day_spent + c > _budget:
+	if _plan == "miser" and _day_spent + c > _budget:
 		return false
 	return true
 
@@ -341,6 +422,8 @@ func _affordable(sp: BuildSpot) -> bool:
 func _next_spot() -> BuildSpot:
 	if _plan == "none":
 		return null
+	if _plan == "lazy":
+		return _careless_spot()
 	var econ: Array = []
 	var defense: Array = []
 	var fill: Array = []
@@ -373,6 +456,9 @@ func _next_spot() -> BuildSpot:
 		if not defense.is_empty() and defense[0][0] >= 85.0 and defense[0][1] != save_for:
 			return defense[0][1]
 		return null
+	# What tonight cannot wait for (the lighthouse level that opens tonight's beach) comes first.
+	if not defense.is_empty() and defense[0][0] >= 100.0:
+		return defense[0][1]
 	# A share of each morning's coins goes to the economy while it still has time to pay back.
 	for it in econ:
 		var c: int = it[1].cost() - it[1].paid
@@ -385,6 +471,22 @@ func _next_spot() -> BuildSpot:
 	if not fill.is_empty() and _plan != "lazy":
 		return fill[0][1]
 	return null
+
+
+## build=lazy: spends what it has on whatever plot is nearest, no plan (it never saves for the lighthouse).
+func _careless_spot() -> BuildSpot:
+	var best: BuildSpot = null
+	var best_d := INF
+	for sp in main.spots:
+		if not sp.is_unlocked() or sp.is_maxed() or not _affordable(sp):
+			continue
+		if sp.building and not sp.building.alive:
+			continue
+		var d: float = sp.global_position.distance_to(hero.global_position) + randf() * 12.0
+		if d < best_d:
+			best_d = d
+			best = sp
+	return best
 
 
 func _is_econ(sp: BuildSpot) -> bool:
@@ -495,7 +597,9 @@ func _go_to(p: Vector3, tol: float) -> bool:
 	_walk(d)
 	# Walking around big buildings is not what we are testing: hop if it takes too long.
 	if _phase_t > 9.0:
-		hero.teleport(p - d.normalized() * maxf(tol - 0.6, 0.2))
+		var to := p - d.normalized() * maxf(tol - 0.6, 0.2)
+		print("[bot] WARN day navigation: hop from (%.1f,%.1f) to (%.1f,%.1f), %.1f m" % [hero.global_position.x, hero.global_position.z, to.x, to.z, d.length()])
+		hero.teleport(to)
 		_phase_t = 0.8
 	return false
 
@@ -510,6 +614,10 @@ func _night(_delta: float) -> void:
 	if hero.state == Hero.S.DEAD:
 		hero.touch_move = Vector2.ZERO
 		_retreat = false
+		if not _n.is_empty():
+			_n["dead_t"] = float(_n.get("dead_t", 0.0)) + _delta
+		return
+	if _fight >= 1 and _avoid_marks():
 		return
 	if _fight == 0:
 		_go_to_soft(main.horn.global_position + Vector3(1.5, 0, 1.0), 1.0)
@@ -549,6 +657,26 @@ func _night(_delta: float) -> void:
 		_idle_t = 0.0
 
 
+## The Hydra's violet ground marks: once seen (~0.25 s), step out of them (the steam dash when it is ready).
+func _avoid_marks() -> bool:
+	var h: Node = main.waves.boss
+	if not is_instance_valid(h) or not h.has_method("danger_zones"):
+		return false
+	for z in h.danger_zones():
+		var c: Vector3 = z[0]
+		var r: float = z[1]
+		var age: float = z[3]
+		var d := Vector3(hero.global_position.x - c.x, 0, hero.global_position.z - c.z)
+		if d.length() > r + hero.radius + 0.3 or age < 0.25:
+			continue
+		var out := d.normalized() if d.length() > 0.1 else Unit.dir_of_yaw(hero.facing + PI)
+		if hero.dodge_cd <= 0.0 and hero.state != Hero.S.DODGE and hero.state != Hero.S.CAST:
+			hero._start_dodge(out)
+		hero.touch_move = Vector2(out.x, out.z)
+		return true
+	return false
+
+
 func _faro_attacked() -> bool:
 	for u in Game.query(1, Game.pharos.global_position, 9.0, false):
 		var en := u as Enemy
@@ -565,6 +693,8 @@ func _pick_target() -> Unit:
 		if not is_instance_valid(u) or not u.alive:
 			continue
 		var dh: float = u.flat_dist(hero.global_position)
+		if _human and dh > 30.0:
+			continue
 		var s := dh
 		if _fight >= 2:
 			var dp: float = u.flat_dist(ph)
@@ -647,6 +777,9 @@ func _heavy_threat() -> Unit:
 
 
 func _idle_spot() -> void:
+	if _human:
+		_go_to_soft(Vector3(0, 0, 8.0), 2.0)
+		return
 	# Wait where the next group will come ashore (the beaches were marked during the day).
 	var lane := 0
 	var g: Array = main.waves._groups
@@ -852,13 +985,13 @@ func _checks() -> void:
 		"t_dmg": t.dmg_stat(), "hero_hp": hero.max_hp_stat(), "hero_speed": hero.speed_stat(), "hero_dmg": hero.dmg_mult()}
 	var expect := {
 		"athena": {"pharos_hp": 1.3, "house_hp": 1.3, "wall_hp": 1.3},
-		"hestia": {"pharos_hp": 1.25, "house_inc": "+1"},
+		"hestia": {"pharos_hp": 1.25, "house_inc": "+2"},
 		"hephaestus": {"wall_hp": 1.6, "t_dmg": 1.2},
 		"artemis": {"t_range": "+2", "t_rate": 0.8},
 		"apollo": {"hero_hp": "+40"},
 		"hermes": {"hero_speed": 1.2},
 		"ares": {"hero_dmg": 1.3},
-		"demeter": {"farm_inc": "+2"},
+		"demeter": {"farm_inc": "+4"},
 	}
 	for id in expect:
 		Game.blessings.clear()
@@ -891,14 +1024,47 @@ func _checks() -> void:
 	print("[check] zeus       favor      %8.2f -> %8.2f (want %8.2f) %s" % [f0, hero.favor, f0 * 1.35, "ok" if absf(hero.favor - f0 * 1.35) < 0.01 else "FAIL"])
 	if absf(hero.favor - f0 * 1.35) >= 0.01:
 		fails += 1
-	# Poseidon: creatures spawn slowed.
+	# Poseidon: not slowed while still in the sea, slowed for 6 s once ashore.
 	Game.blessings.clear()
 	Game.take_blessing("poseidon")
-	var e: Enemy = main.waves.spawn("shade", 0)
-	print("[check] poseidon   slow       %8.2f for %.1fs %s" % [e.slow, e.slow_t, "ok" if e.slow >= 0.44 and e.slow_t > 5.0 else "FAIL"])
-	if e.slow < 0.44:
+	var sea: Enemy = main.waves.spawn("shade", 0)
+	var land: Enemy = main.waves.spawn("shade", 0, sea._land_s + 0.3)
+	await get_tree().create_timer(1.4).timeout
+	var ok_sea := sea.slow < 0.01
+	var ok_land := land.slow >= 0.44 and land.slow_t > 4.0
+	print("[check] poseidon   at sea     %8.2f (want 0) %s" % [sea.slow, "ok" if ok_sea else "FAIL"])
+	print("[check] poseidon   ashore     %8.2f for %.1fs %s" % [land.slow, land.slow_t, "ok" if ok_land else "FAIL"])
+	if not ok_sea:
 		fails += 1
-	e.queue_free()
+	if not ok_land:
+		fails += 1
+	sea.queue_free()
+	land.queue_free()
+	# Hermes: the steam dash goes 30 % further.
+	Game.blessings.clear()
+	var d0: float = await _dash_distance()
+	Game.take_blessing("hermes")
+	var d1: float = await _dash_distance()
+	var ok_h := absf(d1 / maxf(d0, 0.01) - 1.3) < 0.08
+	print("[check] hermes     dash       %8.2f -> %8.2f (want x1.30) %s" % [d0, d1, "ok" if ok_h else "FAIL"])
+	if not ok_h:
+		fails += 1
 	Game.blessings.clear()
 	print("[check] DONE fails=%d" % fails)
 	get_tree().quit()
+
+
+## One real steam dash on the open plaza: how far Fanós travels.
+func _dash_distance() -> float:
+	hero.teleport(Vector3(-1.0, 0, 13.0))
+	hero.state = Hero.S.NORMAL
+	hero.vel = Vector3.ZERO
+	hero.dodge_cd = 0.0
+	await get_tree().physics_frame
+	var from := hero.global_position
+	hero._start_dodge(Vector3(1, 0, 0))
+	while hero.state == Hero.S.DODGE:
+		await get_tree().physics_frame
+	for i in 10:
+		await get_tree().physics_frame
+	return Vector2(hero.global_position.x - from.x, hero.global_position.z - from.z).length()

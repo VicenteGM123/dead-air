@@ -51,8 +51,7 @@ func _apply_model(animate: bool) -> void:
 	max_hp = float(lv["hp"]) * Game.building_hp_mult(type)
 	hp = max_hp if animate or old_max <= 0.0 else hp + (max_hp - old_max)
 	Obstacles.remove_owner(self)
-	if type != "wall" and type != "dock":
-		Obstacles.add(global_position, footprint * 0.85, self)
+	_add_obstacles()
 	if animate:
 		_rise = 0.0
 	_on_model_changed()
@@ -60,6 +59,12 @@ func _apply_model(animate: bool) -> void:
 
 func _on_model_changed() -> void:
 	pass
+
+
+## What keeps units out of the building (a disc; walls override it with a line, docks stand on the water).
+func _add_obstacles() -> void:
+	if type != "wall" and type != "dock":
+		Obstacles.add(global_position, footprint * 0.85, self)
 
 
 func refresh_max_hp() -> void:

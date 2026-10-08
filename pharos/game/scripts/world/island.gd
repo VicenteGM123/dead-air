@@ -21,7 +21,7 @@ const DL_MAX := 9.0
 const DS_MAX := 9.0
 ## Field window: per-cell landscape fields are computed for |x|, |z| <= FIELD_EXT (the whole island).
 const FIELD_EXT := 74.0
-## Ground map: RGBA8 over [-GM_EXT, GM_EXT]^2. R = contact AO, G = bare soil / wear.
+## Ground map: RGBA8 over [-GM_EXT, GM_EXT]^2. R = contact AO, G = bare soil / wear, B = sown field (stubble).
 const GM_N := 512
 const GM_EXT := 72.0
 
@@ -41,7 +41,7 @@ const SPOT_DEFS := [
 	{"type": "house", "at": Vector2(-10.0, 7.5), "ring": 1},
 	{"type": "tower", "lane": 0, "r": 19.0, "off": -5.0, "ring": 1},
 	{"type": "wall", "lane": 0, "r": 26.0, "off": 0.0, "ring": 1},
-	{"type": "barracks", "lane": 0, "r": 13.5, "off": 7.0, "ring": 1},
+	{"type": "barracks", "lane": 0, "r": 19.0, "off": 6.0, "ring": 1},
 	{"type": "farm", "at": Vector2(-19.0, 17.0), "ring": 1},
 	{"type": "house", "at": Vector2(9.5, -9.0), "ring": 1},
 
@@ -51,8 +51,8 @@ const SPOT_DEFS := [
 	{"type": "wall", "lane": 2, "r": 28.0, "off": 0.0, "ring": 2},
 	{"type": "dock", "lane": 1, "coast": true, "off": 11.0, "ring": 2},
 	{"type": "dock", "lane": 0, "coast": true, "off": -13.0, "ring": 2},
-	{"type": "house", "at": Vector2(-9.5, -9.0), "ring": 2},
-	{"type": "house", "at": Vector2(17.5, 15.0), "ring": 2},
+	{"type": "house", "at": Vector2(-9.5, -8.5), "ring": 2},
+	{"type": "house", "at": Vector2(19.0, 16.0), "ring": 2},
 	{"type": "farm", "at": Vector2(19.0, -16.0), "ring": 2},
 	{"type": "barracks", "lane": 1, "r": 15.0, "off": 7.0, "ring": 2},
 
@@ -61,9 +61,9 @@ const SPOT_DEFS := [
 	{"type": "tower", "lane": 0, "r": 35.0, "off": 6.0, "ring": 3},
 	{"type": "tower", "lane": 1, "r": 38.0, "off": 6.0, "ring": 3},
 	{"type": "tower", "lane": 2, "r": 38.0, "off": -6.0, "ring": 3},
-	{"type": "farm", "at": Vector2(-20.0, -15.0), "ring": 3},
-	{"type": "house", "at": Vector2(-17.0, 26.0), "ring": 3},
-	{"type": "barracks", "lane": 2, "r": 15.0, "off": -7.0, "ring": 3},
+	{"type": "farm", "at": Vector2(-21.5, -18.0), "ring": 3},
+	{"type": "house", "at": Vector2(-17.0, 28.0), "ring": 3},
+	{"type": "barracks", "lane": 2, "r": 13.0, "off": 7.0, "ring": 3},
 	{"type": "dock", "lane": 2, "coast": true, "off": 12.0, "ring": 3},
 ]
 
@@ -120,6 +120,8 @@ var _cell_col := PackedColorArray()
 var _facet_col := PackedColorArray()
 var _facet_nrm := PackedVector3Array()
 var _facet_d := PackedFloat32Array() # plane offset: n . p = d
+var _vcol := PackedColorArray() # smooth ground colour per terrain-mesh vertex (grid _mesh_n^2, unjittered index)
+var _tc_smooth := false # set by _terrain_color: the triangle is plain ground, shaded from vertex colours
 var _mesh_n := 0
 var _mesh_ext := 0.0
 var _iso_cache := {}
@@ -157,6 +159,7 @@ func generate(seed_value: int = 7) -> void:
 	var t4 := Time.get_ticks_usec()
 	_build_paths_and_plaza()
 	_build_ground_map()
+	_build_detail_texture()
 	_build_water_texture()
 	var t5 := Time.get_ticks_usec()
 	print("Island: %d terrain tris, %d m2 terraced, %d hummocks, %d hollows | shape %d ms, heights %d ms, fields %d ms, mesh %d ms, rest %d ms" % [terrain.mesh.get_faces().size() / 3, _count_terraced(), hummocks.size(), hollows.size(), (t1 - t0) / 1000, (t2 - t1) / 1000, (t3 - t2) / 1000, (t4 - t3) / 1000, (t5 - t4) / 1000])
@@ -1424,6 +1427,7 @@ func _terrain_color(c: Vector3, nrm: Vector3, rng: RandomNumberGenerator) -> Col
 		if terrace_w[i] > 0.5:
 			var q := hs[i] / S
 			zc = zc.darkened(0.25 if q - floorf(q) > 0.78 else 0.0)
+		_tc_smooth = false
 		return Color(zc.r, zc.g, zc.b, 0.0)
 	var ang := angle_of(c.x, c.z)
 	var b := _bw_at(ang)
@@ -1480,7 +1484,101 @@ func _terrain_color(c: Vector3, nrm: Vector3, rng: RandomNumberGenerator) -> Col
 				col = col.lerp(Color(col.r * k, col.g * k, col.b * k), gw)
 	var kv := 1.0 + rng.randf_range(-0.03, 0.03)
 	var hv := rng.randf_range(-0.02, 0.02)
+	# Ground that is not rock, plaza or the zone debug view is shaded smoothly from per-vertex colours.
+	_tc_smooth = sl <= 0.24 and pz <= 0.0
 	return Color(clampf(col.r * kv * (1.0 + hv), 0.0, 1.0), clampf(col.g * kv, 0.0, 1.0), clampf(col.b * kv * (1.0 - hv), 0.0, 1.0), grass)
+
+
+## Smooth ground colour at a mesh vertex (rgb, a = grassiness): the cell colours interpolated, with the same dune,
+## trodden-lane and path-guard rules as the flat triangles, but no per-triangle noise, so meadows read as soft
+## painted fields instead of a mosaic of flat triangles.
+func _vertex_land_color(x: float, z: float, h: float) -> Color:
+	var ang := angle_of(x, z)
+	var b := _bw_at(ang)
+	var d_coast := coast_at(ang) - sqrt(x * x + z * z)
+	# Wet sand, beach sand and the gully's pebble cove, as on the flat triangles (the line between them and the
+	# meadow becomes a soft one-triangle blend).
+	if h < 0.16:
+		var w := Pal.SAND_WET.darkened(0.05)
+		return Color(w.r, w.g, w.b, 0.0)
+	if h < 1.2 and b > 0.35 and d_coast < 15.0:
+		var sc := Pal.SAND.lerp(Pal.SAND_WET, smoothstep(0.65, 0.18, h) * 0.6)
+		return Color(sc.r, sc.g, sc.b, 0.0)
+	if gully_d[_ci(x, z)] < 4.0 and d_coast < 4.0 and h < 1.0:
+		var pc := Pal.SAND.lerp(Landscape.GRAVEL, 0.35)
+		return Color(pc.r, pc.g, pc.b, 0.0)
+	var c := _bilerp_col(_cell_col, x, z)
+	var col := Color(c.r, c.g, c.b)
+	var grass := c.a
+	var w_dune := smoothstep(0.15, 0.25, b) * (1.0 - smoothstep(17.0, 20.0, d_coast)) * (1.0 - smoothstep(1.6, 2.1, h))
+	if w_dune > 0.0:
+		col = col.lerp(Pal.SAND.lerp(Landscape.DUNE_SAND, smoothstep(0.9, 1.6, h)), w_dune)
+		grass = lerpf(grass, 0.3, w_dune)
+	var lane := _bilerp(lane_mask, x, z)
+	if lane > 0.05 and h > 0.12:
+		col = col.lerp(Pal.GRASS_DRY.lerp(Pal.PATH, 0.4), smoothstep(0.5, 1.0, lane) * 0.5)
+		grass *= 1.0 - smoothstep(0.3, 0.8, lane)
+	var gw := 1.0 - smoothstep(3.5, 6.0, _bilerp(dl, x, z))
+	if gw > 0.0:
+		var y := Landscape.luma(col)
+		if y > 0.42:
+			var k := pow(0.42 / y, 1.0 / 2.2)
+			col = col.lerp(Color(col.r * k, col.g * k, col.b * k), gw)
+	return Color(col.r, col.g, col.b, grass)
+
+
+func _bilerp_col(a: PackedColorArray, x: float, z: float) -> Color:
+	var fx := clampf((x + EXTENT) / GRID, 0.0, n_cells - 1.001)
+	var fz := clampf((z + EXTENT) / GRID, 0.0, n_cells - 1.001)
+	var ix := int(fx)
+	var iz := int(fz)
+	var tx := fx - ix
+	var tz := fz - iz
+	var i := iz * n_cells + ix
+	return a[i].lerp(a[i + 1], tx).lerp(a[i + n_cells].lerp(a[i + n_cells + 1], tx), tz)
+
+
+## Normal of the smoothed ground (central differences over 1.8 m): soft slopes instead of facet noise.
+func _smooth_normal(x: float, z: float) -> Vector3:
+	var e := 0.9
+	var hx := height_at(x + e, z) - height_at(x - e, z)
+	var hz := height_at(x, z + e) - height_at(x, z - e)
+	return Vector3(-hx, 2.0 * e, -hz).normalized()
+
+
+## Smooth ground colour (rgb, a = grassiness) anywhere on the terrain mesh: what grass roots and tips take.
+func ground_color_at(x: float, z: float) -> Color:
+	if _vcol.is_empty():
+		return facet_color_at(x, z)
+	var fx := clampf((x + _mesh_ext) / MESH_CELL, 0.0, _mesh_n - 1.001)
+	var fz := clampf((z + _mesh_ext) / MESH_CELL, 0.0, _mesh_n - 1.001)
+	var ix := int(fx)
+	var iz := int(fz)
+	var tx := fx - ix
+	var tz := fz - iz
+	var i := iz * _mesh_n + ix
+	return _vcol[i].lerp(_vcol[i + 1], tx).lerp(_vcol[i + _mesh_n].lerp(_vcol[i + _mesh_n + 1], tx), tz)
+
+
+## Terrain vertex height: the heightfield, sunk 6 cm under the road ribbons (so the ribbon always covers the
+## facets) and kept below the plaza slabs next to the plaza rim.
+func _mesh_height(x: float, z: float) -> float:
+	var y := height_at(x, z)
+	var ci := _ci(x, z)
+	if dl[ci] < LANE_W + 0.6 and _lane_near[ci] >= 0:
+		var code := _lane_near[ci]
+		var pts: PackedVector3Array = lanes[code / 4096]
+		var k := code % 4096
+		var p := pts[k].lerp(pts[mini(k + 1, pts.size() - 1)], _lane_t[ci])
+		var r := Vector2(p.x, p.z).length()
+		var inland := coast_at(angle_of(p.x, p.z)) - r
+		if inland >= 9.0 and r >= PLAZA_R - 1.0:
+			var w := ribbon_half_width(p, inland)
+			y -= 0.06 * (1.0 - smoothstep(w - 0.45, w - 0.1, _bilerp(dl, x, z)))
+	var rr := sqrt(x * x + z * z)
+	if rr < PLAZA_R + 1.4:
+		y = minf(y, PLAZA_H + 0.02)
+	return y
 
 
 func _build_terrain_mesh() -> void:
@@ -1499,6 +1597,10 @@ func _build_terrain_mesh() -> void:
 	_mesh_n = m
 	var vx := PackedVector3Array()
 	vx.resize(m * m)
+	var vn := PackedVector3Array()
+	vn.resize(m * m)
+	_vcol.resize(m * m)
+	var wet := Color(Pal.SAND_WET.r, Pal.SAND_WET.g, Pal.SAND_WET.b, 0.0)
 	for iz in m:
 		for ix in m:
 			var x := -_mesh_ext + ix * MESH_CELL
@@ -1509,7 +1611,15 @@ func _build_terrain_mesh() -> void:
 				var j := 0.32 * (1.0 - lane_mask[ci] * 0.6) * (1.0 - plaza_mask[ci]) * (1.0 - 0.5 * terrace_w[ci])
 				x += rng.randf_range(-j, j) * MESH_CELL
 				z += rng.randf_range(-j, j) * MESH_CELL
-			vx[iz * m + ix] = Vector3(x, height_at(x, z), z)
+			var y := _mesh_height(x, z)
+			var k := iz * m + ix
+			vx[k] = Vector3(x, y, z)
+			if y > -1.2 and absf(x) < FIELD_EXT and absf(z) < FIELD_EXT:
+				vn[k] = _smooth_normal(x, z)
+				_vcol[k] = _vertex_land_color(x, z, y)
+			else:
+				vn[k] = Vector3.UP
+				_vcol[k] = wet
 	var nq := (m - 1) * (m - 1)
 	_facet_col.resize(nq * 2)
 	_facet_nrm.resize(nq * 2)
@@ -1517,62 +1627,81 @@ func _build_terrain_mesh() -> void:
 	var verts := PackedVector3Array()
 	var norms := PackedVector3Array()
 	var cols := PackedColorArray()
+	var uvs := PackedVector2Array()
 	verts.resize(nq * 6)
 	norms.resize(nq * 6)
 	cols.resize(nq * 6)
+	uvs.resize(nq * 6)
 	var nv := 0
-	var sea := Color(Pal.SAND_WET.r, Pal.SAND_WET.g, Pal.SAND_WET.b, 0.0)
 	for iz in m - 1:
 		for ix in m - 1:
 			var q := (iz * (m - 1) + ix) * 2
-			var a := vx[iz * m + ix]
-			var b := vx[iz * m + ix + 1]
-			var c := vx[(iz + 1) * m + ix + 1]
-			var d := vx[(iz + 1) * m + ix]
-			if maxf(maxf(a.y, b.y), maxf(c.y, d.y)) < -0.9:
-				_facet_col[q] = sea
-				_facet_col[q + 1] = sea
+			var ia := iz * m + ix
+			var ib := ia + 1
+			var ic := ia + m + 1
+			var id := ia + m
+			if maxf(maxf(vx[ia].y, vx[ib].y), maxf(vx[ic].y, vx[id].y)) < -0.9:
+				_facet_col[q] = wet
+				_facet_col[q + 1] = wet
 				_facet_nrm[q] = Vector3.UP
 				_facet_nrm[q + 1] = Vector3.UP
-				_facet_d[q] = a.y
-				_facet_d[q + 1] = a.y
+				_facet_d[q] = vx[ia].y
+				_facet_d[q + 1] = vx[ia].y
 				continue
 			# Alternate the diagonal for a less regular pattern.
 			var tris: Array
 			if (ix + iz) % 2 == 0:
-				tris = [[a, d, c], [a, c, b]]
+				tris = [[ia, id, ic], [ia, ic, ib]]
 			else:
-				tris = [[a, d, b], [b, d, c]]
+				tris = [[ia, id, ib], [ib, id, ic]]
 			for t in 2:
-				var p0: Vector3 = tris[t][0]
-				var p1: Vector3 = tris[t][1]
-				var p2: Vector3 = tris[t][2]
-				var nrm := (p1 - p0).cross(p2 - p0).normalized()
+				var i0: int = tris[t][0]
+				var i1: int = tris[t][1]
+				var i2: int = tris[t][2]
+				var nrm := (vx[i1] - vx[i0]).cross(vx[i2] - vx[i0]).normalized()
 				if nrm.y < 0.0:
 					nrm = -nrm
-					var tmp := p1
-					p1 = p2
-					p2 = tmp
-				var col := _terrain_color((p0 + p1 + p2) / 3.0, nrm, rng)
-				_facet_col[q + t] = col
+					var tmp := i1
+					i1 = i2
+					i2 = tmp
+				var p0 := vx[i0]
+				var col := _terrain_color((p0 + vx[i1] + vx[i2]) / 3.0, nrm, rng)
+				var fuv := Vector2(nrm.x, nrm.z)
+				# Godot's front face is clockwise: emit p0, p2, p1.
+				var order := [i0, i2, i1]
+				if _tc_smooth:
+					var tv := 1.0 + rng.randf_range(-0.012, 0.012)
+					var avg := Color(0, 0, 0, 0)
+					for k in 3:
+						var vi: int = order[k]
+						var vc := _vcol[vi]
+						verts[nv + k] = vx[vi]
+						norms[nv + k] = vn[vi]
+						cols[nv + k] = Color(clampf(vc.r * tv, 0.0, 1.0), clampf(vc.g * tv, 0.0, 1.0), clampf(vc.b * tv, 0.0, 1.0), vc.a)
+						uvs[nv + k] = fuv
+						avg += vc
+					_facet_col[q + t] = avg / 3.0
+				else:
+					for k in 3:
+						var vi: int = order[k]
+						verts[nv + k] = vx[vi]
+						norms[nv + k] = nrm
+						cols[nv + k] = col
+						uvs[nv + k] = fuv
+					_facet_col[q + t] = col
 				_facet_nrm[q + t] = nrm
 				_facet_d[q + t] = nrm.dot(p0)
-				# Godot's front face is clockwise: emit p0, p2, p1.
-				verts[nv] = p0
-				verts[nv + 1] = p2
-				verts[nv + 2] = p1
-				for k in 3:
-					norms[nv + k] = nrm
-					cols[nv + k] = col
 				nv += 3
 	verts.resize(nv)
 	norms.resize(nv)
 	cols.resize(nv)
+	uvs.resize(nv)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = norms
 	arrays[Mesh.ARRAY_COLOR] = cols
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	terrain = MeshInstance3D.new()
@@ -1584,53 +1713,97 @@ func _build_terrain_mesh() -> void:
 
 # --- paths and plaza ---------------------------------------------------------------------------------------
 
+## Point (XZ, y = 0) at arc length s along lane li.
+func _lane_xz(li: int, s: float) -> Vector3:
+	var pts: PackedVector3Array = lanes[li]
+	var cum: PackedFloat32Array = lane_len[li]
+	if s <= 0.0:
+		return pts[0]
+	if s >= cum[cum.size() - 1]:
+		return pts[pts.size() - 1]
+	var lo := 0
+	var hi := cum.size() - 1
+	while hi - lo > 1:
+		var mid := (lo + hi) >> 1
+		if cum[mid] <= s:
+			lo = mid
+		else:
+			hi = mid
+	return pts[lo].lerp(pts[hi], (s - cum[lo]) / maxf(cum[hi] - cum[lo], 1e-5))
+
+
+## Half width of the road ribbon at lane point p: it breathes a little and narrows towards the beach.
+func ribbon_half_width(p: Vector3, inland: float) -> float:
+	return LANE_W * (0.92 + 0.12 * noise2.get_noise_2d(p.x * 3.0, p.z * 3.0)) * clampf((inland - 9.0) / 6.0 + 0.55, 0.55, 1.0)
+
+
+## Ribbon height: just above the highest terrain facet within 0.35 m.
+func _ribbon_y(x: float, z: float) -> float:
+	var y := facet_height_at(x, z)
+	for o: Vector2 in [Vector2(0.35, 0.0), Vector2(-0.35, 0.0), Vector2(0.0, 0.35), Vector2(0.0, -0.35)]:
+		y = maxf(y, facet_height_at(x + o.x, z + o.y))
+	return y + 0.03
+
+
 ## Dirt roads as ribbons laid on the terrain (crisp edges instead of jagged triangle colouring) and a paved
 ## plaza of concentric stone courses around the lighthouse.
 func _build_paths_and_plaza() -> void:
 	var mb := MeshBuilder.new(515)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 515
+	# Each road is a ribbon of four strips, 0.5 m long, laid just above the highest terrain facet under it so the
+	# jittered ground never pokes through (the sunken lane and its lip make the facets cut corners).
+	const STEP := 0.5
+	const CROSS := [-1.0, -0.5, 0.0, 0.5, 1.0]
+	var rb := MeshBuilder.new(516)
 	for li in lanes.size():
-		var pts: PackedVector3Array = lanes[li]
-		var n := pts.size()
+		var total := lane_length(li)
 		var have := false
-		var prev_l := Vector3.ZERO
-		var prev_r := Vector3.ZERO
-		for k in n:
-			var p := pts[k]
+		var prev: Array[Vector3] = []
+		var s := 0.0
+		var seg := 0
+		var c := Pal.PATH
+		while s <= total:
+			var p := _lane_xz(li, s)
 			var ang := angle_of(p.x, p.z)
 			var inland := coast_at(ang) - Vector2(p.x, p.z).length()
 			if inland < 9.0 or Vector2(p.x, p.z).length() < PLAZA_R - 1.0:
 				have = false
+				s += STEP
 				continue
-			var dir := (pts[mini(k + 1, n - 1)] - pts[maxi(k - 1, 0)])
+			var dir := _lane_xz(li, minf(s + 0.6, total)) - _lane_xz(li, maxf(s - 0.6, 0.0))
 			dir.y = 0.0
 			dir = dir.normalized()
 			var right := Vector3(-dir.z, 0, dir.x)
-			# Width breathes a little; the road narrows towards the beach.
-			var w := LANE_W * (0.92 + 0.12 * noise2.get_noise_2d(p.x * 3.0, p.z * 3.0)) * clampf((inland - 9.0) / 6.0 + 0.55, 0.55, 1.0)
-			var l := p - right * w
-			var r := p + right * w
-			l.y = height_at(l.x, l.z) + 0.05
-			r.y = height_at(r.x, r.z) + 0.05
+			var w := ribbon_half_width(p, inland)
+			var row: Array[Vector3] = []
+			for u: float in CROSS:
+				var q := p + right * (w * u)
+				q.y = _ribbon_y(q.x, q.z) + (0.006 if u == 0.0 else 0.0)
+				row.append(q)
 			if have:
-				var c := Pal.PATH.lerp(Pal.PATH_DARK, clampf(0.35 + noise2.get_noise_2d(p.x, p.z) * 0.6, 0.0, 1.0))
-				var k2 := 1.0 + rng.randf_range(-0.025, 0.025)
-				c = Color(c.r * k2, c.g * k2, c.b * k2)
-				var mid_prev := (prev_l + prev_r) * 0.5 + Vector3(0, 0.005, 0)
-				var mid := (l + r) * 0.5 + Vector3(0, 0.005, 0)
+				if seg % 2 == 0:
+					c = Pal.PATH.lerp(Pal.PATH_DARK, clampf(0.35 + noise2.get_noise_2d(p.x, p.z) * 0.6, 0.0, 1.0))
+					var k2 := 1.0 + rng.randf_range(-0.025, 0.025)
+					c = Color(c.r * k2, c.g * k2, c.b * k2)
 				# Two halves so the crown of the road catches the light slightly differently.
-				mb.quad(prev_l, mid_prev, mid, l, c)
-				mb.quad(mid_prev, prev_r, r, mid, c.darkened(0.03))
+				for j in 4:
+					rb.quad(prev[j], prev[j + 1], row[j + 1], row[j], c if j < 2 else c.darkened(0.03))
 				# Pebbles along the verge.
-				if rng.randf() < 0.35:
+				if rng.randf() < 0.18:
 					var side := -1.0 if rng.randf() < 0.5 else 1.0
 					var q := p + right * side * (w + rng.randf_range(0.05, 0.3))
-					q.y = height_at(q.x, q.z)
-					mb.ico(q + Vector3(0, 0.05, 0), rng.randf_range(0.08, 0.16), Pal.ROCK.lerp(Pal.LIMESTONE, rng.randf()), 0, 0.15, Vector3(1.0, 0.55, 1.0))
-			prev_l = l
-			prev_r = r
+					q.y = facet_height_at(q.x, q.z)
+					mb.ico(q + Vector3(0, 0.04, 0), rng.randf_range(0.08, 0.16), Pal.ROCK.lerp(Pal.LIMESTONE, rng.randf()), 0, 0.15, Vector3(1.0, 0.55, 1.0))
+				seg += 1
+			prev = row
 			have = true
+			s += STEP
+	# The roads are shaded like the ground under them: mostly the smoothed normal, a little of the facet.
+	for i in rb._v.size():
+		var v := rb._v[i]
+		rb._n[i] = (_smooth_normal(v.x, v.z) * 0.7 + rb._n[i] * 0.3).normalized()
+	mb.append_builder(rb)
 	# Plaza: concentric courses of limestone slabs with thin joints.
 	var y := PLAZA_H + 0.04
 	var r0 := 0.0
@@ -1662,6 +1835,8 @@ func _build_paths_and_plaza() -> void:
 		ring += 1
 	# Joint colour underneath the slabs.
 	mb.cyl(Vector3(0, y - 0.03, 0), 0.02, PLAZA_R, PLAZA_R, 40, Pal.LIMESTONE_DARK.darkened(0.25), true)
+	# Kerb: a low ring of dressed stone that seals the plaza edge against the meadow.
+	mb.ring(Vector3(0, PLAZA_H - 0.3, 0), PLAZA_R + 0.22, PLAZA_R - 0.03, 0.39, 56, Pal.LIMESTONE_DARK.darkened(0.06))
 	var mi := MeshInstance3D.new()
 	mi.name = "PathsPlaza"
 	mi.mesh = mb.commit()
@@ -1722,6 +1897,27 @@ func _build_ground_map() -> void:
 					_gm[idx] = bv
 
 
+## Painted meadow patches for the terrain shader: a domain-warped noise over the ground-map rect, generated
+## natively (FastNoiseLite.get_image) so it costs a few milliseconds even on the web.
+func _build_detail_texture() -> void:
+	var dn := FastNoiseLite.new()
+	dn.seed = 917
+	dn.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	dn.frequency = 0.07
+	dn.fractal_type = FastNoiseLite.FRACTAL_FBM
+	dn.fractal_octaves = 3
+	dn.fractal_lacunarity = 2.3
+	dn.fractal_gain = 0.45
+	dn.domain_warp_enabled = true
+	dn.domain_warp_type = FastNoiseLite.DOMAIN_WARP_SIMPLEX
+	dn.domain_warp_amplitude = 14.0
+	dn.domain_warp_frequency = 0.03
+	var img := dn.get_image(512, 512, false, false, true)
+	img.generate_mipmaps()
+	var tex := ImageTexture.create_from_image(img)
+	Materials.terrain().set_shader_parameter("detail_tex", tex)
+
+
 ## Soft disc / capsule splat into a ground-map channel (0 = AO, 1 = soil), combined with max().
 func _splat(ch: int, a: Vector2, b: Vector2, R: float, s: float) -> void:
 	if _gm.is_empty() or R <= 0.0 or s <= 0.0:
@@ -1758,6 +1954,12 @@ func splat_ao(a: Vector2, R: float, s: float, b: Variant = null) -> void:
 ## Bare soil / wear (disc, or a capsule from a to b).
 func splat_wear(a: Vector2, R: float, s: float, b: Variant = null) -> void:
 	_splat(1, a, a if b == null else b, R, s)
+
+
+## Sown field: golden stubble under the wheat and barley beds, so a field still reads as a gold strip from far
+## away when its stalks have shrunk with distance (disc, or a capsule from a to b).
+func splat_field(a: Vector2, R: float, s: float, b: Variant = null) -> void:
+	_splat(2, a, a if b == null else b, R, s)
 
 
 func commit_ground_map() -> void:

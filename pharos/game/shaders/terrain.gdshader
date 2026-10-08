@@ -1,9 +1,14 @@
-// Island ground. Same lighting as lowpoly.gdshader (flat facets, hemisphere ambient, wrapped sun, haze, and the
-// Compatibility sRGB pass compensation of pharos.gdshaderinc), plus:
+// Island ground. Same lighting as lowpoly.gdshader (hemisphere ambient, wrapped sun, haze, and the Compatibility
+// sRGB pass compensation of pharos.gdshaderinc), plus:
+//   - soft relief: the vertex NORMAL is the smoothed ground normal and UV carries the facet normal (x, z); the
+//     two are blended (facet_mix), so slopes, mounds and terrace steps read as gentle light and shade while the
+//     ground keeps a hint of the low-poly facets of everything else;
 //   - a ground map (ground_tex over ground_rect): R = contact AO under trees, rocks and walls, G = bare soil /
-//     wear (olive basins, vine rows, lane verges, cleared build plots);
-//   - painterly grass strokes, stretched north-south along the meltemi, scaled by the vertex alpha
-//     (grassiness: 0 on sand, rock, plaza, paths and risers) and faded with distance.
+//     wear (olive basins, vine rows, lane verges, cleared build plots), with a broken, painterly edge, B = sown
+//     wheat and barley beds (golden stubble);
+//   - painted meadow patches from a baked noise (detail_tex, same rect, mipmapped so it calms down with
+//     distance) and a fine grain near the camera, both scaled by the vertex alpha (grassiness: 0 on sand,
+//     rock, plaza, paths and risers).
 shader_type spatial;
 render_mode cull_back, depth_draw_opaque, specular_disabled;
 
@@ -11,8 +16,11 @@ render_mode cull_back, depth_draw_opaque, specular_disabled;
 
 uniform float wrap = 0.35;
 uniform sampler2D ground_tex : filter_linear_mipmap, repeat_disable, hint_default_black;
+uniform sampler2D detail_tex : filter_linear_mipmap, repeat_enable, hint_default_white;
 uniform vec4 ground_rect = vec4(-72.0, -72.0, 144.0, 144.0);
-uniform float stroke_far = 60.0;
+uniform float facet_mix = 0.3;
+uniform float detail_far = 46.0;
+uniform float patch_strength = 1.0;
 
 varying vec3 v_albedo;
 varying float v_grass;
@@ -24,6 +32,8 @@ void vertex() {
 	v_albedo = ph_srgb_to_linear(COLOR.rgb);
 	v_grass = COLOR.a;
 	v_wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	vec3 fn = vec3(UV.x, sqrt(max(1.0 - dot(UV, UV), 0.0)), UV.y);
+	NORMAL = normalize(mix(NORMAL, fn, facet_mix));
 }
 
 void fragment() {
@@ -33,16 +43,34 @@ void fragment() {
 	if (guv.x < 0.0 || guv.y < 0.0 || guv.x > 1.0 || guv.y > 1.0) {
 		gm = vec4(0.0);
 	}
-	const vec3 SOIL_LIN = vec3(0.4026, 0.2318, 0.1191); // #A98361
-	vec3 albedo = mix(v_albedo, SOIL_LIN * (1.0 - 0.15 * gm.g), gm.g * 0.85);
-	float fade = v_grass * (1.0 - smoothstep(stroke_far * 0.5, stroke_far, length(VERTEX)));
-	if (fade > 0.001) {
-		vec2 q = vec2(v_wpos.x * 1.9 + v_wpos.z * 0.4, v_wpos.z * 0.75); // strokes stretched N-S
-		float n = 0.6 * ph_noise(q * 1.6) + 0.4 * ph_noise(q * 4.1);
-		float st = smoothstep(0.42, 0.50, n) + smoothstep(0.62, 0.70, n) - 1.0; // three posterised levels
-		vec3 stroke = (1.0 + 0.05 * st) * (st > 0.0 ? vec3(1.06, 1.02, 0.90) : vec3(1.0));
-		albedo *= mix(vec3(1.0), stroke, fade);
+	float dist = length(VERTEX);
+	float near_k = 1.0 - smoothstep(detail_far * 0.45, detail_far, dist);
+	// Fine grain (two value-noise octaves, about 0.3 m and 0.12 m), only near the camera.
+	float grain = 0.5;
+	if (near_k > 0.001) {
+		grain = 0.62 * ph_noise(v_wpos.xz * 3.1) + 0.38 * ph_noise(v_wpos.xz * 8.3 + vec2(17.0, 5.0));
 	}
+	// Bare soil with a ragged edge instead of a soft blur.
+	const vec3 SOIL_LIN = vec3(0.4026, 0.2318, 0.1191); // #A98361
+	float soil = clamp(gm.g * 1.25 + (grain - 0.5) * 0.55 * near_k - 0.08, 0.0, 1.0);
+	soil = smoothstep(0.08, 0.62, soil) * min(gm.g * 3.0, 1.0);
+	vec3 albedo = mix(v_albedo, SOIL_LIN * (0.92 + 0.16 * grain), soil * 0.9);
+	// Sown beds: golden stubble between the stalks (and a gold strip from afar).
+	const vec3 STUBBLE_LIN = vec3(0.619, 0.465, 0.122); // #CDB462
+	albedo = mix(albedo, STUBBLE_LIN * (0.9 + 0.2 * grain), smoothstep(0.1, 0.7, gm.b) * 0.85);
+	// Painted meadow patches: a darker, bluer green (clover, damp) and a lighter, yellower green (sunlit, dry).
+	// The texture is stretched north-south, along the meltemi.
+	float dv = texture(detail_tex, vec2(guv.x * 1.6, guv.y * 1.05)).r;
+	float dark = smoothstep(0.43, 0.31, dv);
+	float light = smoothstep(0.60, 0.74, dv);
+	float g = v_grass * (1.0 - soil) * patch_strength;
+	vec3 tint = vec3(1.0) - dark * vec3(0.17, 0.09, 0.15) + light * vec3(0.08, 0.06, -0.05);
+	albedo *= mix(vec3(1.0), tint, g);
+	// Broad patches (10-15 m) that still read from the title camera: greener swales, sunnier yellow slopes.
+	float bv = (texture(detail_tex, guv * 0.27 + vec2(0.31, 0.57)).r - 0.5) * 2.0;
+	vec3 broad = bv < 0.0 ? mix(vec3(1.0), vec3(0.90, 0.97, 0.88), -bv) : mix(vec3(1.0), vec3(1.07, 1.04, 0.92), bv);
+	albedo *= mix(vec3(1.0), broad, v_grass * 0.85 * patch_strength);
+	albedo *= 1.0 + (grain - 0.5) * 0.16 * near_k * (0.35 + 0.65 * v_grass);
 	albedo *= mix(1.0, 0.62, gm.r);
 	vec3 base = albedo * ph_ambient(wn);
 	float f = ph_fog(VERTEX);

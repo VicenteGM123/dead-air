@@ -22,6 +22,7 @@ var bot: Node = null
 var _offered: Array = []
 var _title_t := 0.0
 var _seq := 0
+var _snap := {} # the island at the last dusk (Game.snapshot()), for "Reintentar la noche"
 
 
 func _ready() -> void:
@@ -227,19 +228,24 @@ func start_game() -> void:
 	Game.coins_changed.emit(Game.coins, 0)
 	_debug_setup()
 	begin_day(true)
+	_snap = Game.snapshot()
 	if int(Game.arg("startnight", "0")) > 0:
 		Game.night = int(Game.arg("startnight")) - 1
 		await get_tree().create_timer(0.3).timeout
 		call_night()
 
 
-## Test helper for screenshots: a pack of creatures already at the edge of the village.
+## Test helper for screenshots: a pack of creatures already at the edge of the village (on the last night, the
+## Hydra herself rises there instead of out at sea).
 func _debug_near_fight() -> void:
+	if Game.night >= Data.NIGHTS:
+		waves._groups = waves._groups.filter(func(g): return g[2] != "hydra")
+		waves.spawn("hydra", 0, island.lane_length(0) - 30.0)
+		return
 	var kinds := ["shade", "shade", "shade", "ker", "shielded", "shade", "archer", "shade", "cyclops"]
 	for i in kinds.size():
-		var e: Enemy = waves.spawn(kinds[i], 0)
-		e.s = island.lane_length(0) - 22.0 + float(i % 3) * 1.6
-		e.global_position = e._lane_point(e.s)
+		# Just outside the southern wall plot (s 56), so a built wall meets them.
+		waves.spawn(kinds[i], 0, island.lane_length(0) - 27.0 + float(i % 3) * 1.6)
 
 
 ## Test helpers: village=1 pre-builds the island, pl=N sets the lighthouse level.
@@ -270,6 +276,8 @@ func begin_day(first: bool = false) -> void:
 func call_night() -> void:
 	if Game.phase != Game.Phase.DAY:
 		return
+	# The island as it stands now is where "Reintentar la noche" brings the player back to.
+	_snap = Game.snapshot()
 	var seq := _seq
 	Game.set_phase(Game.Phase.DUSK)
 	Sfx.play("night_horn", horn.global_position, 2.0)
@@ -306,7 +314,8 @@ func _on_night_cleared() -> void:
 	await get_tree().create_timer(2.2).timeout
 	if seq != _seq:
 		return
-	_dawn_rewards()
+	if Game.night < Data.NIGHTS:
+		_dawn_rewards() # after the last night the coins would be useless: straight on to the victory
 	await get_tree().create_timer(2.6).timeout
 	if seq != _seq:
 		return
@@ -368,6 +377,7 @@ func on_pharos_destroyed() -> void:
 	if Game.phase == Game.Phase.DEFEAT or Game.phase == Game.Phase.VICTORY:
 		return
 	_seq += 1
+	var seq := _seq
 	Game.set_phase(Game.Phase.DEFEAT)
 	waves.stop()
 	Sfx.music("")
@@ -376,6 +386,8 @@ func on_pharos_destroyed() -> void:
 	rig.target = Game.pharos
 	rig.distance = 40.0
 	await get_tree().create_timer(1.2).timeout
+	if seq != _seq:
+		return
 	Game.time_scale_target = 1.0
 	if ui and ui.has_method("show_end"):
 		ui.show_end(false)
@@ -385,9 +397,46 @@ func victory() -> void:
 	Game.set_phase(Game.Phase.VICTORY)
 	Sfx.play("stinger_victory")
 	Sfx.music("title")
-	hero.rig.play("cheer")
+	if hero.alive and hero.state != Hero.S.DEAD:
+		hero.rig.play("cheer")
 	if ui and ui.has_method("show_end"):
 		ui.show_end(true)
+
+
+## True when "Reintentar la noche" has a dusk to go back to.
+func can_retry() -> bool:
+	return not _snap.is_empty()
+
+
+## "Reintentar la noche" (defeat screen): back to the day before the lost night, exactly as the island stood when
+## the horn was blown: same coins, buildings, lighthouse, blessings and Llama; the creatures are gone, everything
+## razed stands again and Fanós is relit by the lighthouse. Nothing is lost but the night itself.
+func retry_night() -> void:
+	if _snap.is_empty():
+		return
+	_seq += 1
+	Game.paused = false
+	get_tree().paused = false
+	waves.stop()
+	for u in units_root.get_children():
+		if u is Enemy:
+			Game.unregister(u, 1)
+			u.queue_free()
+	projectiles.clear()
+	Game.restore_snapshot(_snap)
+	var states: Array = _snap.get("spots", [])
+	for i in mini(spots.size(), states.size()):
+		spots[i].set_state(states[i])
+	Game.pharos = pharos_spot.building
+	Game.pharos_level = pharos_spot.level()
+	Game.pharos_level_changed.emit(Game.pharos_level)
+	hero.reset_for_retry(float(_snap.get("favor", 0.0)))
+	tod.transition_to("dawn", 1.0)
+	tod.transition_to("day", 1.4)
+	rig.free_mode = false
+	rig.target = hero
+	rig.snap()
+	begin_day()
 
 
 func restart() -> void:
@@ -416,7 +465,7 @@ func _process(delta: float) -> void:
 		var ahead := hero.vel * 0.35
 		rig.look_ahead = rig.look_ahead.lerp(Vector3(ahead.x, 0, ahead.z), 1.0 - exp(-delta * 2.0))
 		var zoom := 27.0 + (4.0 if Game.phase == Game.Phase.NIGHT else 0.0)
-		if waves.boss and is_instance_valid(waves.boss) and waves.boss.alive:
+		if is_instance_valid(waves.boss) and waves.boss.alive:
 			zoom = 36.0
 		rig.distance = lerpf(rig.distance, zoom, 1.0 - exp(-delta * 1.2))
 

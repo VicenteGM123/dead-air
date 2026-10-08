@@ -36,6 +36,9 @@ var counts := {}
 var grass_excl := PackedByteArray()
 var grass_boost := PackedByteArray()
 var outcrops: Array = [] # Vector2 centres of the granite outcrops (goats like them)
+## Sown wheat / barley beds for Grass, which grows them as rows of tall swaying stalks:
+## {c: Vector2 centre, yaw, hx, hz (half extents along the contour / across it), barley: bool}.
+var wheat_beds: Array = []
 
 var _batches := {} # key -> {mesh, material, xforms: Array[Transform3D], shadow}
 var _nature: Script
@@ -371,18 +374,19 @@ func _tree(fn: String, x: float, z: float, sc: float, force: bool = false, yaw: 
 	return true
 
 
-func _shrub_ok(fn: String, x: float, z: float, sc: float) -> bool:
+func _shrub_ok(fn: String, x: float, z: float, sc: float, pack: float = 0.8) -> bool:
 	var r: float = _shrub_r(fn) * sc
 	if island.lane_dist_at(x, z) < LANE_W + 1.2 + r or island.spot_sd_at(x, z) < 0.6 + r:
 		return false
 	if island.height_at(x, z) < 0.3 or island.slope_at(x, z) > 0.35 or Vector2(x, z).length() < 9.0:
 		return false
-	return _occ_free(Vector2(x, z), r, 0.8, 0.05) and _free_spot(x, z, -0.5)
+	return _occ_free(Vector2(x, z), r, pack, 0.05) and _free_spot(x, z, -0.5)
 
 
-## Shrubs, cushions, flower patches: AO by kind, grass excluded under the cushion.
-func _shrub(fn: String, x: float, z: float, sc: float, variant: int = -1, check: bool = true, variants: int = 3) -> bool:
-	if check and not _shrub_ok(fn, x, z, sc):
+## Shrubs, cushions, flower patches: AO by kind, grass excluded under the cushion. `pack` < 0.8 lets cushions
+## touch (phrygana grows as a mosaic of cushions, not as evenly spaced dots).
+func _shrub(fn: String, x: float, z: float, sc: float, variant: int = -1, check: bool = true, variants: int = 3, pack: float = 0.8) -> bool:
+	if check and not _shrub_ok(fn, x, z, sc, pack):
 		return false
 	var r: float = _shrub_r(fn) * sc
 	var v := variant if variant >= 0 else rng.randi() % variants
@@ -478,17 +482,17 @@ func _landmarks() -> void:
 	_tree("cypress", -2.7, -15.7, 1.0, true)
 	_tree("fig_tree", -7.0, 16.0, 1.0, true, RANDOM, 0.0, Vector2.ZERO, false, 1)
 	_tree("cypress", -8.7, 20.0, 0.95, true)
-	_tree("pomegranate", -14.0, 3.4, 1.0, true, RANDOM, 0.0, Vector2.ZERO, false, 1)
+	_tree("pomegranate", Landscape.POMEGRANATE_W.x, Landscape.POMEGRANATE_W.y, 1.0, true, RANDOM, 0.0, Vector2.ZERO, false, 1)
 	# Lane markers.
 	_tree("cypress", 20.3, -0.4, 1.0, true)
-	_tree("cypress", 10.6, 18.3, 1.0, true)
+	_tree("cypress", Landscape.CYPRESS_S.x, Landscape.CYPRESS_S.y, 1.0, true)
 	# The spring: basin, a plane tree overhanging it, beehives with a windbreak.
 	var sp := Landscape.SPRING
 	_static("spring_basin", 0, sp.x, sp.y, 0.95)
 	island.splat_wear(sp, 1.6, 0.45)
 	_gm_splat(true, sp, sp, 1.5, 255)
 	Obstacles.add(Vector3(sp.x, island.height_at(sp.x, sp.y), sp.y), 0.9, self)
-	_tree("plane_tree", 24.6, 19.4, 0.8, true, 2.2, 0.0, Vector2.ZERO, false, 1)
+	_tree("plane_tree", Landscape.SPRING_PLANE.x, Landscape.SPRING_PLANE.y, 0.8, true, 2.2, 0.0, Vector2.ZERO, false, 1)
 	var bh := Landscape.BEEHIVES
 	_static("beehives", 0, bh.x, bh.y, 0.52)
 	island.splat_wear(bh, 1.2, 0.3)
@@ -638,7 +642,7 @@ func _terraces() -> void:
 	_olive_rows(Landscape.T_N, 9, 6.0)
 	# T_E: vineyard on the benches, wheat on the lowest.
 	_vine_rows(Landscape.T_E, 8)
-	_wheat(Landscape.T_E, 2, true)
+	_wheat(Landscape.T_E, 3, true)
 	# T_W: wheat and barley strips, a few olives on the downhill edges, the old olive in the wheat.
 	_wheat(Landscape.T_W, 12, false)
 	var olives_w := 0
@@ -648,8 +652,9 @@ func _terraces() -> void:
 			if olives_w < 3 and _tree("olive_tree", p.x, p.y, rng.randf_range(0.85, 1.05), false, RANDOM, 0.0, Vector2.ZERO, false, 3):
 				island.splat_wear(p, 1.0, 0.8)
 				olives_w += 1
-	# T_SW: vines high up, olives lower down.
+	# T_SW: vines high up, olives in the middle, barley on the lowest bench.
 	_vine_rows(Landscape.T_SW, 10)
+	_wheat(Landscape.T_SW, 4, false)
 	_olive_rows(Landscape.T_SW, 4, 6.0)
 	# T_SE: the kepos (orchard) fed by the spring: fig, almond, pomegranate repeating along the benches.
 	var seq := ["fig_tree", "almond_tree", "pomegranate"]
@@ -786,19 +791,36 @@ func _wheat(blk: int, target: int, lowest_only: bool, widest_only: bool = false)
 			if ok and _occ_free(p, 1.2, 1.0, 0.0):
 				var t := (b - a).normalized()
 				var yaw := atan2(-t.y, t.x) + deg_to_rad(rng.randf_range(-3.0, 3.0))
-				# Fit the patch to the bench: 0.39 m of height per bench, 0.8 m clear of the walls.
-				var depth := _mesh("wheat_patch", 0).get_aabb().size.z
+				# Fit the bed to the bench: 0.39 m of height per bench, 0.8 m clear of the walls.
 				var avail := 0.78 * Landscape.TERRACE_STEP / maxf(g, 0.03) - 1.0
-				var sz := clampf(avail / maxf(depth, 0.5), 0.55, 1.0)
-				_add("wheat_patch", rng.randi() % 2, _xf(p.x, p.y, yaw, Vector3(1.0, 1.0, sz), Vector2.ZERO, 0.0, 0.03))
-				_occ_add(p, 1.2)
-				island.splat_ao(a, 1.3, 0.15, b)
-				_gm_splat(true, a, b, 1.25, 255)
+				var sz := clampf(avail / 2.5, 0.55, 1.0)
+				_sow(p, yaw, 1.45, 1.2 * sz, blk == Landscape.T_SW or rng.randf() < 0.3)
 				n += 1
 				s += 3.0
 			else:
 				s += 1.0
 	counts["wheat_%s" % Landscape.BLOCK_NAMES[blk]] = int(counts.get("wheat_%s" % Landscape.BLOCK_NAMES[blk], 0)) + n
+
+
+## A sown bed (wheat or barley) for Grass: centre, contour yaw and half extents. Splats soil and a little AO and
+## keeps the meadow grass out of it.
+func _sow(p: Vector2, yaw: float, hx: float, hz: float, barley: bool) -> void:
+	var t := Vector2(cos(yaw), -sin(yaw))
+	var a := p - t * (hx - hz * 0.5)
+	var b := p + t * (hx - hz * 0.5)
+	wheat_beds.append({"c": p, "yaw": yaw, "hx": hx, "hz": hz, "barley": barley})
+	_count("wheat_patch")
+	# A footprint-only batch, so code that reads the layout from _batches (the ambient animals) still sees the
+	# beds; Grass draws them, _commit skips it.
+	if not _batches.has("wheat_patch#0"):
+		var box := BoxMesh.new()
+		box.size = Vector3(2.0 * hx, 0.6, 2.4)
+		_batches["wheat_patch#0"] = {"mesh": box, "material": null, "xforms": [], "shadow": false, "virtual": true}
+	_batches["wheat_patch#0"]["xforms"].append(Transform3D(Basis(Vector3.UP, yaw) * Basis.from_scale(Vector3(1.0, 1.0, hz / 1.2)), Vector3(p.x, island.height_at(p.x, p.y), p.y)))
+	_occ_add(p, minf(hx, 1.4))
+	island.splat_ao(a, hz * 1.05, 0.12, b)
+	island.splat_field(a, hz * 1.15, 0.9, b)
+	_gm_splat(true, a, b, hz * 1.08, 255)
 
 
 ## Field walls round the outer edge of the terraced blocks (they keep the goats out), with gates.
@@ -1035,17 +1057,24 @@ func _cliff_top_ok(x: float, z: float) -> bool:
 
 
 func _cliffs() -> void:
+	# Boulders on the cliffs in small groups (one big, one or two smaller leaning on it), with bare rock between.
 	var placed := 0
 	var tries := 0
 	while placed < 30 and tries < 3000:
 		tries += 1
 		var x := rng.randf_range(-66, 66)
 		var z := rng.randf_range(-66, 66)
-		if not _cliff_ok(x, z) or not _occ_free(Vector2(x, z), 1.0, 1.0, 1.0):
+		if not _cliff_ok(x, z) or not _occ_free(Vector2(x, z), 1.0, 1.0, 2.5):
 			continue
-		var sc := rng.randf_range(0.8, 1.5)
+		var sc := rng.randf_range(1.0, 1.5)
 		_rock("rock_large", x, z, sc, 0.1, Vector3.ZERO, 1.0 * sc)
 		placed += 1
+		for j in rng.randi_range(1, 2):
+			var q := Vector2(x, z) + Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(1.3, 1.9) * sc
+			var s2 := sc * rng.randf_range(0.45, 0.7)
+			if _cliff_ok(q.x, q.y) and _occ_free(q, 0.95 * s2, 0.7, 0.0):
+				_rock("rock_large", q.x, q.y, s2, 0.1, Vector3.ZERO, 0.9 * s2)
+				placed += 1
 	# Junipers on the cliff tops, headlands first, singles or pairs at least 12 m apart.
 	var junipers: Array[Vector2] = []
 	var cands: Array[Vector2] = []
@@ -1075,16 +1104,21 @@ func _cliffs() -> void:
 				var p2 := p + Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(2.2, 3.0)
 				if _cliff_top_ok(p2.x, p2.y):
 					_juniper(p2)
-	# Thyme on the flat cliff tops.
+	# Thyme on the flat cliff tops, in wind-pressed clumps of three to six.
 	var thyme := 0
 	tries = 0
 	while thyme < 40 and tries < 3000:
 		tries += 1
 		var ang := rng.randf() * 360.0
 		var r := island.coast_at(ang) - rng.randf_range(3.0, 9.0)
-		var p := Vector2(sin(deg_to_rad(ang)), cos(deg_to_rad(ang))) * r
-		if _cliff_top_ok(p.x, p.y) and _shrub("thyme_cushion", p.x, p.y, rng.randf_range(0.8, 1.2), _thyme_variant()):
-			thyme += 1
+		var c := Vector2(sin(deg_to_rad(ang)), cos(deg_to_rad(ang))) * r
+		if not _cliff_top_ok(c.x, c.y):
+			continue
+		var lead := _thyme_variant()
+		for j in rng.randi_range(3, 6):
+			var p := c + Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(0.0, 1.4)
+			if _cliff_top_ok(p.x, p.y) and _shrub("thyme_cushion", p.x, p.y, rng.randf_range(0.7, 1.15), lead, true, 3, 0.62):
+				thyme += 1
 
 
 func _wild_ok(x: float, z: float) -> bool:
@@ -1112,24 +1146,34 @@ func _wild() -> void:
 			drift_sites.append(c + Vector2(rng.randf_range(-1.0, 1.0), 3.8 * sc))
 		else:
 			drift_sites.append(c)
-	# Phrygana: thyme / burnet / sage cushions in drifts on the hummocks and in the lee of outcrops.
+	# Phrygana: thyme / burnet / sage cushions in drifts on the hummocks and in the lee of outcrops. A drift is a
+	# mosaic: big cushions packed in its core, smaller ones thinning out at the rim, one species leading, on a
+	# patch of bare granite grit; open grassland between drifts.
 	var thyme_drifts := 0
 	for site in drift_sites:
-		if thyme_drifts >= 15:
+		if thyme_drifts >= 12:
 			break
-		var n := rng.randi_range(8, 20)
+		var n := rng.randi_range(12, 24)
 		var made := 0
-		var tries := n * 10
-		var radius := rng.randf_range(3.0, 5.0)
+		var tries := n * 14
+		var radius := rng.randf_range(2.6, 4.0)
+		var lead := _thyme_variant()
+		var flat := rng.randf_range(0.6, 0.9)
+		var turn := rng.randf() * PI
 		while made < n and tries > 0:
 			tries -= 1
-			var p: Vector2 = site + Vector2.from_angle(rng.randf() * TAU) * sqrt(rng.randf()) * radius
+			var u := pow(rng.randf(), 0.8)
+			var off := Vector2.from_angle(rng.randf() * TAU) * u * radius
+			var p: Vector2 = site + Vector2(off.x, off.y * flat).rotated(turn)
 			if not _wild_ok(p.x, p.y) and not _cliff_top_ok(p.x, p.y):
 				continue
-			if _shrub("thyme_cushion", p.x, p.y, rng.randf_range(0.8, 1.25), _thyme_variant()):
+			var sc := lerpf(1.3, 0.62, u) * rng.randf_range(0.88, 1.12)
+			var v := lead if rng.randf() < 0.7 else _thyme_variant()
+			if _shrub("thyme_cushion", p.x, p.y, sc, v, true, 3, 0.62):
 				made += 1
 		if made > 0:
 			thyme_drifts += 1
+			island.splat_wear(site, radius * 0.75, 0.22)
 			# Lavender next to some thyme drifts.
 			if int(counts.get("lavender_drifts", 0)) < 6 and rng.randf() < 0.6:
 				var lp: Vector2 = site + Vector2.from_angle(rng.randf() * TAU) * (radius + 1.0)
@@ -1301,8 +1345,64 @@ func _place_beached_boats() -> void:
 # --- commit and report -------------------------------------------------------------------------------------
 
 func _commit() -> void:
+	# Everything that neither sways nor flashes (rocks, walls, ruins, boats, jars) is baked into one mesh per
+	# region of a 3 x 3 grid: a handful of draw calls instead of one per model variant, and the regions out of
+	# view are culled.
+	var still := Materials.static_twin(Materials.lowpoly())
+	var regions := {} # Vector2i -> Array of [vertex, normal, colour arrays, Transform3D]
 	for key in _batches:
 		var b: Dictionary = _batches[key]
+		if b.get("virtual", false) or b["material"] != still or not b["shadow"]:
+			continue
+		var m: Mesh = b["mesh"]
+		var parts: Array = []
+		for sidx in m.get_surface_count():
+			var arrays := m.surface_get_arrays(sidx)
+			var idx: Variant = arrays[Mesh.ARRAY_INDEX]
+			var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var nrm: Variant = arrays[Mesh.ARRAY_NORMAL]
+			var col: Variant = arrays[Mesh.ARRAY_COLOR]
+			if (idx is PackedInt32Array and (idx as PackedInt32Array).size() > 0) or not (nrm is PackedVector3Array) or not (col is PackedColorArray):
+				parts.clear()
+				break
+			if (nrm as PackedVector3Array).size() != v.size() or (col as PackedColorArray).size() != v.size():
+				parts.clear()
+				break
+			parts.append([v, nrm, col])
+		if parts.is_empty():
+			continue # stays instanced
+		for xf: Transform3D in b["xforms"]:
+			var rk := Vector2i(clampi(int(floor((xf.origin.x + 16.0) / 32.0)) + 1, 0, 2), clampi(int(floor((xf.origin.z + 16.0) / 32.0)) + 1, 0, 2))
+			if not regions.has(rk):
+				regions[rk] = []
+			for part in parts:
+				(regions[rk] as Array).append([part[0], part[1], part[2], xf])
+		b["baked"] = true
+	for rk in regions:
+		var pv := PackedVector3Array()
+		var pn := PackedVector3Array()
+		var pc := PackedColorArray()
+		for e: Array in regions[rk]:
+			var xf: Transform3D = e[3]
+			pv.append_array(xf * (e[0] as PackedVector3Array))
+			pn.append_array(Transform3D(xf.basis.inverse().transposed(), Vector3.ZERO) * (e[1] as PackedVector3Array))
+			pc.append_array(e[2])
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = pv
+		arrays[Mesh.ARRAY_NORMAL] = pn
+		arrays[Mesh.ARRAY_COLOR] = pc
+		var am := ArrayMesh.new()
+		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		var mi := MeshInstance3D.new()
+		mi.name = "Stone_%d_%d" % [rk.x, rk.y]
+		mi.mesh = am
+		mi.material_override = still
+		add_child(mi)
+	for key in _batches:
+		var b: Dictionary = _batches[key]
+		if b.get("baked", false) or b.get("virtual", false):
+			continue
 		var xfs: Array = b["xforms"]
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -1337,6 +1437,8 @@ func _report(t0: int) -> void:
 	var trees := 0
 	for key in _batches:
 		var b: Dictionary = _batches[key]
+		if b.get("virtual", false):
+			continue
 		var m: Mesh = b["mesh"]
 		var t := 0
 		for s in m.get_surface_count():

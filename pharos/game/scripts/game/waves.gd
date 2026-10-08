@@ -71,12 +71,13 @@ func _physics_process(delta: float) -> void:
 
 
 ## Extra creatures called during the night (the Hydra's brood): they count towards what is left to beat.
-func summon(type: String, lane: int) -> Node3D:
+## `start_s` is where along the lane they appear (0 = out at sea).
+func summon(type: String, lane: int, start_s: float = 0.0) -> Node3D:
 	total += 1
-	return spawn(type, lane)
+	return spawn(type, lane, start_s)
 
 
-func spawn(type: String, lane: int) -> Node3D:
+func spawn(type: String, lane: int, start_s: float = 0.0) -> Node3D:
 	var e: Enemy
 	if type == "hydra":
 		e = Hydra.new()
@@ -85,7 +86,10 @@ func spawn(type: String, lane: int) -> Node3D:
 	var lat := randf_range(-1.4, 1.4)
 	if type == "cyclops" or type == "hydra":
 		lat = 0.0
+	elif type == "ker":
+		lat = randf_range(-3.5, 3.5) # Keres fly in a loose swarm, wider than the road
 	e.setup(type, lane, lat)
+	e.s = maxf(0.0, start_s)
 	units_root.add_child(e)
 	spawned += 1
 	if type == "hydra":

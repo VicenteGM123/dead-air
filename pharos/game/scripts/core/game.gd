@@ -44,12 +44,20 @@ func _init() -> void:
 		_parse_web_args()
 
 
+## URL query arguments (?bot=1&speed=3…) are test switches: the public build only honours them when the query
+## asks for them with dev=1 (a debug export always does), so ?coins=999 or ?startnight=7 do nothing for players.
 func _parse_web_args() -> void:
 	var q: Variant = JavaScriptBridge.eval("window.location.search", true)
-	if q is String and (q as String).length() > 1:
-		for part in (q as String).substr(1).split("&"):
-			var kv := part.split("=", true, 1)
-			args[kv[0]] = kv[1].uri_decode() if kv.size() > 1 else "1"
+	if not (q is String) or (q as String).length() <= 1:
+		return
+	var parsed := {}
+	for part in (q as String).substr(1).split("&", false):
+		var kv := part.split("=", true, 1)
+		parsed[kv[0].uri_decode()] = kv[1].uri_decode() if kv.size() > 1 else "1"
+	if not OS.is_debug_build() and String(parsed.get("dev", "0")) != "1":
+		return
+	for k in parsed:
+		args[k] = parsed[k]
 
 
 func _ready() -> void:
@@ -133,10 +141,45 @@ func building_hp_mult(type: String) -> float:
 func income_bonus(type: String) -> int:
 	var b := 0
 	if (type == "farm" or type == "dock") and has_blessing("demeter"):
-		b += 2
+		b += 4
 	if type == "house" and has_blessing("hestia"):
-		b += 1
+		b += 2
 	return b
+
+
+# --- retry from the start of the night -----------------------------------------------------------------------
+
+## Everything needed to replay a night: Game's own state, every build spot (level and coins already paid) and
+## Fanós' Llama. Taken at dusk by main.gd (call_night), restored by main.retry_night() after a defeat.
+func snapshot() -> Dictionary:
+	var s := {"coins": coins, "night": night, "pharos_level": pharos_level, "blessings": blessings.duplicate(),
+		"stats": stats.duplicate(), "spots": [], "favor": 0.0}
+	if main and "spots" in main:
+		for sp in main.spots:
+			s["spots"].append(sp.get_state())
+	if hero and is_instance_valid(hero) and "favor" in hero:
+		s["favor"] = float(hero.get("favor"))
+	return s
+
+
+## Puts back Game's own state from snapshot() (the world itself is rebuilt by main.retry_night()).
+func restore_snapshot(s: Dictionary) -> void:
+	if s.is_empty():
+		return
+	coins = int(s["coins"])
+	night = int(s["night"])
+	pharos_level = int(s["pharos_level"])
+	blessings.clear()
+	for id in s["blessings"]:
+		blessings.append(String(id))
+	var st: Dictionary = s["stats"]
+	for k in st:
+		stats[k] = st[k]
+	paused = false
+	time_scale_target = 1.0
+	_hitstop_until = 0
+	coins_changed.emit(coins, 0)
+	stats_changed.emit()
 
 
 # --- unit registry -----------------------------------------------------------------------------------------
@@ -154,7 +197,7 @@ func enemies_of(team: int) -> Array:
 	return units[1 - team]
 
 
-## Living units of `team` within radius (XZ distance, accounting for their size).
+## Living units of `team` within radius (XZ distance, accounting for their size; a wall counts from its line).
 func query(team: int, pos: Vector3, radius: float, include_buildings: bool = true) -> Array:
 	var out: Array = []
 	for u in units[team]:
@@ -162,7 +205,11 @@ func query(team: int, pos: Vector3, radius: float, include_buildings: bool = tru
 			continue
 		if not include_buildings and u.is_building:
 			continue
-		var d: float = Vector2(u.global_position.x - pos.x, u.global_position.z - pos.z).length() - u.radius
+		var d: float
+		if u is WallBuilding:
+			d = (u as WallBuilding).line_dist(pos)
+		else:
+			d = Vector2(u.global_position.x - pos.x, u.global_position.z - pos.z).length() - u.radius
 		if d <= radius:
 			out.append(u)
 	return out
