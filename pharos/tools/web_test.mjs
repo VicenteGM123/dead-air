@@ -658,7 +658,8 @@ async function gateScenario(browser, base) {
 		|| window.pharosShell.revealedAt !== null || window.pharosShell.failed), null, { timeout: opts.timeout * 1000, polling: 250 });
 	const state = (page) => page.evaluate(() => ({ phase: window.pharosShell.phase, text: document.getElementById('status-text').textContent,
 		audio: (window.pharosAudioContexts || []).map((c) => c.state), failed: window.pharosShell.failed }));
-	const leaked = (page, from) => page.evaluate((f) => window.__pharos.canvasEvents.filter((e) => e[0] >= f && e[0] <= f + 1500).map((e) => e[1]), from);
+	// Nothing else touches the page after the click / tap, so any event on the canvas after it is a leak.
+	const leaked = (page, from) => page.evaluate((f) => window.__pharos.canvasEvents.filter((e) => e[0] >= f).map((e) => e[1]), from);
 	// Desktop, mouse.
 	{
 		const { context, page } = await openPage(browser, DESKTOP, { blockAutoplay: true }, log, t0);
@@ -677,7 +678,9 @@ async function gateScenario(browser, base) {
 				await page.waitForFunction(() => window.pharosShell.revealedAt !== null, null, { timeout: 10000, polling: 100 });
 				await page.waitForFunction(() => (window.pharosAudioContexts || []).every((c) => c.state === 'running'), null, { timeout: 10000, polling: 100 })
 					.catch(() => {});
-				await sleep(2500);
+				// The loading screen fades for 1 s and is then removed by a timer, which a page busy drawing runs late.
+				await page.waitForFunction(() => document.getElementById('status').hidden, null, { timeout: 60000, polling: 250 }).catch(() => {});
+				await sleep(1500);
 				out.after = await page.evaluate(() => ({ audio: (window.pharosAudioContexts || []).map((c) => c.state),
 					overlayHidden: document.getElementById('status').hidden, focus: document.activeElement ? (document.activeElement.id || document.activeElement.tagName) : null }));
 				out.after.canvasEvents = await leaked(page, at);
@@ -731,6 +734,7 @@ async function gateScenario(browser, base) {
 				if (!touch.after.rotatePrompt) out.problems.push('phone held upright: no "Gira el dispositivo" screen over the game');
 				// Turn the phone.
 				await page.setViewportSize({ width: PHONE.viewport.height, height: PHONE.viewport.width });
+				await page.waitForFunction(() => !window.pharosShell.rotatePrompt, null, { timeout: 30000, polling: 250 }).catch(() => {});
 				await sleep(2500);
 				touch.landscape = await page.evaluate(() => ({ rotatePrompt: window.pharosShell.rotatePrompt,
 					canvas: [document.getElementById('canvas').width, document.getElementById('canvas').height] }));
@@ -903,8 +907,14 @@ async function gameScenario(browser, base, name, query, waitS, ctxOpts, extra = 
 		} else {
 			await sleep(waitS * 1000);
 		}
-		const now = await page.evaluate(() => performance.now());
+		// Is the audio still running? The meter reports every ~0.1 s of audio, through messages that a page busy drawing
+		// delivers late (and the audio clock of a starved machine may run slow): wait up to 30 s for another 0.5 s of it.
+		const blocks0 = await page.evaluate(() => window.__pharos.audio.blocks.length);
+		const audioRunning = await page.waitForFunction((n) => window.__pharos.audio.meter !== 'ok' || window.__pharos.audio.blocks.length > n + 5,
+			blocks0, { timeout: 30000, polling: 250 }).then(() => true, () => false);
+		// One snapshot: on a busy page two evaluate() calls can be tens of seconds apart.
 		const data = await page.evaluate(() => ({
+			now: performance.now(),
 			frames: window.__pharos.frames,
 			blocks: window.__pharos.audio.blocks,
 			meter: window.__pharos.audio.meter,
@@ -915,6 +925,7 @@ async function gameScenario(browser, base, name, query, waitS, ctxOpts, extra = 
 			bufferLog: window.__pharos.audio.bufferLog,
 			contexts: window.__pharos.audio.contexts.map((c) => ({ state: c.state, sampleRate: c.sampleRate, baseLatency: c.baseLatency })),
 		}));
+		const now = data.now;
 		const lastFrame = data.frames.length ? data.frames[data.frames.length - 1] : null;
 		out.fps = {
 			last5s: frameStats(data.frames, now - 5000, now),
@@ -922,6 +933,7 @@ async function gameScenario(browser, base, name, query, waitS, ctxOpts, extra = 
 			lastFrameAgoMs: lastFrame === null ? null : round(now - lastFrame, 0),
 		};
 		const minutes = Math.max(1 / 60, (now - startAt) / 60000);
+		const audioEnd = data.blocks.length ? data.blocks[data.blocks.length - 1][0] : now;
 		out.audio = {
 			contexts: data.contexts,
 			// Sample playback starts one AudioBufferSourceNode per voice; Stream mixes everything in the engine and feeds
@@ -938,7 +950,9 @@ async function gameScenario(browser, base, name, query, waitS, ctxOpts, extra = 
 			runSeconds: round(minutes * 60, 0),
 			meter: data.meter,
 			sinceStart: audioStats(data.blocks, startAt, now),
-			last5s: audioStats(data.blocks, now - 5000, now),
+			// the last 5 s of audio the meter has reported (see above), and whether more kept coming
+			last5s: audioStats(data.blocks, audioEnd - 5000, audioEnd),
+			running: audioRunning,
 		};
 		out.canvas = await page.evaluate(() => {
 			const c = document.getElementById('canvas');
@@ -974,9 +988,10 @@ async function gameScenario(browser, base, name, query, waitS, ctxOpts, extra = 
 	if (crashed) problems.push('page crashed');
 	if (c.errors.length) problems.push(`${c.errors.length} console error(s), first: ${c.errors[0].slice(0, 160)}`);
 	if (out.fps) {
-		// The engine asks for a frame after every frame it draws: none for 10 s means it is stuck (or has crashed).
+		// The engine asks for a frame after every frame it draws: none for 30 s means it is stuck (or has crashed; a
+		// software-rendered frame on a busy machine takes a few seconds). The screenshot below also waits for a frame.
 		if (out.fps.sinceStart.frames < 2) problems.push('no frames drawn after the start');
-		else if (out.fps.lastFrameAgoMs > 10000) problems.push(`no frame in the last ${round(out.fps.lastFrameAgoMs / 1000)} s (frozen?)`);
+		else if (out.fps.lastFrameAgoMs > 30000) problems.push(`no frame in the last ${round(out.fps.lastFrameAgoMs / 1000)} s (frozen?)`);
 		else if (out.fps.last5s.frames < 2) warnings.push('fewer than 2 frames in the last 5 s (very slow software rendering?)');
 	}
 	if (out.audio) {
@@ -991,7 +1006,9 @@ async function gameScenario(browser, base, name, query, waitS, ctxOpts, extra = 
 			if (a.sinceStart.seconds >= 4 && a.sinceStart.rmsDb === null) {
 				problems.push(`no sound at all in ${a.sinceStart.seconds} s (${a.mode} playback)`);
 			} else if (!a.last5s.seconds) {
-				problems.push('no audio processed in the last 5 s (audio stopped?)');
+				problems.push('no audio processed after the start (audio stopped?)');
+			} else if (!a.running) {
+				problems.push('the audio stopped (no audio processed for 30 s)');
 			} else if (a.last5s.rmsDb === null) {
 				problems.push(`silence in the last 5 s (${a.last5s.silentPct}% silent)`);
 			}
@@ -1082,6 +1099,17 @@ async function ogScenario(browser, base) {
 
 // --- main ---------------------------------------------------------------------------------------------------------
 
+// Compress the build once up front (GitHub Pages serves from a cache too), so the throttled download measures the
+// network and not gzip running on a busy machine.
+if (opts.gzip) {
+	for (const f of readdirSync(ROOT, { recursive: true })) {
+		const file = normalize(join(ROOT, f));
+		const st = statSync(file);
+		if (st.isFile() && COMPRESS.has(extname(file).toLowerCase())) {
+			gzCache.set(`${file}:${st.mtimeMs}:${st.size}`, gzipSync(readFileSync(file), { level: 6 }));
+		}
+	}
+}
 const server = createServer(serve);
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}${MOUNT}`;

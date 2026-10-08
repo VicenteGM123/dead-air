@@ -223,6 +223,9 @@ ERRORS=$(awk '/^(ERROR|SCRIPT ERROR|USER ERROR)/ { e = $0; n = ""; getline n; k 
 if [ -n "$ERRORS" ]; then
 	echo "-- errors in the Godot import/export log:"
 	printf '%s\n' "$ERRORS" | head -n 40
+	if printf '%s\n' "$ERRORS" | grep -q 'Error loading custom project font'; then
+		echo "   (the custom project font errors come from the first import of a copy without .godot/: harmless, the build has the font)"
+	fi
 fi
 BROKEN=""
 for f in $(awk '/SCRIPT ERROR|Parse Error/ { s = $0; getline n; s = s " " n; if (match(s, /res:\/\/[^:)]*\.gd/)) print substr(s, RSTART + 6, RLENGTH - 6) }' "$LOG" | sort -u); do

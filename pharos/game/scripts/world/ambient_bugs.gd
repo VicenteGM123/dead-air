@@ -7,6 +7,7 @@ extends Node3D
 
 const BUTTERFLIES := 10
 const FIREFLIES := 40
+const FF_CLUSTERS := 13
 
 var amb: Ambient
 var rng := RandomNumberGenerator.new()
@@ -134,7 +135,7 @@ func _setup_butterflies() -> void:
 		bf_landed.append(0)
 		bf_pos.append(p)
 		bf_yaw.append(rng.randf() * TAU)
-		bf_size.append(rng.randf_range(1.1, 1.4))
+		bf_size.append(rng.randf_range(1.35, 1.7)) # larger than life, like the cats: they must read from the camera
 	bf_mm = MultiMesh.new()
 	bf_mm.transform_format = MultiMesh.TRANSFORM_3D
 	bf_mm.use_colors = true
@@ -156,17 +157,17 @@ func _setup_butterflies() -> void:
 func _setup_fireflies() -> void:
 	# Clusters round the trees scattered by Props (nearest the lighthouse first), then the farms, the house
 	# gardens and open meadows.
-	var centers: Array[Vector3] = _spread(amb.trees, 9, 7.0, 34.0)
+	var centers: Array[Vector3] = _spread(amb.trees, FF_CLUSTERS, 6.0, 28.0)
 	for f in _spots("farm"):
-		if centers.size() >= 9:
+		if centers.size() >= FF_CLUSTERS:
 			break
 		centers.append(f)
 	var houses := _spots("house")
 	for i in mini(2, houses.size()):
-		if centers.size() >= 9:
+		if centers.size() >= FF_CLUSTERS:
 			break
 		centers.append(houses[i])
-	while centers.size() < 9:
+	while centers.size() < FF_CLUSTERS:
 		var m := _random_meadow(12.0, 38.0)
 		if not m.is_finite():
 			break
@@ -266,8 +267,8 @@ func _update_fireflies() -> void:
 			sin(t * ff_par[j + 1] * 1.4 + ff_par[j + 5]) * 0.35,
 			cos(t * ff_par[j + 1] + ff_par[j + 4]) * 1.3 + sin(t * ff_par[j + 3] * 1.9 + ff_par[j + 4]) * 0.5)
 		var pulse := sin(t * ff_par[j + 6] + ff_par[j + 7]) * 0.5 + 0.5
-		var glow := pulse * pulse * pulse
-		var inten := night_k * (0.22 + 1.15 * glow)
-		var s := 0.48 + 0.36 * glow
+		var glow := pulse * pulse
+		var inten := night_k * (0.32 + 1.3 * glow)
+		var s := 0.55 + 0.42 * glow
 		ff_mm.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ONE * s), p))
 		ff_mm.set_instance_color(i, Color(col.r, col.g, col.b, inten))

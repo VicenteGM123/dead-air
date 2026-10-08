@@ -71,6 +71,7 @@ var _purr_sfx := 0.0
 var _tilt := Vector2.ZERO
 var _tilt_want := Vector2.ZERO
 var _placed := Vector3.INF
+var _checked := Vector3.INF
 
 
 func _init(ambient: Ambient, coat: String, at: Vector3, seed_value: int) -> void:
@@ -219,9 +220,11 @@ func tick(dt: float) -> void:
 	var want_sleep := amb.night > 0.6
 	var h := amb.hero_pos()
 	if dodge_cd <= 0.0 and (state == SIT or state == LOAF or state == GREET or state == STRETCH or state == SLEEP or state == WAKE):
-		if h.is_finite() and _flat(h - pos).length() < DODGE_R and hold <= 0.0:
+		dodge_cd = 0.15
+		var w := amb.walker_near(pos, DODGE_R)
+		if w.is_finite() and hold <= 0.0:
 			dodge_cd = 1.2
-			_dodge(h, want_sleep)
+			_dodge(w, want_sleep)
 	if threat_cd <= 0.0 and state != WALK:
 		threat_cd = 0.3
 		var th := amb.threat_near(pos, THREAT_R)
@@ -343,7 +346,7 @@ func _start_wander() -> void:
 		# Biased towards the sunny side of home.
 		var a := sun + rng.randf_range(-1.6, 1.6) if rng.randf() < 0.7 else rng.randf() * TAU
 		var p := amb.ground(home + Vector3(sin(a), 0, cos(a)) * rng.randf_range(0.3, WANDER_R))
-		if _flat(p - pos).length() > 0.8 and amb.cat_rest_ok(p) and amb.path_ok(pos, p, amb.cat_ok):
+		if _flat(p - pos).length() > 0.8 and amb.cat_rest_ok(p) and not amb.cat_crowded(p, 1.4, self) and amb.path_ok(pos, p, amb.cat_ok):
 			_walk_to(p, LOAF if rng.randf() < 0.35 else SIT)
 			return
 	_enter(SIT)
@@ -404,7 +407,7 @@ func _flee(from: Vector3) -> void:
 func _go_to_bed() -> void:
 	if _flat(pos - bed).length() < 0.4:
 		_enter(SLEEP)
-	elif _route_to(bed, SLEEP, WALK_SPEED):
+	elif _route_to(bed, SLEEP, WALK_SPEED * 1.5):
 		state = BED
 		_line = rng.randi() % 4
 	else:
@@ -580,10 +583,13 @@ func _walk(dt: float, p: Vector3, spd: float, stop: bool = true) -> bool:
 	var goal_speed := spd * (clampf(d / 0.6, 0.3, 1.0) if stop else 1.0) * clampf(cos(diff), 0.12, 1.0)
 	cur_speed = move_toward(cur_speed, goal_speed, dt * (5.0 if spd > 2.0 else (3.5 if spd >= 1.0 else 2.2)))
 	var np := pos + Vector3(sin(yaw), 0, cos(yaw)) * minf(cur_speed * dt, d)
-	if not amb.cat_ok(np):
-		cur_speed = 0.0
-		rig.set_locomotion(0.0)
-		return true
+	# Routes are checked before setting off; re-check the ground every 0.25 m (a building may have risen).
+	if _flat(np - _checked).length() > 0.25:
+		if not amb.cat_ok(np):
+			cur_speed = 0.0
+			rig.set_locomotion(0.0)
+			return true
+		_checked = np
 	pos = np
 	rig.set_locomotion(cur_speed)
 	return false
@@ -594,7 +600,7 @@ func _place(dt: float) -> void:
 	var key := Vector3(pos.x, pos.z, yaw)
 	if key != _placed or dt >= 1.0:
 		_placed = key
-		pos = Obstacles.push_out(pos, 0.22)
+		pos = amb.push_out(pos, 0.22)
 		pos.y = amb.ground_y(pos.x, pos.z)
 		var f := Vector3(sin(yaw), 0, cos(yaw)) * 0.28
 		var r := Vector3(f.z, 0, -f.x) * 0.6

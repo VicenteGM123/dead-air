@@ -37,6 +37,7 @@ var _ok_fn: Callable
 var _tilt := Vector2.ZERO
 var _tilt_want := Vector2.ZERO
 var _placed := Vector3.INF
+var _checked := Vector3.INF
 
 
 func _init(ambient: Ambient, coat: String, at: Vector3, herd_center: Vector3, seed_value: int, is_kid: bool) -> void:
@@ -119,6 +120,9 @@ func _enter(s: int) -> void:
 			rig.play("stand", 0.7)
 			timer = rng.randf_range(2.5, 5.0)
 			look_timer = 0.0
+			# Optional sound: plays once someone adds assets/audio/sfx/goat_bleat.ogg (Sfx skips missing files).
+			if Ambient.EXTRA_SFX and rng.randf() < 0.1:
+				Sfx.play("goat_bleat", pos, -8.0, rng.randf_range(1.15, 1.35) if kid else rng.randf_range(0.9, 1.05))
 		WALK:
 			rig.play("stand", 0.5)
 			rig.look(0.0, 0.0)
@@ -206,25 +210,23 @@ func _flee(from: Vector3, dmin: float, dmax: float) -> bool:
 
 
 func _graze_shuffle(dt: float) -> void:
-	# Every few seconds a couple of slow steps forward while munching.
+	# Every few seconds a couple of slow steps forward while munching (the end of the shuffle is checked once).
 	shuffle_timer -= dt
 	if shuffle_timer <= 0.0:
 		shuffle_timer = rng.randf_range(2.0, 4.5)
 		shuffle = rng.randf_range(0.7, 1.3)
 		graze_yaw = yaw + rng.randf_range(-0.6, 0.6)
+		var end := amb.ground(pos + Vector3(sin(graze_yaw), 0, cos(graze_yaw)) * 0.3)
+		if not amb.goat_ok(end) or _flat(end - center).length() > HERD_R + 2.0 or _crowded(end):
+			shuffle = 0.0
+			graze_yaw = yaw + PI * 0.6
+			shuffle_timer = 0.8
 	if shuffle > 0.0:
 		shuffle -= dt
 		yaw = rotate_toward(yaw, graze_yaw, 0.9 * dt)
 		var v := 0.14 * clampf(shuffle * 3.0, 0.0, 1.0)
-		var np := pos + Vector3(sin(yaw), 0, cos(yaw)) * v * dt
-		if amb.goat_ok(np) and _flat(np - center).length() < HERD_R + 2.0:
-			pos = np
-			rig.set_locomotion(v)
-		else:
-			shuffle = 0.0
-			graze_yaw = yaw + PI * 0.6
-			shuffle_timer = 0.8
-			rig.set_locomotion(0.0)
+		pos += Vector3(sin(yaw), 0, cos(yaw)) * v * dt
+		rig.set_locomotion(v)
 	else:
 		rig.set_locomotion(0.0)
 
@@ -261,10 +263,13 @@ func _walk(dt: float, p: Vector3, spd: float) -> bool:
 	var goal_speed := spd * clampf(d / 0.8, 0.3, 1.0) * clampf(cos(diff), 0.15, 1.0)
 	cur_speed = move_toward(cur_speed, goal_speed, dt * 1.5)
 	var np := pos + Vector3(sin(yaw), 0, cos(yaw)) * minf(cur_speed * dt, d)
-	if not amb.goat_ok(np):
-		cur_speed = 0.0
-		rig.set_locomotion(0.0)
-		return true
+	# Routes are checked before setting off; re-check the ground every 0.3 m.
+	if _flat(np - _checked).length() > 0.3:
+		if not amb.goat_ok(np):
+			cur_speed = 0.0
+			rig.set_locomotion(0.0)
+			return true
+		_checked = np
 	pos = np
 	rig.set_locomotion(cur_speed)
 	return false
@@ -275,7 +280,7 @@ func _place(dt: float) -> void:
 	var key := Vector3(pos.x, pos.z, yaw)
 	if key != _placed or dt >= 1.0:
 		_placed = key
-		pos = Obstacles.push_out(pos, 0.4)
+		pos = amb.push_out(pos, 0.4)
 		pos.y = amb.ground_y(pos.x, pos.z)
 		var f := Vector3(sin(yaw), 0, cos(yaw)) * 0.42
 		var r := Vector3(f.z, 0, -f.x) * 0.45

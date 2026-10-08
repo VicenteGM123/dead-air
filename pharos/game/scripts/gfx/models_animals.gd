@@ -10,6 +10,8 @@ class_name ModelsAnimals
 ##                                 gull: glide flap | dolphin: swim leap
 ##   set_locomotion(speed, _ref)   walking speed in m/s (gait, bob); the rig does not move itself
 ##   look(yaw, pitch)              head offset relative to the body (radians), eased
+##   step(dt, on_screen)           cats and goats with `driven = true`: the owner ticks them (full pose only on
+##                                 screen); otherwise they animate themselves in _process (previews)
 ## Model space: +Z forward (unlike the character Rig class, which faces -Z; only Ambient orients these), +Y up,
 ## origin on the ground under the animal. No faces: no eyes, no mouths (art direction), just ears, muzzle colour
 ## and silhouette.
@@ -867,6 +869,14 @@ class CatRig extends AnimalRig:
 	const NECK_OFF := Vector3(0.0, 0.07, 0.0)
 	const TAIL_S := -0.085
 	const TAIL_OFF := Vector3(0.0, 0.045, 0.0)
+	## Arc lengths where spine frames are needed, swept once each way from the hip: the hip, the body rings
+	## (CAT_ZS), the shoulder, the neck and the tail root. RING_AT maps each CAT_ZS entry to its sweep index.
+	const SWEEP := [0.0, 0.02, 0.07, 0.12, 0.17, SHOULDER_S, 0.215, NECK_S, 0.25, -0.025, -0.065, TAIL_S]
+	const RING_AT := [10, 9, 1, 2, 3, 4, 6, 8]
+	const SW_HIP := 0
+	const SW_SHOULDER := 5
+	const SW_NECK := 7
+	const SW_TAIL := 11
 
 	var coat := ""
 	var skel: Skeleton3D
@@ -878,6 +888,7 @@ class CatRig extends AnimalRig:
 	var _arc := 0.0
 	var _tp := PackedVector3Array()
 	var _td := PackedVector3Array()
+	var _sf: Array[Transform3D] = []
 	## World-ish (rig space) head transform, updated every frame (hearts spawn above it).
 	var head_xf := Transform3D.IDENTITY
 
@@ -891,6 +902,7 @@ class CatRig extends AnimalRig:
 		tail_len = CAT_TAIL_LEN * _rng.randf_range(0.9, 1.1)
 		_tp.resize(CAT_TAIL_N + 1)
 		_td.resize(CAT_TAIL_N)
+		_sf.resize(SWEEP.size())
 		t = 0.0
 		_setup_poses(CH, DEFAULT, POSES, "stand")
 		_blend()
@@ -931,15 +943,24 @@ class CatRig extends AnimalRig:
 
 	# --- posing ---
 
-	## Spine frame at arc length s from the hip joint (s < 0 runs back towards the tail).
-	func _spine(s: float) -> Transform3D:
-		var n := maxi(1, int(ceil(absf(s) / 0.04)))
-		var ds := s / float(n)
+	## Spine orientation at arc length s from the hip joint (s < 0 runs back towards the tail): the body curls
+	## sideways (crl) and arches (arc) at a constant rate per metre.
+	func _sb(s: float) -> Basis:
+		return _base * Basis(Vector3.UP, _crl * s) * Basis(Vector3.RIGHT, -_arc * s)
+
+	## Spine frames at the SWEEP arc lengths, integrated (midpoint rule) forward and back from the hip.
+	func _sweep() -> void:
 		var p := _hip
-		for i in n:
-			var u := (float(i) + 0.5) * ds
-			p += (_base * Basis(Vector3.UP, _crl * u) * Basis(Vector3.RIGHT, -_arc * u)).z * ds
-		return Transform3D(_base * Basis(Vector3.UP, _crl * s) * Basis(Vector3.RIGHT, -_arc * s), p)
+		var prev := 0.0
+		_sf[0] = Transform3D(_sb(0.0), p)
+		for i in range(1, SWEEP.size()):
+			var s: float = SWEEP[i]
+			if i == 9:
+				p = _hip
+				prev = 0.0
+			p += _sb((prev + s) * 0.5).z * (s - prev)
+			_sf[i] = Transform3D(_sb(s), p)
+			prev = s
 
 	static func _yaw_of(b: Basis) -> float:
 		return atan2(b.z.x, b.z.z)
@@ -954,13 +975,14 @@ class CatRig extends AnimalRig:
 		_base = Basis(Vector3.UP, by) * Basis(Vector3.RIGHT, -c[BP]) * Basis(Vector3.BACK, c[BR] + wk * 0.035 * sin(ph))
 		_crl = c[CRL]
 		_arc = c[ARC]
+		_sweep()
 		var breath := 1.0 + sin(t * 2.3) * 0.03 * c[BRE]
 		var bscale := Basis.from_scale(Vector3(breath, breath, 1.0))
 		for k in CAT_ZS.size():
-			var f := _spine(float(CAT_ZS[k]))
+			var f := _sf[RING_AT[k]]
 			skel.set_bone_pose(k, Transform3D(f.basis * bscale, f.origin))
-		var fs := _spine(SHOULDER_S)
-		var fh := _spine(0.0)
+		var fs := _sf[SW_SHOULDER]
+		var fh := _sf[SW_HIP]
 		# Legs: FL, FR, HL, HR. Trot: diagonal pairs.
 		var amp := 0.55 * wk
 		for i in 4:
@@ -977,7 +999,7 @@ class CatRig extends AnimalRig:
 			var lb := Basis(Vector3.UP, _yaw_of(fr.basis)) * Basis(Vector3.RIGHT, -a) * Basis.from_scale(Vector3(1.0, sc, 1.0))
 			skel.set_bone_pose(CB_LEG + i, Transform3D(lb, j))
 		# Head.
-		var fn := _spine(NECK_S)
+		var fn := _sf[SW_NECK]
 		var lk := c[LOOK]
 		var pur := c[PUR]
 		var nyaw := _yaw_of(fn.basis)
@@ -993,7 +1015,7 @@ class CatRig extends AnimalRig:
 		var sw_amp := c[TSW] + pur * 0.05
 		var sp := c[TSP]
 		var tg := c[TG]
-		var ft := _spine(TAIL_S)
+		var ft := _sf[SW_TAIL]
 		var p := ft * TAIL_OFF
 		var yaw := _yaw_of(ft.basis) + c[TY] + sw_amp * sin(t * sp)
 		_tp[0] = p

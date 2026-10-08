@@ -10,6 +10,7 @@ extends Node3D
 ##   set_hero(hero)         cats glance at / walk up to the hero, goats step out of the way
 ##   nearest_cat(pos, r)    nearest pettable cat rig within r metres, or null (then call rig.pet())
 ##   set_paused(p)          freeze all ambient life (the tree pause freezes it too)
+## Debug: `ambperf=1` prints the per-frame cost of the cats and goats every 300 frames.
 ##
 ## Rigs and meshes: scripts/gfx/models_animals.gd. Behaviour: ambient_cat.gd, ambient_goat.gd, ambient_sky.gd
 ## (gulls), ambient_sea.gd (dolphins), ambient_bugs.gd (butterflies, fireflies), ambient_fx.gd (hearts, splashes).
@@ -66,6 +67,9 @@ var _last_phase := -1
 var _rehome := false
 var _ok := false
 var _cam: Camera3D = null
+var _perf := OS.get_cmdline_user_args().has("ambperf=1")
+var _perf_acc := PackedInt64Array([0, 0, 0, 0, 0])
+var _perf_n := 0
 var _vp := Vector2(1280, 720)
 
 
@@ -139,6 +143,35 @@ func hero_pos() -> Vector3:
 	if hero != null and is_instance_valid(hero) and hero.is_inside_tree() and hero.visible:
 		return hero.global_position
 	return Vector3.INF
+
+
+## Nearest walker of Delos (Fanós or a hoplite) within `r` metres (XZ), or Vector3.INF.
+func walker_near(p: Vector3, r: float) -> Vector3:
+	var best := Vector3.INF
+	var bd := r * r
+	for u in Game.units[0]:
+		if not is_instance_valid(u) or not u.alive or u.is_building or not u.visible:
+			continue
+		var q: Vector3 = u.global_position
+		var d := (q.x - p.x) * (q.x - p.x) + (q.z - p.z) * (q.z - p.z)
+		if d < bd:
+			bd = d
+			best = q
+	return best
+
+
+## True when another cat is (or is heading) within `r` metres of p.
+func cat_crowded(p: Vector3, r: float, me: AmbientCat) -> bool:
+	for c in cats:
+		if c == me:
+			continue
+		if _d2(c.pos, p) < r * r or ((c.state == AmbientCat.WALK or c.state == AmbientCat.BED) and _d2(c.target, p) < r * r):
+			return true
+	return false
+
+
+static func _d2(a: Vector3, b: Vector3) -> float:
+	return (a.x - b.x) * (a.x - b.x) + (a.z - b.z) * (a.z - b.z)
 
 
 ## Nearest living creature of Nyx within `r` metres (XZ), or Vector3.INF.
@@ -246,6 +279,27 @@ func path_ok(a: Vector3, b: Vector3, ok: Callable) -> bool:
 		if not ok.call(a.lerp(b, float(i) / float(n))):
 			return false
 	return true
+
+
+## Obstacles.push_out() through the grid (same result for r <= OBS_MARGIN, a fraction of the cost).
+func push_out(p: Vector3, r: float) -> Vector3:
+	var cell: Variant = _dgrid.get(Vector2i(floori(p.x / OBS_CELL), floori(p.z / OBS_CELL)))
+	if cell == null:
+		return p
+	for o in (cell as PackedVector4Array):
+		var dx := p.x - o.x
+		var dz := p.z - o.y
+		var rr := o.z + r
+		var d2 := dx * dx + dz * dz
+		if d2 < rr * rr:
+			var d := sqrt(d2)
+			if d < 0.001:
+				dx = 1.0
+				dz = 0.0
+				d = 1.0
+			p.x = o.x + dx / d * rr
+			p.z = o.y + dz / d * rr
+	return p
 
 
 ## Height of the rendered terrain triangle under p (paws on the facets, not on the smoothed grid).
@@ -625,9 +679,6 @@ func _spawn_goats() -> void:
 			z += step
 		x += step
 	cands.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
-	if OS.get_cmdline_user_args().has("goatdebug=1"):
-		for cd in cands:
-			print("herd cand %.1f at (%.1f, %.1f)" % [cd[0], cd[1].x, cd[1].z])
 	# Roomy pastures first; a smaller patch will do for the last (smallest) herd.
 	var herds: Array[Vector3] = []
 	for pass_i in 2:
@@ -678,6 +729,7 @@ func _spawn_goats() -> void:
 func _process(delta: float) -> void:
 	if not _ok:
 		return
+	var t0 := Time.get_ticks_usec() if _perf else 0
 	var dt := minf(delta, 0.1)
 	_cam = get_viewport().get_camera_3d()
 	_vp = get_viewport().get_visible_rect().size
@@ -691,9 +743,31 @@ func _process(delta: float) -> void:
 	if _house_timer <= 0.0:
 		_house_timer = 2.0
 		_update_houses()
+	var t1 := Time.get_ticks_usec() if _perf else 0
 	for c in cats:
 		c.tick(dt)
+	var t2 := Time.get_ticks_usec() if _perf else 0
+	for c in cats:
 		c.rig.step(dt, on_screen(c.pos))
+	var t3 := Time.get_ticks_usec() if _perf else 0
 	for g in goats:
 		g.tick(dt)
+	var t4 := Time.get_ticks_usec() if _perf else 0
+	for g in goats:
 		g.rig.step(dt, on_screen(g.pos))
+	if _perf:
+		var t5 := Time.get_ticks_usec()
+		_perf_acc[0] += t1 - t0
+		_perf_acc[1] += t2 - t1
+		_perf_acc[2] += t3 - t2
+		_perf_acc[3] += t4 - t3
+		_perf_acc[4] += t5 - t4
+		_perf_n += 1
+		if _perf_n == 300:
+			var vis := 0
+			for c in cats:
+				if on_screen(c.pos):
+					vis += 1
+			print("Ambient ms/frame: misc %.3f cat-tick %.3f cat-pose %.3f goat-tick %.3f goat-pose %.3f (cats on screen %d)" % [_perf_acc[0] / 300000.0, _perf_acc[1] / 300000.0, _perf_acc[2] / 300000.0, _perf_acc[3] / 300000.0, _perf_acc[4] / 300000.0, vis])
+			_perf_acc.fill(0)
+			_perf_n = 0
