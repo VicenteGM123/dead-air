@@ -1,0 +1,14 @@
+{
+  "name": "pharos-tools",
+  "private": true,
+  "description": "PHAROS build tools: web smoke test of the exported build in headless Chromium (web_test.mjs).",
+  "scripts": {
+    "web-test": "node web_test.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "1.56.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

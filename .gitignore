@@ -18,6 +18,7 @@
 !/blender/
 !/godot-web/
 !/builds/
+!/pharos/
 
 # never, even inside allowed folders
 .godot/
