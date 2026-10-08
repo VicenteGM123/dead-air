@@ -15,6 +15,8 @@ const WANDER_R := 2.8
 const PURR_TIME := 3.4
 ## A hero closer than this makes a resting cat get up and move aside (nobody walks through cats).
 const DODGE_R := 0.8
+## Closest a walker (hero radius 0.5 + the cat's) may come: closer, the cat is pushed aside.
+const BODY_R := 0.72
 ## A creature of Nyx closer than this wakes a sleeping cat, which runs off.
 const THREAT_R := 3.6
 ## Cats are drawn larger than life so they read from the high game camera.
@@ -225,6 +227,13 @@ func tick(dt: float) -> void:
 		if w.is_finite() and hold <= 0.0:
 			dodge_cd = 1.2
 			_dodge(w, want_sleep)
+	# Nobody walks through a cat: one in the way of a running Fanós is nudged aside.
+	if h.is_finite() and _flat(h - pos).length() < BODY_R:
+		var away := _flat(pos - h)
+		var np := h + (away.normalized() if away.length() > 0.01 else Vector3(sin(yaw), 0, cos(yaw))) * BODY_R
+		np = amb.ground(np)
+		if amb.cat_ok(np):
+			pos = np
 	if threat_cd <= 0.0 and state != WALK:
 		threat_cd = 0.3
 		var th := amb.threat_near(pos, THREAT_R)
@@ -314,7 +323,7 @@ func _decide() -> void:
 			reset_at_home()
 			return
 	var h := amb.hero_pos()
-	if h.is_finite() and approach_cd <= 0.0 and _flat(h - pos).length() < 9.0 and rng.randf() < 0.4:
+	if h.is_finite() and approach_cd <= 0.0 and _flat(h - pos).length() < 9.0 and rng.randf() < 0.4 and not amb.hero_at_work():
 		approach_cd = rng.randf_range(25.0, 50.0)
 		_enter(APPROACH)
 		return
@@ -416,6 +425,11 @@ func _go_to_bed() -> void:
 
 func _approach(dt: float, want_sleep: bool) -> void:
 	var h := amb.hero_pos()
+	if timer <= 0.0:
+		timer = 0.5
+		if amb.hero_at_work():
+			_enter(SIT) # Fanós is busy building: greet him another time
+			return
 	if not h.is_finite() or want_sleep or _flat(h - home).length() > 12.0:
 		if not _route_to(home, SIT, WALK_SPEED):
 			_enter(SIT)

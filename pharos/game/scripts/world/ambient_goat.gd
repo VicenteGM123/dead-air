@@ -12,6 +12,7 @@ const TURN_RATE := 2.6
 const HERD_R := 7.0
 const SCALE := 1.3
 const SHY_R := 2.4
+const BODY_R := 0.95 # hero radius 0.5 + the goat's
 const THREAT_R := 4.5
 
 var amb: Ambient
@@ -63,6 +64,14 @@ func tick(dt: float) -> void:
 	timer -= dt
 	flee_cd -= dt
 	var night_mode := amb.night > 0.6
+	# Nobody walks through a goat: one in the way of a running Fanós is nudged aside.
+	var hb := amb.hero_pos()
+	if hb.is_finite() and _flat(hb - pos).length() < BODY_R:
+		var away := _flat(pos - hb)
+		var np := hb + (away.normalized() if away.length() > 0.01 else Vector3(sin(yaw), 0, cos(yaw))) * BODY_R
+		np = amb.ground(np)
+		if amb.goat_ok(np):
+			pos = np
 	if flee_cd <= 0.0 and state != WALK:
 		flee_cd = 0.4
 		# Shy: step away from a hero who walks right up, and from any creature of Nyx.

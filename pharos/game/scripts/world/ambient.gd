@@ -56,7 +56,7 @@ var trees := PackedVector3Array()
 ## Village places a cat may call home while no house stands near it: [Vector3, taken_by (AmbientCat or null)].
 var village_sites: Array = []
 
-var _solid := PackedVector4Array() # x, z, radius, clearance (0 = solid from the ground up)
+var _solid := PackedVector4Array() # x, z, radius, clearance (0: a low prop, solid from the ground up; -1: a tree)
 var _grid := {} # Vector2i -> PackedVector4Array (props and landmarks, built once)
 var _dgrid := {} # Vector2i -> PackedVector4Array (Obstacles registry: buildings, trees, rocks; rebuilt on change)
 var _dyn_count := -1
@@ -65,6 +65,7 @@ var _keep_clear := PackedVector3Array() # x, z, r: small interactables cats keep
 var _house_timer := 0.0
 var _last_phase := -1
 var _rehome := false
+var _started := false
 var _ok := false
 var _cam: Camera3D = null
 var _perf := OS.get_cmdline_user_args().has("ambperf=1")
@@ -160,6 +161,21 @@ func walker_near(p: Vector3, r: float) -> Vector3:
 	return best
 
 
+## True when Fanós stands within reach of something else he can use (a build spot, the horn): cats then leave
+## him be instead of coming over to greet him (and stealing the Interact prompt).
+func hero_at_work() -> bool:
+	if hero == null or not is_instance_valid(hero):
+		return false
+	var hp := hero.global_position
+	for it in Interactables.list:
+		if not is_instance_valid(it) or it is ModelsAnimals.CatRig or not it.has_method("can_interact"):
+			continue
+		var ip: Vector3 = it.interact_position()
+		if Vector2(ip.x - hp.x, ip.z - hp.z).length() < float(it.interact_range()) + 1.0 and it.can_interact(hero):
+			return true
+	return false
+
+
 ## True when another cat is (or is heading) within `r` metres of p.
 func cat_crowded(p: Vector3, r: float, me: AmbientCat) -> bool:
 	for c in cats:
@@ -216,6 +232,22 @@ func free_at(x: float, z: float, r: float, height: float) -> bool:
 			if dx * dx + dz * dz < rr * rr:
 				return false
 	return true
+
+
+## True when a low solid prop (shrub, rock, wall, vine row, wheat, ruin) stands at (x, z): butterflies fly over it.
+func low_prop_at(x: float, z: float, r: float = 0.15) -> bool:
+	var cell: Variant = _grid.get(Vector2i(floori(x / OBS_CELL), floori(z / OBS_CELL)))
+	if cell == null:
+		return false
+	for o in (cell as PackedVector4Array):
+		if o.w < 0.0:
+			continue
+		var dx := x - o.x
+		var dz := z - o.y
+		var rr := o.z + r
+		if dx * dx + dz * dz < rr * rr:
+			return true
+	return false
 
 
 ## Where a cat may walk: dry, gentle ground (no beach, no cliff), clear of everything solid.
@@ -382,12 +414,12 @@ func _add_batch(fn: String, mesh: Mesh, xfs: Array) -> void:
 			# under a tree. Tall narrow crowns (cypress) and high ones (plane tree, palms) hide little.
 			var s := (absf(sc.x) + absf(sc.z)) * 0.5
 			trees.append(o)
-			_solid.append(Vector4(o.x, o.z, maxf(float(tree[3]) * s, 0.25) + 0.12, 0.0))
+			_solid.append(Vector4(o.x, o.z, maxf(float(tree[3]) * s, 0.25) + 0.12, -1.0))
 			var cr := float(tree[0]) * s
 			var h0 := float(tree[2]) * s
 			var h1 := float(tree[1]) * s
 			var mid := minf((h0 + h1) * 0.5, h0 + 2.0)
-			_solid.append(Vector4(o.x, o.z - mid * 0.78 * 0.6, cr * 0.85 + minf(h1 - h0, 3.0) * 0.25, 0.0))
+			_solid.append(Vector4(o.x, o.z - mid * 0.78 * 0.6, cr * 0.85 + minf(h1 - h0, 3.0) * 0.25, -1.0))
 			continue
 		var hx := ab.size.x * 0.5 * absf(sc.x)
 		var hz := ab.size.z * 0.5 * absf(sc.z)
@@ -632,10 +664,11 @@ func _update_houses(instant: bool = false) -> void:
 
 
 func _on_phase(p: int) -> void:
-	# A new game (from the title or a restart) starts with every cat at home, once the title village is gone
-	# and any test village is up (next frame).
-	if p == Game.Phase.DAY and (_last_phase == Game.Phase.TITLE or _last_phase == Game.Phase.BOOT):
+	# A new game (the first day, or a day straight after the title) starts with every cat at home, once the
+	# title village is gone and any test village is up (next frame).
+	if p == Game.Phase.DAY and (not _started or _last_phase == Game.Phase.TITLE):
 		_rehome = true
+		_started = true
 	_last_phase = p
 
 

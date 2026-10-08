@@ -26,6 +26,7 @@ var bf_landed := PackedByteArray()
 var bf_pos := PackedVector3Array()
 var bf_yaw := PackedFloat32Array()
 var bf_size := PackedFloat32Array()
+var bf_lift := PackedFloat32Array() # 0 .. 1 while crossing over a low prop
 
 var ff_mm: MultiMesh
 var ff_mmi: MultiMeshInstance3D
@@ -136,6 +137,7 @@ func _setup_butterflies() -> void:
 		bf_pos.append(p)
 		bf_yaw.append(rng.randf() * TAU)
 		bf_size.append(rng.randf_range(1.35, 1.7)) # larger than life, like the cats: they must read from the camera
+		bf_lift.append(0.0)
 	bf_mm = MultiMesh.new()
 	bf_mm.transform_format = MultiMesh.TRANSFORM_3D
 	bf_mm.use_colors = true
@@ -229,7 +231,7 @@ func _update_butterflies(dt: float) -> void:
 				bf_timer[i] = rng.randf_range(7.0, 16.0)
 			else:
 				var gp := bf_pos[i]
-				if isl.height_at(gp.x, gp.z) > 0.5:
+				if isl.height_at(gp.x, gp.z) > 0.5 and bf_lift[i] < 0.05:
 					bf_landed[i] = 1
 					bf_timer[i] = rng.randf_range(2.5, 6.0)
 				else:
@@ -242,7 +244,10 @@ func _update_butterflies(dt: float) -> void:
 		var x := a.x + sin(c * bf_par[j] + bf_par[j + 4]) * 2.4 + sin(c * bf_par[j + 2] + bf_par[j + 6]) * 0.9
 		var z := a.z + cos(c * bf_par[j + 1] + bf_par[j + 5]) * 2.4 + sin(c * bf_par[j + 3] + bf_par[j + 7]) * 0.9
 		var gh := isl.height_at(x, z)
-		var fly := 0.8 + 0.35 * sin(c * 0.8 + bf_par[j + 4]) + 0.09 * sin(t * 6.5 + bf_par[j + 5])
+		# Over a shrub, a wall, a vine row or the wheat the butterfly rises clear of it.
+		var over := 1.0 if (bf_landed[i] == 0 and amb.low_prop_at(x, z, 0.6)) else 0.0
+		bf_lift[i] = move_toward(bf_lift[i], over, dt * 1.6)
+		var fly := 0.8 + 0.35 * sin(c * 0.8 + bf_par[j + 4]) + 0.09 * sin(t * 6.5 + bf_par[j + 5]) + 0.95 * bf_lift[i]
 		var p := Vector3(x, gh + lerpf(fly, 0.05, land), z)
 		var v := p - bf_pos[i]
 		if v.x * v.x + v.z * v.z > 1e-7:
