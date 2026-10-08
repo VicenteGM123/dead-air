@@ -2,28 +2,22 @@
 # PHAROS web build: Godot 4.7 web export (Compatibility renderer / WebGL 2, single-threaded so it runs on GitHub
 # Pages and inside iframes without COOP/COEP headers), custom loading screen from <project>/web/shell.html.
 #
-#   sh pharos/tools/export_web.sh [--qa] [project_dir] [out_dir]
+#   sh pharos/tools/export_web.sh [project_dir] [out_dir]
 #
 #   project_dir  Godot project to export (default: pharos/game next to this script). The first export of a copy
 #                imports its assets into <project_dir>/.godot (a minute or two); later ones are incremental.
 #   out_dir      static site to (re)write (default: pharos/web, published at
 #                https://vicentegm123.github.io/dead-air/pharos/web/). Previous index.* files there are replaced.
-#   --qa         preset "Web QA" instead of "Web": the same build but it keeps tools/ (needed for ?bot=1). Its
-#                default out_dir is ${TMPDIR:-/tmp}/pharos-web-qa so a QA build is not published by accident.
 #
 # Environment: GODOT=<godot binary> (default: godot on PATH, 4.7.x with the web export templates installed).
 # Output: index.html/.js/.wasm/.pck, the audio worklets, icons, fonts/ (Cinzel for the loading screen, SIL OFL) and a
-# README.md line. No pre-compressed copies: GitHub Pages already gzips html/js/wasm on the fly, it would not serve
-# *.gz files as Content-Encoding, and the .pck is mostly Ogg Vorbis audio, which does not compress.
+# README.md line. The build includes tools/bot.gd, so ?play=1&bot=1&speed=2 works on the published page too (the
+# smoke test uses it): node pharos/tools/web_test.mjs <report_dir> --dir <out_dir>
+# No pre-compressed copies: GitHub Pages already gzips html/js/wasm on the fly, it would not serve *.gz files as
+# Content-Encoding, and the .pck is mostly Ogg Vorbis audio, which does not compress.
 set -eu
 
 PRESET="Web"
-QA=0
-if [ "${1:-}" = "--qa" ]; then
-	PRESET="Web QA"
-	QA=1
-	shift
-fi
 case "${1:-}" in
 	-h|--help)
 		sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
@@ -33,11 +27,7 @@ esac
 
 TOOLS_DIR=$(cd "$(dirname "$0")" && pwd)
 PROJ=${1:-$TOOLS_DIR/../game}
-if [ "$QA" = 1 ]; then
-	OUT=${2:-${TMPDIR:-/tmp}/pharos-web-qa}
-else
-	OUT=${2:-$TOOLS_DIR/../web}
-fi
+OUT=${2:-$TOOLS_DIR/../web}
 GODOT=${GODOT:-godot}
 
 if [ ! -f "$PROJ/project.godot" ]; then
@@ -78,7 +68,8 @@ if [ "$FOUND" = 0 ]; then
 fi
 
 LOG=$(mktemp "${TMPDIR:-/tmp}/pharos-export.XXXXXX")
-trap 'rm -f "$LOG"' EXIT
+STAGE=$(mktemp -d "${TMPDIR:-/tmp}/pharos-web.XXXXXX")
+trap 'rm -rf "$LOG" "$STAGE"' EXIT
 START=$(date +%s)
 
 echo "== PHAROS web export: preset \"$PRESET\", Godot $VERSION"
@@ -92,31 +83,35 @@ echo "   output:  $OUT"
 	exit 1
 }
 
-# 2. Export. Old build files go first so nothing stale is left behind.
-rm -f "$OUT"/index.*
-if ! "$GODOT" --headless --path "$PROJ" --export-release "$PRESET" "$OUT/index.html" >>"$LOG" 2>&1; then
+# 2. Export into a staging folder; out_dir is only touched once the build is complete, so a failed export never
+#    leaves a half-written site behind.
+if ! "$GODOT" --headless --path "$PROJ" --export-release "$PRESET" "$STAGE/index.html" >>"$LOG" 2>&1; then
 	cat "$LOG"
-	echo "export_web: export failed" >&2
+	echo "export_web: export failed (nothing written to $OUT)" >&2
 	exit 1
 fi
 for f in index.html index.js index.wasm index.pck; do
-	if [ ! -s "$OUT/$f" ]; then
+	if [ ! -s "$STAGE/$f" ]; then
 		cat "$LOG"
-		echo "export_web: $f missing after export" >&2
+		echo "export_web: $f missing after export (nothing written to $OUT)" >&2
 		exit 1
 	fi
 done
-if grep -q '\$GODOT_' "$OUT/index.html"; then
+if grep -q '\$GODOT_' "$STAGE/index.html"; then
 	echo "export_web: warning: unreplaced \$GODOT_ placeholders in index.html (custom shell out of date?)" >&2
 fi
 # The shell has its own loading screen and never shows Godot's boot splash image.
-rm -f "$OUT/index.png"
+rm -f "$STAGE/index.png"
+# Replace the previous build (old index.* files go first so nothing stale is left behind).
+rm -f "$OUT"/index.*
+cp "$STAGE"/index.* "$OUT"/
 
-# Errors printed by the editor while importing/exporting (script parse errors etc.) are worth a look.
-ERRORS=$(grep -cE '^(ERROR|SCRIPT ERROR|USER ERROR)' "$LOG" || true)
-if [ "$ERRORS" != 0 ]; then
-	echo "-- $ERRORS error line(s) in the Godot import/export log:"
-	grep -E -A1 '^(ERROR|SCRIPT ERROR|USER ERROR)' "$LOG" | head -n 40
+# Errors printed by the editor while importing/exporting (script parse errors etc.) are worth a look; each one is
+# printed by the import and again by the export, so show every distinct error (with its "at:" line) once.
+ERRORS=$(awk '/^(ERROR|SCRIPT ERROR|USER ERROR)/ { e = $0; n = ""; getline n; k = e "|" n; if (!(k in seen)) { seen[k] = 1; print e; print n } }' "$LOG")
+if [ -n "$ERRORS" ]; then
+	echo "-- errors in the Godot import/export log (the build may still work, but check them):"
+	printf '%s\n' "$ERRORS" | head -n 40
 fi
 
 # 3. Loading-screen fonts (SIL Open Font License: the licence travels with the files).
@@ -147,7 +142,4 @@ for f in $(cd "$OUT" && find . -type f | sed 's|^\./||' | sort); do
 	awk -v f="$f" -v n="$n" -v g="$g" 'BEGIN { printf "  %-34s %10d B %9.2f MB   gzip %8.2f MB\n", f, n, n / 1048576, g / 1048576 }'
 done
 awk -v n="$TOTAL" -v g="$TOTAL_GZ" 'BEGIN { printf "  %-34s %10d B %9.2f MB   gzip %8.2f MB\n", "total", n, n / 1048576, g / 1048576 }'
-echo "== done in $(( $(date +%s) - START )) s"
-if [ "$QA" = 1 ]; then
-	echo "   QA build (includes tools/): test it with  node pharos/tools/web_test.mjs <report_dir> --dir $OUT"
-fi
+echo "== done in $(( $(date +%s) - START )) s; smoke test:  node $TOOLS_DIR/web_test.mjs <report_dir> --dir $OUT"

@@ -70,6 +70,12 @@ func _physics_process(delta: float) -> void:
 		night_cleared.emit()
 
 
+## Extra creatures called during the night (the Hydra's brood): they count towards what is left to beat.
+func summon(type: String, lane: int) -> Node3D:
+	total += 1
+	return spawn(type, lane)
+
+
 func spawn(type: String, lane: int) -> Node3D:
 	var e: Enemy
 	if type == "hydra":
@@ -84,5 +90,7 @@ func spawn(type: String, lane: int) -> Node3D:
 	spawned += 1
 	if type == "hydra":
 		boss = e
+		# Never leave a freed boss behind for the HUD and the camera to read.
+		e.tree_exiting.connect(func(): if boss == e: boss = null)
 		boss_spawned.emit(e)
 	return e

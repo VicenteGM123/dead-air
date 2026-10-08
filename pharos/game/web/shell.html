@@ -2,16 +2,17 @@
 <html lang="es">
 	<head>
 		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-		<meta name="theme-color" content="#0B1030">
+		<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+		<meta name="theme-color" content="#0A0D26">
 		<meta name="color-scheme" content="dark">
-		<meta name="description" content="PHAROS · La última luz. Defiende el faro de Delos de las criaturas de Nyx.">
+		<meta name="description" content="PHAROS · La última luz. Defiende el Faro de Delos de las criaturas de Nyx.">
 		<meta name="mobile-web-app-capable" content="yes">
 		<meta name="apple-mobile-web-app-capable" content="yes">
 		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-		<title>$GODOT_PROJECT_NAME · La última luz</title>
+		<title>PHAROS · La última luz</title>
 		<!-- PHAROS web shell (Godot custom HTML shell, pharos/game/web/shell.html). The Cinzel files are copied next to
-		     index.html by pharos/tools/export_web.sh (fonts/, SIL OFL); without them the title falls back to a serif. -->
+		     index.html by pharos/tools/export_web.sh (fonts/, SIL OFL); without them the title falls back to a serif.
+		     window.pharosShell is read by pharos/tools/web_test.mjs. -->
 		<link rel="preload" href="fonts/Cinzel-SemiBold.ttf" as="font" type="font/ttf" crossorigin>
 		<link rel="preload" href="fonts/Cinzel-Regular.ttf" as="font" type="font/ttf" crossorigin>
 		<style>
@@ -29,16 +30,17 @@
 	font-display: block;
 }
 
+/* Palette of the art direction brief: night indigo (the body of Nyx), UI ivory and gold, amber lantern flame. */
 :root {
-	--night-top: #0B1030;
-	--night-bottom: #1B1F3B;
-	--gold: #E9C27A;
-	--gold-soft: rgba(233, 194, 122, 0.62);
-	--gold-faint: rgba(233, 194, 122, 0.16);
-	--ivory: #F6EBD3;
+	--night-top: #0A0D26;
+	--night-bottom: #241B45;
+	--ivory: #F7F1E3;
+	--gold: #E9C46A;
+	--gold-soft: rgba(233, 196, 106, 0.66);
+	--gold-faint: rgba(233, 196, 106, 0.15);
 	--display: 'Cinzel', 'Trajan Pro', 'Cormorant SC', Georgia, 'Times New Roman', serif;
-	--text: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Times New Roman', serif;
-	--beam-width: min(280px, 64vw);
+	--text: 'EB Garamond', Garamond, Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Times New Roman', serif;
+	--beam-width: min(300px, 64vw);
 }
 
 html, body {
@@ -85,14 +87,15 @@ body {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	justify-content: center;
-	padding: 24px 16px;
+	justify-content: flex-start;
+	padding: max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+		max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
 	box-sizing: border-box;
 	overflow: hidden;
 	background:
-		radial-gradient(ellipse 60% 45% at 50% 34%, rgba(255, 186, 104, 0.10), rgba(255, 186, 104, 0) 70%),
-		linear-gradient(180deg, var(--night-top) 0%, var(--night-bottom) 100%);
-	transition: opacity 0.9s ease;
+		radial-gradient(ellipse 50% 40% at 50% 36%, rgba(255, 196, 110, 0.08), rgba(255, 196, 110, 0) 70%),
+		linear-gradient(180deg, var(--night-top) 0%, #131336 55%, var(--night-bottom) 100%);
+	transition: opacity 1s ease;
 }
 
 /* A few faint stars. */
@@ -103,18 +106,34 @@ body {
 	pointer-events: none;
 	opacity: 0.55;
 	background-image:
-		radial-gradient(1px 1px at 12% 18%, #fff 50%, transparent 51%),
-		radial-gradient(1px 1px at 27% 62%, #dfe6ff 50%, transparent 51%),
-		radial-gradient(1.5px 1.5px at 41% 11%, #fff 50%, transparent 51%),
-		radial-gradient(1px 1px at 63% 24%, #e8ecff 50%, transparent 51%),
-		radial-gradient(1px 1px at 78% 9%, #fff 50%, transparent 51%),
-		radial-gradient(1.5px 1.5px at 86% 41%, #fff 50%, transparent 51%),
-		radial-gradient(1px 1px at 7% 47%, #dfe6ff 50%, transparent 51%),
-		radial-gradient(1px 1px at 93% 73%, #fff 50%, transparent 51%),
-		radial-gradient(1px 1px at 18% 86%, #e8ecff 50%, transparent 51%),
-		radial-gradient(1px 1px at 71% 83%, #fff 50%, transparent 51%),
-		radial-gradient(1px 1px at 55% 92%, #dfe6ff 50%, transparent 51%),
-		radial-gradient(1.5px 1.5px at 33% 31%, #fff 50%, transparent 51%);
+		radial-gradient(1px 1px at 12% 18%, #F4F1FF 50%, transparent 51%),
+		radial-gradient(1px 1px at 27% 62%, #CBD5E6 50%, transparent 51%),
+		radial-gradient(1.5px 1.5px at 41% 11%, #F4F1FF 50%, transparent 51%),
+		radial-gradient(1px 1px at 63% 24%, #CBD5E6 50%, transparent 51%),
+		radial-gradient(1px 1px at 78% 9%, #F4F1FF 50%, transparent 51%),
+		radial-gradient(1.5px 1.5px at 86% 41%, #F4F1FF 50%, transparent 51%),
+		radial-gradient(1px 1px at 7% 47%, #CBD5E6 50%, transparent 51%),
+		radial-gradient(1px 1px at 93% 73%, #F4F1FF 50%, transparent 51%),
+		radial-gradient(1px 1px at 18% 86%, #CBD5E6 50%, transparent 51%),
+		radial-gradient(1px 1px at 71% 83%, #F4F1FF 50%, transparent 51%),
+		radial-gradient(1px 1px at 55% 92%, #CBD5E6 50%, transparent 51%),
+		radial-gradient(1.5px 1.5px at 33% 31%, #F4F1FF 50%, transparent 51%);
+}
+
+/* The sea: a darker band under a faint horizon, with the light of the flame reflected in it. */
+#status::after {
+	content: '';
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 17%;
+	pointer-events: none;
+	background:
+		linear-gradient(90deg, rgba(233, 196, 106, 0) 8%, rgba(233, 196, 106, 0.16) 50%, rgba(233, 196, 106, 0) 92%) top / 100% 1px no-repeat,
+		radial-gradient(ellipse 3.5% 95% at 50% 0%, rgba(255, 214, 140, 0.20), rgba(255, 214, 140, 0) 100%),
+		radial-gradient(ellipse 30% 60% at 50% 0%, rgba(255, 190, 110, 0.06), rgba(255, 190, 110, 0) 100%),
+		linear-gradient(180deg, rgba(5, 7, 22, 0.42) 0%, rgba(5, 7, 22, 0.72) 100%);
 }
 
 #status.done {
@@ -128,6 +147,8 @@ body {
 
 .content {
 	position: relative;
+	z-index: 1;
+	margin: auto 0; /* centred, but scrolls from the top when it does not fit (error notices on small screens) */
 	display: flex;
 	flex-direction: column;
 	align-items: center;
@@ -137,9 +158,9 @@ body {
 
 .flame {
 	position: relative;
-	width: 54px;
-	height: 80px;
-	margin-bottom: clamp(14px, 3.2vh, 26px);
+	width: 50px;
+	height: 74px;
+	margin-bottom: clamp(12px, 3vh, 26px);
 }
 
 .flame .halo {
@@ -150,7 +171,7 @@ body {
 	height: 220px;
 	margin: -110px 0 0 -110px;
 	border-radius: 50%;
-	background: radial-gradient(circle, rgba(255, 204, 128, 0.42) 0%, rgba(255, 168, 82, 0.16) 32%, rgba(255, 150, 60, 0) 68%);
+	background: radial-gradient(circle, rgba(255, 227, 163, 0.40) 0%, rgba(242, 168, 59, 0.15) 32%, rgba(242, 168, 59, 0) 68%);
 	animation: breathe 3.4s ease-in-out infinite;
 	will-change: transform, opacity;
 }
@@ -182,7 +203,7 @@ body {
 	line-height: 1;
 	letter-spacing: 0.3em;
 	color: var(--ivory);
-	text-shadow: 0 0 22px rgba(255, 196, 112, 0.30), 0 0 2px rgba(255, 228, 180, 0.35);
+	text-shadow: 0 0 24px rgba(255, 190, 100, 0.28), 0 0 2px rgba(255, 228, 180, 0.35);
 }
 
 .subtitle {
@@ -193,7 +214,7 @@ body {
 	font-size: clamp(0.78rem, 2.4vw, 1.05rem);
 	letter-spacing: 0.42em;
 	color: var(--gold);
-	opacity: 0.88;
+	opacity: 0.9;
 }
 
 /* The progress bar is a thin lighthouse beam. */
@@ -201,9 +222,9 @@ body {
 	position: relative;
 	width: var(--beam-width);
 	height: 2px;
-	margin-top: clamp(30px, 7vh, 58px);
+	margin-top: clamp(28px, 7vh, 58px);
 	border-radius: 2px;
-	background: var(--gold-faint);
+	background: linear-gradient(90deg, rgba(233, 196, 106, 0) 0%, var(--gold-faint) 12%, var(--gold-faint) 88%, rgba(233, 196, 106, 0) 100%);
 }
 
 .beam .fill {
@@ -213,21 +234,22 @@ body {
 	left: 0;
 	width: 0;
 	border-radius: 2px;
-	background: linear-gradient(90deg, rgba(233, 194, 122, 0) 0%, rgba(233, 194, 122, 0.75) 55%, #FFE9BC 100%);
-	box-shadow: 0 0 10px rgba(255, 200, 120, 0.55);
+	background: linear-gradient(90deg, rgba(233, 196, 106, 0) 0%, rgba(233, 196, 106, 0.78) 55%, #FFE3A3 100%);
+	box-shadow: 0 0 10px rgba(255, 190, 100, 0.55);
 	transition: width 0.3s ease-out;
 }
 
+/* The light at the head of the beam. */
 .beam .fill::after {
 	content: '';
 	position: absolute;
-	right: -7px;
+	right: -8px;
 	top: 50%;
-	width: 14px;
-	height: 14px;
-	margin-top: -7px;
+	width: 16px;
+	height: 16px;
+	margin-top: -8px;
 	border-radius: 50%;
-	background: radial-gradient(circle, #FFF7E2 0%, rgba(255, 216, 146, 0.75) 32%, rgba(255, 180, 90, 0) 70%);
+	background: radial-gradient(circle, #FFF7E2 0%, rgba(255, 227, 163, 0.75) 30%, rgba(242, 168, 59, 0) 70%);
 }
 
 /* While the engine starts (the page is busy) a light sweeps along the beam; transform-only, so the browser keeps
@@ -261,21 +283,36 @@ body {
 	text-transform: uppercase;
 	color: var(--gold-soft);
 	font-variant-numeric: tabular-nums;
+	transition: color 0.6s ease;
+}
+
+/* Loaded, waiting for the first click / tap / key (browsers only start the sound after one). */
+#status.ready {
+	cursor: pointer;
+}
+
+#status.ready .status-text {
+	color: var(--gold);
+	animation: call 2.4s ease-in-out infinite;
+}
+
+#status.ready .flame .halo {
+	animation-duration: 2.2s;
 }
 
 .hint {
 	display: none;
+	max-width: 22rem;
 	margin: 22px 0 0;
 	font-family: var(--text);
 	font-style: italic;
-	font-size: 0.85rem;
-	color: rgba(246, 235, 211, 0.45);
+	font-size: 0.9rem;
+	line-height: 1.4;
+	color: rgba(247, 241, 227, 0.5);
 }
 
-@media (orientation: portrait) and (pointer: coarse) {
-	.hint {
-		display: block;
-	}
+.hint.show {
+	display: block;
 }
 
 /* --- errors -------------------------------------------------------------------------------------------- */
@@ -285,12 +322,12 @@ body {
 	margin: clamp(26px, 6vh, 48px) 4px 0;
 	padding: 20px 22px;
 	box-sizing: border-box;
-	border: 1px solid rgba(233, 194, 122, 0.30);
+	border: 1px solid rgba(233, 196, 106, 0.32);
 	border-radius: 12px;
-	background: rgba(11, 16, 48, 0.78);
+	background: rgba(10, 13, 38, 0.8);
 	box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
 	font-family: var(--text);
-	font-size: 1rem;
+	font-size: 1.05rem;
 	line-height: 1.5;
 	color: #EDE3CF;
 	text-align: center;
@@ -342,9 +379,9 @@ body {
 .notice button {
 	margin-top: 16px;
 	padding: 10px 22px;
-	border: 1px solid rgba(233, 194, 122, 0.55);
+	border: 1px solid rgba(233, 196, 106, 0.55);
 	border-radius: 999px;
-	background: rgba(233, 194, 122, 0.08);
+	background: rgba(233, 196, 106, 0.08);
 	color: var(--gold);
 	font-family: var(--display);
 	font-weight: 600;
@@ -357,7 +394,7 @@ body {
 
 .notice button:hover,
 .notice button:focus-visible {
-	background: rgba(233, 194, 122, 0.18);
+	background: rgba(233, 196, 106, 0.18);
 	outline: none;
 }
 
@@ -365,6 +402,11 @@ body {
 #status.error .status-text,
 #status.error .hint {
 	display: none;
+}
+
+#status.error {
+	overflow-y: auto;
+	touch-action: pan-y;
 }
 
 #status.error .flame .outer,
@@ -384,6 +426,45 @@ noscript p {
 	font-family: var(--text);
 	text-align: center;
 	color: #EDE3CF;
+}
+
+/* Short landscape phones: tighter spacing so everything fits above the fold. */
+@media (max-height: 440px) {
+	.flame {
+		width: 36px;
+		height: 54px;
+		margin-bottom: 8px;
+	}
+	.title {
+		font-size: clamp(2rem, 7vw, 3rem);
+	}
+	.beam {
+		margin-top: 22px;
+	}
+	.status-text {
+		margin-top: 12px;
+	}
+	.hint {
+		margin-top: 10px;
+	}
+	.notice {
+		margin-top: 14px;
+		padding: 14px 18px;
+		font-size: 0.95rem;
+		line-height: 1.4;
+	}
+	.notice button {
+		margin-top: 10px;
+	}
+	#status.error .flame {
+		display: none;
+	}
+	#status.error .title {
+		font-size: 1.9rem;
+	}
+	#status.error .subtitle {
+		margin-top: 6px;
+	}
 }
 
 /* --- motion ------------------------------------------------------------------------------------------- */
@@ -416,8 +497,14 @@ noscript p {
 	100% { transform: translateX(250%); }
 }
 
+@keyframes call {
+	0%, 100% { opacity: 0.6; }
+	50% { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-	.content, .flame .halo, .flame .outer, .flame .inner, #status.init .beam .sweep, #status.indeterminate .beam .sweep {
+	.content, .flame .halo, .flame .outer, .flame .inner, #status.init .beam .sweep, #status.indeterminate .beam .sweep,
+	#status.ready .status-text {
 		animation: none;
 	}
 	#status {
@@ -444,14 +531,14 @@ noscript p {
 						<defs>
 							<radialGradient id="flame-outer" cx="50%" cy="78%" r="68%">
 								<stop offset="0" stop-color="#FFF1CF"/>
-								<stop offset="0.42" stop-color="#FFC56A"/>
-								<stop offset="0.8" stop-color="#F08A33"/>
-								<stop offset="1" stop-color="#C9521F"/>
+								<stop offset="0.42" stop-color="#FFB25A"/>
+								<stop offset="0.8" stop-color="#F2A83B"/>
+								<stop offset="1" stop-color="#C8623E"/>
 							</radialGradient>
 							<radialGradient id="flame-inner" cx="50%" cy="80%" r="62%">
 								<stop offset="0" stop-color="#FFFFFF"/>
 								<stop offset="0.55" stop-color="#FFF0C4"/>
-								<stop offset="1" stop-color="#FFD27E"/>
+								<stop offset="1" stop-color="#FFE3A3"/>
 							</radialGradient>
 						</defs>
 						<path class="outer" fill="url(#flame-outer)" d="M27 2 C31 15 45 25 47 43 C49 61 40 76 27 77 C14 76 5 63 7 47 C8 37 14 30 18 22 C19 30 22 34 25 36 C24 25 24 13 27 2 Z"/>
@@ -465,7 +552,7 @@ noscript p {
 					<div class="sweep"></div>
 				</div>
 				<p class="status-text" id="status-text" aria-live="polite">Cargando</p>
-				<p class="hint">Mejor con el dispositivo en horizontal</p>
+				<p class="hint" id="status-hint"></p>
 				<div class="notice" id="status-notice" role="alert" hidden>
 					<h2 id="notice-title"></h2>
 					<p id="notice-text"></p>
@@ -478,6 +565,28 @@ noscript p {
 			</div>
 		</div>
 
+		<script>
+// Remember the AudioContext the engine creates, so the first click / tap / key on the loading screen can start the
+// sound (browsers keep a page silent until the player interacts with it; the engine's own unlock only listens to
+// input on the canvas, which the loading screen covers).
+(function () {
+	const contexts = window.pharosAudioContexts = [];
+	const AC = window.AudioContext || window.webkitAudioContext;
+	if (!AC) {
+		return;
+	}
+	const Tracked = class extends AC {
+		constructor(...args) {
+			super(...args);
+			contexts.push(this);
+		}
+	};
+	window.AudioContext = Tracked;
+	if (window.webkitAudioContext) {
+		window.webkitAudioContext = Tracked;
+	}
+}());
+		</script>
 		<script src="$GODOT_URL"></script>
 		<script>
 const GODOT_CONFIG = $GODOT_CONFIG;
@@ -489,12 +598,14 @@ const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
 	const progress = document.getElementById('status-progress');
 	const fill = progress.querySelector('.fill');
 	const statusText = document.getElementById('status-text');
+	const hint = document.getElementById('status-hint');
 	const notice = document.getElementById('status-notice');
 	const noticeTitle = document.getElementById('notice-title');
 	const noticeText = document.getElementById('notice-text');
 	const noticeDetails = document.getElementById('notice-details');
 	const noticeDetailText = document.getElementById('notice-detail-text');
 	const noticeButton = document.getElementById('notice-button');
+	const touchOnly = window.matchMedia('(pointer: coarse)').matches && !window.matchMedia('(any-pointer: fine)').matches;
 
 	// Read by pharos/tools/web_test.mjs (times are performance.now() milliseconds).
 	const shell = window.pharosShell = {
@@ -502,6 +613,8 @@ const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
 		progress: 0,
 		downloadedAt: null,
 		startedAt: null,
+		revealedAt: null,
+		waitedForInput: false,
 		failed: false,
 	};
 	let phase = 'download';
@@ -512,12 +625,18 @@ const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
 		shell.phase = p;
 		status.classList.toggle('init', p === 'init');
 		status.classList.toggle('indeterminate', p === 'indeterminate');
+		status.classList.toggle('ready', p === 'ready');
 		if (p === 'init') {
 			shell.progress = 1;
 			shell.downloadedAt = performance.now();
 			fill.style.width = '100%';
 			progress.setAttribute('aria-valuenow', '100');
 			statusText.textContent = 'Encendiendo el faro';
+		} else if (p === 'ready') {
+			shell.progress = 1;
+			fill.style.width = '100%';
+			progress.setAttribute('aria-valuenow', '100');
+			statusText.textContent = touchOnly ? 'Toca para entrar' : 'Pulsa para entrar';
 		}
 	}
 
@@ -526,7 +645,7 @@ const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
 	}
 
 	function onProgress(current, total) {
-		if (failed || phase === 'init') {
+		if (failed || phase === 'init' || phase === 'ready') {
 			return;
 		}
 		if (total > 0) {
@@ -549,12 +668,24 @@ const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
 			statusText.textContent = current > 0 ? `Cargando · ${megabytes(current)} MB` : 'Cargando';
 		}
 	}
+	// Loading-screen previews (pharos/tools/web_test.mjs): shell.preview(0.42) or shell.preview('init').
+	shell.preview = (p) => (typeof p === 'number' ? onProgress(p * 100, 100) : setPhase(p));
+
+	// Phones: the game is laid out for a landscape screen.
+	function updateHint() {
+		const portrait = window.innerHeight > window.innerWidth;
+		const text = touchOnly && portrait ? 'Mejor con el dispositivo en horizontal' : '';
+		hint.textContent = text;
+		hint.classList.toggle('show', text !== '');
+	}
+	updateHint();
+	window.addEventListener('resize', updateHint);
 
 	function showNotice(title, text, detail, buttonLabel) {
 		failed = true;
 		shell.failed = true;
 		status.hidden = false;
-		status.classList.remove('done', 'init', 'indeterminate');
+		status.classList.remove('done', 'init', 'indeterminate', 'ready');
 		status.classList.add('error');
 		noticeTitle.textContent = title;
 		noticeText.textContent = text;
@@ -595,6 +726,66 @@ const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
 		}
 	});
 
+	// Fade the loading screen out over the running game.
+	function reveal() {
+		if (failed || shell.revealedAt !== null) {
+			return;
+		}
+		shell.revealedAt = performance.now();
+		status.classList.add('done');
+		canvas.focus();
+		window.setTimeout(() => {
+			if (!failed) {
+				status.hidden = true;
+				status.classList.remove('init', 'indeterminate', 'ready');
+			}
+		}, 1050);
+	}
+
+	// The game is running but the browser keeps it silent until the player interacts: wait for that first click /
+	// tap / key on the loading screen, start the sound with it and reveal the island with its music. That first
+	// input is consumed (capture phase) so it does not also press something on the title screen; later ones keep
+	// retrying the unlock (iOS only honours some gestures) until the sound runs.
+	function waitForInput() {
+		shell.waitedForInput = true;
+		setPhase('ready');
+		const events = ['pointerup', 'touchend', 'click', 'keydown'];
+		const contexts = () => (window.pharosAudioContexts || []).filter((ctx) => ctx.state === 'suspended');
+		const stop = () => {
+			for (const e of events) {
+				window.removeEventListener(e, onInput, true);
+			}
+		};
+		function onInput(ev) {
+			if (failed) {
+				stop();
+				return;
+			}
+			if (ev.type === 'keydown' && (ev.repeat || ev.key === 'Tab' || ev.key === 'Escape' || ev.ctrlKey || ev.metaKey || ev.altKey)) {
+				return;
+			}
+			for (const ctx of contexts()) {
+				ctx.resume().then(() => {
+					if (contexts().length === 0) {
+						stop();
+					}
+				}, () => {});
+			}
+			if (shell.revealedAt === null) {
+				ev.stopPropagation();
+				if (ev.type === 'keydown') {
+					ev.preventDefault();
+				}
+				reveal();
+			} else if (contexts().length === 0) {
+				stop();
+			}
+		}
+		for (const e of events) {
+			window.addEventListener(e, onInput, true);
+		}
+	}
+
 	const missing = Engine.getMissingFeatures({
 		threads: GODOT_THREADS_ENABLED,
 	});
@@ -634,7 +825,7 @@ const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
 			}
 		},
 	}).then(() => {
-		// startGame() resolves once the engine has run its first frame (main scene ready and drawn): reveal it.
+		// startGame() resolves once the engine has run its first frame (main scene ready and drawn).
 		shell.startedAt = performance.now();
 		if (shell.downloadedAt === null) {
 			shell.downloadedAt = shell.startedAt;
@@ -643,13 +834,12 @@ const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
 			return;
 		}
 		requestAnimationFrame(() => {
-			status.classList.add('done');
-			window.setTimeout(() => {
-				if (!failed) {
-					status.hidden = true;
-					status.classList.remove('init', 'indeterminate');
-				}
-			}, 950);
+			const silent = (window.pharosAudioContexts || []).some((ctx) => ctx.state === 'suspended');
+			if (silent) {
+				waitForInput();
+			} else {
+				reveal();
+			}
 		});
 	}, (err) => {
 		console.error(err);

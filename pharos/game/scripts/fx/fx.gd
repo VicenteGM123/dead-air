@@ -123,7 +123,7 @@ func ring(at: Vector3, radius: float, col: Color, dur: float = 0.5) -> void:
 		mi = _ring_pool.pop_back()
 		mi.visible = true
 	mi.global_position = at + Vector3(0, 0.08, 0)
-	mi.set_instance_shader_parameter("tint_color", Vector3(col.r, col.g, col.b))
+	Materials.set_param(mi, "tint_color", Vector3(col.r, col.g, col.b))
 	_rings.append([mi, 0.0, dur, radius, col.a])
 
 
@@ -220,7 +220,7 @@ func _process(delta: float) -> void:
 			continue
 		var rad: float = lerpf(r[3] * 0.3, r[3], Rig.ease_out(k))
 		mi.scale = Vector3(rad, 1.0, rad)
-		mi.set_instance_shader_parameter("intensity", (1.0 - k) * r[4] * 2.0)
+		Materials.set_param(mi, "intensity", (1.0 - k) * r[4] * 2.0)
 	for i in range(_bolts.size() - 1, -1, -1):
 		var b: Array = _bolts[i]
 		b[1] += delta

@@ -29,7 +29,7 @@ func _ready() -> void:
 	halo.mesh = qm
 	halo.material_override = Materials.glow_add()
 	halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	halo.set_instance_shader_parameter("tint_color", Vector3(1.0, 0.72, 0.4))
+	Materials.set_param(halo, "tint_color", Vector3(1.0, 0.72, 0.4))
 	add_child(halo)
 	light = OmniLight3D.new()
 	light.light_color = Color(1.0, 0.72, 0.42)
@@ -95,14 +95,14 @@ func _process(delta: float) -> void:
 	flame_core.rotation.y = -t * 1.3
 	flame.visible = _flame_k > 0.02
 	flame_core.visible = flame.visible
-	halo.set_instance_shader_parameter("intensity", (0.35 + 0.9 * night) * _flame_k * fl)
+	Materials.set_param(halo, "intensity", (0.35 + 0.9 * night) * _flame_k * fl)
 	light.light_energy = (0.25 + 1.6 * night) * _flame_k * fl
 	light.omni_range = 22.0 + 4.0 * level
 	_beam_k = lerpf(_beam_k, night * _flame_k, 1.0 - exp(-delta * 1.5))
 	beam.visible = _beam_k > 0.02
 	beam.rotation.y = t * 0.35
 	for q in beam.get_children():
-		(q as MeshInstance3D).set_instance_shader_parameter("intensity", _beam_k)
+		Materials.set_param((q as MeshInstance3D), "intensity", _beam_k)
 
 
 func _on_death() -> void:

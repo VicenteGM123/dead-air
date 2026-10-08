@@ -28,6 +28,9 @@ var _attack_dir := Vector3.FORWARD
 var spawn_point := Vector3(0, 0, 9.5)
 var input_enabled := true
 var touch_move := Vector2.ZERO
+var _calm_t := 0.0
+var _falls := 0
+var _fall_night := -1
 
 
 func _ready() -> void:
@@ -103,6 +106,7 @@ func _physics_process(delta: float) -> void:
 		if respawn_t <= 0.0:
 			_respawn()
 		return
+	poll_events()
 	var inp := _input_vector()
 	var spd := speed_stat() * smul
 	_regen(delta)
@@ -205,6 +209,7 @@ func _start_attack(inp: Vector3) -> void:
 	state = S.ATTACK
 	_hit_this_swing.clear()
 	rig.play("attack%d" % combo)
+	expect_event("impact", 0.56 if combo == 3 else 0.46)
 	Sfx.play("swing_%d" % combo, global_position, -2.0, randf_range(0.95, 1.05))
 
 
@@ -214,6 +219,7 @@ func _start_bash(inp: Vector3) -> void:
 	state = S.BASH
 	bash_cd = Data.HERO["bash_cd"]
 	rig.play("bash")
+	expect_event("impact", 0.48)
 
 
 func _start_dodge(inp: Vector3) -> void:
@@ -246,8 +252,12 @@ func _start_cast() -> void:
 		Game.fx.flash_screen(Color(1.0, 0.9, 0.7), 0.3)
 
 
+func _rig_event_fallback(ev: String) -> void:
+	_on_rig_event(ev)
+
+
 func _on_rig_event(ev: String) -> void:
-	if ev != "impact":
+	if ev != "impact" or not accept_event(ev):
 		return
 	match state:
 		S.ATTACK:
@@ -274,10 +284,10 @@ func _strike(reach: float, half_angle: float, dmg: float, knockback: float, stun
 		_hit_this_swing[e] = true
 		var dealt: float = e.take_damage(dmg, self, knockback, kind)
 		if stun_s > 0.0:
-			e.stun = maxf(e.stun, stun_s)
+			_stun(e, stun_s)
 		if dealt > 0.0:
 			hits += 1
-			add_favor(dealt * 0.55)
+			add_favor(dealt * float(Data.HERO.get("favor_per_dmg", 0.55)))
 			if Game.fx:
 				Game.fx.hit_spark(e.global_position + Vector3(0, 1.0, 0), fwd)
 	if hits > 0:
@@ -314,6 +324,16 @@ func _flash() -> void:
 var _beam_hit := {}
 
 
+## Big creatures shrug stuns off sooner (the Hydra most of all), so they cannot be locked in place.
+func _stun(e: Unit, seconds: float) -> void:
+	var k := 1.0
+	if e is Enemy and (e as Enemy).data.get("boss", false):
+		k = 0.3
+	elif e.is_heavy:
+		k = 0.5
+	e.stun = maxf(e.stun, seconds * k)
+
+
 ## Special: Fanós becomes the lighthouse; the beam sweeps all around and burns what it touches.
 func _beam_tick() -> void:
 	var r: RigHero = rig
@@ -331,7 +351,7 @@ func _beam_tick() -> void:
 			continue
 		_beam_hit[e] = true
 		e.take_damage(dmg, self, 2.5, "beam")
-		e.stun = maxf(e.stun, 1.5)
+		_stun(e, 1.5)
 		Sfx.play("zap", e.global_position, -6.0, randf_range(0.9, 1.2))
 		if Game.fx:
 			Game.fx.hit_spark(e.global_position + Vector3(0, 1.0, 0), dir, 1.4)
@@ -364,11 +384,15 @@ func _try_move(step: Vector3) -> void:
 		# Slide along the coast.
 		var px := global_position + Vector3(step.x, 0, 0)
 		var pz := global_position + Vector3(0, 0, step.z)
+		# (the blocked part of the velocity is dropped: Fanós stops at the shore instead of running on the spot)
 		if isl.is_walkable(px.x, px.z):
 			p = px
+			vel.z = 0.0
 		elif isl.is_walkable(pz.x, pz.z):
 			p = pz
+			vel.x = 0.0
 		else:
+			vel = Vector3.ZERO
 			return
 	p = Obstacles.push_out(p, radius)
 	global_position = Vector3(p.x, global_position.y, p.z)
@@ -380,14 +404,16 @@ func _face(dir: Vector3, delta: float, rate: float) -> void:
 
 
 func _regen(delta: float) -> void:
-	var idle := now() - last_hit
+	# Game time since the last hit (not wall-clock time: it must follow pauses, hit-stop and time scale).
+	_calm_t += delta
 	if not Game.is_night():
 		heal(delta * 25.0)
-	elif idle > 4.0:
+	elif _calm_t > 4.0:
 		heal(delta * (12.0 if Game.has_blessing("apollo") else 4.0))
 
 
 func _on_hurt(amount: float, _from: Node3D, _kind: String) -> void:
+	_calm_t = 0.0
 	Sfx.play("hero_hurt", global_position, -2.0, randf_range(0.95, 1.05))
 	Game.shake(clampf(amount / 30.0, 0.1, 0.45))
 	if Game.hud and Game.hud.has_method("hurt_flash"):
@@ -402,7 +428,12 @@ func _on_death() -> void:
 	rig.play("death")
 	(rig as RigHero).lit = false
 	Sfx.play("hero_down", global_position)
-	respawn_t = Data.HERO_RESPAWN
+	# The Faro takes a little longer to relight him each time he falls in the same night.
+	if _fall_night != Game.night:
+		_fall_night = Game.night
+		_falls = 0
+	respawn_t = minf(Data.HERO_RESPAWN + float(_falls), Data.HERO_RESPAWN_MAX)
+	_falls += 1
 	Game.say("La llama de Fanós se ha apagado", "El Faro volverá a encenderla", "danger")
 	_release_interaction()
 

@@ -48,6 +48,10 @@ func _ready() -> void:
 	props.name = "Props"
 	add_child(props)
 	props.build(island)
+	var grass := Grass.new()
+	grass.name = "Grass"
+	add_child(grass)
+	grass.build(island, props)
 	fx = Fx.new()
 	fx.name = "Fx"
 	add_child(fx)
@@ -90,6 +94,7 @@ func _ready() -> void:
 	Game.hero = hero
 	_make_ambient()
 	_make_ui()
+	Settings.apply_quality(get_viewport())
 	print("PHAROS world ready in %d ms" % (Time.get_ticks_msec() - t0))
 	if Game.arg("shot", "") != "" and Game.arg("shot") in ["overview", "island"]:
 		_static_shot(Game.arg("shot"))

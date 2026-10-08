@@ -103,7 +103,7 @@ func _glow_quad(parent: Node3D, pos: Vector3, size: float, tint: Vector3) -> Mes
 	g.material_override = Materials.glow_add()
 	g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	g.position = pos
-	g.set_instance_shader_parameter("tint_color", tint)
+	Materials.set_param(g, "tint_color", tint)
 	parent.add_child(g)
 	return g
 
@@ -380,13 +380,13 @@ func _animate_flame(delta: float, mv: float) -> void:
 		f.global_basis = Basis(Vector3.UP, t * (2.5 + i)).scaled(Vector3(k, k * (1.0 + 0.3 * i), k))
 		f.visible = _flame_k > 0.02
 	var night: float = Game.main.tod.night_amount() if Game.main and Game.main.tod else 0.0
-	head_glow.set_instance_shader_parameter("intensity", (0.06 + 0.8 * night) * _flame_k * fl + _beam_k * 1.5)
-	lens_glow.set_instance_shader_parameter("intensity", (0.0 + 0.25 * night) * _flame_k + _lens_flash * 2.5)
+	Materials.set_param(head_glow, "intensity", (0.06 + 0.8 * night) * _flame_k * fl + _beam_k * 1.5)
+	Materials.set_param(lens_glow, "intensity", (0.0 + 0.25 * night) * _flame_k + _lens_flash * 2.5)
 	_lens_flash = maxf(0.0, _lens_flash - delta * 3.0)
 	beam.visible = _beam_k > 0.01
 	if beam.visible:
 		for q in beam.get_children():
-			(q as MeshInstance3D).set_instance_shader_parameter("intensity", _beam_k * 3.0)
+			Materials.set_param((q as MeshInstance3D), "intensity", _beam_k * 3.0)
 	# Steam from the back vents while running.
 	if Game.fx and is_inside_tree():
 		_steam_t -= delta

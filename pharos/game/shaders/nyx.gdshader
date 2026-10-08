@@ -10,9 +10,9 @@ uniform vec3 rim_color : source_color = vec3(0.62, 0.48, 1.0);
 uniform float star_density = 330.0;
 uniform float hem = 0.35; // model-space height under which the body frays into smoke
 uniform float glow_strength = 2.6;
-instance uniform float flash = 0.0;
-instance uniform float dissolve = 0.0;
-instance uniform vec3 eye_tint = vec3(1.0);
+uniform float flash = 0.0;
+uniform float dissolve = 0.0;
+uniform vec3 eye_tint = vec3(1.0);
 
 varying vec3 v_albedo;
 varying float v_kind;

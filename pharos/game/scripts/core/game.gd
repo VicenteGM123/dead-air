@@ -68,7 +68,10 @@ func reset() -> void:
 	blessings.clear()
 	for k in stats:
 		stats[k] = 0
-	units = [[], []]
+	# Keep what is already standing in the world (the hero and the lighthouse exist before start_game() resets
+	# the run); drop only leftovers from a previous scene.
+	for t in 2:
+		units[t] = units[t].filter(func(u): return is_instance_valid(u) and u.is_inside_tree() and u.alive)
 	Engine.time_scale = 1.0
 	time_scale_target = 1.0
 	_hitstop_until = 0
@@ -76,6 +79,8 @@ func reset() -> void:
 
 func set_phase(p: int) -> void:
 	phase = p
+	# Stable marker for the automated web test (tools/web_test.mjs).
+	print("PHAROS phase %s night %d" % [Phase.keys()[p], night])
 	phase_changed.emit(p)
 
 

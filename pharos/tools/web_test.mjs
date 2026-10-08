@@ -9,15 +9,19 @@
 //
 // Options:
 //   --dir <path>         exported build to serve (default: pharos/web next to this script)
-//   --only <list>        scenarios, comma separated (default: shell,title,play,night,mobile)
+//   --only <list>        scenarios, comma separated (default: shell,gate,title,play,night,mobile)
 //                          shell   loading screen on a throttled connection (desktop + phone portrait) and the
 //                                  "no WebGL 2" message                      -> loading.png, loading_mobile.png,
 //                                                                               error_webgl2.png
+//                          gate    autoplay blocked (emulated): the loaded shell waits for "Pulsa para entrar",
+//                                  a click starts the sound, reveals the game and gives the canvas the keyboard
+//                                                                            -> gate.png, gate_after.png
 //                          title   index.html, screenshot ~8 s after start  -> title.png
 //                          play    ?play=1                                   -> play.png
 //                          night   --night-query: >= --night-wait s and until the bot's night has begun (at most
-//                                  --night-max s; needs tools/bot.gd in the build: export_web.sh --qa) -> night.png
-//                          mobile  title on an emulated phone in landscape (touch, DPR 2.6) -> mobile.png
+//                                  --night-max s; tools/bot.gd ships in the "Web" build)          -> night.png
+//                          mobile  title on an emulated phone in landscape (863 x 360 CSS px, touch, DPR 1)
+//                                                                            -> mobile.png
 //   --title-wait <s>     default 8     --play-wait <s>   default 10     --night-wait <s>   default 40
 //   --night-max <s>      default 240   --timeout <s>     max wait for the game to start, default 180
 //   --night-query <q>    default ?play=1&bot=1&speed=2&startnight=1&nearfight=1 (startnight/nearfight: the night
@@ -47,7 +51,7 @@ const { chromium, devices } = playwright;
 
 // --- options -----------------------------------------------------------------------------------------------------
 
-const ALL = ['shell', 'title', 'play', 'night', 'mobile'];
+const ALL = ['shell', 'gate', 'title', 'play', 'night', 'mobile'];
 const opts = {
 	report: null,
 	dir: join(HERE, '..', 'web'),
@@ -92,7 +96,7 @@ const opts = {
 		else throw new Error(`unexpected argument ${k}`);
 	}
 	if (!opts.report) {
-		console.error('usage: node web_test.mjs <report_dir> [--dir pharos/web] [--only shell,title,play,night,mobile]');
+		console.error('usage: node web_test.mjs <report_dir> [--dir pharos/web] [--only shell,gate,title,play,night,mobile]');
 		process.exit(2);
 	}
 	for (const s of opts.only) {
@@ -189,7 +193,7 @@ function instrument(cfg) {
 		readyAt: null,
 		captureWanted: false,
 		capture: null,
-		audio: { contexts: [], blocks: [], sources: 0, worklets: 0, meter: 'pending' },
+		audio: { contexts: [], blocks: [], sources: 0, worklets: 0, buffers: 0, bufferBytes: 0, meter: 'pending' },
 	};
 	// FPS: count animation frames. Screenshots: Godot draws inside requestAnimationFrame and its WebGL canvas is not
 	// preserved after compositing, so the canvas is read right after a (non-instrumentation) frame callback; this
@@ -235,10 +239,32 @@ function instrument(cfg) {
 	// render quanta between non-silent ones. PHAROS always plays the sea ambience once the title is up, so with the
 	// Stream playback type a gap is a buffer underrun of the engine's mixer (main thread too busy to mix in time).
 	const A = P.audio;
-	const AC = window.AudioContext;
+	let AC = window.AudioContext;
 	if (!AC) {
 		A.meter = 'no AudioContext';
 		return;
+	}
+	if (cfg && cfg.blockAutoplay) {
+		// Headless Chromium always lets pages play sound (and reports navigator.userActivation as active): emulate the
+		// normal policy, a context starts suspended and resume() only works after a real click, tap or key press.
+		let interacted = false;
+		for (const e of ['pointerdown', 'mousedown', 'touchend', 'keydown']) {
+			window.addEventListener(e, (ev) => {
+				if (ev.isTrusted) interacted = true;
+			}, true);
+		}
+		const Base = AC;
+		AC = class extends Base {
+			constructor(...a) {
+				super(...a);
+				if (!interacted) {
+					Base.prototype.suspend.call(this);
+				}
+			}
+			resume() {
+				return interacted ? super.resume() : Promise.resolve();
+			}
+		};
 	}
 	const METER = `class PharosMeter extends AudioWorkletProcessor {
 		constructor() { super(); this.reset(); this.zeroRun = 0; this.hadSound = false; }
@@ -318,6 +344,14 @@ function instrument(cfg) {
 	AudioBufferSourceNode.prototype.start = function (...a) {
 		A.sources++;
 		return start.apply(this, a);
+	};
+	// Sample playback decodes every sound into an AudioBuffer (32-bit float PCM), and Godot 4.7 copies that buffer again
+	// for every play(): the cumulative size of the buffers created is its memory churn (copies are freed by the GC).
+	const createBuffer = BaseAudioContext.prototype.createBuffer;
+	BaseAudioContext.prototype.createBuffer = function (channels, length, rate) {
+		A.buffers++;
+		A.bufferBytes += channels * length * 4;
+		return createBuffer.call(this, channels, length, rate);
 	};
 	if (window.AudioWorkletNode) {
 		const AWN = window.AudioWorkletNode;
@@ -444,7 +478,11 @@ async function launch() {
 
 const DESKTOP = { viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 };
 const PHONE = devices['Pixel 7'] || { viewport: { width: 412, height: 839 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true };
-const PHONE_LANDSCAPE = devices['Pixel 7 landscape'] || { ...PHONE, viewport: { width: 863, height: 360 } };
+// The in-game phone scenario keeps the phone's layout (863 x 360 CSS px, touch, mobile UA) but renders at DPR 1:
+// at the real DPR (2.625) the engine draws 2265 x 945 pixels, which SwiftShader cannot do in useful time. The report
+// still states the canvas size a real Pixel 7 gets (canvas.realDeviceWidth/Height).
+const PHONE_DPR = (devices['Pixel 7 landscape'] || PHONE).deviceScaleFactor;
+const PHONE_LANDSCAPE = { ...(devices['Pixel 7 landscape'] || { ...PHONE, viewport: { width: 863, height: 360 } }), deviceScaleFactor: 1 };
 
 async function openPage(browser, ctxOpts, initCfg, log, t0) {
 	const context = await browser.newContext(ctxOpts);
@@ -476,7 +514,7 @@ async function throttle(context, page, mbps) {
 }
 
 async function shellScenario(browser, base) {
-	const out = { screenshots: [] };
+	const out = { screenshots: [], problems: [] };
 	const log = [];
 	const t0 = Date.now();
 	// Loading screen mid-download on a ~25 Mbit/s connection, desktop and phone portrait.
@@ -491,8 +529,14 @@ async function shellScenario(browser, base) {
 			out.screenshots.push(file);
 			out[file] = await page.evaluate(() => ({ progress: window.pharosShell.progress, text: document.getElementById('status-text').textContent,
 				fonts: [...document.fonts].filter((f) => f.status === 'loaded').map((f) => `${f.family} ${f.weight}`) }));
+			if (file === 'loading.png') {
+				// The whole download (wasm + pck, gzip where the server compresses) at 25 Mbit/s with 60 ms latency.
+				await page.waitForFunction(() => window.pharosShell.downloadedAt !== null || window.pharosShell.failed, null, { timeout: 120000, polling: 100 });
+				out.download25MbitS = await page.evaluate(() => Math.round(window.pharosShell.downloadedAt / 100) / 10);
+			}
 		} catch (e) {
 			out[file] = { error: String(e.message || e).split('\n')[0] };
+			out.problems.push(`${file}: ${out[file].error}`);
 		}
 		await context.close();
 	}
@@ -509,9 +553,61 @@ async function shellScenario(browser, base) {
 		out.screenshots.push('error_webgl2.png');
 		out.noWebGL2Notice = notice;
 		out.noWebGL2Ok = !!notice && /WebGL 2/.test(notice);
+		if (!out.noWebGL2Ok) {
+			out.problems.push('no Spanish "WebGL 2" message when WebGL 2 is missing');
+		}
 		await context.close();
 	}
 	writeLog('shell', log);
+	const c = classify(log);
+	out.console = { errors: c.errors, warnings: c.warnings };
+	return out;
+}
+
+// A browser that keeps pages silent until the first interaction (the default everywhere): the loaded shell must
+// wait with "Pulsa para entrar", and one click must start the sound, fade the loading screen and leave the keyboard
+// with the game canvas.
+// (Headless Chromium never blocks sound, so the usual policy is emulated in instrument(): blockAutoplay.)
+async function gateScenario(browser, base) {
+	const out = { screenshots: [], problems: [] };
+	const log = [];
+	const t0 = Date.now();
+	const { context, page } = await openPage(browser, DESKTOP, { blockAutoplay: true }, log, t0);
+	try {
+		await page.goto(base + 'index.html', { waitUntil: 'load', timeout: 120000 });
+		await page.waitForFunction(() => window.pharosShell && (window.pharosShell.phase === 'ready' || window.pharosShell.revealedAt !== null
+			|| window.pharosShell.failed), null, { timeout: opts.timeout * 1000, polling: 250 });
+		const before = await page.evaluate(() => ({ phase: window.pharosShell.phase, text: document.getElementById('status-text').textContent,
+			audio: (window.pharosAudioContexts || []).map((c) => c.state), failed: window.pharosShell.failed }));
+		out.before = before;
+		await sleep(1200);
+		await page.screenshot({ path: join(REPORT, 'gate.png'), timeout: 90000 });
+		out.screenshots.push('gate.png');
+		if (before.phase !== 'ready') {
+			out.problems.push(`the loaded shell did not wait for a first input (phase ${before.phase}, audio ${before.audio.join(',') || 'none'})`);
+		} else {
+			await page.mouse.click(640, 360);
+			await page.waitForFunction(() => window.pharosShell.revealedAt !== null, null, { timeout: 10000, polling: 100 });
+			await page.waitForFunction(() => (window.pharosAudioContexts || []).every((c) => c.state === 'running'), null, { timeout: 10000, polling: 100 })
+				.catch(() => {});
+			await sleep(2500);
+			out.after = await page.evaluate(() => ({ audio: (window.pharosAudioContexts || []).map((c) => c.state),
+				overlayHidden: document.getElementById('status').hidden, focus: document.activeElement ? (document.activeElement.id || document.activeElement.tagName) : null }));
+			const shot = await capture(page, 'gate_after.png');
+			out.screenshots.push('gate_after.png');
+			out.image = shot.image;
+			if (!out.after.audio.length || out.after.audio.some((s) => s !== 'running')) {
+				out.problems.push(`sound did not start after the click (${out.after.audio.join(',') || 'no AudioContext'})`);
+			}
+			if (!out.after.overlayHidden) out.problems.push('the loading screen did not go away after the click');
+			if (out.after.focus !== 'canvas') out.problems.push(`keyboard focus is on ${out.after.focus}, not on the game canvas`);
+		}
+	} catch (e) {
+		out.error = String((e && e.message) || e).split('\n')[0];
+		out.problems.push(out.error);
+	}
+	await context.close();
+	writeLog('gate', log);
 	const c = classify(log);
 	out.console = { errors: c.errors, warnings: c.warnings };
 	return out;
@@ -524,17 +620,44 @@ async function capture(page, file) {
 			window.__pharos.capture = null;
 			window.__pharos.captureWanted = true;
 		});
-		await page.waitForFunction(() => window.__pharos.capture !== null, null, { timeout: 60000, polling: 200 });
+		// Under heavy CPU load a SwiftShader frame can take tens of seconds: wait up to --timeout for the next one.
+		await page.waitForFunction(() => window.__pharos.capture !== null, null, { timeout: opts.timeout * 1000, polling: 200 });
 		const url = await page.evaluate(() => window.__pharos.capture);
 		if (!url.startsWith('data:image/png;base64,')) {
 			throw new Error(url);
 		}
 		writeFileSync(join(REPORT, file), Buffer.from(url.slice('data:image/png;base64,'.length), 'base64'));
-		return 'canvas';
+		return { from: 'canvas', image: await imageStats(page) };
 	} catch {
-		await page.screenshot({ path: join(REPORT, file), timeout: 90000 });
-		return 'page';
+		await page.screenshot({ path: join(REPORT, file), timeout: 120000 });
+		return { from: 'page', image: null };
 	}
+}
+
+// Mean luma (0..255) of the captured frame, and the share of near-black (< 10) and of blown-out (> 250) pixels.
+function imageStats(page) {
+	return page.evaluate(async () => {
+		const img = new Image();
+		img.src = window.__pharos.capture;
+		await img.decode();
+		const c = document.createElement('canvas');
+		c.width = 160;
+		c.height = 90;
+		const g = c.getContext('2d');
+		g.drawImage(img, 0, 0, c.width, c.height);
+		const d = g.getImageData(0, 0, c.width, c.height).data;
+		let sum = 0;
+		let dark = 0;
+		let blown = 0;
+		const n = d.length / 4;
+		for (let i = 0; i < d.length; i += 4) {
+			const y = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+			sum += y;
+			if (y < 10) dark++;
+			if (y > 250) blown++;
+		}
+		return { meanLuma: Math.round(sum / n), darkPct: Math.round((100 * dark) / n), blownPct: Math.round((100 * blown) / n) };
+	});
 }
 
 async function gameScenario(browser, base, name, query, waitS, ctxOpts, extra = {}) {
@@ -576,7 +699,7 @@ async function gameScenario(browser, base, name, query, waitS, ctxOpts, extra = 
 		const startAt = t.startedAt;
 		// Scenario-specific wait.
 		if (extra.night) {
-			// SwiftShader frames are slow and Godot caps physics steps per frame, so speed=3 is far from 3x here: wait for
+			// SwiftShader frames are slow and Godot caps physics steps per frame, so speed=2 is far from 2x here: wait for
 			// the bot's night (plus a few seconds for the waves to land) instead of a fixed time, up to --night-max.
 			const minEnd = Date.now() + waitS * 1000;
 			const maxEnd = Date.now() + Math.max(waitS, opts.nightMax) * 1000;
@@ -598,8 +721,7 @@ async function gameScenario(browser, base, name, query, waitS, ctxOpts, extra = 
 				lines: log.filter((x) => /^\[bot\]/.test(x.text)).map((x) => x.text).slice(0, 60),
 			};
 			if (!out.bot.available) {
-				out.bot.hint = 'tools/bot.gd is not in this build (preset "Web" excludes tools/*): export with '
-					+ '`sh pharos/tools/export_web.sh --qa` and pass --dir <that folder>';
+				out.bot.hint = 'tools/bot.gd is not in this build (check exclude_filter of the "Web" preset in export_presets.cfg)';
 			}
 		} else {
 			await sleep(waitS * 1000);
@@ -611,6 +733,8 @@ async function gameScenario(browser, base, name, query, waitS, ctxOpts, extra = 
 			meter: window.__pharos.audio.meter,
 			sources: window.__pharos.audio.sources,
 			worklets: window.__pharos.audio.worklets,
+			buffers: window.__pharos.audio.buffers,
+			bufferBytes: window.__pharos.audio.bufferBytes,
 			contexts: window.__pharos.audio.contexts.map((c) => ({ state: c.state, sampleRate: c.sampleRate, baseLatency: c.baseLatency })),
 		}));
 		out.fps = {
@@ -624,12 +748,26 @@ async function gameScenario(browser, base, name, query, waitS, ctxOpts, extra = 
 			mode: data.sources > 0 ? 'Sample' : data.worklets > 0 ? 'Stream' : 'none',
 			workletNodes: data.worklets,
 			bufferSourcesStarted: data.sources,
+			// Sample playback: AudioBuffers created so far (decoded sounds + one copy per play(), float PCM, cumulative)
+			audioBuffersCreated: data.buffers,
+			audioBuffersMB: round(data.bufferBytes / 1048576),
 			meter: data.meter,
 			sinceStart: audioStats(data.blocks, startAt, now),
 			last5s: audioStats(data.blocks, now - 5000, now),
 		};
+		out.canvas = await page.evaluate(() => {
+			const c = document.getElementById('canvas');
+			return { width: c.width, height: c.height, cssWidth: window.innerWidth, cssHeight: window.innerHeight, devicePixelRatio: window.devicePixelRatio,
+				waitedForInput: window.pharosShell.waitedForInput, revealed: window.pharosShell.revealedAt !== null };
+		});
+		if (name === 'mobile') {
+			out.canvas.realDeviceWidth = Math.round(out.canvas.cssWidth * PHONE_DPR);
+			out.canvas.realDeviceHeight = Math.round(out.canvas.cssHeight * PHONE_DPR);
+		}
 		out.screenshot = `${name}.png`;
-		out.screenshotFrom = await capture(page, out.screenshot);
+		const shot = await capture(page, out.screenshot);
+		out.screenshotFrom = shot.from;
+		out.image = shot.image;
 	} catch (e) {
 		out.error = out.error || String((e && e.message) || e).split('\n')[0];
 		try {
@@ -641,6 +779,18 @@ async function gameScenario(browser, base, name, query, waitS, ctxOpts, extra = 
 	writeLog(name, log);
 	const c = classify(log);
 	out.console = { errors: c.errors, warnings: c.warnings, audio: c.audio };
+	const problems = [];
+	if (!out.ok) problems.push(`did not start: ${out.error || '?'}`);
+	if (crashed) problems.push('page crashed');
+	if (c.errors.length) problems.push(`${c.errors.length} console error(s), first: ${c.errors[0].slice(0, 160)}`);
+	if (out.audio && out.audio.meter === 'ok' && out.audio.sinceStart.seconds >= 4 && out.audio.sinceStart.rmsDb === null) {
+		problems.push(`no sound at all in ${out.audio.sinceStart.seconds} s (${out.audio.mode} playback)`);
+	}
+	if (out.image && out.image.darkPct > (extra.night ? 90 : 50)) {
+		problems.push(`${out.image.darkPct}% of the frame is black (mean luma ${out.image.meanLuma})`);
+	}
+	if (extra.night && out.bot && out.bot.available && !out.bot.nightReached) problems.push('the bot never reached the night');
+	out.problems = problems;
 	await context.close();
 	return out;
 }
@@ -679,31 +829,40 @@ for (const f of readdirSync(ROOT, { recursive: true })) {
 }
 console.log(`web_test: ${base} (${ROOT}) with ${report.browser}; ${report.webgl.renderer || 'no WebGL 2'}`);
 
-let failed = false;
+const problems = [];
 for (const name of ALL.filter((s) => opts.only.includes(s))) {
 	const started = Date.now();
 	process.stdout.write(`-- ${name} ... `);
 	let r;
 	if (name === 'shell') r = await shellScenario(browser, base);
+	else if (name === 'gate') r = await gateScenario(browser, base);
 	else if (name === 'title') r = await gameScenario(browser, base, 'title', '', opts.titleWait, DESKTOP);
 	else if (name === 'play') r = await gameScenario(browser, base, 'play', '?play=1', opts.playWait, DESKTOP);
-	else if (name === 'night') r = await gameScenario(browser, base, 'night', '?play=1&bot=1&speed=3', opts.nightWait, DESKTOP, { night: true });
+	else if (name === 'night') r = await gameScenario(browser, base, 'night', opts.nightQuery, opts.nightWait, DESKTOP, { night: true });
 	else if (name === 'mobile') r = await gameScenario(browser, base, 'mobile', '', opts.titleWait, PHONE_LANDSCAPE);
 	r.wallS = round((Date.now() - started) / 1000);
 	report.scenarios[name] = r;
-	if (name !== 'shell' && !r.ok) failed = true;
+	for (const p of r.problems || []) problems.push(`${name}: ${p}`);
 	const bits = [];
+	if (r.download25MbitS != null) bits.push(`download at 25 Mbit/s ${r.download25MbitS} s`);
 	if (r.loadMs) bits.push(`first frame ${r.loadMs.firstFrame} ms (world ${r.loadMs.worldGenInEngine} ms)`);
 	if (r.fps) bits.push(`${r.fps.last5s.fps} fps (max frame ${r.fps.last5s.maxMs} ms)`);
-	if (r.audio) bits.push(`audio ${r.audio.mode} ${r.audio.sinceStart.rmsDb} dBFS rms, ${r.audio.sinceStart.gaps || 0} gaps (${r.audio.sinceStart.gapMs || 0} ms)`);
+	if (r.audio) {
+		bits.push(`audio ${r.audio.mode} ${r.audio.sinceStart.rmsDb} dBFS rms, ${r.audio.sinceStart.gaps || 0} gaps (${r.audio.sinceStart.gapMs || 0} ms)`
+			+ (r.audio.audioBuffersCreated ? `, ${r.audio.audioBuffersMB} MB of AudioBuffers created` : ''));
+	}
+	if (r.image) bits.push(`frame luma ${r.image.meanLuma}, ${r.image.darkPct}% black`);
 	if (r.bot) bits.push(r.bot.available ? `bot night ${r.bot.nightReached ? `at +${r.bot.nightAfterStartS} s` : 'NOT reached'}` : 'no bot in build');
 	if (r.noWebGL2Ok !== undefined) bits.push(`no-WebGL2 message ${r.noWebGL2Ok ? 'ok' : 'MISSING'}`);
+	if (r.after) bits.push(`after the click: audio ${r.after.audio.join(',')}, focus ${r.after.focus}`);
+	if (r.canvas) bits.push(`canvas ${r.canvas.width}x${r.canvas.height} (DPR ${r.canvas.devicePixelRatio})`);
 	if (r.console) bits.push(`${r.console.errors.length} errors, ${r.console.warnings.length} warnings`);
-	if (r.error) bits.push(`ERROR: ${r.error}`);
-	console.log(`${r.ok === false ? 'FAILED' : 'ok'} in ${r.wallS} s: ${bits.join('; ')}`);
+	console.log(`${r.problems && r.problems.length ? 'PROBLEM' : 'ok'} in ${r.wallS} s: ${bits.join('; ')}`);
+	for (const p of r.problems || []) console.log(`   ! ${p}`);
 }
 await browser.close();
 server.close();
+report.problems = problems;
 writeFileSync(join(REPORT, 'report.json'), JSON.stringify(report, null, '\t') + '\n');
-console.log(`web_test: report in ${join(REPORT, 'report.json')}`);
-process.exit(failed ? 1 : 0);
+console.log(`web_test: ${problems.length ? `${problems.length} problem(s)` : 'no problems'}; report in ${join(REPORT, 'report.json')}`);
+process.exit(problems.length ? 1 : 0);

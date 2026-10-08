@@ -31,7 +31,7 @@ func setup(island: Island) -> void:
 		ring.mesh = rb.commit()
 		ring.material_override = Materials.glow_flat()
 		ring.position = Vector3(0, 0.12, 0)
-		ring.set_instance_shader_parameter("tint_color", Vector3(0.62, 0.45, 1.0))
+		Materials.set_param(ring, "tint_color", Vector3(0.62, 0.45, 1.0))
 		root.add_child(ring)
 		_cols.append(root)
 		_shown.append(false)
@@ -66,6 +66,6 @@ func _process(delta: float) -> void:
 		if not root.visible:
 			continue
 		for c in root.get_children():
-			(c as MeshInstance3D).set_instance_shader_parameter("intensity", _k[i] * (0.8 + 0.2 * sin(t * 1.7 + i)))
+			Materials.set_param((c as MeshInstance3D), "intensity", _k[i] * (0.8 + 0.2 * sin(t * 1.7 + i)))
 		var ring: Node3D = root.get_child(root.get_child_count() - 1)
 		ring.scale = Vector3.ONE * (1.0 + 0.08 * sin(t * 2.0 + i))

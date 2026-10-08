@@ -21,6 +21,11 @@ var slow_t := 0.0
 var knock := Vector3.ZERO
 var last_hit := -100.0
 var display_name := ""
+# Animation events (see expect_event): the event we wait for, at which normalised progress, during which action.
+var _pending_ev := ""
+var _pending_at := 0.0
+var _pending_action := ""
+var _ev_done := {}
 
 
 func _enter_tree() -> void:
@@ -116,6 +121,42 @@ func tick_status(delta: float) -> float:
 
 func _apply_knock(step: Vector3) -> void:
 	global_position += step
+
+
+## Call right after rig.play(action): the blow of that action must land exactly once at normalised progress `at`,
+## whether the rig emits its event (any timing) or not. The rig's own event wins if it comes first.
+func expect_event(ev: String, at: float) -> void:
+	_pending_ev = ev
+	_pending_at = at
+	_pending_action = rig.action if rig else ""
+	_ev_done.clear()
+
+
+## Gate for _on_rig_event: false if this event was already handled for the current action.
+func accept_event(ev: String) -> bool:
+	if _ev_done.has(ev):
+		return false
+	_ev_done[ev] = true
+	if ev == _pending_ev:
+		_pending_ev = ""
+	return true
+
+
+## Poll once per physics tick: fires the expected event when the action reaches its mark (or ends) without it.
+func poll_events() -> void:
+	if _pending_ev == "" or rig == null:
+		return
+	var same := rig.action == _pending_action
+	if same and rig.ap() < _pending_at:
+		return
+	var ev := _pending_ev
+	_pending_ev = ""
+	if same or rig.action == "":
+		_rig_event_fallback(ev)
+
+
+func _rig_event_fallback(_ev: String) -> void:
+	pass
 
 
 static func yaw_to(dir: Vector3) -> float:

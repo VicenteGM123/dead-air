@@ -15,6 +15,21 @@ static func _shader_mat(key: String, path: String, params: Dictionary = {}) -> S
 	return m
 
 
+## Per-node shader parameter (instead of instance uniforms / set_instance_shader_parameter()). Godot 4.7's
+## Compatibility renderer only has 256 global/instance uniform slots on WebGL 2 (16 per instance), so on the web all
+## but ~14 instances would read zeros: black models and invisible glows. The first call gives the node its own copy
+## of its material (and again if its material_override is replaced later); materials nobody animates stay shared.
+static func set_param(gi: GeometryInstance3D, param: StringName, value: Variant) -> void:
+	var m := gi.material_override as ShaderMaterial
+	if m == null:
+		return
+	if not gi.has_meta(&"own_material") or gi.get_meta(&"own_material") != m:
+		m = m.duplicate() as ShaderMaterial
+		gi.material_override = m
+		gi.set_meta(&"own_material", m)
+	m.set_shader_parameter(param, value)
+
+
 static func lowpoly() -> ShaderMaterial:
 	return _shader_mat("lowpoly", "res://shaders/lowpoly.gdshader")
 
@@ -46,6 +61,42 @@ static func cone_mesh(length: float, r0: float, r1: float, sides: int = 14) -> A
 	mb.cyl(Vector3.ZERO, length, r0, r1, sides, Color.WHITE, false)
 	mb.pop()
 	return mb.commit()
+
+
+## The same look as a lowpoly / foliage material but without its per-instance uniforms (flash, dissolve, tint).
+## The Compatibility renderer gives every GeometryInstance whose shader declares instance uniforms 16 slots of a
+## 4096-slot buffer (about 250 instances for the whole scene), so static scenery that never flashes or dissolves
+## (props, paths, plaza) should use this twin. Other materials are returned unchanged.
+static func static_twin(m: Material) -> Material:
+	var sm := m as ShaderMaterial
+	if sm == null or sm.shader == null or sm.shader.resource_path != "res://shaders/lowpoly.gdshader":
+		return m
+	var key := "static_%d" % sm.get_instance_id()
+	if _cache.has(key):
+		return _cache[key]
+	if not _cache.has("_static_shader"):
+		var re := RegEx.new()
+		re.compile("instance\\s+uniform\\s+(\\w+)\\s+(\\w+)\\s*=\\s*([^;]+);")
+		var sh := Shader.new()
+		sh.code = re.sub(sm.shader.code, "const $1 $2 = $3;", true)
+		_cache["_static_shader"] = sh
+	var twin := ShaderMaterial.new()
+	twin.shader = _cache["_static_shader"]
+	for u in sm.shader.get_shader_uniform_list():
+		var n: String = u["name"]
+		twin.set_shader_parameter(n, sm.get_shader_parameter(n))
+	_cache[key] = twin
+	return twin
+
+
+## Island ground: lowpoly lighting plus the ground map (contact AO, bare soil) and grass strokes.
+static func terrain() -> ShaderMaterial:
+	return _shader_mat("terrain", "res://shaders/terrain.gdshader")
+
+
+## Instanced grass clumps (Grass): lit like the facet they grow on, wind waves, distance shrink.
+static func grass() -> ShaderMaterial:
+	return _shader_mat("grass", "res://shaders/grass.gdshader")
 
 
 static func water() -> ShaderMaterial:

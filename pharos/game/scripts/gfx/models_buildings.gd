@@ -260,6 +260,10 @@ static func _post_lamp(mb: MeshBuilder, base: Vector3) -> void:
 
 
 ## Ember bed: warm dark coals by day (rgb), glowing at night (alpha 0 = night-glow flag).
+const VINE_LEAF := Color("86A04E")
+const VINE_LEAF_DARK := Color("62803E")
+const GRAPES := Color("5E3C72")
+const GRAPES_DARK := Color("47305A")
 const EMBERS := Color(0.36, 0.16, 0.1, 0.0)
 
 
@@ -381,7 +385,7 @@ static func _house2(mb: MeshBuilder, rng: RandomNumberGenerator) -> Dictionary:
 	# Chimney.
 	_box(mb, Vector3(mx + 1.1, base + mh + 1.05, -0.6), Vector3(0.44, 1.4, 0.44), Pal.MARBLE)
 	_box(mb, Vector3(mx + 1.1, base + mh + 1.8, -0.6), Vector3(0.56, 0.12, 0.56), Pal.MARBLE_SHADE)
-	# Pergola in front of the annex, smothered in bougainvillea.
+	# Vine arbour in front of the annex.
 	var pz := az + ad * 0.5 + 1.25
 	var px0 := ax - aw * 0.5 + 0.2
 	for sx in [px0, ax + aw * 0.5 - 0.15]:
@@ -390,9 +394,9 @@ static func _house2(mb: MeshBuilder, rng: RandomNumberGenerator) -> Dictionary:
 		_box(mb, Vector3(ax, 2.42, zz), Vector3(aw + 0.3, 0.12, 0.12), Pal.WOOD)
 	for i in 5:
 		_box(mb, Vector3(px0 - 0.1 + float(i) * 0.55, 2.52, (pz + az + ad * 0.5) * 0.5 + 0.1), Vector3(0.08, 0.08, 1.75), Pal.WOOD_LIGHT)
-	_bougainvillea(mb, rng, Vector3(px0, 2.66, pz + 0.05), Vector3(ax + aw * 0.5, 2.6, pz - 0.1), 4, 0.42)
-	_bougainvillea(mb, rng, Vector3(px0 + 0.3, 2.7, pz - 0.9), Vector3(ax + 0.6, 2.72, pz - 1.0), 2, 0.38)
-	_bougainvillea(mb, rng, Vector3(px0 + 0.05, 0.45, pz + 0.05), Vector3(px0, 2.3, pz + 0.05), 3, 0.22)
+	_vine_canopy(mb, rng, Vector3(px0, 2.66, pz + 0.05), Vector3(ax + aw * 0.5, 2.6, pz - 0.1), 4, 0.42)
+	_vine_canopy(mb, rng, Vector3(px0 + 0.3, 2.7, pz - 0.9), Vector3(ax + 0.6, 2.72, pz - 1.0), 2, 0.38)
+	_vine_canopy(mb, rng, Vector3(px0 + 0.05, 0.45, pz + 0.05), Vector3(px0, 2.3, pz + 0.05), 3, 0.22)
 	# Roof terrace: rug, little blue table and stools, a clothesline.
 	_box(mb, Vector3(ax - 0.1, ty + 0.07, az + 0.15), Vector3(1.3, 0.02, 0.9), Pal.CLOTH_RED)
 	_box(mb, Vector3(ax - 0.1, ty + 0.6, az + 0.15), Vector3(0.6, 0.06, 0.6), Pal.AEGEAN)
@@ -500,11 +504,11 @@ static func _plaque(mb: MeshBuilder, c: Vector3, size: Vector3, col: Color) -> v
 	mb.quad(p0, p3, p7, p4, col)
 
 
-## Terracotta pot with a flowering geranium.
+## Terracotta pot with flowering herbs.
 static func _pot_plant(mb: MeshBuilder, rng: RandomNumberGenerator, p: Vector3, s: float = 1.0) -> void:
 	ModelsNature.lathe(mb, p, ModelsNature._scaled([Vector2(0, 0), Vector2(0.14, 0), Vector2(0.2, 0.3), Vector2(0.24, 0.33), Vector2(0.17, 0.36), Vector2(0, 0.36)], s), 5, [Pal.TERRACOTTA, Pal.TERRACOTTA, Pal.TERRACOTTA_DARK, Pal.TERRACOTTA_DARK, Pal.WOOD_DARK])
 	ModelsNature.blob(mb, rng, p + Vector3(0, 0.3 * s, 0), ModelsNature._scaled([Vector2(0.24, 0), Vector2(0.18, 0.24), Vector2(0, 0.34)], s), 5, 0.15, Pal.GRASS_DARK, Pal.CYPRESS)
-	var col: Color = [Pal.POPPY, Pal.BOUGAINVILLEA, Pal.CREST, Pal.DAISY][rng.randi() % 4]
+	var col: Color = [Pal.POPPY, Pal.LAVENDER, Pal.CREST, Pal.DAISY][rng.randi() % 4]
 	for i in 3:
 		var a := TAU * float(i) / 3.0 + rng.randf()
 		mb.cyl(p + Vector3(cos(a) * 0.12, 0.5, sin(a) * 0.12) * s, 0.12 * s, 0.09 * s, 0.0, 4, col, false, rng.randf())
@@ -517,14 +521,21 @@ static func _bench(mb: MeshBuilder, p: Vector3) -> void:
 		_box(mb, p + Vector3(sx, 0.2, 0), Vector3(0.08, 0.4, 0.3), Pal.WOOD)
 
 
-## Chain of bougainvillea lumps from `a` to `b` (mostly magenta, some leaves), slightly drooping.
-static func _bougainvillea(mb: MeshBuilder, rng: RandomNumberGenerator, a: Vector3, b: Vector3, n: int, r: float) -> void:
+## Chain of grapevine lumps from `a` to `b` (vine leaves with a few dark bunches hanging below), slightly drooping.
+## (A vine arbour rather than bougainvillea, which only reached the Mediterranean in the 19th century.)
+static func _vine_canopy(mb: MeshBuilder, rng: RandomNumberGenerator, a: Vector3, b: Vector3, n: int, r: float) -> void:
 	var prof := [Vector2(0, -0.62), Vector2(0.78, -0.4), Vector2(1.0, 0.02), Vector2(0.7, 0.42), Vector2(0, 0.56)]
 	for i in n:
 		var t := (float(i) + 0.5) / float(n)
 		var p := a.lerp(b, t) + Vector3(rng.randf_range(-0.12, 0.12), rng.randf_range(-0.08, 0.08), rng.randf_range(-0.12, 0.12))
-		var leaf := (i + rng.randi() % 3) % 3 == 0
-		ModelsNature.blob(mb, rng, p, ModelsNature._scaled(prof, r * rng.randf_range(0.85, 1.15)), 5, 0.16, Pal.GRASS_DARK if leaf else Pal.BOUGAINVILLEA, Pal.CYPRESS if leaf else Pal.BOUGAINVILLEA.darkened(0.25), -0.3)
+		var light := (i + rng.randi() % 3) % 3 != 0
+		var rr := r * rng.randf_range(0.85, 1.15)
+		ModelsNature.blob(mb, rng, p, ModelsNature._scaled(prof, rr), 5, 0.16, VINE_LEAF if light else VINE_LEAF_DARK, VINE_LEAF_DARK if light else Pal.CYPRESS, -0.3)
+		# A bunch of grapes or two hanging under the leaves (only up on the arbour).
+		if r >= 0.3:
+			for k in 1 + rng.randi() % 2:
+				var g := p + Vector3(rng.randf_range(-0.5, 0.5) * rr, -rr * 0.62 - 0.2, rng.randf_range(-0.4, 0.4) * rr)
+				mb.cyl(g, 0.22, 0.0, 0.085, 5, GRAPES if k == 0 else GRAPES_DARK, false, rng.randf())
 
 
 # --- farm ----------------------------------------------------------------------------------------------------

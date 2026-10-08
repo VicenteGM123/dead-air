@@ -7,7 +7,7 @@ render_mode blend_add, unshaded, cull_disabled, depth_draw_never, shadows_disabl
 
 uniform float beam_length = 60.0;
 uniform vec3 beam_color : source_color = vec3(1.0, 0.86, 0.6);
-instance uniform float intensity = 1.0;
+uniform float intensity = 1.0;
 varying float v_z;
 
 void vertex() {

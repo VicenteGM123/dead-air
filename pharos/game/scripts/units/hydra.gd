@@ -1,6 +1,6 @@
 class_name Hydra
 extends Enemy
-## Boss of the seventh night. Crawls out of the sea on the southern beach; bites anything in front of it,
+## Boss of the seventh night. Crawls out of the sea on its beach (Data.NIGHT_WAVES); bites anything in front of it,
 ## spits shadow orbs at towers and the Keeper, and calls shades when wounded.
 
 var spit_cd := 4.0
@@ -21,7 +21,10 @@ func _physics_process(delta: float) -> void:
 		return
 	if not _roared and _t > 2.5:
 		_roared = true
-		Game.say("La Hidra de la Noche", "Ha salido del mar por la Playa del Sur", "boss")
+		var beach := "Playa del Sur"
+		if Game.island and lane < Game.island.beaches.size():
+			beach = Game.island.beaches[lane]["label"]
+		Game.say("La Hidra de la Noche", "Ha salido del mar por la %s" % beach, "boss")
 	spit_cd -= delta
 	if spit_cd <= 0.0 and not rig.is_busy() and stun <= 0.0:
 		var tgt := _spit_target()
@@ -30,6 +33,7 @@ func _physics_process(delta: float) -> void:
 			facing = Unit.yaw_to(tgt.global_position - global_position)
 			_spit_at = tgt
 			rig.play("spit")
+			expect_event("release", 0.5)
 		else:
 			spit_cd = 1.0
 	while not _summons.is_empty() and hp / max_hp <= _summons[0]:
@@ -38,6 +42,20 @@ func _physics_process(delta: float) -> void:
 
 
 var _spit_at: Unit = null
+
+
+## The Hydra marches on the lighthouse: it turns aside for buildings, but Fanós and the hoplites only get bitten
+## when they stand in its way (it spits at them otherwise), so the climax happens in the village, under the towers.
+func _aggro_for(u: Unit, aggro: float) -> float:
+	if u.is_building:
+		return super(u, aggro)
+	return _reach(u) - u.radius + 0.5
+
+
+func _target_ok() -> bool:
+	if not super():
+		return false
+	return target.is_building or flat_dist(target.global_position) <= _reach(target) + 2.5
 
 
 func _spit_target() -> Unit:
@@ -56,7 +74,7 @@ func _spit_target() -> Unit:
 
 
 func _on_rig_event(ev: String) -> void:
-	if state == S.DEAD:
+	if state == S.DEAD or not accept_event(ev):
 		return
 	if ev == "release" and _spit_at and is_instance_valid(_spit_at):
 		var from := global_position + Vector3(0, 4.0, 0) + Unit.dir_of_yaw(facing) * 2.0
@@ -90,7 +108,7 @@ func _summon() -> void:
 	Game.say("La Hidra llama a su prole", "", "boss")
 	if Game.main and Game.main.waves:
 		for i in 5:
-			var e: Enemy = Game.main.waves.spawn("shade" if i < 4 else "shielded", lane)
+			var e: Enemy = Game.main.waves.summon("shade" if i < 4 else "shielded", lane)
 			e.s = maxf(0.0, s - 3.0 - i * 0.8)
 			e.global_position = _lane_point(e.s)
 

@@ -1,60 +1,62 @@
 class_name Data
 ## Balance and content tables. Everything tunable lives here.
 
-const START_COINS := 14
+const START_COINS := 24
 const NIGHTS := 7
-const HERO_RESPAWN := 7.0
+const HERO_RESPAWN := 6.0 # seconds; +1 for every earlier fall in the same night, up to HERO_RESPAWN_MAX
+const HERO_RESPAWN_MAX := 10.0
 
+## Economy: every building pays for itself in about two dawns, so the island fills up night after night.
 const BUILDINGS := {
 	"pharos": {
 		"name": "Faro",
 		"levels": [
-			{"cost": 0, "hp": 600, "income": 4, "desc": "El corazón de la isla. Si su llama se apaga, todo termina."},
-			{"cost": 12, "hp": 850, "income": 5, "desc": "Aviva la llama: más vida y la luz alcanza nuevos solares."},
-			{"cost": 22, "hp": 1150, "income": 6, "desc": "Faro de tres cuerpos: aún más vida y los últimos solares."},
+			{"cost": 0, "hp": 650, "income": 8, "desc": "El corazón de la isla. Si su llama se apaga, todo termina."},
+			{"cost": 16, "hp": 900, "income": 14, "desc": "Aviva la llama: más vida, más tributo y la luz alcanza nuevos solares."},
+			{"cost": 30, "hp": 1200, "income": 20, "desc": "Faro de tres cuerpos: aún más vida y tributo, y los últimos solares."},
 		],
 	},
 	"house": {
 		"name": "Casa",
 		"levels": [
-			{"cost": 4, "hp": 80, "income": 2, "desc": "Una familia de pescadores. +2 dracmas cada amanecer."},
-			{"cost": 6, "hp": 110, "income": 3, "desc": "Segundo piso y pérgola. +3 dracmas cada amanecer."},
+			{"cost": 5, "hp": 80, "income": 4, "desc": "Una familia de pescadores. +4 dracmas cada amanecer."},
+			{"cost": 8, "hp": 110, "income": 7, "desc": "Segundo piso y pérgola. +7 dracmas cada amanecer."},
 		],
 	},
 	"farm": {
 		"name": "Olivar",
 		"levels": [
-			{"cost": 6, "hp": 90, "income": 3, "desc": "Olivos y una prensa. +3 dracmas cada amanecer."},
-			{"cost": 8, "hp": 120, "income": 5, "desc": "Más olivos y ánforas. +5 dracmas cada amanecer."},
+			{"cost": 8, "hp": 90, "income": 6, "desc": "Olivos y una prensa. +6 dracmas cada amanecer."},
+			{"cost": 12, "hp": 120, "income": 10, "desc": "Más olivos y ánforas. +10 dracmas cada amanecer."},
 		],
 	},
 	"dock": {
 		"name": "Muelle",
 		"levels": [
-			{"cost": 5, "hp": 80, "income": 3, "desc": "Barcas de pesca. +3 dracmas cada amanecer."},
-			{"cost": 7, "hp": 110, "income": 4, "desc": "Muelle más largo y otra barca. +4 dracmas cada amanecer."},
+			{"cost": 7, "hp": 80, "income": 5, "desc": "Barcas de pesca. +5 dracmas cada amanecer."},
+			{"cost": 10, "hp": 110, "income": 8, "desc": "Muelle más largo y otra barca. +8 dracmas cada amanecer."},
 		],
 	},
 	"tower": {
 		"name": "Torre de arqueros",
 		"levels": [
-			{"cost": 6, "hp": 150, "range": 13.0, "dmg": 7.0, "rate": 1.05, "shots": 1, "desc": "Un arquero dispara a las criaturas cercanas."},
-			{"cost": 10, "hp": 210, "range": 15.0, "dmg": 10.0, "rate": 0.85, "shots": 1, "desc": "Piedra y mejor arco: más alcance y daño."},
-			{"cost": 16, "hp": 280, "range": 17.0, "dmg": 12.0, "rate": 0.7, "shots": 2, "desc": "Torre de mármol: dos flechas por disparo."},
+			{"cost": 7, "hp": 150, "range": 13.0, "dmg": 7.0, "rate": 1.05, "shots": 1, "desc": "Un arquero dispara a las criaturas cercanas."},
+			{"cost": 12, "hp": 210, "range": 15.0, "dmg": 10.0, "rate": 0.85, "shots": 1, "desc": "Piedra y mejor arco: más alcance y daño."},
+			{"cost": 18, "hp": 280, "range": 17.0, "dmg": 12.0, "rate": 0.7, "shots": 2, "desc": "Torre de mármol: dos flechas por disparo."},
 		],
 	},
 	"wall": {
 		"name": "Muralla",
 		"levels": [
-			{"cost": 3, "hp": 160, "desc": "Empalizada: las criaturas que caminan deben derribarla para pasar."},
-			{"cost": 6, "hp": 420, "desc": "Muralla de piedra, mucho más resistente."},
+			{"cost": 4, "hp": 160, "desc": "Empalizada: las criaturas que caminan deben derribarla para pasar."},
+			{"cost": 8, "hp": 420, "desc": "Muralla de piedra, mucho más resistente."},
 		],
 	},
 	"barracks": {
 		"name": "Cuartel",
 		"levels": [
-			{"cost": 8, "hp": 150, "soldiers": 2, "s_hp": 60.0, "s_dmg": 8.0, "desc": "Dos hoplitas defienden la zona."},
-			{"cost": 12, "hp": 210, "soldiers": 3, "s_hp": 90.0, "s_dmg": 11.0, "desc": "Tres hoplitas veteranos."},
+			{"cost": 10, "hp": 150, "soldiers": 2, "s_hp": 90.0, "s_dmg": 10.0, "desc": "Dos hoplitas defienden el camino."},
+			{"cost": 15, "hp": 210, "soldiers": 3, "s_hp": 130.0, "s_dmg": 14.0, "desc": "Tres hoplitas veteranos."},
 		],
 	},
 }
@@ -62,24 +64,44 @@ const BUILDINGS := {
 const ECONOMY := ["pharos", "house", "farm", "dock"]
 
 const ENEMIES := {
-	"shade": {"name": "Sombra", "hp": 30.0, "speed": 2.3, "dmg": 6.0, "rate": 1.15, "range": 1.2, "radius": 0.45, "aggro": 4.5},
+	"shade": {"name": "Sombra", "hp": 34.0, "speed": 2.3, "dmg": 6.0, "rate": 1.15, "range": 1.2, "radius": 0.45, "aggro": 4.5},
 	"ker": {"name": "Ker", "hp": 16.0, "speed": 4.1, "dmg": 4.0, "rate": 0.8, "range": 1.1, "radius": 0.35, "aggro": 6.0, "flying": true},
 	"shielded": {"name": "Escudado", "hp": 75.0, "speed": 1.8, "dmg": 10.0, "rate": 1.3, "range": 1.35, "radius": 0.55, "aggro": 4.0, "arrow_resist": 0.5},
 	"archer": {"name": "Arquero de Nyx", "hp": 24.0, "speed": 2.1, "dmg": 6.0, "rate": 1.9, "range": 9.0, "radius": 0.45, "aggro": 10.0, "ranged": true},
-	"cyclops": {"name": "Cíclope de sombra", "hp": 280.0, "speed": 1.35, "dmg": 28.0, "rate": 2.4, "range": 2.1, "radius": 1.1, "aggro": 6.0, "building_mult": 2.0, "aoe": 2.3, "heavy": true},
-	"hydra": {"name": "Hidra de la Noche", "hp": 2600.0, "speed": 0.9, "dmg": 34.0, "rate": 2.0, "range": 4.2, "radius": 2.4, "aggro": 9.0, "building_mult": 1.5, "boss": true, "heavy": true},
+	"cyclops": {"name": "Cíclope de sombra", "hp": 320.0, "speed": 1.35, "dmg": 28.0, "rate": 2.4, "range": 2.1, "radius": 1.1, "aggro": 6.0, "building_mult": 1.7, "aoe": 2.3, "heavy": true},
+	"hydra": {"name": "Hidra de la Noche", "hp": 2800.0, "speed": 1.0, "dmg": 34.0, "rate": 2.0, "range": 4.2, "radius": 2.4, "aggro": 9.0, "building_mult": 1.5, "boss": true, "heavy": true},
 }
 
-## Each night: list of [seconds from nightfall, lane index, {type: count}].
+## Each night: list of [seconds from nightfall, lane index, {type: count}]. Lanes: 0 south, 1 east, 2 west, 3 north.
+## Ramp: nights 1-2 teach on the southern beach only; the east opens on night 3, the west on night 4 (both need
+## the lighthouse at level 2), the north on night 5 (level 3); night 6 is the peak and night 7 the Hydra.
 const NIGHT_WAVES := [
-	[[2.0, 0, {"shade": 3}], [16.0, 0, {"shade": 4}]],
-	[[2.0, 0, {"shade": 4}], [10.0, 1, {"shade": 3}], [24.0, 0, {"shade": 3, "ker": 2}], [33.0, 1, {"shade": 4}]],
-	[[2.0, 2, {"shade": 4}], [9.0, 0, {"shade": 4, "archer": 1}], [19.0, 1, {"shade": 4, "ker": 3}], [31.0, 2, {"shade": 3, "shielded": 1}], [41.0, 0, {"shade": 5, "archer": 2}]],
-	[[2.0, 0, {"shade": 5, "shielded": 2}], [10.0, 1, {"shade": 5, "archer": 2}], [20.0, 2, {"ker": 5, "shade": 3}], [34.0, 0, {"cyclops": 1, "shade": 4}], [45.0, 1, {"shielded": 2, "shade": 4}]],
-	[[2.0, 3, {"shade": 5}], [8.0, 0, {"shade": 4, "shielded": 2, "archer": 2}], [18.0, 1, {"ker": 6}], [27.0, 2, {"shade": 6, "archer": 2}], [37.0, 3, {"cyclops": 1, "shade": 4}], [49.0, 0, {"cyclops": 1, "shielded": 3}]],
-	[[2.0, 0, {"shade": 6, "archer": 2}], [6.0, 1, {"shade": 6, "shielded": 2}], [14.0, 2, {"ker": 6, "shade": 4}], [23.0, 3, {"shade": 6, "archer": 3}], [35.0, 0, {"cyclops": 1, "shielded": 3}], [42.0, 1, {"cyclops": 1, "ker": 5}], [53.0, 2, {"cyclops": 1, "shade": 6}], [62.0, 3, {"shielded": 4, "archer": 3}]],
-	[[3.0, 0, {"hydra": 1}], [9.0, 1, {"shade": 5, "ker": 4}], [17.0, 2, {"shade": 5, "archer": 2}], [31.0, 3, {"shielded": 3, "shade": 4}], [46.0, 1, {"cyclops": 1, "shade": 4}]],
+	# 1 · Sombras por el sur.
+	[[2.0, 0, {"shade": 3}], [16.0, 0, {"shade": 3}], [30.0, 0, {"shade": 4}]],
+	# 2 · Llegan las Keres (vuelan sobre las murallas) y el primer arquero.
+	[[2.0, 0, {"shade": 4}], [14.0, 0, {"shade": 3, "ker": 2}], [28.0, 0, {"shade": 4, "archer": 1}], [42.0, 0, {"shade": 5}]],
+	# 3 · Se abre la Cala del Este; primeros Escudados.
+	[[2.0, 0, {"shade": 4}], [7.0, 1, {"shade": 4}], [19.0, 1, {"shade": 3, "ker": 2}], [27.0, 0, {"shade": 3, "shielded": 1, "archer": 1}],
+		[40.0, 1, {"shade": 4, "archer": 2}], [48.0, 0, {"shade": 4, "ker": 2}]],
+	# 4 · Se abre el oeste; el primer Cíclope.
+	[[2.0, 2, {"shade": 5}], [6.0, 0, {"shade": 5, "shielded": 1}], [13.0, 1, {"shade": 5, "archer": 2}], [22.0, 2, {"shade": 4, "ker": 4}],
+		[32.0, 0, {"cyclops": 1, "shade": 4}], [42.0, 1, {"shade": 5, "shielded": 2}], [52.0, 2, {"shade": 4, "archer": 2}]],
+	# 5 · Se abre el norte: cuatro frentes.
+	[[2.0, 3, {"shade": 6}], [5.0, 0, {"shade": 6, "archer": 2}], [11.0, 1, {"shade": 6, "shielded": 2}], [18.0, 2, {"ker": 5, "shade": 4}],
+		[27.0, 3, {"shade": 5, "shielded": 2, "archer": 2}], [36.0, 0, {"cyclops": 1, "shade": 5}], [45.0, 1, {"shade": 5, "ker": 4}],
+		[54.0, 2, {"cyclops": 1, "shielded": 2, "shade": 3}]],
+	# 6 · La noche más larga: todo a la vez.
+	[[2.0, 0, {"shade": 8, "archer": 2}], [4.0, 1, {"shade": 7, "shielded": 2}], [10.0, 2, {"ker": 6, "shade": 5}], [16.0, 3, {"shade": 7, "archer": 3}],
+		[26.0, 0, {"cyclops": 1, "shielded": 3, "shade": 3}], [32.0, 2, {"cyclops": 1, "shade": 6}], [40.0, 1, {"cyclops": 1, "ker": 5, "shade": 3}],
+		[50.0, 3, {"shielded": 3, "archer": 3, "shade": 3}], [60.0, 0, {"shade": 8, "ker": 4}]],
+	# 7 · La Hidra de la Noche sale por el sur; su prole llega por las otras playas (menos que en la noche 6: la
+	#     protagonista es ella).
+	[[3.0, 0, {"hydra": 1}], [8.0, 1, {"shade": 6, "ker": 3}], [15.0, 2, {"shade": 6, "archer": 2}], [25.0, 3, {"shielded": 3, "shade": 5}],
+		[38.0, 1, {"cyclops": 1, "shade": 5}], [50.0, 2, {"shielded": 2, "ker": 4, "shade": 2}], [62.0, 3, {"cyclops": 1, "archer": 2, "shade": 2}]],
 ]
+
+## Creatures grow tougher as the nights go on (health multiplier per night; the Hydra keeps its own).
+const NIGHT_HP := [1.0, 1.0, 1.0, 1.1, 1.25, 1.45, 1.15]
 
 const BLESSINGS := {
 	"zeus": {"god": "Zeus", "title": "Ira del cielo", "desc": "El Haz del Faro se carga un 35 % más rápido y quema un 50 % más.", "icon": "bolt", "color": Color("F2C14E")},
@@ -96,7 +118,7 @@ const BLESSINGS := {
 
 const HERO := {
 	"hp": 130.0, "speed": 6.0, "combo": [13.0, 13.0, 24.0], "bash_dmg": 10.0, "bash_cd": 4.0, "dodge_cd": 0.75,
-	"favor_max": 100.0, "beam_dmg": 70.0, "beam_radius": 10.0,
+	"favor_max": 100.0, "favor_per_dmg": 0.35, "beam_dmg": 70.0, "beam_radius": 10.0,
 }
 
 
@@ -107,6 +129,10 @@ static func building_level(type: String, level: int) -> Dictionary:
 
 static func max_level(type: String) -> int:
 	return (BUILDINGS[type]["levels"] as Array).size()
+
+
+static func night_hp_mult(n: int) -> float:
+	return float(NIGHT_HP[clampi(n - 1, 0, NIGHT_HP.size() - 1)])
 
 
 static func night_lanes(n: int) -> Array:

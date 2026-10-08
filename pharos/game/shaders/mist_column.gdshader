@@ -4,7 +4,7 @@ render_mode blend_add, unshaded, cull_disabled, depth_draw_never, shadows_disabl
 
 #include "res://shaders/pharos.gdshaderinc"
 
-instance uniform float intensity = 1.0;
+uniform float intensity = 1.0;
 
 void fragment() {
 	float x = abs(UV.x - 0.5) * 2.0;

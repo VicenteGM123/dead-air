@@ -19,6 +19,9 @@ var _stinger: AudioStreamPlayer
 var _amb := {}
 var _night := 0.0
 var _fade_jobs: Array = []
+## Web: sounds still to be decoded ahead of their first play() (see _web_preload).
+var _sample_queue: Array[String] = []
+var _sample_wait := 0.0
 
 
 func _ready() -> void:
@@ -38,6 +41,37 @@ func _ready() -> void:
 		var p := _new_player("Amb")
 		p.volume_db = -80.0
 		_amb[n] = p
+	# A little headroom: the busiest night fights summed above full scale.
+	AudioServer.set_bus_volume_db(0, -2.5)
+	if OS.has_feature("web"):
+		_web_preload()
+
+
+## On the web every sound is a Web Audio sample, decoded whole on its first play(): a 60 s track blocks the main
+## thread for 0.3-1.2 s. Decode what the title and the first day need now (under the loading screen), the short
+## effects a few at a time while the title shows, and the night and boss music when dusk falls (hidden by the fade).
+func _web_preload() -> void:
+	for key in ["music/title", "music/day", "amb/sea", "amb/day", "amb/night"]:
+		_register_sample(key)
+	for f in ResourceLoader.list_directory("res://assets/audio/sfx"):
+		if f.ends_with(".ogg"):
+			_sample_queue.append("sfx/" + f.get_basename())
+	_sample_queue.append_array(["amb/fire", "music/stinger_dawn", "music/stinger_defeat", "music/stinger_victory"])
+	Game.phase_changed.connect(_on_phase_samples)
+
+
+func _on_phase_samples(p: int) -> void:
+	if p == Game.Phase.DUSK:
+		_register_sample("music/night")
+		if Game.night + 1 >= Data.NIGHTS:
+			_register_sample("music/boss")
+
+
+func _register_sample(key: String) -> void:
+	var parts := key.split("/")
+	var s := _stream(parts[0], parts[1], parts[0] != "sfx" and not parts[1].begins_with("stinger_"))
+	if s and not AudioServer.is_stream_registered_as_sample(s):
+		AudioServer.register_stream_as_sample(s)
 
 
 func _new_player(bus: String) -> AudioStreamPlayer:
@@ -50,8 +84,10 @@ func _new_player(bus: String) -> AudioStreamPlayer:
 func _make_bus(bus_name: String, vol: float) -> void:
 	if AudioServer.get_bus_index(bus_name) != -1:
 		return
-	AudioServer.add_bus()
-	var i := AudioServer.bus_count - 1
+	# Not add_bus(): with the web's Sample playback Godot 4.7 then loops the sample buses with Master and nothing is
+	# heard. Growing bus_count appends the bus the same way on every platform.
+	var i := AudioServer.bus_count
+	AudioServer.bus_count = i + 1
 	AudioServer.set_bus_name(i, bus_name)
 	AudioServer.set_bus_send(i, "Master")
 	AudioServer.set_bus_volume_db(i, linear_to_db(maxf(vol, 0.0001)))
@@ -179,6 +215,11 @@ func loop(sound: String, node: Node3D, vol_db: float = 0.0) -> Node:
 
 
 func _process(delta: float) -> void:
+	if not _sample_queue.is_empty():
+		_sample_wait -= delta
+		if _sample_wait <= 0.0:
+			_register_sample(_sample_queue.pop_front())
+			_sample_wait = 0.05
 	for i in range(_fade_jobs.size() - 1, -1, -1):
 		var j: Array = _fade_jobs[i]
 		j[3] += delta

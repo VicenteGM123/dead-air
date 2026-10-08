@@ -22,6 +22,8 @@ var _dissolve := 0.0
 var _fired := {}
 ## Material used by add_part (creatures override this with Materials.nyx()).
 var part_material: Material = null
+## This rig's own copies of its shared materials, so hit flash / dissolve / tint stay per rig (Materials.set_param).
+var _own_materials := {}
 
 
 func _init() -> void:
@@ -39,12 +41,22 @@ func add_part(part_name: String, mesh: Mesh, parent_name: String = "", pos: Vect
 	if mesh:
 		var mi := MeshInstance3D.new()
 		mi.mesh = mesh
-		mi.material_override = mat if mat else (part_material if part_material else Materials.lowpoly())
+		mi.material_override = _own_material(mat if mat else (part_material if part_material else Materials.lowpoly()))
+		mi.set_meta(&"own_material", mi.material_override)
 		if not shadow:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		pivot.add_child(mi)
 		meshes.append(mi)
 	return pivot
+
+
+## This rig's copy of a shared material: all its parts share it, and Materials.set_param edits it in place.
+func _own_material(m: Material) -> Material:
+	if not (m is ShaderMaterial):
+		return m
+	if not _own_materials.has(m):
+		_own_materials[m] = m.duplicate()
+	return _own_materials[m]
 
 
 ## Soft additive halo (glowing eyes, fire). Returns the quad so it can be animated.
@@ -56,11 +68,11 @@ func add_glow(parent_name: String, pos: Vector3, color: Color, size: float, inte
 	q.material_override = Materials.glow_add()
 	q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	q.position = pos
-	q.set_instance_shader_parameter("intensity", intensity)
+	Materials.set_param(q, "intensity", intensity)
 	var parent: Node3D = self if parent_name == "" else parts[parent_name]
 	parent.add_child(q)
 	# Quad vertex colours are white: tint through the instance parameter.
-	q.set_instance_shader_parameter("tint_color", Vector3(color.r, color.g, color.b))
+	Materials.set_param(q, "tint_color", Vector3(color.r, color.g, color.b))
 	return q
 
 
@@ -100,12 +112,12 @@ func hit_flash(strength: float = 1.0) -> void:
 func set_dissolve(v: float) -> void:
 	_dissolve = v
 	for m in meshes:
-		m.set_instance_shader_parameter("dissolve", v)
+		Materials.set_param(m, "dissolve", v)
 
 
 func set_tint(c: Color) -> void:
 	for m in meshes:
-		m.set_instance_shader_parameter("tint", Vector3(c.r, c.g, c.b))
+		Materials.set_param(m, "tint", Vector3(c.r, c.g, c.b))
 
 
 func set_shadows(on: bool) -> void:
@@ -115,7 +127,7 @@ func set_shadows(on: bool) -> void:
 
 func _apply_flash() -> void:
 	for m in meshes:
-		m.set_instance_shader_parameter("flash", _flash)
+		Materials.set_param(m, "flash", _flash)
 
 
 func _process(delta: float) -> void:

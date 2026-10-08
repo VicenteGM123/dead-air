@@ -34,8 +34,8 @@ func _ready() -> void:
 	_halo.mesh = q
 	_halo.material_override = Materials.glow_add()
 	_halo.position = Vector3(0.6, 1.7, 0.05)
-	_halo.set_instance_shader_parameter("tint_color", Vector3(0.7, 0.6, 1.0))
-	_halo.set_instance_shader_parameter("intensity", 0.0)
+	Materials.set_param(_halo, "tint_color", Vector3(0.7, 0.6, 1.0))
+	Materials.set_param(_halo, "intensity", 0.0)
 	add_child(_halo)
 	Interactables.add(self)
 	Obstacles.add(global_position, 0.45, self)
@@ -77,4 +77,4 @@ func _process(_delta: float) -> void:
 	var t := Time.get_ticks_msec() / 1000.0
 	var on := Game.phase == Game.Phase.DAY
 	var night: float = Game.main.tod.night_amount() if Game.main and Game.main.tod else 0.0
-	_halo.set_instance_shader_parameter("intensity", (0.1 + 0.08 * sin(t * 2.5) + 0.3 * night) * (1.0 if on else 0.0) + _hold * 1.2)
+	Materials.set_param(_halo, "intensity", (0.1 + 0.08 * sin(t * 2.5) + 0.3 * night) * (1.0 if on else 0.0) + _hold * 1.2)

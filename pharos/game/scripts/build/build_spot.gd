@@ -97,16 +97,18 @@ func interact_position() -> Vector3:
 
 
 func interact_range() -> float:
+	var r := 3.0
 	match type:
 		"pharos":
-			return 5.2
+			r = 5.2
 		"farm":
-			return 4.5
-		"wall":
-			return 3.0
+			r = 4.5
 		"dock":
-			return 3.2
-	return 3.0
+			r = 3.2
+	# The building pushes Fanós out (Obstacles): always reachable from its edge, whatever the model size.
+	if building and type != "wall" and type != "dock":
+		r = maxf(r, building.footprint * 0.85 + 1.2)
+	return r
 
 
 func interact_info() -> Dictionary:

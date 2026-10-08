@@ -22,6 +22,7 @@ var _t := 0.0
 var _dead_t := 0.0
 var _leash_from := Vector3.ZERO
 var _blocking_wall: Unit = null
+var _land_s := 0.0 # lane distance of the beach landing: before it, a walker is still wading ashore
 
 
 func setup(t: String, lane_index: int, lateral_offset: float) -> void:
@@ -31,12 +32,14 @@ func setup(t: String, lane_index: int, lateral_offset: float) -> void:
 	lateral = lateral_offset
 	team = 1
 	display_name = data["name"]
-	max_hp = data["hp"] * Game.main.difficulty_hp_mult()
+	max_hp = data["hp"] * Game.main.difficulty_hp_mult() * (1.0 if data.get("boss", false) else Data.night_hp_mult(Game.night))
 	hp = max_hp
 	radius = data["radius"]
 	speed = data["speed"] * randf_range(0.92, 1.08)
 	is_flying = data.get("flying", false)
 	is_heavy = data.get("heavy", false)
+	if Game.island and lane < Game.island.beaches.size():
+		_land_s = Game.island.lane_project(lane, Game.island.beaches[lane]["landing"]) + radius
 
 
 func _ready() -> void:
@@ -85,6 +88,7 @@ func _physics_process(delta: float) -> void:
 			queue_free()
 		return
 	var smul := tick_status(delta)
+	poll_events()
 	attack_cd = maxf(0.0, attack_cd - delta)
 	if state == S.SPAWN:
 		var k := clampf(_t / 1.0, 0.0, 1.0)
@@ -127,8 +131,10 @@ func _physics_process(delta: float) -> void:
 				else:
 					var gp := target.global_position
 					if data.get("ranged", false):
-						# Keep shooting distance.
+						# Keep shooting distance (but never back off into the sea).
 						gp = target.global_position + (global_position - target.global_position).normalized() * (reach * 0.85)
+						if not _on_land(gp):
+							gp = target.global_position
 					_step_to(gp, delta, smul)
 		S.ATTACK:
 			if not _target_ok():
@@ -144,6 +150,8 @@ func _physics_process(delta: float) -> void:
 				elif attack_cd <= 0.0 and not rig.is_busy():
 					attack_cd = data["rate"] * randf_range(0.9, 1.1)
 					rig.play(_attack_anim())
+					# Ranged creatures loose their orb on "release" (a rig may also call it "impact": both count once).
+					expect_event("release" if data.get("ranged", false) else "impact", 0.56)
 	_finish_frame(delta)
 
 
@@ -193,6 +201,13 @@ func _target_ok() -> bool:
 
 
 func _think() -> void:
+	# Creatures come ashore before they fight (and archers never shoot from the water): out there nobody could
+	# ever reach them.
+	if not is_flying and not _on_land(global_position) and (data.get("ranged", false) or s < _land_s):
+		if state != S.WALK:
+			state = S.WALK
+			target = null
+		return
 	if state == S.ATTACK and _target_ok() and target.is_building:
 		return
 	# Walls on our lane hold the line for walkers.
@@ -214,7 +229,7 @@ func _think() -> void:
 		if u is Building and u.type == "dock":
 			continue
 		var d: float = u.flat_dist(global_position) - u.radius
-		var limit := aggro + (2.0 if u.is_building else 0.0)
+		var limit := _aggro_for(u, aggro)
 		if d > limit:
 			continue
 		var score := d
@@ -236,19 +251,31 @@ func _think() -> void:
 		target = null
 
 
+## How far this creature looks for `u` (buildings draw them from a little further away).
+func _aggro_for(u: Unit, aggro: float) -> float:
+	return aggro + (2.0 if u.is_building else 0.0)
+
+
+func _on_land(p: Vector3) -> bool:
+	return Game.island.height_at(p.x, p.z) > -0.3
+
+
 func _wall_relevant(w: Unit) -> bool:
 	return w.lane == lane and absf(w.lane_s - s) < 4.0
 
 
+func _rig_event_fallback(ev: String) -> void:
+	_on_rig_event(ev)
+
+
 func _on_rig_event(ev: String) -> void:
-	if state == S.DEAD:
+	if data.get("ranged", false) and ev == "impact":
+		ev = "release"
+	if state == S.DEAD or not accept_event(ev):
 		return
 	match ev:
 		"impact":
-			if data.get("ranged", false):
-				_do_release()
-			else:
-				_do_impact()
+			_do_impact()
 		"release":
 			_do_release()
 

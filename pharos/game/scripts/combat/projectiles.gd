@@ -40,8 +40,8 @@ func _take(kind: String) -> Node3D:
 		g.mesh = q
 		g.material_override = Materials.glow_add()
 		g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		g.set_instance_shader_parameter("tint_color", Vector3(0.6, 0.5, 1.0))
-		g.set_instance_shader_parameter("intensity", 1.4)
+		Materials.set_param(g, "tint_color", Vector3(0.6, 0.5, 1.0))
+		Materials.set_param(g, "intensity", 1.4)
 		root.add_child(g)
 	add_child(root)
 	return root
@@ -110,7 +110,7 @@ func _impact(it: Dictionary) -> void:
 	if it["kind"] == "arrow":
 		var tg: Unit = it["target"]
 		if is_instance_valid(tg) and tg.alive:
-			tg.take_damage(it["dmg"], it["source"], 0.25, "arrow")
+			tg.take_damage(it["dmg"], it["source"] if is_instance_valid(it["source"]) else null, 0.25, "arrow")
 			if randf() < 0.4:
 				Sfx.play("arrow_hit", tg.global_position, -10.0, randf_range(0.9, 1.15))
 			if Game.fx:
@@ -121,7 +121,7 @@ func _impact(it: Dictionary) -> void:
 		for u in Game.query(0, at, 0.7):
 			if u is Hero and (u as Hero).invuln > 0.0:
 				continue
-			u.take_damage(it["dmg"], it["source"], 0.5, "orb")
+			u.take_damage(it["dmg"], it["source"] if is_instance_valid(it["source"]) else null, 0.5, "orb")
 			hit = true
 			break
 		Sfx.play("orb_hit", at, -8.0 if hit else -12.0, randf_range(0.9, 1.1))

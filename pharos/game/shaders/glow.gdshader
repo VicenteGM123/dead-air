@@ -7,8 +7,8 @@ render_mode blend_add, unshaded, cull_disabled, depth_draw_never, shadows_disabl
 uniform bool billboard = true;
 uniform bool uv_falloff = true;
 uniform float pull = 0.35; // metres pulled toward the camera so the halo is not clipped by its owner
-instance uniform float intensity = 1.0;
-instance uniform vec3 tint_color = vec3(1.0);
+uniform float intensity = 1.0;
+uniform vec3 tint_color = vec3(1.0);
 
 void vertex() {
 	if (billboard) {

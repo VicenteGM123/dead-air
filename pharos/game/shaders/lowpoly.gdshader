@@ -13,9 +13,9 @@ uniform float wrap = 0.35;         // wrapped diffuse amount
 uniform float glow_strength = 2.4; // self-lit multiplier
 uniform vec3 rim_color : source_color = vec3(0.0); // ethereal rim for the creatures of Nyx
 uniform float rim_power = 2.5;
-instance uniform float flash = 0.0;     // hit flash (0..1)
-instance uniform float dissolve = 0.0;  // 0 = solid, 1 = gone
-instance uniform vec3 tint = vec3(1.0);
+uniform float flash = 0.0;     // hit flash (0..1)
+uniform float dissolve = 0.0;  // 0 = solid, 1 = gone
+uniform vec3 tint = vec3(1.0);
 
 varying vec3 v_albedo;
 varying float v_kind;

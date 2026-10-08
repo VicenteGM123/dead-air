@@ -34,11 +34,12 @@ func apply_stats(hp_v: float, dmg_v: float) -> void:
 
 
 func post() -> Vector3:
-	var rp: Vector3 = barracks.rally_point() if is_instance_valid(barracks) else global_position
-	var count := 3
+	if not is_instance_valid(barracks):
+		return global_position
+	var rp: Vector3 = barracks.rally_point()
+	var count: int = maxi(1, barracks.soldiers.size())
 	var a := (float(slot) - float(count - 1) * 0.5) * 1.6
-	var b: Node3D = barracks
-	var side := b.global_transform.basis.x.normalized() if is_instance_valid(b) else Vector3.RIGHT
+	var side: Vector3 = barracks.rally_side() if barracks.has_method("rally_side") else barracks.global_transform.basis.x.normalized()
 	return rp + side * a
 
 
@@ -65,6 +66,7 @@ func _physics_process(delta: float) -> void:
 				visible = false
 		return
 	var smul := tick_status(delta)
+	poll_events()
 	attack_cd = maxf(0.0, attack_cd - delta)
 	_retarget -= delta
 	if _retarget <= 0.0:
@@ -85,6 +87,7 @@ func _physics_process(delta: float) -> void:
 			if attack_cd <= 0.0 and not rig.is_busy():
 				attack_cd = 1.0
 				rig.play("attack%d" % (randi() % 2 + 1))
+				expect_event("impact", 0.38)
 	else:
 		var d := goal - global_position
 		d.y = 0.0
@@ -110,17 +113,25 @@ func _pick_target() -> void:
 		return
 	target = null
 	var best_d := GUARD_RADIUS
+	var at := post()
 	for e in Game.units[1]:
-		if not is_instance_valid(e) or not e.alive or e.is_flying:
+		if not is_instance_valid(e) or not e.alive:
 			continue
-		var d: float = e.flat_dist(post())
+		var d: float = e.flat_dist(at)
+		# Keres fly over the squad: the hoplites only raise their spears at those that swoop in close.
+		if e.is_flying and d > 4.5:
+			continue
 		if d < best_d:
 			best_d = d
 			target = e
 
 
+func _rig_event_fallback(ev: String) -> void:
+	_on_rig_event(ev)
+
+
 func _on_rig_event(ev: String) -> void:
-	if ev != "impact" or not alive:
+	if ev != "impact" or not alive or not accept_event(ev):
 		return
 	if target and is_instance_valid(target) and target.alive:
 		if flat_dist(target.global_position) <= radius + target.radius + 1.4:
