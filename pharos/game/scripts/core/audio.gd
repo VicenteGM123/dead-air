@@ -141,8 +141,15 @@ func play(sound: String, pos: Vector3 = Vector3.INF, vol_db: float = 0.0, pitch:
 		vol_db -= clampf((d - 10.0) * 0.55, 0.0, 40.0)
 		if vol_db < -38.0:
 			return
-	var p := _players[_next]
-	_next = (_next + 1) % POOL
+	# Prefer a voice that has finished; steal the next one in turn only when all of them are busy.
+	var idx := _next
+	for k in POOL:
+		var i := (_next + k) % POOL
+		if not _players[i].playing:
+			idx = i
+			break
+	var p := _players[idx]
+	_next = (idx + 1) % POOL
 	p.stream = s
 	p.volume_db = vol_db
 	p.pitch_scale = clampf(pitch, 0.25, 4.0)

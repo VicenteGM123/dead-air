@@ -229,9 +229,9 @@ func _wheat_buffers() -> Array:
 		var k := clampi(int((c.y - ORIGIN) / CHUNK), 0, GRID - 1) * GRID + clampi(int((c.x - ORIGIN) / CHUNK), 0, GRID - 1)
 		var buf: PackedFloat32Array = out[k]
 		var tip := Landscape.BARLEY_TIP if barley else Landscape.WHEAT_TIP
-		var rows := maxi(2, int(round(hz * 2.0 / 0.42)))
+		var rows := maxi(3, int(round(hz * 2.0 / 0.38)))
 		for r in rows:
-			var vz := lerpf(-hz + 0.2, hz - 0.2, float(r) / float(maxi(rows - 1, 1)))
+			var vz := lerpf(-hz + 0.16, hz - 0.16, float(r) / float(maxi(rows - 1, 1)))
 			var vx := -hx + 0.08
 			while vx < hx - 0.08:
 				var q := c + lx * (vx + rng.randf_range(-0.05, 0.05)) + lz * (vz + rng.randf_range(-0.07, 0.07))
@@ -253,7 +253,7 @@ func _wheat_buffers() -> Array:
 				buf[o + 17] = Landscape.STALK_ROOT.g
 				buf[o + 18] = Landscape.STALK_ROOT.b
 				buf[o + 19] = 0.6
-				vx += rng.randf_range(0.14, 0.19)
+				vx += rng.randf_range(0.12, 0.17)
 		out[k] = buf
 	return out
 

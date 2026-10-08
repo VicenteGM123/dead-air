@@ -819,7 +819,7 @@ func _sow(p: Vector2, yaw: float, hx: float, hz: float, barley: bool) -> void:
 	_batches["wheat_patch#0"]["xforms"].append(Transform3D(Basis(Vector3.UP, yaw) * Basis.from_scale(Vector3(1.0, 1.0, hz / 1.2)), Vector3(p.x, island.height_at(p.x, p.y), p.y)))
 	_occ_add(p, minf(hx, 1.4))
 	island.splat_ao(a, hz * 1.05, 0.12, b)
-	island.splat_field(a, hz * 1.15, 0.9, b)
+	island.splat_field(a, hz + 0.25, 0.9, b)
 	_gm_splat(true, a, b, hz * 1.08, 255)
 
 

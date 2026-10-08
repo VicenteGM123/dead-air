@@ -60,6 +60,7 @@ var _starting := false
 var _hero_input_locked := false
 var _modal := false
 var _shot_frames := -1
+var _rotate_poll := 0.0
 
 
 func _ready() -> void:
@@ -234,6 +235,14 @@ func can_pause() -> bool:
 	return GAMEPLAY.has(Game.phase) and not menus.call("is_open") and not picker.call("is_open") and not _starting
 
 
+## Leaving the game (another window or tab, a phone call) pauses a run instead of letting the night go on alone.
+## Automated runs (the autoplayer, Movie Maker renders) are never paused this way.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
+		if can_pause() and Game.arg("bot", "") == "" and not OS.has_feature("movie"):
+			open_pause()
+
+
 func open_pause() -> void:
 	if not can_pause():
 		return
@@ -341,6 +350,13 @@ func _update_touch() -> void:
 
 func _process(delta: float) -> void:
 	var rd := S.rdelta(delta)
+	# Phones held upright: the web shell covers the game with a "turn the device" card; pause behind it.
+	if OS.has_feature("web") and (_touch_forced or G.device == "touch"):
+		_rotate_poll -= rd
+		if _rotate_poll <= 0.0:
+			_rotate_poll = 0.5
+			if JavaScriptBridge.eval("!!(window.pharosShell && window.pharosShell.rotatePrompt)", true) and can_pause():
+				open_pause()
 	if _shot_frames > 0:
 		_shot_frames -= 1
 		if _shot_frames == 0:

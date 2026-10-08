@@ -321,7 +321,7 @@ func _aggro_for(u: Unit, aggro: float) -> float:
 
 ## Keres are drawn to the hearths of Delos (houses, olive groves, piers) from this far off, over walls and past
 ## Fanós: the towers (and Fanós, if he gives chase) are what keeps them from the village's income.
-const HEARTH_SENSE := 18.0
+const HEARTH_SENSE := 14.0
 
 
 static func _is_hearth(u: Unit) -> bool:

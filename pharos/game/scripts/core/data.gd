@@ -78,7 +78,7 @@ const ENEMIES := {
 	"shielded": {"name": "Escudado", "hp": 75.0, "speed": 1.8, "dmg": 10.0, "rate": 1.3, "range": 1.35, "radius": 0.55, "aggro": 4.0, "arrow_resist": 0.5},
 	"archer": {"name": "Arquero de Nyx", "hp": 24.0, "speed": 2.1, "dmg": 6.0, "rate": 1.9, "range": 9.0, "radius": 0.45, "aggro": 10.0, "ranged": true},
 	"cyclops": {"name": "Cíclope de sombra", "hp": 320.0, "speed": 1.35, "dmg": 28.0, "rate": 2.4, "range": 2.1, "radius": 1.1, "aggro": 6.0, "building_mult": 1.7, "aoe": 2.3, "heavy": true},
-	"hydra": {"name": "Hidra de la Noche", "hp": 3200.0, "speed": 1.0, "dmg": 34.0, "rate": 2.6, "range": 4.2, "radius": 2.4, "aggro": 9.0, "building_mult": 1.5, "boss": true, "heavy": true,
+	"hydra": {"name": "Hidra de la Noche", "hp": 2800.0, "speed": 1.0, "dmg": 34.0, "rate": 2.6, "range": 4.2, "radius": 2.4, "aggro": 9.0, "building_mult": 1.5, "boss": true, "heavy": true,
 		# Bite: a violet ring marks where the head will land; it lands `bite_at` s later (the rig's contact frame),
 		# 3 m wide, softer on Fanós (he is meant to dodge it, not to tank it). Spit: three orbs, one per head.
 		"bite_at": 0.66, "bite_radius": 3.0, "hero_mult": 0.7, "spit_dmg": 18.0},
@@ -100,10 +100,10 @@ const NIGHT_WAVES := [
 		[32.0, 1, {"shade": 4, "archer": 2}], [32.0, 0, {"ker": 4, "shade": 3}], [44.0, 0, {"shielded": 1, "shade": 4}], [44.0, 1, {"shade": 3}]],
 	# 4 · Se abre el oeste; el primer Cíclope.
 	[[2.0, 2, {"shade": 5}], [6.0, 0, {"shade": 5, "shielded": 1}], [13.0, 1, {"shade": 5, "archer": 2}], [22.0, 2, {"shade": 4, "ker": 5}],
-		[32.0, 0, {"cyclops": 1, "shade": 4}], [36.0, 1, {"ker": 3}], [42.0, 1, {"shade": 5, "shielded": 2}], [52.0, 2, {"shade": 4, "archer": 2}]],
-	# 5 · Se abre el norte: cuatro frentes y tres Cíclopes.
+		[32.0, 0, {"cyclops": 1, "shade": 4}], [42.0, 1, {"shade": 5, "shielded": 2}], [52.0, 2, {"shade": 4, "archer": 2}]],
+	# 5 · Se abre el norte: cuatro frentes y dos Cíclopes.
 	[[2.0, 3, {"shade": 6}], [5.0, 0, {"shade": 6, "archer": 2}], [11.0, 1, {"shade": 6, "shielded": 2}], [18.0, 2, {"ker": 6, "shade": 4}],
-		[20.0, 1, {"cyclops": 1, "shade": 3}], [27.0, 3, {"shade": 5, "shielded": 2, "archer": 2}], [36.0, 0, {"cyclops": 1, "shade": 5}],
+		[20.0, 1, {"shielded": 2, "shade": 4}], [27.0, 3, {"shade": 5, "shielded": 2, "archer": 2}], [36.0, 0, {"cyclops": 1, "shade": 5}],
 		[45.0, 1, {"shade": 5, "ker": 5}], [54.0, 2, {"cyclops": 1, "shielded": 2, "shade": 3}]],
 	# 6 · La noche más larga: todo a la vez.
 	[[2.0, 0, {"shade": 8, "archer": 2}], [4.0, 1, {"shade": 7, "shielded": 2}], [10.0, 2, {"ker": 6, "shade": 5}], [16.0, 3, {"shade": 7, "archer": 3}],
@@ -116,7 +116,7 @@ const NIGHT_WAVES := [
 ]
 
 ## Creatures grow tougher as the nights go on (health multiplier per night; the Hydra keeps its own).
-const NIGHT_HP := [1.0, 1.0, 1.0, 1.1, 1.3, 1.5, 1.25]
+const NIGHT_HP := [1.0, 1.0, 1.0, 1.05, 1.15, 1.3, 1.15]
 
 const BLESSINGS := {
 	"zeus": {"god": "Zeus", "title": "Ira del cielo", "desc": "El Haz del Faro se carga un 35 % más rápido y quema un 50 % más.", "icon": "bolt", "color": Color("F2C14E")},
@@ -136,7 +136,7 @@ const BLESSINGS := {
 ## times; a lens flash that stuns adds favor_flash. Aim: about 3-5 beams on the late nights.
 const HERO := {
 	"hp": 130.0, "speed": 6.0, "combo": [13.0, 13.0, 24.0], "bash_dmg": 10.0, "bash_cd": 4.0, "dodge_cd": 0.75,
-	"favor_max": 100.0, "favor_per_dmg": 0.24, "favor_swing_cap": 1.5, "favor_boss": 0.6, "favor_flash": 4.0, "beam_dmg": 70.0, "beam_radius": 10.0,
+	"favor_max": 100.0, "favor_per_dmg": 0.24, "favor_swing_cap": 1.5, "favor_boss": 0.45, "favor_flash": 4.0, "beam_dmg": 70.0, "beam_radius": 10.0,
 }
 
 
