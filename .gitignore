@@ -19,6 +19,7 @@
 !/godot-web/
 !/builds/
 !/pharos/
+!/doce/
 
 # never, even inside allowed folders
 .godot/
