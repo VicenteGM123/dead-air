@@ -603,7 +603,7 @@ func _build_pier() -> void:
 			mb.limb(Vector3(x + sx, y0, zc), Vector3(x + sx, deck + 0.35, zc), 0.13, 0.12, 6, Pal.WOOD_DARK)
 	_add_mesh(mb.commit(), Transform3D.IDENTITY)
 	_box(Vector3(3.0, 0.4, length), Transform3D(Basis.IDENTITY, Vector3(x, deck - 0.2, (z0 + z1) * 0.5)))
-	# Steps down to the sand at the land end.
+	# The land end starts where the sand reaches the deck (no steps needed); the boat moors at the sea end.
 	_dock = Vector3(x, deck, z1 - 1.0)
 	var boat := ModelsNature.boat_small(4)
 	_add_mesh(boat, Transform3D(Basis(Vector3.UP, 0.08), Vector3(x + 3.4, -0.05, z1 - 4.0)))

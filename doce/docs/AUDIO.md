@@ -8,20 +8,24 @@ Regenerate everything with `python3 doce/tools/audio/render_all.py` (about 1 min
   mono; music, the sea and the day bed are stereo. Vorbis quality: sfx 4, music 3, amb 2.
 - Levels: effects peak at −3 dBFS (footsteps −8/−10, UI −4…−10, distant gull −10); loops RMS ≈ −19…−21 dBFS;
   ambience RMS ≈ −26…−28 dBFS. Every loop is rendered circularly and joins seamlessly.
-- Played through the `Sfx` autoload (`scripts/core/audio.gd`): `Sfx.play(name, pos, vol_db, pitch)` for one-shots
-  (pass the world position: it is attenuated with distance from the hero), `Sfx.music(name)` to crossfade the
-  music, `Sfx.loop(name, node, vol_db)` for a looping 3D emitter (files in `amb/`), and the ambience beds in
-  `Sfx.set_ambience()`. Names starting with `stinger_` are played by `Sfx.play()` on the music stinger player.
+- Played through the `Sfx` autoload (`scripts/core/audio.gd`, owned by UI+AUDIO): `Sfx.play(name, pos, vol_db,
+  pitch)` for one-shots (pass the world position: it is attenuated with distance from the hero), `Sfx.music(name)`
+  to crossfade the music, `Sfx.loop(name, node, vol_db)` for a looping 3D emitter (files in `amb/`). Names starting
+  with `stinger_` are played by `Sfx.play()` on the music stinger player.
+- **The ambience and the music run by themselves** (see the last sections): nobody needs to call
+  `Sfx.set_ambience()`, and `Sfx.music()` only for something special.
 
-## Names already used in the code that changed
+## Old PHAROS names in the live code
 
-| Old (PHAROS) name in the live code | Use instead | Where |
-|---|---|---|
-| `Sfx.music("title")`, `Sfx.music("day")` | `Sfx.music("explore")` in both (it carries on from the title into the game). Until then the UI starts `explore` itself when those files are missing (`ui.gd` `_music_bridge`), which restarts the theme at "Comenzar" | `main.gd` |
-| `blessing` | `altar` | `props/altar.gd` |
-| `orb_hit` | `chain_stick` | `props/chain_ring.gd` (the spear biting the ring) |
-| `structure_hit` | `chain_stick` when the spear hooks it; `boulder_thud` when it settles; `boulder_drag` loop while it moves | `props/boulder.gd` |
-| `music/boss`, `amb/night`, `amb/fire`, `stinger_dawn`, `stinger_defeat` | `music/boss_lion`, `amb/wind`, `amb/cave`, —, `stinger_death` | `core/audio.gd` (`_web_preload`, ambience list) |
+`audio.gd` maps them to their DOCE sounds before loading anything (`RENAMES`), so nothing goes silent and the
+PHAROS files are gone. Switch the calls to the new names when you touch those files:
+
+| Old name in the live code | Plays | Where | Better |
+|---|---|---|---|
+| `Sfx.music("title")`, `Sfx.music("day")` | `explore` (one name, so the theme carries on from the title into the game) | `main.gd` | `Sfx.music("explore")`, or nothing: the director starts it |
+| `blessing` | `altar` | `props/altar.gd` | `altar` |
+| `orb_hit` | `chain_stick` | `props/chain_ring.gd` (the spear biting the ring) | `chain_stick` |
+| `structure_hit` | `chain_stick` | `props/boulder.gd` | `chain_stick` when the spear hooks it; `boulder_thud` when it settles; `boulder_drag` loop while it moves |
 
 Kept with the same name: `swing_1..3`, `hit_1..3`, `dodge`, `footstep`, `hero_hurt`, `hero_down`, `splash`,
 `stinger_victory`, `cat_purr`, `cat_meow`, `gull`, `ui_move`, `ui_select`, `ui_back`.
@@ -85,60 +89,33 @@ Kept with the same name: `swing_1..3`, `hit_1..3`, `dodge`, `footstep`, `hero_hu
 | `lion_thrash` | the Lion throws its weight about in the wrestle |
 | `lion_death` | the Lion is defeated (long groan, the body settling) |
 
-## Music (`Sfx.music`)
+## Music: the director in `audio.gd`
 
-| Track | Where | Notes |
+While `Sfx.auto_music` is true (default) the music follows the game; the director only moves between its own
+tracks, so a track someone picks with `Sfx.music()` stays until they hand it back (`Sfx.music("explore")`).
+
+| Track | When | Notes |
 |---|---|---|
-| `explore` | the title and the whole island | A Dorian, 6/8, 71 s loop: lyre, aulos, frame drums, strings, choir |
-| `tension` | the ridge and the approach to the cave | same grid as `explore` (6/8, eighth = 162 BPM, 16 bars = 35.6 s, `explore` = 2 × `tension`); only A C D E G, so it can crossfade from `explore` (`Sfx.music("tension")` on entering the zone, `Sfx.music("explore")` on leaving) or play in sync on top of it as a layer |
-| `boss_lion` | `Game.boss_started` | E Hitzaz, 7/8 (3+2+2), 51 s loop, great drums |
-| `stinger_victory` | `main.victory()` (already there) | call `Sfx.music("")` just before it; back to `explore` after ~8 s |
-| `stinger_death` | played by the UI when "Has caído" appears | |
+| `explore` | the title and the island | A Dorian, 6/8, 71 s loop: lyre, aulos, frame drums, strings, choir |
+| `tension` | within 55 m of a cave mouth (`World.cave()` entrances; leaves at 70 m) and inside the cave before the fight | same grid as `explore` (6/8, eighth = 162 BPM, 16 bars = 35.6 s, `explore` = 2 × `tension`), only A C D E G: the 3 s crossfades sit well |
+| `boss_lion` | from `Game.boss_started` to `Game.boss_ended` | E Hitzaz, 7/8 (3+2+2), 51 s loop, great drums |
+| (silence) | 9 s after `boss_ended(true)` (or entering VICTORY during a fight) | `main.victory()` plays `stinger_victory` alone; then `explore` / `tension` again |
+| ducked to −16 dB | while the phase is DEAD | the UI plays `stinger_death` with "Has caído" |
 
-## Ambience beds (`amb/`, loops)
+`Sfx.auto_music = false` hands the music to whoever wants to drive it; `Sfx.current_music()` says what is playing.
 
-| Bed | Level | Where |
+## Ambience: the beds in `audio.gd`
+
+Measured from the hero four times a second and smoothed (real time, so hit-stop does not freeze them):
+
+| Bed | Level | Driven by |
 |---|---|---|
-| `sea` | −14 dB at the shore → −26 dB inland | everywhere outside the cave (distance to the coast) |
-| `wind` | −30 dB in the lowlands → −16 dB on the ridge and high places | open ground; scale with altitude |
-| `day` | −18 dB | forest, meadows, village (birds and cicadas) |
-| `cave` | −12 dB | inside the Lion's cave; the other beds drop to −40 dB |
+| `sea` | −14 dB at the shore → −26 dB inland | `World.coast_distance(x, z)` when the world has it, else `is_water()` probes around the hero |
+| `wind` | −30 dB low → −16 dB 50 m above the sea | the hero's height |
+| `day` (birds, cicadas) | −18 dB (→ −50 dB at night) | `TimeOfDay.night_amount()` |
+| `cave` (drips, echo) | −80 → −12 dB inside the cave; the other beds drop to −40 dB | `World.cave_amount(pos) -> 0..1` when the world has it (WORLD: add it once the real cave exists), else the distance to `World.cave().arena_center` (full inside 16 m, gone at 28 m); `Sfx.cave_override` forces it |
 
-Drop-in for `scripts/core/audio.gd` (replaces the PHAROS night/fire beds and preload lists):
-
-```gdscript
-# _ready(): the beds
-for n in ["sea", "wind", "day", "cave"]:
-	var p := _new_player("Amb")
-	p.volume_db = -80.0
-	_amb[n] = p
-
-# _web_preload(): what the title and the island need first
-for key in ["music/explore", "amb/sea", "amb/wind", "amb/day"]:
-	_register_sample(key)
-...
-_sample_queue.append_array(["amb/cave", "music/tension", "music/stinger_victory", "music/stinger_death"])
-Game.boss_started.connect(func(_n: String, _b: Node): _register_sample("music/boss_lion"))
-
-# set_ambience(): coast 0..1 (1 at the shore), height 0..1 (1 on the ridge), cave 0..1
-func set_beds(coast: float, height: float, cave: float, active: bool = true) -> void:
-	var targets := {
-		"sea": lerpf(-26.0, -14.0, coast),
-		"wind": lerpf(-30.0, -16.0, height),
-		"day": -18.0,
-		"cave": -12.0,
-	}
-	for n in _amb:
-		var p: AudioStreamPlayer = _amb[n]
-		if p.stream == null:
-			p.stream = _stream("amb", n, true)
-			if p.stream:
-				p.play()
-		var t: float = targets[n] if n == "cave" else lerpf(targets[n], -40.0, cave)
-		if n == "cave":
-			t = lerpf(-80.0, t, cave)
-		p.volume_db = lerpf(p.volume_db, t if active else -80.0, 0.05)
-```
+Debug: `audiodebug=1` prints the mix every 2 s (music, coast/height/cave, bed levels).
 
 ## UI (played by `scripts/ui`; nobody else needs to)
 
