@@ -71,12 +71,12 @@ Times are the rig's authored seconds (`RigHeracles` keys); `speed` scales them (
 
 | Blow | speed | hold key | active | combo opens | cancel from | length (real) | first contact* | damage | knockback | stagger | hit-stop | shake | nudge |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| attack1 forehand | 1.05 | 0.11 | 0.125-0.29 | 0.29 | 0.30 | 0.53 s | ~0.16 s | 10 | 2.6 | 0.35 | 0.05 | 0.14 | 0.05 |
-| attack2 backhand | 1.05 | 0.10 | 0.115-0.28 | 0.28 | 0.29 | 0.53 s | ~0.15 s | 10 | 2.6 | 0.35 | 0.05 | 0.14 | 0.05 |
-| attack3 overhead (finisher) | 1.00 | 0.22 | 0.262-0.42 | - | 0.50 | 0.80 s | ~0.30 s | 18 | 7.5 | 0.75 | 0.09 | 0.30 | 0.10 |
+| attack1 forehand | 1.05 | 0.11 | 0.125-0.29 | 0.29 | 0.30 | 0.53 s | 0.17 s | 10 | 2.6 | 0.35 | 0.05 | 0.14 | 0.05 |
+| attack2 backhand | 1.05 | 0.10 | 0.115-0.28 | 0.28 | 0.29 | 0.53 s | 0.13 s | 10 | 2.6 | 0.35 | 0.05 | 0.14 | 0.05 |
+| attack3 overhead (finisher) | 1.00 | 0.22 | 0.262-0.42 | - | 0.50 | 0.80 s | 0.33 s | 18 | 7.5 | 0.75 | 0.09 | 0.30 | 0.10 |
 | heavy spin (charged) | 1.00 | 0.30 | 0.37-0.68 (360 degrees) | - | 0.80 | 0.70 s after release | ~0.12 s after release | 30, guard_break | 10 | 1.1 | 0.12 | 0.45 | 0.14 |
 
-\* for a foe straight ahead at the lunge's stop distance. Knockback is the initial shove in m/s (decays at 18 m/s^2:
+\* measured (`meleedebug=1`: "MELEE HIT ... blow_t") on a post 2.2 m away, the lunge ending 0.82 m from its centre. Knockback is the initial shove in m/s (decays at 18 m/s^2:
 2.6 m/s moves a foe 0.19 m, 7.5 about 1.6 m, 10 about 2.8 m before `knockback_resist`).
 
 - **Combo**: a press during a blow is buffered for 0.3 s and fires the next blow the moment the window opens
@@ -92,7 +92,9 @@ Times are the rig's authored seconds (`RigHeracles` keys); `speed` scales them (
   best foe in a 35-degree half-angle cone round the input direction (or his facing) within 2.5 m of its surface;
   locked on: the lock target within 4.5 m, with 0.5 m more lunge. The lunge stops 0.5 m from the foe's surface
   (the xiphos reaches 0.85 m straight ahead, 1.2-1.4 m at the ends of its arcs), up to 1.4 m (attack1/2), 1.5 m
-  (attack3), 0.6 m (heavy); it runs from 0.02 s to the first active frame. No foe: a 0.3 m step into the blow.
+  (attack3), 0.6 m (heavy); it runs from 0.02 s to the first active frame (+0.04 s) along a displacement curve
+  (a sine ease-out: quick out of the blocks, peak speed 1.57 x the mean, planted at the end) that the hero follows
+  exactly, so it never overshoots into the foe; then the feet plant (45 m/s^2). No foe: a 0.3 m step into the blow.
 - **Hits**: the blade (`RigHeracles.blade_segment()`: root 0.1 m to tip 0.64 m from the grip, plus 0.22 m of
   gameplay reach past the tip) is sampled each time the rig poses a new frame; between two samples four points along
   its length each travel an arc round the hero's (moving) centre, in sub-steps of 12 degrees, and the part of that
@@ -115,7 +117,7 @@ Times are the rig's authored seconds (`RigHeracles` keys); `speed` scales them (
 | | Value |
 |---|---|
 | Guard | held in MOVE on the ground; covers +-70 degrees round the facing; blocks blows unless `unblockable` |
-| Block cost | 6 + 0.9 x damage stamina (x1.4 for blows with stagger >= 0.5); 40 % of the knockback; shield jolt (`guard_impact`), sparks at the shield, `shield_block`, hit-stop 0.04, shake 0.12 |
+| Block cost | 6 + 0.9 x damage stamina (x1.4 for blows with stagger >= 0.5); 60 % of the knockback (a short shove back); shield jolt (`guard_impact`), sparks at the shield, `shield_block`, hit-stop 0.04, shake 0.12 |
 | Guard break | stamina short of the cost, or `hit.guard_break`: stamina 0 (exhausted), half the damage, `hit_heavy` stagger, signal `guard_broken` |
 | Parry | the hit lands within 0.18 s of a fresh guard press (a new window only 0.4 s after the last): no damage, +8 stamina, the shield punches (`parry`, upper body), `parry` sound, impact burst + ring at the shield, hit-stop 0.10, slow motion x0.25 for 0.22 s, shake 0.2, `attacker.on_parried(hero)`, signal `parried`; not for `parryable: false` or `unblockable` blows |
 | Roll | 0.55 s, 4.0 m along the input (camera / lock relative), i-frames 0.05-0.35 s, 22 stamina, needs 11; displacement 1-(1-u)^2.2 over the first 86 % |
@@ -130,7 +132,7 @@ Times are the rig's authored seconds (`RigHeracles` keys); `speed` scales them (
 | Costs | sprint 16/s, roll 22, heavy 22, block 6 + 0.9 x damage |
 | Regeneration | 34/s after 0.7 s without spending; none while guarding, charging or wrestling |
 | Exhausted | at 0: until back to 35 % (field `exhausted`, read by the UI's stamina ring): no sprint, roll or heavy blow, run at 80 %, `RigHeracles.tired` (heavier breathing, the head drops) |
-| Taking a hit | 0.35 s of invulnerability; light (`stagger` < 0.5 and damage < 25): `hit`, 0.27 s without control, shake 0.25, hit-stop 0.05; heavy: `hit_heavy`, 0.53 s, shake 0.45, hit-stop 0.08; knockback from `hit.dir` x `hit.knockback`; red screen flash (`Fx.flash_screen` -> the UI's `screen_flash`); `hero_hurt` |
+| Taking a hit | 0.35 s of invulnerability; light (`stagger` < 0.5 and damage < 25): `hit`, 0.27 s without control, shake 0.25, hit-stop 0.05; heavy: `hit_heavy`, 0.53 s, shake 0.45, hit-stop 0.08; knockback from `hit.dir` x `hit.knockback`, decaying at 18 m/s^2 and kept apart from his own run speed (3.5 m/s moves him 0.34 m, 7 m/s 1.4 m); red screen flash (`Fx.flash_screen` -> the UI's `screen_flash`); `hero_hurt` |
 | Lion's pelt | `Hero.don_lion_skin()`: blades do 60 % |
 | Death | `hero_down`, rig `death`, `Game.hero_died` (main.gd respawns at the last altar after 3 s) |
 
@@ -155,13 +157,13 @@ starts the current `Engine.time_scale` is 50 times smaller than the one that fra
 | Throw | rig `throw` at x1.3 (upper body when moving or airborne): the left hand draws the spear from the back and lets it go at the `release` event, 0.36 s after the press; `chain_throw` |
 | Flight | 50 m/s, homing on the target's `chain_point()`; the first anchor it touches on the way is the one it bites (`chain_stick`, sparks, a little shake, `on_chain_attach(hero)`) |
 | Return | butt first to the left hand, 10 -> 40 m/s (110 m/s^2); `chain_rattle`; then back on the back |
-| The chain | dark bronze links (one MultiMesh, up to 260 links, 0.095 m apart, 0.12 x 0.07 m) from the left fist to the spear's butt ring; links further than ~6 m from the view are drawn up to 2.6 x thicker (0.16 x distance) so the chain still reads as a line at range; slack: sags (0.06 x length + 0.1 m, never below the ground under its middle) and whips after the throw; taut (`ChainSpear.taut`, set by the hero): straight with a tension tremble |
+| The chain | dark bronze links (one MultiMesh, up to 260 links, 0.095 m apart, 0.12 x 0.07 m) from the left fist to the spear's butt ring; one face of each link's wire is self-lit (vertex alpha 0.5, a dim bronze glint) so the chain reads in shadow and against dark rock; links further than ~6 m from the view are drawn up to 2.6 x thicker (0.16 x distance) so the chain still reads as a line at range; slack: sags (0.06 x length + 0.1 m, never below the ground under its middle) and whips after the throw; taut (`ChainSpear.taut`, set by the hero): straight with a tension tremble |
 
 What the bite does, by `chain_kind()`:
 
 | Kind | Hero | Target | Numbers |
 |---|---|---|---|
-| `&"ring"` | 0.07 s of tension, then zips along a gentle arc to hang 0.5 m out and 2.3 m under the ring (left arm up on the chain, `RigHeracles.HANG_GRIP` = `Hero.HANG_HAND`, the shield upright beside the head) (`set_motion_state(&"zip")`, `chain_taut`, `chain_zip`, FOV +13). A walkable, roomy top 0.9 m under to 1.9 m over the ring just behind it (a ledge): he climbs straight up and over onto it. None: HANG (the next ring can be thrown at from there; the hero keeps his grip until the new throw bites; jump or roll drops him; 6 s max) | `on_chain_attach` (the ring glints) | zip: accelerates at 70 m/s^2 to 20 m/s, eases out in the last ~3 m (never under 6 m/s); blocked for 4 ticks: lets go; climb 7.5 m/s |
+| `&"ring"` | 0.07 s of tension, then zips along a gentle arc to hang 0.5 m out and 2.3 m under the ring (left arm up on the chain, `RigHeracles.HANG_GRIP` = `Hero.HANG_HAND`, the shield upright beside the head) (`set_motion_state(&"zip")`, `chain_taut`, `chain_zip`, FOV +9, the camera arm 18 % shorter). A walkable, roomy top 0.9 m under to 1.9 m over the ring just behind it (a ledge): he climbs straight up and over onto it. None, but walkable ground at most 1.9 m under where he would hang (`Hero.ZIP_LAND_DROP`: a ring on a standing stone, like the three of Nemea's passage): the zip sets him down on that ground at the foot of the stone (a short landing, dust). Neither: HANG (the next ring can be thrown at from there; the hero keeps his grip until the new throw bites; jump or roll drops him; 6 s max) | `on_chain_attach` (the ring glints) | zip: accelerates at 70 m/s^2 to 20 m/s, eases out in the last ~3 m (never under 6 m/s); blocked for 4 ticks: lets go; climb 7.5 m/s |
 | `&"heavy"` | pulled to it the same way, landing 1.05 m from its surface facing it; a blow buffered on the way becomes attack3 on arrival | stays put | arc 0.5 m higher |
 | `&"light"` | rig `pull` (x1.15); at its `pull` event (0.21 s): `target.on_chain_pull(hero, dir)` (dir: target -> hero); released when it lands within 2.6 m or after 0.9 s | Enemy base: hops to land 1.2 m + its radius + 0.36 m in front of the hero (0.25-0.65 s, an arc 0.45 m + 5 % of the distance), staggered `yank_stagger` (1.1 s) after landing: a set-up for the combo | |
 | `&"beast"` | braces, rig `pull` (x0.9), at the `pull` event (0.27 s): `on_chain_pull(hero, dir)`, shake 0.35, hit-stop 0.05, jerked 2.5 m/s towards it; lets go 0.5 s later | Enemy base: slides `chain_slide` m (3.5) along dir; slamming into the world or a movable on the way stuns it (section 6.5) | slide speed sqrt(2 x 16 x chain_slide) (10.6 m/s for 3.5 m), 16 m/s^2 |
@@ -178,15 +180,18 @@ Press the chain button again while the spear is out to call it back. A light tar
 | Lock-on | press: the `lockable` nearest the screen centre (score: normalised screen distance + 0.35 x distance / 25 m) within 25 m of the hero, on screen, in sight (world layer); `Game.lock_changed(target)` (null on release) |
 | Switch | a flick of the right stick past 75 % (after resting under 30 %) or 90 px of sideways mouse within 0.25 s: the nearest lockable on that side of the current one |
 | Release | press again; the target dies or leaves the groups; beyond 30 m; out of sight for 2 s |
-| Framing | yaw turns to look past the hero at the target (6/s) from 11 degrees round to his right (`LOCK_YAW_OFFSET`: the target shows past his left shoulder, never behind him), pitch -15 - 2.5 x (height difference - 1) - 0.15 x separation (between -34 and -4), arm 5.2-8.5 m with the separation, focus 15-35 % towards the midpoint, shoulder offset 0.8 m |
-| Interest | not locked on, `Hero.camera_interest()` (the foe being wrestled, the boulder on the chain, a foe or beast being yanked) is framed the same way while the player leaves the camera alone (0.4 s): 14 degrees round (48 when wrestling: a side view of the struggle), pitch -22, arm at least 6.2 m, focus 10-30 % towards it, shoulder offset 0.8 m |
+| Framing | yaw turns to look past the hero at the target (6/s) from 18 degrees round to his right (`LOCK_YAW_OFFSET`: the target shows past his left shoulder, never behind him), pitch -15 - 2.5 x (height difference - 1) - 0.15 x separation (between -34 and -4), arm 5.2-8.5 m with the separation, focus 15-35 % towards the midpoint, shoulder offset 0.8 m |
+| Wrestle | a centred two-shot of the struggle (no shoulder offset, focus on the middle of the two heads, 4.8 m, pitch -14): every 0.4 s the angle round them (+-16 / 32 / 48 / 66 / 85 / 110 degrees) with the clearest arm, room round the lens (no world within 1.1 m) and both heads in sight, preferring 48 degrees and the current one |
+| Interest | not locked on, `Hero.camera_interest()` (the foe being wrestled, the boulder on the chain, a foe or beast being yanked, the foe the sword is busy with, a foe winding up a blow in view) is framed the same way while the player leaves the camera alone (0.4 s): 24 degrees round (the wrestle: see Wrestle), turning at 3/s (4/s wrestling), pitch -22, arm at least 6.2 m, focus 10-30 % towards it, shoulder offset 0.8 m; it does not turn the view while the hero rolls nor for 0.4 s after (a roll away from a foe must not swing the camera round) |
 | Locked movement | the hero faces the target and strafes / circles it (the rig steps sideways and back-pedals); sprinting runs free |
-| Arm | 5.5 m from a pivot 1.55 m over the hero; a sphere of 0.3 m cast on the world layer every frame from the hero's head (inside his capsule, so the cast never starts inside a wall or a pillar) out to the wanted camera point: comes in at once, eases back out (2.6/s, up to 11.6/s while shorter than 1.7 m); walls close on both sides (rays of 2.4 m from the head) shorten it to 68 % |
+| Arm | 5.5 m from a pivot 1.55 m over the hero; a sphere of 0.3 m cast on the world layer every frame from the hero's head (inside his capsule, so the cast never starts inside a wall or a pillar) out to the wanted camera point (Jolt: a cast that starts inside one shape of a body skips that whole body - the island's terrain, all the arena's props - so the start is checked once a frame with a sphere query, and when the head itself is pressed into the world by a move without collision the arm is a ray to the first surface, less 0.3 m): comes in at once, eases back out (2.6/s, up to 11.6/s while shorter than 1.7 m); walls close on both sides (rays of 2.4 m from the head) shorten it to 68 % |
 | Obstacles | the arm cut under `need` = max(2.6 m, 60 % of the arm) with the look input idle 0.3 s (or for 0.6 s whatever the input, or squeezed under 1 m): swings round by the nearest clear angle of +-20 / 40 / 65 / 95 degrees (180 degrees/s, 360 under 1.7 m); squeezed under 1 m all at once (the hero brushing past a pillar at speed): jumps by the nearest clear angle up to 65 degrees that very frame rather than show the inside of his helmet; nowhere clear: pitches down towards -48 degrees (over the obstacle); looking round by hand cancels the swing. Cut under 1.7 m beside the hero, a thin sphere (0.13 m, still covering the near plane) may find the line clear, grazing the obstacle. Whiskers: arms 16 degrees either side; while the look input is idle the view drifts (up to 70 degrees/s) away from a side cut under `need`, so a pillar coming past is avoided before the arm is cut. The bot's camera watch: never inside the world, never within 1.2 m of the hero's head for 0.35 s (at 60 fps the arena run keeps it over 4 m) |
 | Follow | XZ 14/s, Y 7/s (never more than 3 m behind), lead 7 % of the hero's velocity |
 | Recentring | after 1.4 s without look input, behind a hero moving faster than 2.5 m/s (rate 0.7 x clamp(speed / 6, 0.4, 1.4) per s, x0.25 at full combat weight); never while dodging (`Hero.is_dodging()`: a roll sideways does not swing the view) |
+| Chain | while the spear is thrown, flying, biting, zipping or hanging, the shoulder offset (0.8 m) applies too: seen from straight behind, the target and the chain would be hidden behind his back |
+| Framing side | the shoulder side flips only while framing a target hidden from the current side and visible from the other (the camera's own sphere cast for the arm: under 60 % clear) |
 | Combat | foes within 11 m (counted every 0.3 s): combat weight rises 1.6/s, falls 0.6/s; arm +0.9 m, shoulder offset 0.7 m (eased 3/s), pitch eases to -24 degrees after 1 s without look input |
-| Feel | FOV 60, +5 sprinting, +13 zipping; shake: trauma squared, offsets up to 0.35 m and 0.05 rad of roll, decays 1.7/s (Settings `shake` off disables shake and nudges); nudge: a spring (k 160, damping 18) pushed 9 x amount along the blow |
+| Feel | FOV 60, +5 sprinting, +9 zipping (and the arm 18 % shorter, so the hero does not shrink to a dot); shake: trauma squared, offsets up to 0.35 m and 0.05 rad of roll, decays 1.7/s (Settings `shake` off disables shake and nudges); nudge: a spring (k 160, damping 18) pushed 9 x amount along the blow |
 | Look | mouse 0.14 degrees/px x `mouse_sens`; pad 185 degrees/s x `pad_sens` with a squared response, vertical x0.75; `invert_x` / `invert_y` |
 
 ---
@@ -246,6 +251,7 @@ Everything of ARCHITECTURE 5.10 is unchanged; added:
 | `parry_stagger`, `yank_stagger`, `chain_slide`, `stun_on_slam` | tuning (1.2 s, 1.1 s, 3.5 m, 3 s) |
 | `is_yanked()`, `is_sliding()` | while the chain moves it (no `_think`) |
 | death | `die()` as before; the rig dissolves over the last 0.8 s of `corpse_time` |
+| rest | 8 ticks at rest on the floor (no wanted velocity, knockback, yank or slide), the body stops calling `move_and_slide` until it moves again (waiting pack members cost nothing). Move enemies with `teleport(p, yaw)`, never by setting `global_position`: it also wakes the body |
 
 `_think` is not called while staggered, stunned, yanked or sliding.
 
@@ -284,15 +290,18 @@ The target drives the rhythm; the hero answers. Group `"grapplable"` plus these 
 | Direction | Call | When |
 |---|---|---|
 | hero -> target | `can_grapple(hero) -> bool` | every tick while the hero looks for something to use (true: interact starts the wrestle, the UI shows `interact_info()` if the target has it) |
-| hero -> target | `grapple_anchor(hero) -> Transform3D` | at the start and every tick of the wrestle: where the hero's origin goes, its basis -Z the way he faces. `RigHeracles.GRAPPLE_HOLD` (0, 1.17, -0.43) is where his arms lock: put the beast's neck / head there |
-| hero -> target | `grapple_begin(hero)` | once, when it starts (the hero snaps to the anchor, stops colliding with enemies, plays `grapple_start` then `grapple_loop`) |
+| hero -> target | `grapple_anchor(hero) -> Transform3D` | at the start and every tick of the wrestle: where the hero's origin goes, its basis -Z the way he faces. `RigHeracles.GRAPPLE_HOLD` (0, 1.17, -0.43) is where his arms lock: put the beast's neck / head there. The hero eases onto it sliding round the world (`move_and_collide`, the beast itself off his mask), so he never enters a pillar, but a spot that is not free leaves him short of it with his arms off the head: pick a free spot (a beast stunned against a pillar: not between its head and the pillar; the straw bull tries its front, then 45, 90, 22.5 and 67.5 degrees round either side of its head with a capsule query, once per wrestle, else the side with the most room) |
+| hero -> target | `grapple_begin(hero)` | once, when it starts (the hero eases onto the anchor, stops colliding with enemies, plays `grapple_start` then `grapple_loop`) |
 | target -> hero | `hero.grapple_cue(window)` | a squeeze beat: a window of `window` s (the hero shows a glint on the hold) |
 | hero -> target | `grapple_input(hero, timing_ok)` | every press of attack or interact; `timing_ok` = inside an open window (a press consumes it) |
 | target -> hero | `hero.grapple_thrash(cost)` | the beast throws its weight about: `cost` stamina, a fifth of it if the hero holds guard; out of stamina the hero is thrown off (knockback 6 m/s, `hit_heavy`) |
 | target -> hero | `hero.grapple_release(won)` | the target ends it: `won` = the beast is beaten |
 | hero -> target | `grapple_end(hero, won)` | **always**, once, whatever ended it (released, thrown off, the hero hurt by someone else, dead); must be idempotent |
 
-The target does the damage itself (`kind: &"grapple"` on a good squeeze) and the sounds (`wrestle_strain` every
+The hero lays his sword and shield on the ground beside him when the wrestle starts (bare hands, as Heracles with
+the lion; the shield would cut into the beast's head: `RigHeracles.set_weapons_aside(true)` + two props at his
+right side) and takes them back when it ends. So the beast's head and neck may fill the space in front of his chest
+freely. The target does the damage itself (`kind: &"grapple"` on a good squeeze) and the sounds (`wrestle_strain` every
 beat, `wrestle_squeeze` on a good press, `lion_thrash`, `lion_pain`). The hero regenerates no stamina while
 wrestling. Warn before a thrash (`telegraph`, 0.45 s) so the player can raise the guard.
 
@@ -321,7 +330,17 @@ hanging; the body swings about it), `reset_cloth()` (the cape and the crest rest
 normal, on)` with the ground under each foot (the hero casts two rays a tick, `Hero._probe_feet`): the pelvis drops to
 the lower foot, each foot is raised to its ground and its sole tilted to the slope (up to 35 degrees, smoothed 14/s),
 weighted by `_gnd_k` (only on the ground, eased out while airborne, swimming, hanging or rolling). Clip check:
-`tools/clip_check_heracles.tscn` (adds strafe, back-pedal, guard-strafe and hang states). Preview:
+`tools/clip_check_heracles.tscn` (adds strafe, back-pedal, guard-strafe and hang states; hidden weapons are skipped):
+2548 samples, 1059-1124 contacts deeper than 8 mm (the count varies from run to run with the cape cloth): ~70 % under
+2 cm, ~5 % deeper than 4 cm (an arm against the cuirass, the lion paws against the upper arms, the cape against the
+arms in the heavy's spin: the deepest, 7 cm, for a frame or two).
+`set_weapons_aside(on)` hides the sword and the shield (the wrestle; `Hero._lay_weapons` lays two props on the
+ground); `don_skin` hides them by itself while the hands are busy with the pelt (`Hero.don_lion_skin` lays them
+down too). Cost: `RigHeracles.advance()` 0.9-1.3 ms a frame on desktop (`tools/perf_probe.gd`; the cape is ~80 % of
+it: 72 particles, 398 constraints x 5 passes, collisions after passes 3 and 5 against packed capsules with a
+bounding-sphere early-out; it was 3.3-4.0 ms before). The cape also stays in front of a wall or rock behind him
+(two rays back from his chest and hips, one down behind his heels: a plane it is pushed out of, and the rising
+ground the hem rests on; `cape_world = false` for tools without a world). Preview:
 `tools/preview.tscn -- script=res://tools/preview_heracles.gd fns=sheet rows=views:hang` (rows also take `hang`).
 
 ---
@@ -346,12 +365,43 @@ python3 doce/game/tools/arena_strips.py strips.png --row "combo:/abs/frames/comb
 ```
 
 Tests (`tools/arena_bot.gd`): lockon (acquire, stick flick to the next, strafe facing, release), combo (attack1,
-attack2, attack3 in order), heavy (charge, charged, 30 damage with guard_break), guard (a block costs stamina, no
-damage), parry (guard 0.09 s before the club lands: parried, the post reels), dodge (roll through the club),
+attack2, attack3 in order), heavy (charge, charged, 30 damage with guard_break), kill (a locked straw soldier cut down
+by the combo: slow motion on the killing blow, the lock lets go, he topples, dissolves and is freed, a new one stands
+up), guard (a block costs stamina, no
+damage), parry (guard 0.09 s before the club lands: parried, the post reels), dodge (roll through the club), hurt
+(no guard: health lost, the hit reaction, knocked back),
 light (a sack 12 m away lands in front of the hero), ledge (zip to the ring under the west cliff and climb on),
 rings (ring A on the sea stack, hang, ring B, climb onto the far cliff), beast (yank the bull into a pillar, stunned,
 walk up, wrestle: squeeze in the windows, brace on the thrashes, win), boulder (haul it into the east doorway),
 ramps (foot IK: standing across and then up the 30-degree ramp, each ankle within 7 cm of its sole height over the
-slope; a walk up the 15-degree ramp onto the terrace), and throughout, camera (the view never inside the world and
-never within 1.2 m of the hero's head for 0.35 s). 13/13 pass at `--fixed-fps 60` and at `--fixed-fps 24`.
-Debug args: `meleedebug=1` (blade sweep distances), `camdebug=1` (camera per frame), `feeldebug=1` (hit-stops).
+slope; a walk up the 15-degree ramp onto the terrace), death (health to nothing: `Game.hero_died`, the DEAD phase,
+the death action, back at the start with full health after main.gd's 3 s), and throughout, camera (the view never inside the world and
+never within 1.2 m of the hero's head for 0.35 s). 16/16 pass at `--fixed-fps 60` and at `--fixed-fps 24`.
+Debug args: `meleedebug=1` (blade sweep distances, "MELEE HIT <blow> blow_t= rig_t= dist="), `camdebug=1` (camera per
+frame), `feeldebug=1` (hit-stops).
+
+### 8.1 On the island: `corebot` (tools/nemea_bot.gd)
+
+The same hero on the real Nemea World (`main.gd` loads the bot with the arg):
+
+```sh
+timeout 900 godot --headless --path doce/game --fixed-fps 60 --quit-after 12000 -- play=1 corebot=1 quit=1 | grep NEMEA
+# some tests: corebot=passage,cave   (botdebug=1: the boulder haul traced every 0.5 s)
+```
+
+Tests: start (on the pier, on the floor, the view behind him), passage (south rim -> the ring on the sea stack: the
+zip lands him at the foot of its stone -> round the stone until the north ring is in sight -> the north rim), boulder
+(mouth B, see below), cave (in through mouth A, to the arena centre, round two pillars), swim (off the end of the
+pier), and the camera watch (the hero's head always in sight from the camera - a ray on the world layer: a point
+query cannot tell "inside" on the island's trimesh terrain and cave -, never within 1.2 m of his head for 0.35 s,
+never under the sea). `corebot=boulder_search` tries 20 pull spots round mouth B and prints where the boulder ends.
+
+Status (2026-10-10, live world of that day, again with the world of commit 330989b): start, passage, cave, swim and
+the camera watch PASS. **boulder FAILS
+because of the layout**: from its spot beside mouth B the boulder is wedged between the cliff foot (the cave mesh,
+normal (0.12, 0.42, 0.90)) and a 28-degree rise of the terrain 4.5 m from the mouth point whatever the hero does
+(20 pull spots, best 4.47 m), and the hero cannot walk past ~0.6 m on the far side of the opening. The World's
+"clear run" checks the ground under the path, not the boulder's 1.3 m sphere against the cave mesh. For WORLD: put
+the boulder on the mouth's axis (e.g. `entrance_b + dir_b * 5`, flat ground, nothing of the cave mesh within 1.4 m
+of the line to the arch), or check the run with a sphere cast of radius 1.3 on layer 1; the haul itself works (arena
+test `boulder`).
