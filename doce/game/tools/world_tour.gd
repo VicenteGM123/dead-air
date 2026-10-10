@@ -12,6 +12,9 @@ extends "res://scripts/main.gd"
 ##  skipping (a stuck hero stays stuck) and prints "ROUTE reached|blocked <where>": e.g. proof that a cliff
 ##  cannot be walked up.
 ##
+##  Pet check (headless): pet=1 walks the hero up to a cat, holds Interact and prints "PET ..." (the cat is the
+##  interact target, starts purring, the hero rig plays "pet").
+##
 ##  Shots (needs a window): each named shot places the hero and the follow camera (or a fly camera), waits for
 ##  things to settle, saves <outdir>/<name>.png and prints the frame's draw calls / primitives / objects.
 ##    xvfb-run ... godot --path . --rendering-driver opengl3 --resolution 1600x900 res://tools/world_tour.tscn \
@@ -61,6 +64,8 @@ func _ready() -> void:
 	super._ready()
 	if Game.arg_on("walk"):
 		_walk.call_deferred()
+	elif Game.arg_on("pet"):
+		_pet.call_deferred()
 	elif String(Game.arg("route", "")) != "":
 		_route.call_deferred(String(Game.arg("route")))
 	elif String(Game.arg("shots", "")) != "":
@@ -187,6 +192,37 @@ func _walk() -> void:
 	_wlog("SUMMARY route time %.1f s (game), %.0f m walked, stuck %d, skipped %d, below ground %d, real %d ms -> %s" % [
 		total_t, total_d, r1["stuck"] + r2["stuck"], r1["skipped"] + r2["skipped"], r1["fell"] + r2["fell"], Time.get_ticks_msec() - t0,
 		"PASS" if issues == 0 else "ISSUES"])
+	get_tree().quit()
+
+
+func _pet() -> void:
+	await get_tree().create_timer(1.0).timeout
+	var amb: Node = world.get("ambient")
+	if amb == null or (amb.get("cats") as Array).is_empty():
+		print("PET FAIL no cats")
+		get_tree().quit()
+		return
+	var cat: RefCounted = (amb.get("cats") as Array)[0]
+	var cp: Vector3 = cat.get("pos")
+	var off := Vector3(0.9, 0.0, 0.0)
+	var p: Vector3 = world.ground(cp + off)
+	hero.teleport(Transform3D(Basis(Vector3.UP, atan2(off.x, off.z)), p))
+	cam.follow(hero)
+	await get_tree().create_timer(0.6).timeout
+	var tgt: Node = hero.interact_target
+	var rig: Node = cat.get("rig")
+	print("PET target %s (cat rig %s) info %s" % [tgt.name if tgt else "none", rig.name, str(tgt.call("interact_info").get("verb", "")) if tgt else "-"])
+	Input.action_press("interact")
+	var saw_pet := false
+	var t0 := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t0 < 1500:
+		await get_tree().physics_frame
+		if String(hero.rig.get("action")) == "pet":
+			saw_pet = true
+	Input.action_release("interact")
+	await get_tree().create_timer(0.3).timeout
+	var petted: bool = int(cat.get("state")) == 6 # AmbientCat PET
+	print("PET %s: target is the cat %s, cat petted %s, hero rig played pet %s" % ["PASS" if (tgt == rig and petted and saw_pet) else "FAIL", tgt == rig, petted, saw_pet])
 	get_tree().quit()
 
 

@@ -90,14 +90,18 @@ Times are the rig's authored seconds (`RigHeracles` keys); `speed` scales them (
   active frames. The last 28 % of a roll can become a blow or another roll.
 - **Magnetism**: at the start of a blow the hero turns to (26 rad/s through the wind-up) and lunges towards the
   best foe in a 35-degree half-angle cone round the input direction (or his facing) within 2.5 m of its surface;
-  locked on: the lock target within 4.5 m, with 0.5 m more lunge. The lunge stops 0.55 m from the foe's surface
-  (the xiphos reaches 0.85 m straight ahead, 1.2-1.4 m at the ends of its arcs), up to 1.1 m (attack1/2), 1.3 m
+  locked on: the lock target within 4.5 m, with 0.5 m more lunge. The lunge stops 0.5 m from the foe's surface
+  (the xiphos reaches 0.85 m straight ahead, 1.2-1.4 m at the ends of its arcs), up to 1.4 m (attack1/2), 1.5 m
   (attack3), 0.6 m (heavy); it runs from 0.02 s to the first active frame. No foe: a 0.3 m step into the blow.
-- **Hits**: between consecutive physics ticks of the active frames the blade (`RigHeracles.blade_segment()`: root
-  0.1 m to tip 0.64 m from the grip, plus 0.22 m of gameplay reach past the tip) is swept at four points along its
-  length and tested top-down against every foe's hurt volumes (`Combat.hurt_volumes`) with a radius of
-  volume + 0.14 m, inside a vertical band from 0.9 m under the blade to 0.35 m over it (a chest-high cut still finds
-  a wolf). Each foe is hit at most once per blow. The contact point is on the volume's surface at the blade's height.
+- **Hits**: the blade (`RigHeracles.blade_segment()`: root 0.1 m to tip 0.64 m from the grip, plus 0.22 m of
+  gameplay reach past the tip) is sampled each time the rig poses a new frame; between two samples four points along
+  its length each travel an arc round the hero's (moving) centre, in sub-steps of 12 degrees, and the part of that
+  move inside the active window is tested exactly (a frame that straddles the window's start or end is clipped), so
+  the same swing hits the same things at 24 fps and at 144 fps. The test is top-down against every foe's hurt
+  volumes (`Combat.hurt_volumes`) with a radius of volume + 0.16 m, inside a vertical band from 0.9 m under the
+  blade to 0.35 m over it (a chest-high cut still finds a wolf). Each foe is hit at most once per blow. The contact
+  point is on the volume's surface at the blade's height. (The bot's combo, heavy and every other test pass at both
+  60 and 24 fps.)
 - **When it lands** (`take_hit` returned true): `Fx.impact` (white star flash, radial streaks, sparks; power 0.7 /
   1.1 / 1.6), dust at the foe's feet for the finisher and the heavy, `hit_1/2/3` or `hit_heavy` at the contact
   (pitch 0.92-1.08), one hit-stop per blow, `Game.shake`, `CameraRig.nudge` along the blow, signal
@@ -177,8 +181,8 @@ Press the chain button again while the spear is out to call it back. A light tar
 | Framing | yaw turns to look past the hero at the target (6/s) from 11 degrees round to his right (`LOCK_YAW_OFFSET`: the target shows past his left shoulder, never behind him), pitch -15 - 2.5 x (height difference - 1) - 0.15 x separation (between -34 and -4), arm 5.2-8.5 m with the separation, focus 15-35 % towards the midpoint, shoulder offset 0.8 m |
 | Interest | not locked on, `Hero.camera_interest()` (the foe being wrestled, the boulder on the chain, a foe or beast being yanked) is framed the same way while the player leaves the camera alone (0.4 s): 14 degrees round (48 when wrestling: a side view of the struggle), pitch -22, arm at least 6.2 m, focus 10-30 % towards it, shoulder offset 0.8 m |
 | Locked movement | the hero faces the target and strafes / circles it (the rig steps sideways and back-pedals); sprinting runs free |
-| Arm | 5.5 m from a pivot 1.55 m over the hero; a sphere of 0.3 m cast on the world layer every frame from the hero's head (inside his capsule, so the cast never starts inside a wall or a pillar) out to the wanted camera point: comes in at once, eases back out (2.6/s); walls close on both sides (rays of 2.4 m) shorten it to 68 % |
-| Obstacles | blocked closer than 1.7 m (`MIN_ARM`) for 0.1 s with the look input idle 0.3 s (or blocked 0.6 s whatever the input): swings round by the nearest clear angle of +-20 / 40 / 65 / 95 degrees (150 degrees/s; clear = at least max(2.6 m, 60 % of the arm)); nowhere clear: pitches down towards -48 degrees (over the obstacle); looking round by hand cancels the swing |
+| Arm | 5.5 m from a pivot 1.55 m over the hero; a sphere of 0.3 m cast on the world layer every frame from the hero's head (inside his capsule, so the cast never starts inside a wall or a pillar) out to the wanted camera point: comes in at once, eases back out (2.6/s, up to 11.6/s while shorter than 1.7 m); walls close on both sides (rays of 2.4 m from the head) shorten it to 68 % |
+| Obstacles | the arm cut under `need` = max(2.6 m, 60 % of the arm) with the look input idle 0.3 s (or for 0.6 s whatever the input, or squeezed under 1 m): swings round by the nearest clear angle of +-20 / 40 / 65 / 95 degrees (180 degrees/s, 360 under 1.7 m); squeezed under 1 m all at once (the hero brushing past a pillar at speed): jumps by the nearest clear angle up to 65 degrees that very frame rather than show the inside of his helmet; nowhere clear: pitches down towards -48 degrees (over the obstacle); looking round by hand cancels the swing. Cut under 1.7 m beside the hero, a thin sphere (0.13 m, still covering the near plane) may find the line clear, grazing the obstacle. Whiskers: arms 16 degrees either side; while the look input is idle the view drifts (up to 70 degrees/s) away from a side cut under `need`, so a pillar coming past is avoided before the arm is cut. The bot's camera watch: never inside the world, never within 1.2 m of the hero's head for 0.35 s (at 60 fps the arena run keeps it over 4 m) |
 | Follow | XZ 14/s, Y 7/s (never more than 3 m behind), lead 7 % of the hero's velocity |
 | Recentring | after 1.4 s without look input, behind a hero moving faster than 2.5 m/s (rate 0.7 x clamp(speed / 6, 0.4, 1.4) per s, x0.25 at full combat weight); never while dodging (`Hero.is_dodging()`: a roll sideways does not swing the view) |
 | Combat | foes within 11 m (counted every 0.3 s): combat weight rises 1.6/s, falls 0.6/s; arm +0.9 m, shoulder offset 0.7 m (eased 3/s), pitch eases to -24 degrees after 1 s without look input |
@@ -332,7 +336,7 @@ pillars, ramps of 15 / 30 / 45 / 58 degrees.
 
 ```sh
 # every test, faster than real time (prints one line per test and a summary)
-timeout 900 godot --headless --path doce/game res://tools/arena.tscn --fixed-fps 60 --quit-after 6000 -- autotest=1 quit=1 | grep ARENA
+timeout 900 godot --headless --path doce/game res://tools/arena.tscn --fixed-fps 60 --quit-after 8000 -- autotest=1 quit=1 | grep ARENA
 # some tests
 ... -- bot=combo,heavy,parry quit=1
 # a movie of a test from the gameplay camera, then strips (one row per move)
@@ -346,5 +350,8 @@ attack2, attack3 in order), heavy (charge, charged, 30 damage with guard_break),
 damage), parry (guard 0.09 s before the club lands: parried, the post reels), dodge (roll through the club),
 light (a sack 12 m away lands in front of the hero), ledge (zip to the ring under the west cliff and climb on),
 rings (ring A on the sea stack, hang, ring B, climb onto the far cliff), beast (yank the bull into a pillar, stunned,
-walk up, wrestle: squeeze in the windows, brace on the thrashes, win), boulder (haul it into the east doorway).
+walk up, wrestle: squeeze in the windows, brace on the thrashes, win), boulder (haul it into the east doorway),
+ramps (foot IK: standing across and then up the 30-degree ramp, each ankle within 7 cm of its sole height over the
+slope; a walk up the 15-degree ramp onto the terrace), and throughout, camera (the view never inside the world and
+never within 1.2 m of the hero's head for 0.35 s). 13/13 pass at `--fixed-fps 60` and at `--fixed-fps 24`.
 Debug args: `meleedebug=1` (blade sweep distances), `camdebug=1` (camera per frame), `feeldebug=1` (hit-stops).

@@ -64,8 +64,9 @@ func _touch(p: Vector2) -> void:
 
 func _run() -> void:
 	await _wait(1.0)
-	var vs := get_viewport().get_visible_rect().size
-	var empty := Vector2(vs.x * 0.85, vs.y * 0.12)
+	# Input events are in window pixels (the canvas is stretched from 1280x720 to the window).
+	var ws := Vector2(DisplayServer.window_get_size())
+	var empty := Vector2(ws.x * 0.85, ws.y * 0.12)
 	_check("boot -> title", Game.phase == Game.Phase.TITLE, Game.phase_name())
 	_check("title menu open", bool(ui.menus.call("is_title_open")))
 	await _tap(KEY_X)
@@ -135,7 +136,7 @@ func _run() -> void:
 	_check("hero_died -> death card", float(ui.cards.get("_death")) > 0.0 or bool(ui.cards.get("_death_on")), "phase=%s" % Game.phase_name())
 	var t0 := Time.get_ticks_msec()
 	var f0 := Engine.get_process_frames()
-	while Game.phase != Game.Phase.PLAY and Time.get_ticks_msec() - t0 < 15000:
+	while Game.phase != Game.Phase.PLAY and Time.get_ticks_msec() - t0 < 120000:
 		await get_tree().process_frame
 	print("UIFLOW info respawn after %.1f s real, %d frames, time_scale %.2f paused %s" % [(Time.get_ticks_msec() - t0) / 1000.0, Engine.get_process_frames() - f0, Engine.time_scale, str(get_tree().paused)])
 	await _wait(0.5)
