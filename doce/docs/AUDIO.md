@@ -103,6 +103,8 @@ tracks, so a track someone picks with `Sfx.music()` stays until they hand it bac
 | ducked to −16 dB | while the phase is DEAD | the UI plays `stinger_death` with "Has caído" |
 
 `Sfx.auto_music = false` hands the music to whoever wants to drive it; `Sfx.current_music()` says what is playing.
+ENCOUNTERS: emit `Game.boss_ended(false)` when a fight resets (the hero fell and respawns at an altar), or the boss
+music keeps playing until the next `boss_ended`.
 
 ## Ambience: the beds in `audio.gd`
 
