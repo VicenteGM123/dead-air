@@ -39,6 +39,7 @@ var fx = null # Fx (scripts/fx/fx.gd)
 var ui = null # root of the UI (scripts/ui/...), may be null
 var hud = null # whatever answers screen_flash(color, seconds) (Fx.flash_screen), may be null
 var tod = null # TimeOfDay
+var sea = null # Sea (surface_y(x, z, depth): the animated sea surface)
 ## Last altar the hero used (checkpoint), or null.
 var checkpoint = null
 ## Time (Time.get_ticks_msec) of the last click that only captured the mouse: the hero ignores it as an attack.

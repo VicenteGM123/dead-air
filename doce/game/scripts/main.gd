@@ -40,6 +40,7 @@ func _ready() -> void:
 	sea = Sea.new()
 	sea.name = "Sea"
 	add_child(sea)
+	Game.sea = sea
 	world = _make_world()
 	Game.world = world
 	sea.build(world.sea_level)

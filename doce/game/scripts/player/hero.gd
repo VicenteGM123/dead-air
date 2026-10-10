@@ -96,6 +96,7 @@ var _prev_pos := Vector3.ZERO
 var _curr_pos := Vector3.ZERO
 var _vis_yaw := 0.0
 var _step_t := 0.0
+var _ripple_t := 0.0
 var _world = null
 
 
@@ -252,6 +253,7 @@ func _physics_process(delta: float) -> void:
 	_update_stamina(delta)
 	_update_interaction(delta)
 	_update_attack(delta)
+	_update_ripples(delta)
 	_curr_pos = global_position
 	_feed_rig()
 
@@ -336,6 +338,34 @@ func _update_water() -> void:
 		velocity.y = minf(velocity.y, 0.0) * 0.2
 
 
+## The sea surface over the hero right now (waves included); sea_level when there is no Sea.
+func _surface_y() -> float:
+	var level: float = _world.sea_level
+	if Game.sea == null or not is_instance_valid(Game.sea):
+		return level
+	var depth: float = level - float(_world.height_at(global_position.x, global_position.z))
+	return Game.sea.surface_y(global_position.x, global_position.z, depth)
+
+
+## Ripple rings on the water round the legs while wading and round the body while swimming: about one a second
+## standing still, more often on the move.
+func _update_ripples(delta: float) -> void:
+	if _world == null or Game.fx == null or motion_state == &"air" or not alive:
+		return
+	var surf := _surface_y()
+	var depth := surf - global_position.y
+	if depth < 0.06 or depth > 2.5:
+		_ripple_t = minf(_ripple_t, 0.15)
+		return
+	var hs := Vector2(velocity.x, velocity.z).length()
+	_ripple_t -= delta * (1.0 + hs * 0.8)
+	if _ripple_t <= 0.0:
+		_ripple_t = 1.0
+		var r := 1.15 if motion_state == &"swim" else 0.8
+		# Fx.ring lifts the ring 8 cm: it floats just over the swell.
+		Game.fx.call("ring", Vector3(global_position.x, surf - 0.05, global_position.z), r, Color(1.0, 1.0, 1.0, 0.5), 1.1)
+
+
 func _physics_swim(delta: float, dir: Vector3, mag: float) -> void:
 	var top := SWIM_SPRINT_SPEED if sprinting else SWIM_SPEED
 	var want := dir.normalized() * top * mag if mag > 0.01 else Vector3.ZERO
@@ -344,7 +374,8 @@ func _physics_swim(delta: float, dir: Vector3, mag: float) -> void:
 	velocity.x = hv.x
 	velocity.z = hv.z
 	var sea: float = _world.sea_level
-	var target_y := sea - SWIM_FLOAT + sin(Time.get_ticks_msec() * 0.0025) * 0.05
+	# Float with the swell (Sea.surface_y follows the water shader's waves).
+	var target_y := _surface_y() - SWIM_FLOAT
 	velocity.y = clampf((target_y - global_position.y) * 6.0, -3.0, 3.0)
 	if mag > 0.05:
 		facing = lerp_angle(facing, atan2(-dir.x, -dir.z), 1.0 - exp(-delta * TURN_RATE * 0.5))

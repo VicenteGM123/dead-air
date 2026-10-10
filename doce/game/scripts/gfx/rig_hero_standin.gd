@@ -15,6 +15,11 @@ const ACTIONS := {
 	"grapple_loop": 0.6, "grapple_end": 0.5, "interact": 0.5, "pet": 1.0, "don_skin": 1.4, "victory": 1.6,
 }
 
+## The hoplite leg's sandal (leg-local): sole height, toe and heel z.
+const SOLE_Y := -0.865
+const SOLE_TOE := -0.175
+const SOLE_HEEL := 0.075
+
 var motion_state: StringName = &"ground"
 var vertical_speed := 0.0
 var guard := false
@@ -97,6 +102,24 @@ func _action_length(a: String) -> float:
 	return float(ACTIONS.get(a, 0.4))
 
 
+## Lowest point of a hoplite leg's sandal (hip-pivot space) when the leg swings by `a` radians about X.
+func _sole_low(a: float) -> float:
+	var c := cos(a)
+	var sn := sin(a)
+	return minf(SOLE_Y * c - SOLE_TOE * sn, SOLE_Y * c - SOLE_HEEL * sn)
+
+
+## Volumes for tools/clip_check.gd (part-local ellipsoids [centre, radii]): the helmet without its crest and the
+## cuirass without the shoulder guards, so the checker reports real contacts only.
+func clip_volume(part: String) -> Array:
+	match part:
+		"head":
+			return [Vector3(0, 0.184, 0), Vector3(0.245, 0.299, 0.273)]
+		"torso":
+			return [Vector3(0, 0.27, 0), Vector3(0.28, 0.27, 0.28)]
+	return []
+
+
 # --- animation -----------------------------------------------------------------------------------------------
 
 func _animate(delta: float) -> void:
@@ -125,9 +148,10 @@ func _animate(delta: float) -> void:
 	var leg_l: Node3D = parts["leg_l"]
 	var leg_r: Node3D = parts["leg_r"]
 	var shield: Node3D = parts["shield"]
-	# The hoplite holds its aspis so close that the rim cuts into the left shoulder: hold it a little further out.
+	# The hoplite holds its aspis so close that the rim cuts into the left shoulder and the cuirass: hold it a
+	# little further out and turned outwards (the parry brings it in front on purpose).
 	shield.position = Vector3(-0.2, -0.3, -0.3)
-	if action == "":
+	if action != "parry":
 		shield.rotation.y += 0.25
 	# Guard: shield up in front.
 	_guard_k = move_toward(_guard_k, 1.0 if guard else 0.0, delta * 10.0)
@@ -180,7 +204,16 @@ func _animate(delta: float) -> void:
 				torso.rotation.x += 0.6 * k
 				arm_r.rotation = Rig.lerp_angle_v(arm_r.rotation, Vector3(1.6, 0.0, -0.4), k)
 				arm_l.rotation = Rig.lerp_angle_v(arm_l.rotation, Vector3(1.6, 0.0, 0.4), k)
+				# The aspis would lie flat over the raised forearm, into the helmet: turn it edge-on, facing outwards
+				# on the outside of the left arm.
+				shield.rotation = Rig.lerp_angle_v(shield.rotation, Vector3(0.0, PI * 0.5, 0.0), k)
+				shield.position = shield.position.lerp(Vector3(-0.16, -0.32, -0.25), k)
 				body.position.y -= 0.2 * k
+	# Run cycle: the hoplite's legs are straight, so at full stride both feet left the ground and it seemed to glide.
+	# Drop the hips so the lower foot stays planted (which also gives the stride its bounce).
+	if action == "" and motion_state == &"ground" and _air_k <= 0.0 and _swim_k <= 0.0:
+		var low := minf(_sole_low(leg_l.rotation.x), _sole_low(leg_r.rotation.x))
+		body.position.y = SOLE_Y - low
 	# Footstep events from the run cycle.
 	var s := sin(_run_phase)
 	if speed > 0.3 and motion_state == &"ground" and signf(s) != _last_step_sign:

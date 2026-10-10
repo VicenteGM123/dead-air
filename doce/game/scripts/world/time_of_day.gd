@@ -233,6 +233,11 @@ func _apply(s: Dictionary) -> void:
 	gs.global_shader_parameter_set("g_moon_dir", dir_from(38.0, 160.0))
 
 
+## The clock the shaders animate with (global g_time, seconds): Sea.surface_y() follows the same waves.
+func shader_time() -> float:
+	return _time
+
+
 ## Current blended mood (the toon style reads its post settings from it).
 func current() -> Dictionary:
 	return _cur
