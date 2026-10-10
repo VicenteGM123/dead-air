@@ -34,7 +34,7 @@ run `godot --headless --path doce/game --import` so Godot picks the new files up
 | `dsp.py` | core: envelopes, RBJ biquads applied by FFT, time-varying spectral noise, convolution reverb with a synthetic IR, panning, limiter (from PHAROS) |
 | `instruments.py` | lyre (Karplus–Strong), aulos (additive, vibrato, portamento, breath), string/choir pads (formants), frame drums, bells, brass, drone, cymbal (from PHAROS) |
 | `common.py` | building blocks for the effects: impacts, band-noise whooshes, grit, debris, bronze and blade modes, chain links, leather creaks, cave reverb, growling voices (formants + subharmonics), clean animal voices (howls, yelps, squeals), snorts, paws, hooves, body falls |
-| `sfx.py` | Heracles (sword, shield, parry, roll, jump, footsteps on grass / stone / sand), the chain spear, the world (altar, boulder, water, cats, gulls) and the UI |
+| `sfx.py` | Heracles (sword, shield, parry, roll, jump, footsteps on grass / stone / sand), the chain spear, the world (altar, boulder, water, cats, goats, gulls) and the UI |
 | `beasts.py` | wolves, boars, the Nemean Lion and the wrestle |
 | `music.py` | compositions written as data (chords, arpeggios, melodies) and a bus mix: `explore`, `tension`, `boss_lion`, two stingers |
 | `ambience.py` | sea (PHAROS), wind in the grass, day (birds and cicadas), the cave, the boulder-drag loop |
@@ -46,7 +46,7 @@ To change a sound: edit its recipe and run `--only name --png /tmp/png` to check
 ## Levels
 
 - **Effects**: peak −3 dBFS. On purpose quieter: footsteps −8/−10, `ui_select`/`ui_back` −4, `ui_move` −6,
-  `ui_lock` −7, `ui_toast` −9, `ui_unlock` −10, `jump` −6, `land` −4, `swim` −8, `gull` −10, `wolf_howl` −5.
+  `ui_lock` −7, `ui_toast` −9, `ui_unlock` −10, `jump` −6, `land` −4, `swim` −8, `gull` −10, `goat_bleat` −6, `wolf_howl` −5.
 - **Loops**: RMS ≈ −20.5 (`explore`), −21 (`tension`), −19 dBFS (`boss_lion`), peaks ≤ −1 dBFS.
   **Stingers**: active RMS ≈ −18/−19 dBFS.
 - **Ambience**: RMS ≈ −26…−28 dBFS (`boulder_drag` −20: it is an emitter, attenuated by distance).
@@ -88,6 +88,7 @@ The audio manager sets `loop = true` on music and `amb/` streams when it loads t
 | `body_fall` | 0.65 | a body hitting the ground |
 | `cat_purr`, `cat_meow` | 2.00 / 0.40 | purr (seamless 2 s), "mrrp" |
 | `gull` | 0.60 | a far gull |
+| `goat_bleat` | 0.80 | a goat's "meh-eh-eh": nasal voice with the bleat's quaver (the ambient goats) |
 | `ui_move`, `ui_select`, `ui_back` | 0.08 / 0.25 / 0.20 | soft tick, lyre pluck (E5 + A5), lower pluck |
 | `ui_lock`, `ui_unlock` | 0.22 / 0.14 | two small bronze ticks closing; one lower tick |
 | `ui_toast` | 0.55 | a soft lyre harmonic |

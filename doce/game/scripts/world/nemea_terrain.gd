@@ -319,17 +319,25 @@ func _coast() -> void:
 			if z > -64.0 and z < 38.0 and x < -40.0:
 				var cut := maxf(capsule_in(x, z, inlet_pts[0], inlet_pts[1], inlet_r[0], inlet_r[1]), capsule_in(x, z, inlet_pts[1], inlet_pts[2], inlet_r[1], inlet_r[2]))
 				f = smin(f, -cut, 4.0)
+			var islet := false
 			if r > 120.0:
 				for k in isl_c.size():
 					var c := isl_c[k]
 					var rr := isl_r[k]
 					var dx := (x - c.x) / rr.x
 					var dz := (z - c.y) / rr.y
-					if absf(dx) < 2.5 and absf(dz) < 2.5:
-						f = maxf(f, (1.0 - sqrt(dx * dx + dz * dz)) * minf(rr.x, rr.y))
+					# (the box reaches out to where the islet's field is ~46 m under water: the sea floor now
+					# follows it that far, and a smaller box left straight steps in the shelf round the islets)
+					var lim := 1.0 + 46.0 / minf(rr.x, rr.y)
+					if absf(dx) < lim and absf(dz) < lim:
+						var fi := (1.0 - sqrt(dx * dx + dz * dz)) * minf(rr.x, rr.y)
+						if fi > f:
+							f = fi
+							islet = true
 			f += _n_coast.get_noise_2d(x, z) * 2.2
 			sd[i] = f
-			if f < -18.0:
+			# (the shelf now falls into the deep over ~35 m: _sea_floor() needs the coast type that far out)
+			if f < -44.0:
 				cliff[i] = 0.5
 				continue
 			# Cliffness: sea cliffs in the north, on the thumb, on the west plateau and in the inlet; the village
@@ -342,8 +350,14 @@ func _coast() -> void:
 			c2 = lerpf(c2, 0.55, smoothstep(98.0, 118.0, x) * smoothstep(-50.0, -30.0, z))
 			# The inlet head: a pebble beach that leads into the ravine.
 			c2 = lerpf(c2, 0.1, smoothstep(-100.0, -94.0, x) * smoothstep(-32.0, -22.0, z) * smoothstep(8.0, -2.0, z))
+			var c2_far := c2
 			if r > 140.0:
 				c2 = maxf(c2, 0.75)
+			# Out on the main island's shelf the "far from the centre = cliffs" rule fades away (the shelf off a
+			# beach would otherwise drop into the deep where it crosses r = 140: a hard seam on the toon sea).
+			# The islets keep their steep flanks.
+			if f < -12.0 and not islet:
+				c2 = lerpf(c2, c2_far, smoothstep(-12.0, -22.0, f))
 			cliff[i] = c2
 
 
@@ -425,7 +439,9 @@ func _elevation() -> void:
 			var i := iz * N + ix
 			var s := sd[i]
 			if s < -16.0:
-				h[i] = DEEP
+				# Open water: only the sea floor (integration fix: this used to jump straight to DEEP, leaving a
+				# 9 m underwater wall 16 m off every beach that the toon sea drew as a hard turquoise/blue seam).
+				h[i] = _sea_floor(s, maxf(cliff[i], upw[i]))
 				continue
 			var x := gx(ix)
 			var roll := _n_roll.get_noise_2d(x, z)
@@ -514,8 +530,16 @@ func _elevation() -> void:
 				var hc := e * smoothstep(0.0, 2.8, s) + 0.3 * (1.0 - smoothstep(0.0, 2.8, s))
 				hh = lerpf(hb, hc, c2)
 			else:
-				hh = maxf(DEEP, -0.3 + s * lerpf(0.095, 0.9, c2))
+				hh = _sea_floor(s, c2)
 			h[i] = hh
+
+
+## Sea floor at signed coast distance s < 0 (c2: cliffness): the shore profile (gentle off the beaches, steep
+## under the cliffs) out to 14 m, then the shelf edge curving down into the deep (DEEP by ~34 m off a beach), so
+## the toon sea's colour bands (shallows, turquoise, teal, ultramarine) follow smooth depth contours.
+static func _sea_floor(s: float, c2: float) -> float:
+	var far := maxf(0.0, -s - 14.0)
+	return maxf(DEEP, -0.3 + s * lerpf(0.095, 0.9, c2) - far * far * 0.02)
 
 
 ## The ravine at the inlet head: a gully from the pebble beach up to the forest floor, so whoever falls into the

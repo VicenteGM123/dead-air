@@ -4,7 +4,7 @@ All of DOCE's audio is synthesised by code (numpy, no samples): `doce/tools/audi
 Regenerate everything with `python3 doce/tools/audio/render_all.py` (about 1 min; `--only name …` for a few,
 `--png DIR` for spectrograms). Output: `doce/game/assets/audio/{sfx,music,amb}/*.ogg`.
 
-- **77 files, 3.4 MiB in total** (music 1.8 MiB, ambience 1.0 MiB, 67 effects 0.6 MiB). Effects and most ambience are
+- **78 files, 3.4 MiB in total** (music 1.8 MiB, ambience 1.0 MiB, 68 effects 0.6 MiB). Effects and most ambience are
   mono; music, the sea and the day bed are stereo. Vorbis quality: sfx 4, music 3, amb 2.
 - Levels: effects peak at −3 dBFS (footsteps −8/−10, UI −4…−10, distant gull −10); loops RMS ≈ −19…−21 dBFS;
   ambience RMS ≈ −26…−28 dBFS. Every loop is rendered circularly and joins seamlessly.
@@ -60,6 +60,7 @@ Kept with the same name: `swing_1..3`, `hit_1..3`, `dodge`, `footstep`, `hero_hu
 | `altar` | praying at an altar (heal + checkpoint) | fire catching, lyre chord, choir, bell |
 | `cat_purr` / `cat_meow` | petting a cat (re-trigger the 2 s purr while the hold lasts) / when petting starts or ends | |
 | `gull` | now and then over the coast (every 8–20 s, far) | WORLD / ambient |
+| `goat_bleat` | now and then from a grazing goat (one look-up in ten) | WORLD / ambient (`ambient_goat.gd`, −8 dB, pitch 0.9–1.05, kids 1.15–1.35); added at integration |
 | `body_fall` | a beast's body hits the ground | |
 
 ## ENCOUNTERS: wolves, boars, the Nemean Lion

@@ -569,6 +569,38 @@ def cat_meow() -> np.ndarray:
     return finish(y, 0.4, -3.0, fade_in=0.003, fade_out=0.04, lp=6000)
 
 
+def goat_bleat() -> np.ndarray:
+    """Goat "meh-eh-eh" (ambient goats): a nasal voice with the bleat's fast quaver, falling at the end.
+    Played far away and quiet (-8 dB, pitched up for the kids)."""
+    rng = rng_for("goat_bleat")
+    n = secs(0.8)
+    t = tvec(n)
+    f0 = pts(t, [(0, 285), (0.05, 330), (0.3, 322), (0.52, 300), (0.64, 250)], log=True)
+    f0 *= 1 + 0.008 * smooth_random(n, rng, 12)
+    # the quaver: pitch and loudness pulse together at ~19 Hz, deepest in the middle of the call
+    q = 0.5 + 0.5 * np.sin(TAU * np.cumsum(pts(t, [(0, 17.0), (0.6, 21.0)])) / SR + rng.uniform(0, TAU))
+    depth = env_points(n, [(0, 0.15), (0.1, 0.8), (0.48, 0.95), (0.64, 0.5)])
+    f0 = f0 * (1 + 0.03 * depth * (q - 0.5))
+    ph = TAU * np.cumsum(f0) / SR
+    open_ = env_points(n, [(0, 0.0), (0.06, 0.55), (0.14, 1.0), (0.5, 0.85), (0.64, 0.25)])
+    F1 = 480 + 300 * open_
+    out = np.zeros(n)
+    for k in range(1, 15):
+        fk = k * f0
+        a = (0.72 ** (k - 1)) * (0.2 + 0.8 * mag_reso(fk, F1, 200) + 0.45 * mag_reso(fk, 1900, 380)
+                                 + 0.22 * mag_reso(fk, 2900, 520))
+        out += a * np.sin(k * ph + rng.uniform(0, TAU))
+    amp = 1.0 - 0.6 * depth * (1.0 - q)
+    env = env_points(n, [(0, 0), (0.025, 0.6), (0.09, 1.0), (0.48, 0.85), (0.62, 0.3), (0.68, 0.0)])
+    y = unit(out) * amp * env
+    breath = whoosh(n, rng, [(0, 1500), (0.66, 1200)], [(0, 0), (0.04, 0.7), (0.5, 0.6), (0.68, 0)], width=0.8,
+                    lp=4200)
+    y += 0.07 * unit(breath)
+    y = filt(y, [("hp", 180, 0.7), ("lp", 4800, 0.7)])
+    y = wet(y, "small", 0.14)
+    return finish(y, 0.8, -6.0, fade_in=0.003, fade_out=0.08, lp=6000)
+
+
 # ---------------------------------------------------------------------------
 # Interface (tuned to A, the island's key)
 # ---------------------------------------------------------------------------
@@ -692,6 +724,7 @@ SFX = {
     "gull": gull,
     "cat_purr": cat_purr,
     "cat_meow": cat_meow,
+    "goat_bleat": goat_bleat,
     "ui_move": ui_move,
     "ui_select": ui_select,
     "ui_back": ui_back,

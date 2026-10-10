@@ -140,6 +140,23 @@ static func _qn(mb: MeshBuilder, a: Vector3, b: Vector3, c: Vector3, d: Vector3,
 		mb.quad(a, b, c, d, col)
 
 
+## Like _qn, but each of the two triangles is turned towards `want` on its own, so a strongly folded quad never
+## leaves a back-facing (culled) hole. Same shading draw as quad().
+static func _qn_up(mb: MeshBuilder, a: Vector3, b: Vector3, c: Vector3, d: Vector3, want: Vector3, col: Color) -> void:
+	var sc := mb._shade(col)
+	var keep := mb.vary
+	mb.vary = 0.0
+	for tr: Array in [[a, b, c], [a, c, d]]:
+		var p0: Vector3 = tr[0]
+		var p1: Vector3 = tr[1]
+		var p2: Vector3 = tr[2]
+		if (p1 - p0).cross(p2 - p0).dot(want) < 0.0:
+			mb.tri(p0, p2, p1, sc)
+		else:
+			mb.tri(p0, p1, p2, sc)
+	mb.vary = keep
+
+
 # --- lid ---------------------------------------------------------------------------------------------------
 
 ## Height of the lid's underside at distance r from the arena centre.
@@ -350,8 +367,14 @@ func _tunnel(mouth: Vector2, hw: float, h: float, which: int) -> void:
 			_qn(under_mb, r0[u], r1[u], r1[u + 1], r0[u + 1], Vector3.DOWN, roof_col if (k + u) % 2 == 0 else roof_col.lerp(ModelsNature.CAVE_ROCK, 0.3))
 		for u in 2:
 			var q3: Vector3 = r0[5 + u]
-			var tc: Color = t.color_at(q3.x + side.x * wide * 1.6, q3.z + side.y * wide * 1.6)
-			_qn(top_mb, r0[5 + u], r0[6 + u], r1[6 + u], r1[5 + u], Vector3.UP, Color(tc.r, tc.g, tc.b).lerp(ModelsNature.LIME, 0.35))
+			var sx: float = q3.x + side.x * wide * 1.6
+			var sz: float = q3.z + side.y * wide * 1.6
+			var tc: Color = t.color_at(sx, sz)
+			# Integration fix: where the top is not flush with the ground it was coloured from (the cleft over
+			# mouth B, whose sample lands on the meadow 6 m below), it is bare rock like the cliff, not a patch
+			# of meadow halfway up the cliff; and each triangle faces up on its own (the leaning rows fold).
+			var bare := smoothstep(1.0, 3.0, absf(q3.y - float(t.height_at(sx, sz))))
+			_qn_up(top_mb, r0[5 + u], r0[6 + u], r1[6 + u], r1[5 + u], Vector3.UP, Color(tc.r, tc.g, tc.b).lerp(ModelsNature.LIME, lerpf(0.35, 1.0, bare)))
 		# sides (sunk in the walls, closing the plug)
 		var sd3 := Vector3(side.x, 0, side.y)
 		_qn(under_mb, r0[0], r0[5], r1[5], r1[0], -sd3, roof_col)
