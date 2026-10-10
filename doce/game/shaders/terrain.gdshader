@@ -1,26 +1,25 @@
-// Island ground. Same lighting as lowpoly.gdshader (hemisphere ambient, wrapped sun, haze, and the Compatibility
-// sRGB pass compensation of pharos.gdshaderinc), plus:
-//   - soft relief: the vertex NORMAL is the smoothed ground normal and UV carries the facet normal (x, z); the
-//     two are blended (facet_mix), so slopes, mounds and terrace steps read as gentle light and shade while the
-//     ground keeps a hint of the low-poly facets of everything else;
-//   - a ground map (ground_tex over ground_rect): R = contact AO under trees, rocks and walls, G = bare soil /
-//     wear (olive basins, vine rows, lane verges, cleared build plots), with a broken, painterly edge, B = sown
-//     wheat and barley beds (golden stubble);
-//   - painted meadow patches from a baked noise (detail_tex, same rect, mipmapped so it calms down with
-//     distance) and a fine grain near the camera, both scaled by the vertex alpha (grassiness: 0 on sand,
-//     rock, plaza, paths and risers).
+// Island ground (DOCE, Nemea). Same lighting as lowpoly.gdshader (toon ramp, hemisphere ambient, haze, cloud
+// shadows and the Compatibility sRGB pass compensation of pharos.gdshaderinc). Vertex colour = ground colour,
+// vertex alpha = grassiness (0 on sand, rock, paths and the cave). The ground map (ground_tex over ground_rect):
+//   R  contact AO under trees, rocks and walls; the darkness inside the cave
+//   G  bare soil / wear (verges, pens, around houses), with a ragged painted edge
+//   B  packed-earth paths: crisp edge, a darker rim line, pebbles near the camera
+//   A  (grass exclusion, read by the grass shader only)
+// Plus painted meadow patches (detail_tex), a fine grain near the camera, and layered rock strata on steep
+// ground (Wind Waker cliffs): wobbly horizontal bands with a dark line under each lip.
 shader_type spatial;
 render_mode cull_back, depth_draw_opaque, specular_disabled;
 
 #include "res://shaders/pharos.gdshaderinc"
 
-uniform float wrap = 0.35;
 uniform sampler2D ground_tex : filter_linear_mipmap, repeat_disable, hint_default_black;
 uniform sampler2D detail_tex : filter_linear_mipmap, repeat_enable, hint_default_white;
-uniform vec4 ground_rect = vec4(-72.0, -72.0, 144.0, 144.0);
-uniform float facet_mix = 0.0;
+uniform vec4 ground_rect = vec4(-192.0, -192.0, 384.0, 384.0);
 uniform float detail_far = 46.0;
 uniform float patch_strength = 1.0;
+uniform vec3 path_col : source_color = vec3(0.79, 0.75, 0.67);
+uniform vec3 path_rim : source_color = vec3(0.6, 0.52, 0.42);
+uniform vec3 strata_col : source_color = vec3(0.45, 0.37, 0.36);
 
 varying vec3 v_albedo;
 varying float v_grass;
@@ -34,8 +33,6 @@ void vertex() {
 	v_albedo = ph_toon_albedo_day(ph_srgb_to_linear(COLOR.rgb));
 	v_grass = COLOR.a;
 	v_wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	vec3 fn = vec3(UV.x, sqrt(max(1.0 - dot(UV, UV), 0.0)), UV.y);
-	NORMAL = normalize(mix(NORMAL, fn, facet_mix));
 }
 
 void fragment() {
@@ -47,35 +44,56 @@ void fragment() {
 	}
 	float dist = length(VERTEX);
 	float near_k = 1.0 - smoothstep(detail_far * 0.45, detail_far, dist);
-	// Fine grain (two value-noise octaves, about 0.3 m and 0.12 m), only near the camera.
 	float grain = 0.5;
 	if (near_k > 0.001) {
 		grain = 0.62 * ph_noise(v_wpos.xz * 3.1) + 0.38 * ph_noise(v_wpos.xz * 8.3 + vec2(17.0, 5.0));
 	}
-	// Bare soil with a ragged edge instead of a soft blur.
-	const vec3 SOIL_LIN = vec3(0.4026, 0.2318, 0.1191); // #A98361
-	float soil = clamp(gm.g * 1.25 + (grain - 0.5) * 0.55 * near_k - 0.08, 0.0, 1.0);
-	soil = smoothstep(0.08, 0.62, soil) * min(gm.g * 3.0, 1.0);
-	vec3 albedo = mix(v_albedo, SOIL_LIN * (0.92 + 0.16 * grain), soil * 0.9);
-	// Sown beds: golden stubble between the stalks (and a gold strip from afar).
-	const vec3 STUBBLE_LIN = vec3(0.619, 0.465, 0.122); // #CDB462
-	albedo = mix(albedo, STUBBLE_LIN * (0.9 + 0.2 * grain), smoothstep(0.1, 0.7, gm.b) * 0.85);
-	// Painted meadow patches: a darker, bluer green (clover, damp) and a lighter, yellower green (sunlit, dry).
-	// The texture is stretched north-south, along the meltemi.
-	float dv = texture(detail_tex, vec2(guv.x * 1.6, guv.y * 1.05)).r;
-	// TOON: crisp painted patches (graphic shapes instead of soft blotches)
+	vec3 albedo = v_albedo;
+	// Painted meadow patches: a darker, bluer green and a lighter, yellower green, crisp graphic shapes.
+	float dv = texture(detail_tex, v_wpos.xz * vec2(0.0042, 0.0028)).r;
 	float dark = smoothstep(0.405, 0.39, dv);
 	float light = smoothstep(0.635, 0.65, dv);
-	float g = v_grass * (1.0 - soil) * patch_strength;
-	vec3 tint = vec3(1.0) - dark * vec3(0.26, 0.13, 0.1) + light * vec3(0.13, 0.1, -0.07);
+	float g = v_grass * patch_strength;
+	vec3 tint = vec3(1.0) - dark * vec3(0.24, 0.12, 0.1) + light * vec3(0.12, 0.09, -0.07);
 	albedo *= mix(vec3(1.0), tint, g);
-	// Broad patches (10-15 m) that still read from the title camera: greener swales, sunnier yellow slopes.
-	float bv = (texture(detail_tex, guv * 0.27 + vec2(0.31, 0.57)).r - 0.5) * 2.0;
-	float bq = smoothstep(-0.32, -0.28, bv) - 1.0 + smoothstep(0.3, 0.34, bv); // posterised -1 / 0 / 1
+	// Broad patches (10-20 m) that still read from afar.
+	float bv = (texture(detail_tex, v_wpos.xz * 0.0011 + vec2(0.31, 0.57)).r - 0.5) * 2.0;
+	float bq = smoothstep(-0.32, -0.28, bv) - 1.0 + smoothstep(0.3, 0.34, bv);
 	vec3 broad = bq < 0.0 ? mix(vec3(1.0), vec3(0.88, 0.96, 0.9), -bq) : mix(vec3(1.0), vec3(1.07, 1.05, 0.9), bq);
-	albedo *= mix(vec3(1.0), broad, v_grass * 0.85 * patch_strength);
+	albedo *= mix(vec3(1.0), broad, g * 0.85);
 	albedo *= 1.0 + (grain - 0.5) * 0.16 * near_k * (0.35 + 0.65 * v_grass);
-	albedo *= mix(1.0, 0.62, gm.r);
+	// Bare soil with a ragged edge.
+	const vec3 SOIL_LIN = vec3(0.4026, 0.2318, 0.1191);
+	float soil = clamp(gm.g * 1.25 + (grain - 0.5) * 0.55 * near_k - 0.08, 0.0, 1.0);
+	soil = smoothstep(0.08, 0.62, soil) * min(gm.g * 3.0, 1.0);
+	albedo = mix(albedo, SOIL_LIN * (0.92 + 0.16 * grain), soil * 0.85);
+	// Paths: packed earth with a crisp, slightly wobbly edge and a darker rim (the toon outline of the road).
+	float pn = ph_noise(v_wpos.xz * 0.9) - 0.5;
+	float pb = gm.b + pn * 0.12 + (grain - 0.5) * 0.1 * near_k;
+	float on_path = smoothstep(0.40, 0.46, pb);
+	float rim = smoothstep(0.26, 0.34, pb) * (1.0 - on_path);
+	vec3 pc = ph_srgb_to_linear(path_col);
+	pc *= 0.94 + 0.12 * ph_noise(v_wpos.xz * 0.35);
+	// pebbles near the camera
+	float peb = smoothstep(0.78, 0.82, ph_noise(v_wpos.xz * 6.5 + 3.0)) * near_k;
+	pc = mix(pc, pc * vec3(1.18, 1.14, 1.08), peb);
+	albedo = mix(albedo, ph_srgb_to_linear(path_rim), rim * 0.75);
+	albedo = mix(albedo, pc, on_path);
+	// Layered rock on steep ground: horizontal strata that wobble, a dark line under each lip, lit tops.
+	float steep = smoothstep(0.78, 0.68, wn.y) * (1.0 - v_grass);
+	if (steep > 0.01) {
+		float wob = ph_noise(v_wpos.xz * 0.13) * 1.6 + ph_noise(v_wpos.xz * 0.5 + 7.0) * 0.35;
+		float band = fract(v_wpos.y * 0.42 + wob);
+		float far_k = 1.0 - smoothstep(60.0, 150.0, dist);
+		float line = (smoothstep(0.06, 0.0, band) + smoothstep(0.93, 1.0, band) * 0.6) * far_k;
+		float lip = smoothstep(0.12, 0.2, band) * smoothstep(0.32, 0.22, band) * far_k;
+		float tone = ph_noise(vec2(v_wpos.y * 0.42 + wob, 3.7) * 2.0);
+		vec3 rock = albedo * mix(0.9, 1.08, tone) * (1.0 + lip * 0.1);
+		rock = mix(rock, ph_srgb_to_linear(strata_col), line * 0.7);
+		albedo = mix(albedo, rock, steep);
+	}
+	// Contact AO and the cave's darkness.
+	albedo *= mix(1.0, 0.42, gm.r);
 	v_day = albedo;
 	albedo = ph_toon_night(albedo);
 	vec3 base = albedo * ph_toon_ambient(wn);

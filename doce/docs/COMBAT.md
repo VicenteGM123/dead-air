@@ -151,13 +151,13 @@ starts the current `Engine.time_scale` is 50 times smaller than the one that fra
 | Throw | rig `throw` at x1.3 (upper body when moving or airborne): the left hand draws the spear from the back and lets it go at the `release` event, 0.36 s after the press; `chain_throw` |
 | Flight | 50 m/s, homing on the target's `chain_point()`; the first anchor it touches on the way is the one it bites (`chain_stick`, sparks, a little shake, `on_chain_attach(hero)`) |
 | Return | butt first to the left hand, 10 -> 40 m/s (110 m/s^2); `chain_rattle`; then back on the back |
-| The chain | bronze links (one MultiMesh, up to 260 links, 0.095 m apart, 0.12 x 0.07 m) from the left fist to the spear's butt ring; slack: sags (0.06 x length + 0.1 m, never below the ground under its middle) and whips after the throw; taut (`ChainSpear.taut`, set by the hero): straight with a tension tremble |
+| The chain | dark bronze links (one MultiMesh, up to 260 links, 0.095 m apart, 0.12 x 0.07 m) from the left fist to the spear's butt ring; links further than ~6 m from the view are drawn up to 2.6 x thicker (0.16 x distance) so the chain still reads as a line at range; slack: sags (0.06 x length + 0.1 m, never below the ground under its middle) and whips after the throw; taut (`ChainSpear.taut`, set by the hero): straight with a tension tremble |
 
 What the bite does, by `chain_kind()`:
 
 | Kind | Hero | Target | Numbers |
 |---|---|---|---|
-| `&"ring"` | 0.07 s of tension, then zips along a gentle arc to hang 0.5 m out and 2.3 m under the ring (`set_motion_state(&"zip")`, `chain_taut`, `chain_zip`, FOV +13). A walkable, roomy top 0.9 m under to 1.9 m over the ring just behind it (a ledge): he climbs straight up and over onto it. None: HANG (the next ring can be thrown at from there; the hero keeps his grip until the new throw bites; jump or roll drops him; 6 s max) | `on_chain_attach` (the ring glints) | zip: accelerates at 70 m/s^2 to 20 m/s, eases out in the last ~3 m (never under 6 m/s); blocked for 4 ticks: lets go; climb 7.5 m/s |
+| `&"ring"` | 0.07 s of tension, then zips along a gentle arc to hang 0.5 m out and 2.3 m under the ring (left arm up on the chain, `RigHeracles.HANG_GRIP` = `Hero.HANG_HAND`, the shield upright beside the head) (`set_motion_state(&"zip")`, `chain_taut`, `chain_zip`, FOV +13). A walkable, roomy top 0.9 m under to 1.9 m over the ring just behind it (a ledge): he climbs straight up and over onto it. None: HANG (the next ring can be thrown at from there; the hero keeps his grip until the new throw bites; jump or roll drops him; 6 s max) | `on_chain_attach` (the ring glints) | zip: accelerates at 70 m/s^2 to 20 m/s, eases out in the last ~3 m (never under 6 m/s); blocked for 4 ticks: lets go; climb 7.5 m/s |
 | `&"heavy"` | pulled to it the same way, landing 1.05 m from its surface facing it; a blow buffered on the way becomes attack3 on arrival | stays put | arc 0.5 m higher |
 | `&"light"` | rig `pull` (x1.15); at its `pull` event (0.21 s): `target.on_chain_pull(hero, dir)` (dir: target -> hero); released when it lands within 2.6 m or after 0.9 s | Enemy base: hops to land 1.2 m + its radius + 0.36 m in front of the hero (0.25-0.65 s, an arc 0.45 m + 5 % of the distance), staggered `yank_stagger` (1.1 s) after landing: a set-up for the combo | |
 | `&"beast"` | braces, rig `pull` (x0.9), at the `pull` event (0.27 s): `on_chain_pull(hero, dir)`, shake 0.35, hit-stop 0.05, jerked 2.5 m/s towards it; lets go 0.5 s later | Enemy base: slides `chain_slide` m (3.5) along dir; slamming into the world or a movable on the way stuns it (section 6.5) | slide speed sqrt(2 x 16 x chain_slide) (10.6 m/s for 3.5 m), 16 m/s^2 |
@@ -174,12 +174,14 @@ Press the chain button again while the spear is out to call it back. A light tar
 | Lock-on | press: the `lockable` nearest the screen centre (score: normalised screen distance + 0.35 x distance / 25 m) within 25 m of the hero, on screen, in sight (world layer); `Game.lock_changed(target)` (null on release) |
 | Switch | a flick of the right stick past 75 % (after resting under 30 %) or 90 px of sideways mouse within 0.25 s: the nearest lockable on that side of the current one |
 | Release | press again; the target dies or leaves the groups; beyond 30 m; out of sight for 2 s |
-| Framing | yaw turns to look from behind the hero at the target (6/s), pitch -15 - 2.5 x (height difference - 1) - 0.15 x separation (between -34 and -4), arm 5.2-8.5 m with the separation, focus 15-35 % towards the midpoint, shoulder offset 0.8 m |
+| Framing | yaw turns to look past the hero at the target (6/s) from 11 degrees round to his right (`LOCK_YAW_OFFSET`: the target shows past his left shoulder, never behind him), pitch -15 - 2.5 x (height difference - 1) - 0.15 x separation (between -34 and -4), arm 5.2-8.5 m with the separation, focus 15-35 % towards the midpoint, shoulder offset 0.8 m |
+| Interest | not locked on, `Hero.camera_interest()` (the foe being wrestled, the boulder on the chain, a foe or beast being yanked) is framed the same way while the player leaves the camera alone (0.4 s): 14 degrees round (48 when wrestling: a side view of the struggle), pitch -22, arm at least 6.2 m, focus 10-30 % towards it, shoulder offset 0.8 m |
 | Locked movement | the hero faces the target and strafes / circles it (the rig steps sideways and back-pedals); sprinting runs free |
-| Arm | 5.5 m from a pivot 1.55 m over the hero, a sphere of 0.3 m cast on the world layer every frame: comes in at once, eases back out (2.6/s); walls close on both sides (rays of 2.4 m) shorten it to 68 % |
+| Arm | 5.5 m from a pivot 1.55 m over the hero; a sphere of 0.3 m cast on the world layer every frame from the hero's head (inside his capsule, so the cast never starts inside a wall or a pillar) out to the wanted camera point: comes in at once, eases back out (2.6/s); walls close on both sides (rays of 2.4 m) shorten it to 68 % |
+| Obstacles | blocked closer than 1.7 m (`MIN_ARM`) for 0.1 s with the look input idle 0.3 s (or blocked 0.6 s whatever the input): swings round by the nearest clear angle of +-20 / 40 / 65 / 95 degrees (150 degrees/s; clear = at least max(2.6 m, 60 % of the arm)); nowhere clear: pitches down towards -48 degrees (over the obstacle); looking round by hand cancels the swing |
 | Follow | XZ 14/s, Y 7/s (never more than 3 m behind), lead 7 % of the hero's velocity |
-| Recentring | after 1.4 s without look input, behind a hero moving faster than 2.5 m/s |
-| Combat | foes within 11 m: arm +0.9 m, shoulder offset 0.55 m (eased), pitch eases to -20 degrees while the player leaves the camera alone |
+| Recentring | after 1.4 s without look input, behind a hero moving faster than 2.5 m/s (rate 0.7 x clamp(speed / 6, 0.4, 1.4) per s, x0.25 at full combat weight); never while dodging (`Hero.is_dodging()`: a roll sideways does not swing the view) |
+| Combat | foes within 11 m (counted every 0.3 s): combat weight rises 1.6/s, falls 0.6/s; arm +0.9 m, shoulder offset 0.7 m (eased 3/s), pitch eases to -24 degrees after 1 s without look input |
 | Feel | FOV 60, +5 sprinting, +13 zipping; shake: trauma squared, offsets up to 0.35 m and 0.05 rad of roll, decays 1.7/s (Settings `shake` off disables shake and nudges); nudge: a spring (k 160, damping 18) pushed 9 x amount along the blow |
 | Look | mouse 0.14 degrees/px x `mouse_sens`; pad 185 degrees/s x `pad_sens` with a squared response, vertical x0.75; `invert_x` / `invert_y` |
 
@@ -309,8 +311,14 @@ walk), `action_hold` (hold the current action at a key), `stop_action(blend)`, `
 (0..1 winded idle), `guard_impact(k)` (shield jolt), `blade_segment()` (the sword's root and tip in world space),
 motion state `&"hang"`, a strafing / back-pedalling gait (the stride follows the direction of travel in rig space),
 actions `recoil` (0.52 s) and `backstep` (0.5 s), the shield kept forward-left in the light blows, the spear's chain
-coil in bronze, `spear_meshes(false)` (the bare spear in flight). Clip check: `tools/clip_check_heracles.tscn` (adds
-strafe, back-pedal, guard-strafe and hang states).
+coil in bronze, `spear_meshes(false)` (the bare spear in flight), `HANG_GRIP` (the left fist on the chain when
+hanging; the body swings about it), `reset_cloth()` (the cape and the crest restart at rest; called by
+`Hero.teleport` and by the rig itself when it jumps more than 3 m in a frame), foot IK: `set_ground(dy_r, dy_l,
+normal, on)` with the ground under each foot (the hero casts two rays a tick, `Hero._probe_feet`): the pelvis drops to
+the lower foot, each foot is raised to its ground and its sole tilted to the slope (up to 35 degrees, smoothed 14/s),
+weighted by `_gnd_k` (only on the ground, eased out while airborne, swimming, hanging or rolling). Clip check:
+`tools/clip_check_heracles.tscn` (adds strafe, back-pedal, guard-strafe and hang states). Preview:
+`tools/preview.tscn -- script=res://tools/preview_heracles.gd fns=sheet rows=views:hang` (rows also take `hang`).
 
 ---
 

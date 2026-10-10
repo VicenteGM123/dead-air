@@ -75,6 +75,10 @@ const INFO := {
 	"beehives": {"h": 0.77, "h0": 0.0, "r": 1.2, "obstacle": 1.0, "ao": 0.3},
 	"well": {"h": 1.6, "h0": 0.0, "r": 1.6, "obstacle": 0.8, "ao": 0.45},
 	"spring_basin": {"h": 0.66, "h0": 0.0, "r": 1.4, "obstacle": 1.0, "ao": 0.4},
+	"cliff_rock": {"h": 3.2, "h0": 0.0, "r": 2.2, "obstacle": 1.8, "ao": 0.5},
+	"stalagmite": {"h": 2.0, "h0": 0.0, "r": 0.7, "obstacle": 0.6, "ao": 0.4},
+	"wood_fence": {"h": 1.1, "h0": 0.0, "r": 1.5, "obstacle": 0.0, "ao": 0.2},
+	"bones": {"h": 0.3, "h0": 0.0, "r": 0.6, "obstacle": 0.0, "ao": 0.0},
 }
 
 
@@ -1095,6 +1099,283 @@ static func chunk(mb: MeshBuilder, rng: RandomNumberGenerator, c: Vector3, r: fl
 	mb.pop()
 
 
+# --- Nemea (DOCE): cliffs, sea stacks, the Lion's cave, fences, bones, the broken bridge ------------------------
+
+## Wind Waker limestone: warm ochre, a bleached top, a cool underside.
+const LIME := Color("CDB48E")
+const LIME_TOP := Color("E2CFA6")
+const LIME_LOW := Color("9C8670")
+const LIME_DARK := Color("85725F")
+const CAVE_ROCK := Color("8A7A70")
+const CAVE_ROCK_LOW := Color("5C5058")
+const CAVE_ROCK_TOP := Color("A08F82")
+const BONE := Color("EDE4CF")
+const BONE_SHADE := Color("CDBFA2")
+const FENCE_WOOD := Color("9A7350")
+const FENCE_WOOD_DARK := Color("6E5038")
+
+
+## One stratum of a layered rock: a flat-topped, slightly tapering slab with a jittered outline (`sides` corners).
+static func _slab(mb: MeshBuilder, rng: RandomNumberGenerator, c: Vector3, rx: float, rz: float, h: float, sides: int, col: Color, top: Color, low: Color, rot: float) -> void:
+	var bot: Array[Vector3] = []
+	var mid: Array[Vector3] = []
+	var tp: Array[Vector3] = []
+	for i in sides:
+		var a := rot + TAU * float(i) / float(sides) + rng.randf_range(-0.18, 0.18)
+		var k := rng.randf_range(0.82, 1.08)
+		var d := Vector3(cos(a) * rx * k, 0, sin(a) * rz * k)
+		bot.append(c + d * 0.94)
+		mid.append(c + d + Vector3(0, h * rng.randf_range(0.45, 0.6), 0))
+		tp.append(c + d * rng.randf_range(0.8, 0.9) + Vector3(0, h * rng.randf_range(0.92, 1.0), 0))
+	var ctop := c + Vector3(0, h, 0)
+	for i in sides:
+		var j := (i + 1) % sides
+		mb.quad(bot[i], mid[i], mid[j], bot[j], low if i % 3 == 0 else col)
+		mb.quad(mid[i], tp[i], tp[j], mid[j], col)
+		mb.tri(ctop, tp[j], tp[i], top)
+
+
+## Layered limestone outcrop (Wind Waker cliffs): 3-5 stacked strata stepping back as they rise, flat bleached
+## tops. ~4 m across, 2.5-4 m tall at scale 1; origin at the base centre (sunk 0.4 m). For cliff feet, ledges and
+## the rock outcrops of the thumb and the ridge.
+static func cliff_rock(seed_value: int) -> ArrayMesh:
+	var mb := _begin(seed_value)
+	add_cliff_rock(mb, make_rng(seed_value), 1.0)
+	return mb.commit()
+
+
+static func add_cliff_rock(mb: MeshBuilder, rng: RandomNumberGenerator, s: float = 1.0, cols: Array = []) -> void:
+	var col: Color = cols[0] if cols.size() > 0 else LIME
+	var top: Color = cols[1] if cols.size() > 1 else LIME_TOP
+	var low: Color = cols[2] if cols.size() > 2 else LIME_LOW
+	var layers := 3 + rng.randi() % 3
+	var y := -0.4 * s
+	var rx := rng.randf_range(1.9, 2.3) * s
+	var rz := rng.randf_range(1.4, 1.9) * s
+	var off := Vector3.ZERO
+	var rot := rng.randf() * TAU
+	for k in layers:
+		var h := rng.randf_range(0.6, 1.0) * s
+		_slab(mb, rng, off + Vector3(0, y, 0), rx, rz, h, 6 + rng.randi() % 2, col.lerp(top, 0.12 * k), top, low, rot + rng.randf_range(-0.3, 0.3))
+		y += h * 0.96
+		rx *= rng.randf_range(0.7, 0.86)
+		rz *= rng.randf_range(0.7, 0.88)
+		off += Vector3(rng.randf_range(-0.25, 0.25), 0, rng.randf_range(-0.25, 0.25)) * s
+
+
+## Sea stack / rock pillar: a tall layered column (height ~ h, radius ~ r), widest at the waterline, with a flat
+## top you can stand on. Origin at the base centre; the base reaches 3 m under the origin (into the sea).
+static func sea_stack(seed_value: int) -> ArrayMesh:
+	var mb := _begin(seed_value)
+	add_sea_stack(mb, make_rng(seed_value), 4.0, 14.0)
+	return mb.commit()
+
+
+static func add_sea_stack(mb: MeshBuilder, rng: RandomNumberGenerator, r: float, h: float, flat_top: bool = true) -> void:
+	var y := -3.0
+	var rot := rng.randf() * TAU
+	var rr := r * 1.12
+	while y < h - 0.01:
+		var lh := minf(rng.randf_range(1.3, 2.1), h - y)
+		var c := Vector3(rng.randf_range(-0.12, 0.12), y, rng.randf_range(-0.12, 0.12)) * Vector3(r, 1, r)
+		var dark := y < 1.0
+		var col := LIME_LOW.lerp(PX.ROCK_WET, 0.6) if dark else LIME.lerp(LIME_LOW, rng.randf_range(0.0, 0.35))
+		_slab(mb, rng, c, rr, rr * rng.randf_range(0.86, 1.0), lh + 0.08, 9, col, LIME_TOP if flat_top or y + lh < h - 0.01 else LIME, LIME_DARK, rot + rng.randf_range(-0.2, 0.2))
+		y += lh
+		rr = maxf(r * 0.72, rr * rng.randf_range(0.9, 1.0))
+	if flat_top:
+		mb.cyl(Vector3(0, h, 0), 0.06, rr * 0.82, rr * 0.8, 9, LIME_TOP, true, rot)
+
+
+## Crest spire: a tall, lumpy limestone tower (radius r at the base, a blunt crooked tip at height h) with a
+## few strata ledges standing proud of it and a bleached cap. Origin at the base centre; the base reaches 2.5 m
+## under it (sunk into the rock it stands on).
+static func add_spire(mb: MeshBuilder, rng: RandomNumberGenerator, r: float, h: float) -> void:
+	var widths := [1.0, 0.94, 0.86, 0.8, 0.7, 0.62, 0.5, 0.36, 0.16]
+	var prof: Array = []
+	for i in widths.size():
+		var t := float(i) / float(widths.size() - 1)
+		var wv: float = widths[i] * rng.randf_range(0.9, 1.1)
+		prof.append(Vector2(r * wv, -2.5 + (h + 2.5) * pow(t, 0.92)))
+	prof.append(Vector2(0.0, h + 0.4))
+	var lean := Vector3(rng.randf_range(-1.0, 1.0), 0, rng.randf_range(-1.0, 1.0)).normalized() * r * 0.18
+	# The tower leans a little: shear the stack (lower half straight, the top drifting off by `lean`).
+	mb.push(Transform3D(Basis(Vector3(1, 0, 0), Vector3(lean.x / h, 1, lean.z / h), Vector3(0, 0, 1)), Vector3.ZERO))
+	blob(mb, rng, Vector3.ZERO, prof, 9, 0.1, LIME, LIME_LOW, -0.35, LIME_TOP, 0.75, 0.25)
+	# Strata ledges standing proud of the tower.
+	var n := 2 + rng.randi() % 2
+	for k in n:
+		var t := rng.randf_range(0.22, 0.72) if k > 0 else rng.randf_range(0.12, 0.3)
+		var y := -2.5 + (h + 2.5) * t
+		var wi := lerpf(1.0, 0.36, t) * r
+		_slab(mb, rng, Vector3(rng.randf_range(-0.1, 0.1) * r, y, rng.randf_range(-0.1, 0.1) * r), wi * 1.12, wi * 1.02, rng.randf_range(0.7, 1.1), 8, LIME.lerp(LIME_TOP, 0.2), LIME_TOP, LIME_DARK, rng.randf() * TAU)
+	mb.pop()
+
+
+## Cave column: a flowstone pillar fused floor to ceiling (radius r at the floor, `h` tall), bulging rings and a
+## flared foot; cool cave stone. Origin at the floor.
+static func cave_pillar(seed_value: int) -> ArrayMesh:
+	var mb := _begin(seed_value)
+	add_cave_pillar(mb, make_rng(seed_value), 1.4, 13.0)
+	return mb.commit()
+
+
+static func add_cave_pillar(mb: MeshBuilder, rng: RandomNumberGenerator, r: float, h: float) -> void:
+	var prof: Array = []
+	var n := 9
+	for i in n + 1:
+		var t := float(i) / float(n)
+		# Flared foot and head (stalagmite + stalactite), a waist in the middle, lumpy rings.
+		var w := 1.0 + 0.75 * pow(1.0 - t, 4.0) + 0.6 * pow(t, 5.0) - 0.18 * sin(t * PI)
+		w *= rng.randf_range(0.9, 1.08)
+		prof.append(Vector2(r * w, -0.3 + (h + 0.6) * t))
+	var cols := func(fc: Vector3, ring: int, side: int) -> Color:
+		if fc.y < 1.0:
+			return CAVE_ROCK.lerp(CAVE_ROCK_TOP, 0.2)
+		return CAVE_ROCK if (ring + side) % 5 != 0 else CAVE_ROCK.lerp(CAVE_ROCK_LOW, 0.15)
+	mb.push(Transform3D(Basis(Vector3.UP, rng.randf() * TAU), Vector3.ZERO))
+	mb.lathe(prof, 9, cols, rng.randf() * TAU)
+	mb.pop()
+
+
+## Stalagmite: a lumpy cone (0.4-0.8 m radius, 1-2.6 m tall) with a smaller sister.
+static func stalagmite(seed_value: int) -> ArrayMesh:
+	var mb := _begin(seed_value)
+	add_stalagmite(mb, make_rng(seed_value), 1.0)
+	return mb.commit()
+
+
+static func add_stalagmite(mb: MeshBuilder, rng: RandomNumberGenerator, s: float = 1.0) -> void:
+	var h := rng.randf_range(1.2, 2.6) * s
+	var r := rng.randf_range(0.42, 0.7) * s
+	var prof := [Vector2(r * 1.1, -0.2), Vector2(r, h * 0.2), Vector2(r * 0.7, h * 0.5), Vector2(r * 0.4, h * 0.78), Vector2(r * 0.12, h * 0.95), Vector2(0, h)]
+	blob(mb, rng, Vector3.ZERO, prof, 6, 0.12, CAVE_ROCK, CAVE_ROCK_LOW, -0.3, CAVE_ROCK_TOP, 0.85, 0.2)
+	var a := rng.randf() * TAU
+	var r2 := r * rng.randf_range(0.45, 0.6)
+	var h2 := h * rng.randf_range(0.35, 0.55)
+	var p := Vector3(cos(a), 0, sin(a)) * (r + r2) * 0.85
+	blob(mb, rng, p, [Vector2(r2 * 1.1, -0.15), Vector2(r2, h2 * 0.3), Vector2(r2 * 0.45, h2 * 0.75), Vector2(0, h2)], 5, 0.12, CAVE_ROCK, CAVE_ROCK_LOW, -0.3, CAVE_ROCK_TOP, 0.85, 0.2)
+
+
+## Wooden post-and-rail fence segment along X (3 m, centred). kind = seed % 3: 0 intact, 1 broken (a rail
+## snapped and hanging, a post leaning), 2 smashed (posts knocked over, rails on the ground).
+static func wood_fence(seed_value: int) -> ArrayMesh:
+	var mb := _begin(seed_value)
+	add_wood_fence(mb, make_rng(seed_value), posmod(seed_value, 3))
+	return mb.commit()
+
+
+static func add_wood_fence(mb: MeshBuilder, rng: RandomNumberGenerator, kind: int = 0) -> void:
+	var posts := [-1.45, 0.0, 1.45]
+	for i in posts.size():
+		var x: float = posts[i]
+		var lean := Vector3(rng.randf_range(-0.04, 0.04), 0, rng.randf_range(-0.05, 0.05))
+		if kind == 1 and i == 2:
+			lean = Vector3(0.0, 0, 0.45)
+		if kind == 2 and i > 0:
+			# knocked over, lying on the grass
+			var d := Vector3(rng.randf_range(-0.3, 0.3), 0, 1.0).normalized()
+			mb.limb(Vector3(x, 0.08, 0), Vector3(x, 0.08, 0) + d * 1.1, 0.07, 0.06, 5, FENCE_WOOD_DARK)
+			continue
+		var top := Vector3(x, 1.12, 0) + lean * 1.1
+		mb.limb(Vector3(x, -0.3, 0), top, 0.075, 0.065, 5, FENCE_WOOD_DARK)
+	for ry in [0.5, 0.92]:
+		if kind == 0 or (kind == 1 and ry < 0.6):
+			box5(mb, Vector3(0, ry, 0.08), Vector3(2.95, 0.09, 0.05), FENCE_WOOD, FENCE_WOOD.lightened(0.08), Vector3(0, 0, rng.randf_range(-0.02, 0.02)))
+		elif kind == 1:
+			# snapped: one half still nailed, the other hanging to the ground
+			box5(mb, Vector3(-0.75, ry, 0.08), Vector3(1.45, 0.09, 0.05), FENCE_WOOD, FENCE_WOOD.lightened(0.08))
+			box5(mb, Vector3(0.62, ry * 0.5, 0.1), Vector3(1.5, 0.09, 0.05), FENCE_WOOD, FENCE_WOOD.lightened(0.08), Vector3(0, 0, -0.55))
+		else:
+			box5(mb, Vector3(rng.randf_range(-0.4, 0.4), 0.05, rng.randf_range(0.2, 0.8)), Vector3(2.7, 0.09, 0.09), FENCE_WOOD, FENCE_WOOD.lightened(0.08), Vector3(0, rng.randf_range(-0.4, 0.4), 0))
+
+
+## Dry-stone retaining wall block for terrace risers: 1 m long (X, centred), 1 m tall (scaled to the riser),
+## its face on z = 0 (+Z out), the stones running 0.6 m back into the bank. Three rough courses and capstones.
+static func retaining_wall(seed_value: int) -> ArrayMesh:
+	var mb := _begin(seed_value)
+	add_retaining_wall(mb, make_rng(seed_value))
+	return mb.commit()
+
+
+static func add_retaining_wall(mb: MeshBuilder, rng: RandomNumberGenerator) -> void:
+	# Two big face stones and a capstone (30 triangles: the olive terraces use ~800 of these).
+	var cols := [Pal.ROCK, Pal.LIMESTONE_DARK, PX.ROCK_MID, Pal.LIMESTONE]
+	var split := rng.randf_range(-0.2, 0.2)
+	for k in 2:
+		var x0 := -0.62 if k == 0 else split
+		var x1 := split if k == 0 else 0.62
+		var col: Color = cols[rng.randi() % cols.size()]
+		var tilt := Vector3(rng.randf_range(-0.04, 0.04), rng.randf_range(-0.05, 0.05), rng.randf_range(-0.04, 0.04))
+		box5(mb, Vector3((x0 + x1) * 0.5, 0.39, -0.3 + rng.randf_range(-0.03, 0.03)), Vector3(x1 - x0 - 0.04, 0.86 * rng.randf_range(0.92, 1.0), 0.62), col, col.lightened(0.06), tilt)
+	box5(mb, Vector3(0, 0.9, -0.32), Vector3(1.2, 0.14, 0.66), Pal.LIMESTONE_DARK, Pal.LIMESTONE, Vector3(rng.randf_range(-0.04, 0.04), rng.randf_range(-0.06, 0.06), rng.randf_range(-0.04, 0.04)))
+
+
+## Bleached bones in the grass: a horned goat skull and a few long bones (stylised, clean, not gory).
+static func bones(seed_value: int) -> ArrayMesh:
+	var mb := _begin(seed_value)
+	add_bones(mb, make_rng(seed_value), posmod(seed_value, 2) == 0)
+	return mb.commit()
+
+
+static func add_bones(mb: MeshBuilder, rng: RandomNumberGenerator, skull: bool = true) -> void:
+	if skull:
+		mb.push(Transform3D(Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, -0.25), Vector3(0, 0.12, 0)))
+		mb.ico(Vector3(0, 0, 0), 0.13, BONE, 0, 0.05, Vector3(1.0, 0.8, 1.15), BONE_SHADE)
+		mb.limb(Vector3(0, -0.03, 0.08), Vector3(0, -0.06, 0.3), 0.07, 0.045, 5, BONE)
+		mb.box(Vector3(-0.05, 0.02, 0.06), Vector3(0.03, 0.03, 0.02), Color(0.25, 0.22, 0.22))
+		mb.box(Vector3(0.05, 0.02, 0.06), Vector3(0.03, 0.03, 0.02), Color(0.25, 0.22, 0.22))
+		for sx in [-1.0, 1.0]:
+			var pts: Array = []
+			for k in 5:
+				var t := float(k) / 4.0
+				pts.append(Vector3(sx * (0.06 + 0.14 * t), 0.08 + 0.16 * sin(t * 2.2), -0.04 - 0.22 * t * t))
+			mb.tube(pts, 0.035, 0.008, 5, Color("B9A67E"))
+		mb.pop()
+	for i in 3:
+		var a := rng.randf() * TAU
+		var c := Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.3, 0.7)
+		var d := Vector3(cos(a + 1.3), 0, sin(a + 1.3)) * rng.randf_range(0.18, 0.3)
+		mb.limb(c - d + Vector3(0, 0.035, 0), c + d + Vector3(0, 0.035, 0), 0.03, 0.03, 4, BONE)
+		mb.ico(c - d + Vector3(0, 0.04, 0), 0.05, BONE_SHADE, 0, 0.05)
+		mb.ico(c + d + Vector3(0, 0.04, 0), 0.05, BONE_SHADE, 0, 0.05)
+
+
+## The broken bridge's abutment: dressed limestone blocks on the rim and the first voussoirs of the arch,
+## snapped off in mid air (the arch springs towards +Z). ~4 m wide, origin at the rim on the ground.
+static func bridge_end(seed_value: int) -> ArrayMesh:
+	var mb := _begin(seed_value)
+	add_bridge_end(mb, make_rng(seed_value))
+	return mb.commit()
+
+
+static func add_bridge_end(mb: MeshBuilder, rng: RandomNumberGenerator) -> void:
+	var w := 3.6
+	# Abutment: three courses of big blocks stepping into the rim.
+	for k in 3:
+		var y := -1.6 + k * 0.62
+		var z := -1.4 + k * 0.35
+		var x := -w * 0.5
+		while x < w * 0.5 - 0.1:
+			var bl := minf(rng.randf_range(0.8, 1.3), w * 0.5 - x)
+			box5(mb, Vector3(x + bl * 0.5, y + 0.31, z), Vector3(bl - 0.06, 0.6, 2.4 - k * 0.3), Pal.LIMESTONE.lerp(Pal.LIMESTONE_DARK, rng.randf() * 0.5), Pal.LIMESTONE, Vector3(rng.randf_range(-0.03, 0.03), 0, rng.randf_range(-0.03, 0.03)))
+			x += bl
+	# Deck slabs out to the break, then the springing voussoirs curving down and a jagged broken end.
+	var deck_y := 0.08
+	for i in 3:
+		var z0 := -0.3 + i * 0.75
+		box5(mb, Vector3(rng.randf_range(-0.05, 0.05), deck_y - 0.12, z0), Vector3(w - 0.1, 0.24, 0.72), Pal.LIMESTONE_DARK, Pal.LIMESTONE, Vector3(0.03 * i, 0, rng.randf_range(-0.03, 0.03)))
+	for i in 4:
+		var t := float(i) / 3.0
+		var a := t * 0.5
+		var z := 0.2 + t * 1.8
+		var y := -0.55 - t * t * 1.3
+		box5(mb, Vector3(0, y, z), Vector3(w - 0.3, 0.55, 0.62), Pal.LIMESTONE.lerp(Pal.LIMESTONE_DARK, 0.3), Pal.LIMESTONE, Vector3(a, 0, 0))
+	# Low parapet stubs.
+	for sx in [-1.0, 1.0]:
+		box5(mb, Vector3(sx * (w * 0.5 - 0.2), deck_y + 0.3, 0.2), Vector3(0.3, 0.55, rng.randf_range(0.9, 1.6)), Pal.LIMESTONE_DARK, Pal.LIMESTONE)
+
+
 # --- flowers and grass ---------------------------------------------------------------------------------------
 
 static func flowers_lavender(seed_value: int) -> ArrayMesh:
@@ -1313,6 +1594,73 @@ static func grass_clump(seed_value: int) -> ArrayMesh:
 		var p: Vector3 = perp[i]
 		v.append_array([t - p * 0.026 - Vector3(0, 0.012, 0), t + Vector3(0, 0.045, 0), t + p * 0.026 - Vector3(0, 0.012, 0)])
 		uv.append_array([Vector2(1, 1), Vector2(1, 1), Vector2(1, 1)])
+	return _grass_arrays(v, uv)
+
+
+## Third-person grass tuft (DOCE): six broad, slightly curved blades in a loose fan plus two seed heads (shown only
+## on dry ground by the shader). Broad blades read as painted strokes under the toon outlines instead of a mesh
+## of spikes. 14 triangles, 0.34 m tall at scale 1; same UV convention as grass_clump.
+static func grass_tuft_toon(seed_value: int) -> ArrayMesh:
+	var rng := make_rng(seed_value, 47)
+	var v := PackedVector3Array()
+	var uv := PackedVector2Array()
+	var heights := [0.34, 0.22, 0.29, 0.18, 0.31, 0.24]
+	var apex: Array[Vector3] = []
+	var perp: Array[Vector3] = []
+	for i in 6:
+		var a := TAU * float(i) / 6.0 + rng.randf_range(-0.35, 0.35)
+		var d := Vector3(cos(a), 0, sin(a))
+		var p := Vector3(-d.z, 0, d.x)
+		var base := d * rng.randf_range(0.02, 0.06) - Vector3(0, 0.02, 0)
+		var h: float = heights[i]
+		var lean := rng.randf_range(0.25, 0.55)
+		var mid := base + d * h * lean * 0.35 + Vector3(0, h * 0.55, 0)
+		var tip := base + d * h * lean + Vector3(0, h, 0)
+		var w := rng.randf_range(0.06, 0.08)
+		# Two triangles per blade: a broad base tapering to the bent tip.
+		v.append_array([base - p * w, mid - p * w * 0.55, base + p * w])
+		uv.append_array([Vector2(0, 0), Vector2(0, 0.55), Vector2(0, 0)])
+		v.append_array([base + p * w, mid - p * w * 0.55, mid + p * w * 0.55])
+		uv.append_array([Vector2(0, 0), Vector2(0, 0.55), Vector2(0, 0.55)])
+		v.append_array([mid - p * w * 0.55, tip, mid + p * w * 0.55])
+		uv.append_array([Vector2(0, 0.55), Vector2(0, 1), Vector2(0, 0.55)])
+		apex.append(tip)
+		perp.append(p)
+	for i in [0, 4]:
+		var t: Vector3 = apex[i]
+		var p: Vector3 = perp[i]
+		v.append_array([t - p * 0.03 - Vector3(0, 0.014, 0), t + Vector3(0, 0.05, 0), t + p * 0.03 - Vector3(0, 0.014, 0)])
+		uv.append_array([Vector2(1, 1), Vector2(1, 1), Vector2(1, 1)])
+	return _grass_arrays(v, uv)
+
+
+## Cheap tuft for the far grass layer (seen from 25-50 m): four straight tapering blades and one seed head,
+## 9 triangles; same UV convention as grass_tuft_toon.
+static func grass_tuft_far(seed_value: int) -> ArrayMesh:
+	var rng := make_rng(seed_value, 53)
+	var v := PackedVector3Array()
+	var uv := PackedVector2Array()
+	var heights := [0.34, 0.24, 0.3, 0.2]
+	var first_tip := Vector3.ZERO
+	var first_p := Vector3.ZERO
+	for i in 4:
+		var a := TAU * float(i) / 4.0 + rng.randf_range(-0.4, 0.4)
+		var d := Vector3(cos(a), 0, sin(a))
+		var p := Vector3(-d.z, 0, d.x)
+		var base := d * 0.04 - Vector3(0, 0.02, 0)
+		var h: float = heights[i]
+		var tip := base + d * h * rng.randf_range(0.3, 0.5) + Vector3(0, h, 0)
+		var mid := base.lerp(tip, 0.5)
+		var w := rng.randf_range(0.07, 0.09)
+		v.append_array([base - p * w, mid, base + p * w])
+		uv.append_array([Vector2(0, 0), Vector2(0, 0.5), Vector2(0, 0)])
+		v.append_array([mid - p * w * 0.5, tip, mid + p * w * 0.5])
+		uv.append_array([Vector2(0, 0.5), Vector2(0, 1), Vector2(0, 0.5)])
+		if i == 0:
+			first_tip = tip
+			first_p = p
+	v.append_array([first_tip - first_p * 0.03 - Vector3(0, 0.014, 0), first_tip + Vector3(0, 0.05, 0), first_tip + first_p * 0.03 - Vector3(0, 0.014, 0)])
+	uv.append_array([Vector2(1, 1), Vector2(1, 1), Vector2(1, 1)])
 	return _grass_arrays(v, uv)
 
 
@@ -2256,7 +2604,10 @@ static func _blob_f(mb: MeshBuilder, rng: RandomNumberGenerator, c: Vector3, pro
 	var rings: Array = []
 	# TOON: rounder silhouettes for the cel look: twice the sides, half the jitter, and a profile with a
 	# bulged midpoint between each pair of points.
-	var toon_sub: bool = str(Game.arg("toonsub", "1")) == "1"
+	# toonsub=1: both refinements; toonsub=2: twice the sides only (half the triangles); toonsub=0: none.
+	var ts := str(Game.arg("toonsub", "1"))
+	var toon_sub: bool = ts == "1" or ts == "2"
+	var bulge: bool = ts == "1"
 	if toon_sub:
 		sides *= 2
 		jitter *= 0.5
@@ -2264,7 +2615,7 @@ static func _blob_f(mb: MeshBuilder, rng: RandomNumberGenerator, c: Vector3, pro
 	for pi in profile.size():
 		var a: Vector2 = profile[pi]
 		prof2.append(a)
-		if toon_sub and pi < profile.size() - 1:
+		if bulge and pi < profile.size() - 1:
 			var b: Vector2 = profile[pi + 1]
 			var m := (a + b) * 0.5
 			var seg := b - a

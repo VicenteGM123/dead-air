@@ -538,6 +538,73 @@ static func _vine_canopy(mb: MeshBuilder, rng: RandomNumberGenerator, a: Vector3
 				mb.cyl(g, 0.27, 0.0, 0.11, 5, GRAPES if k == 0 else GRAPES_DARK, false, rng.randf())
 
 
+# --- Nemea's market (DOCE) --------------------------------------------------------------------------------------
+
+## Market stall for the plaza: a counter under a striped linen awning on four poles (sloping to the front, a
+## scalloped valance), goods on the counter: baskets of olives, lemons and pomegranates, amphoras, a fish tray.
+## Front = +Z, ~2.6 x 1.8 m, 2.4 m tall; origin on the ground at its centre.
+static func market_stall(seed_value: int, stripe: Color) -> ArrayMesh:
+	var mb := MeshBuilder.new(seed_value)
+	mb.vary = VARY
+	add_market_stall(mb, ModelsNature.make_rng(seed_value, 5), stripe)
+	return mb.commit()
+
+
+static func add_market_stall(mb: MeshBuilder, rng: RandomNumberGenerator, stripe: Color) -> void:
+	for sx in [-1.2, 1.2]:
+		for sz in [-0.75, 0.75]:
+			var top := 2.42 if sz < 0.0 else 2.06
+			mb.limb(Vector3(sx, -0.15, sz), Vector3(sx, top, sz), 0.055, 0.045, 5, Pal.WOOD_DARK)
+	# Counter and the shelf behind it.
+	_box(mb, Vector3(0, 0.46, 0.38), Vector3(2.3, 0.92, 0.62), Pal.WOOD_LIGHT, Pal.WOOD)
+	_box(mb, Vector3(0, 0.88, 0.38), Vector3(2.42, 0.07, 0.74), Pal.WOOD)
+	_box(mb, Vector3(0, 0.62, -0.55), Vector3(2.2, 0.06, 0.4), Pal.WOOD)
+	# The awning: stripes across, both faces (it is seen from under it too).
+	# Two pitches (a gentle one at the back, a steeper one at the front) so it never reads edge-on.
+	var n := 7
+	var back_y := 2.5
+	var mid_y := 2.4
+	var front_y := 2.0
+	for i in n:
+		var x0 := -1.42 + 2.84 * float(i) / n
+		var x1 := -1.42 + 2.84 * float(i + 1) / n
+		var col := stripe if i % 2 == 0 else Pal.CLOTH
+		var dark := col.darkened(0.12)
+		var a := Vector3(x0, back_y, -0.95)
+		var b := Vector3(x1, back_y, -0.95)
+		var m1 := Vector3(x1, mid_y, 0.15)
+		var m0 := Vector3(x0, mid_y, 0.15)
+		var c := Vector3(x1, front_y, 1.1)
+		var d := Vector3(x0, front_y, 1.1)
+		for q in [[a, b, m1, m0], [m0, m1, c, d]]:
+			mb.quad(q[0], q[1], q[2], q[3], col)
+			mb.quad(q[0], q[3], q[2], q[1], dark)
+		# Valances: a scallop hanging at the front edge and a short straight one at the back.
+		var m := Vector3((x0 + x1) * 0.5, front_y - 0.24, 1.11)
+		mb.tri(d, c, m, col)
+		mb.tri(d, m, c, dark)
+		var a2 := a + Vector3(0, -0.3, 0)
+		var b2 := b + Vector3(0, -0.3, 0)
+		mb.quad(a, b, b2, a2, col)
+		mb.quad(a, a2, b2, b, dark)
+	# Goods: baskets with fruit, amphoras, a tray of fish.
+	var fruit := [Pal.GOLD, Pal.CREST, Color("6F8A3E"), Pal.GOLD]
+	for k in 3:
+		var bp := Vector3(-0.75 + k * 0.75, 0.92, 0.36)
+		_basket(mb, rng, bp)
+		var fc: Color = fruit[k % fruit.size()]
+		for j in 4:
+			mb.ico(bp + Vector3(rng.randf_range(-0.12, 0.12), 0.27 + rng.randf_range(0.0, 0.05), rng.randf_range(-0.12, 0.12)), 0.075, fc, 0, 0.1)
+	for k in 2:
+		mb.push_at(Vector3(-0.7 + k * 1.3, 0.65, -0.55), rng.randf() * TAU)
+		ModelsNature.add_amphora(mb, rng, 0.55, 1)
+		mb.pop()
+	mb.push_at(Vector3(0.95, 0.0, 1.05), 0.3)
+	ModelsNature.add_amphora(mb, rng, 0.8, 1)
+	mb.pop()
+	_crate(mb, rng, Vector3(-1.05, 0.0, 1.0), 0.45)
+
+
 # --- farm ----------------------------------------------------------------------------------------------------
 
 static func _farm(mb: MeshBuilder, rng: RandomNumberGenerator, lv: int) -> Dictionary:
@@ -1334,3 +1401,101 @@ static func _with_boats(d: Dictionary, seed_value: int) -> Dictionary:
 				mb.tri_raw(vs[k] + off, vs[k + 2] + off, vs[k + 1] + off, cs[k])
 	mb.commit(m)
 	return d
+
+# --- DOCE: ships ---------------------------------------------------------------------------------------------
+
+## A Greek ship moored at Nemea's pier. Origin on the waterline amidships, bow towards +Z. style 0: Heracles'
+## galley (black hull with a red band, painted eyes at the bow, a curled stern post, oars shipped along the
+## sides, bronze shields on the rail, the square sail furled on its yard); style 1: the merchantman for Lerna
+## (white and blue, the striped sail set). Returns {"mesh", "length", "beam"}.
+static func ship(style: int, seed_value: int) -> Dictionary:
+	var mb := MeshBuilder.new(seed_value)
+	mb.vary = VARY
+	var rng := ModelsNature.make_rng(seed_value, 11)
+	var length := 10.5 if style == 0 else 9.0
+	var beam := 2.8 if style == 0 else 3.0
+	var depth := 1.35 if style == 0 else 1.55
+	var band := Pal.CLOTH_RED if style == 0 else Pal.AEGEAN
+	var side := Color("3A3236") if style == 0 else Pal.MARBLE
+	var bottom := Color("2C2629") if style == 0 else Pal.AEGEAN.darkened(0.25)
+	var rim := Pal.WOOD_DARK if style == 0 else Pal.WOOD
+	mb.push_at(Vector3(0, -0.6, 0))
+	ModelsNature.hull(mb, length, beam, depth, band, side, bottom, rim, Pal.WOOD_LIGHT)
+	# Deck and thwarts.
+	ModelsNature.box5(mb, Vector3(0, 0.55, 0), Vector3(beam * 0.55, 0.06, length * 0.62), Pal.WOOD_LIGHT, Pal.WOOD_LIGHT)
+	for t in [-0.32, -0.12, 0.08, 0.28]:
+		var w := beam * 0.5 * pow(maxf(0.0, 1.0 - pow(absf(t * 2.0), 2.2)), 0.6) - 0.1
+		ModelsNature.box5(mb, Vector3(0, depth - 0.18, t * length), Vector3(w * 2.0, 0.07, 0.24), Pal.WOOD)
+	mb.pop()
+	var top := depth - 0.6 + 0.12
+	# Stern post curling up and forward; a tall stem post.
+	var stern: Array = []
+	for k in 7:
+		var u := float(k) / 6.0
+		stern.append(Vector3(0, top + 0.1 + u * 1.5, -length * 0.5 + 0.05 - sin(u * 2.4) * 0.65 + u * u * 0.3))
+	mb.tube(stern, 0.13, 0.05, 6, rim)
+	mb.limb(Vector3(0, top - 0.1, length * 0.5 - 0.08), Vector3(0, top + 0.95, length * 0.5 + 0.18), 0.12, 0.07, 6, rim)
+	if style == 0:
+		# Painted eyes on the bow (the ship sees its way).
+		for sx in [-1.0, 1.0]:
+			var z := length * 0.5 - 0.95
+			var x: float = sx * ModelsNature._hull_half_width(0.82, beam) + sx * 0.02
+			mb.push(Transform3D(Basis(Vector3.UP, sx * PI * 0.5 + sx * 0.25), Vector3(x, top - 0.35, z)))
+			_plaque(mb, Vector3(0, 0, 0), Vector3(0.44, 0.3, 0.03), Pal.MARBLE)
+			_plaque(mb, Vector3(0.04, 0, 0.02), Vector3(0.17, 0.2, 0.03), Color("1E1A1E"))
+			mb.pop()
+		# Bronze shields along the rail and the oars shipped (blades up).
+		for sx in [-1.0, 1.0]:
+			for i in 5:
+				var t := -0.3 + 0.15 * float(i)
+				var x: float = sx * (ModelsNature._hull_half_width(t * 2.0, beam) + 0.06)
+				mb.push(Transform3D(Basis(Vector3.UP, sx * PI * 0.5), Vector3(x, top - 0.12, t * length)))
+				mb.push(Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3.ZERO))
+				mb.cyl(Vector3(0, -0.03, 0), 0.06, 0.34, 0.3, 10, Pal.BRONZE, true, 0.0, Pal.BRONZE.lightened(0.1))
+				mb.cyl(Vector3(0, 0.03, 0), 0.04, 0.1, 0.06, 6, Pal.BRONZE_DARK)
+				mb.pop()
+				mb.pop()
+			var a := Vector3(sx * beam * 0.36, top + 0.05, -length * 0.36)
+			var b := Vector3(sx * beam * 0.42, top + 0.12, length * 0.3)
+			for o in 3:
+				var off := Vector3(0, 0.07 * o, 0.12 * o)
+				mb.limb(a + off, b + off, 0.035, 0.035, 4, Pal.WOOD_LIGHT, false)
+	# Mast and yard.
+	var mz := 0.4 if style == 0 else 0.6
+	var mh := 7.2 if style == 0 else 7.8
+	mb.limb(Vector3(0, -0.2, mz), Vector3(0, mh, mz), 0.12, 0.085, 6, Pal.WOOD)
+	var yard_y := mh - 0.55
+	var yw := 2.9 if style == 0 else 3.2
+	mb.limb(Vector3(-yw, yard_y, mz + 0.1), Vector3(yw, yard_y, mz + 0.1), 0.07, 0.07, 5, Pal.WOOD_LIGHT)
+	if style == 0:
+		# Sail furled on the yard: a lumpy bundle.
+		mb.limb(Vector3(-yw + 0.3, yard_y - 0.12, mz + 0.12), Vector3(0, yard_y - 0.2, mz + 0.12), 0.1, 0.2, 6, Pal.CLOTH, false)
+		mb.limb(Vector3(0, yard_y - 0.2, mz + 0.12), Vector3(yw - 0.3, yard_y - 0.12, mz + 0.12), 0.2, 0.1, 6, Pal.CLOTH, false)
+	else:
+		# The striped square sail, set and bellied a little towards the bow.
+		var rows := 6
+		var cols := 6
+		for r in rows:
+			for c in cols:
+				var u0 := float(c) / cols
+				var u1 := float(c + 1) / cols
+				var v0 := float(r) / rows
+				var v1 := float(r + 1) / rows
+				var p := func(u: float, v: float) -> Vector3:
+					return Vector3(lerpf(-yw + 0.15, yw - 0.15, u), yard_y - 0.1 - v * 4.4, mz + 0.18 + sin(u * PI) * sin(v * PI * 0.9 + 0.3) * 0.65)
+				var col := Pal.AEGEAN if c % 2 == 0 else Pal.MARBLE
+				var q0: Vector3 = p.call(u0, v0)
+				var q1: Vector3 = p.call(u1, v0)
+				var q2: Vector3 = p.call(u1, v1)
+				var q3: Vector3 = p.call(u0, v1)
+				mb.quad(q0, q1, q2, q3, col)
+				mb.quad(q0, q3, q2, q1, col.darkened(0.08))
+		# Amphoras lashed amidships.
+		for i in 4:
+			mb.push_at(Vector3(-0.5 + (i % 2) * 1.0, top - 0.5, -1.4 - (i / 2) * 0.7), rng.randf() * TAU, Vector3.ONE * 0.9)
+			ModelsNature.add_amphora(mb, rng, 1.0, 1)
+			mb.pop()
+	# Rigging: forestay and backstay.
+	mb.limb(Vector3(0, mh - 0.1, mz), Vector3(0, top + 0.9, length * 0.5 + 0.1), 0.015, 0.015, 3, Pal.WOOD_LIGHT, false)
+	mb.limb(Vector3(0, mh - 0.1, mz), Vector3(0, top + 1.3, -length * 0.5 + 0.4), 0.015, 0.015, 3, Pal.WOOD_LIGHT, false)
+	return {"mesh": mb.commit(), "length": length, "beam": beam, "top": top}

@@ -60,7 +60,9 @@ doce/
     scripts/
       main.gd                 boot and flow (BOOT -> TITLE -> PLAY -> DEAD/VICTORY), builds the scene, stream hooks
       core/game.gd            autoload Game: phases, signals for the UI, hitstop/shake/slowmo, debug args, live refs
-      core/audio.gd           autoload Sfx: one-shots, music crossfades, loops, ambience beds (web-safe buses)
+      core/audio.gd           autoload Sfx: one-shots, music + its director (explore / tension / boss_lion), loops,
+                              ambience beds (sea, wind, day, cave) measured round the hero, RENAMES of the old PHAROS
+                              names, web-safe buses (UI+AUDIO; sound names in docs/AUDIO.md)
       core/settings.gd        Settings (static): volumes, quality, shake, mouse/pad sensitivity, inversion
       core/pal.gd             Pal (static): the palette (sRGB); Pal.lin() for shader globals
       core/interactables.gd   Interactables (static): registry + pick() of things the hero can use
@@ -71,36 +73,59 @@ doce/
       props/altar.gd          Altar: checkpoint interactable (heal + respawn point)
       props/chain_ring.gd     ChainRing: bronze ring on a standing stone, chain anchor &"ring"
       props/boulder.gd        Boulder: movable boulder, chain anchor &"boulder", shove by holding E (stub)
-      world/world.gd          World: PLACEHOLDER island implementing the World API (WORLD replaces it)
+      world/world.gd          World: the island of Nemea (World API, section 5.5), built by the helpers below
+      world/nemea_layout.gd   the map: every place, path, level, house, altar, ring, spawn group and the cave (data)
+      world/nemea_terrain.gd  1 m heightfield (art-directed fields, coast, escarpment, cave carve, paths, benches),
+                              meshed in 128 m chunks (+ 2 m LOD) with trimesh collision from the same triangles;
+                              ground / colour / height / sea-depth textures for the shaders
+      world/nemea_props.gd    flora, rocks and cliffs zone by zone: MultiMesh per species / variant / 64 m region
+                              (toon crowns near, plain far), merged rock and shrub meshes per region, simple colliders
+      world/nemea_village.gd  houses, plaza and market, garden walls, fences, the broken goat pen, pier, ships
+      world/nemea_cave.gd     the Lion's cave: lid, tunnels, mouth arches, pillars, stalagmites, light shafts, boulder
+      world/nemea_passage.gd  the broken bridge, the sea stacks, the three bronze rings, the three altars
+      world/nemea_story.gd    the lion's paw prints, remains, smashed fences (the island tells what happened)
+      world/nemea_boat.gd     the ship to Lerna (Interactable: "Zarpar" after Game.boss_ended(true))
+      world/ambient*.gd       Ambient: cats (pettable: Interactables + the hero rig's "pet"), goats, gulls,
+                              dolphins, butterflies / fireflies, hearts and splashes (no PHAROS dependency)
       world/time_of_day.gd    TimeOfDay: environment, sun, moods (golden by default), every lighting global
       world/sea.gd            Sea: the toon sea planes that follow the camera; surface_y() = the animated swell
-      world/grass.gd          Grass: instanced meadow tufts + flowers fed by World.grass_params()
+      world/grass.gd          Grass: GPU grass, three camera-following MultiMesh grids (near, far, flowers) fed by
+                              the World's textures (shaders/grass.gdshader); hidden while the camera is in the cave
       gfx/toon_screen.gd      ToonScreen: always-on outline/rim quad + final grade (Wind Waker look)
       gfx/mesh_builder.gd     MeshBuilder: low-poly mesh kit (flat/auto-smoothed normals, vertex colours, xf stack)
       gfx/materials.gd        Materials (static): shared materials + set_param() (per-node, web-safe)
       gfx/rig.gd              Rig: base of every code-animated character (parts, play(), event signal, flash)
       gfx/rig_hoplite.gd      RigHoplite: PHAROS hoplite (base of the stand-in)
       gfx/rig_hero_standin.gd RigHeroStandIn: TEMPORARY hero model speaking the RigHeracles API
-      gfx/models_nature.gd    ModelsNature: Greek flora, rocks, ruins, wells, boats, terrace walls...
-      gfx/models_buildings.gd ModelsBuildings: houses, docks, towers... (some PHAROS-only pieces are unused)
+      gfx/models_nature.gd    ModelsNature: Greek flora, rocks, ruins, wells, boats, terrace walls, limestone cliffs,
+                              sea stacks, spires, cave pillars, stalagmites, fences, bones, the broken bridge...
+      gfx/models_buildings.gd ModelsBuildings: houses, docks, market stalls, ships... (some PHAROS pieces are unused)
       gfx/models_animals.gd   ModelsAnimals: skinned cats, goats, gulls, dolphins (rigs + meshes)
+      gfx/rig_wolf.gd         RigWolf (three coats) + the shared quadruped kit (RigWolf.SkinMesh: one skinned mesh
+                              per beast; RigWolf.Quadruped: spine, two-bone leg IK, planted feet, body ground clamp)
+      gfx/rig_boar.gd         RigBoar · gfx/rig_lion.gd  RigLion (section 5.8; glowing eyes, closed mouths)
       gfx/pal_extra.gd        PalExtra: extra rock/sea tones
       fx/fx.gd                Fx: pooled particles (dust, smoke, splash, sparks, motes), rings, lightning
+      ui/ui.gd                the UI root (Game.ui, Game.hud): title / pause / options / controls menus, HUD,
+                              world prompt, banners, labour / victory / death cards (section 5.12)
+      ui/hud.gd prompt.gd banners.gd cards.gd figures.gd menus.gd   its parts (figures: black-figure friezes)
       ui/style.gd widgets.gd glyphs.gd icons.gd   UI kit (fonts, panels, key caps for DOCE's actions, icons)
-      ui/title_card.gd        PLACEHOLDER title ("DOCE", "Pulsa para empezar") and "Pausa"
     shaders/       pharos.gdshaderinc (shared lighting pipeline: sRGB, toon ramp, fog, ambient, cloud shade),
                    lowpoly, terrain, grass, water, sky + toon_sky.gdshaderinc, toon_edges, toon_post, glow, fx,
                    nyx, beam, beam_cone, mist_column
-    assets/fonts/  Cinzel, EB Garamond (+ SIL OFL) · assets/audio/{sfx,music,amb}/*.ogg (PHAROS set for now)
+    assets/fonts/  Cinzel, EB Garamond (+ SIL OFL) · assets/audio/{sfx,music,amb}/*.ogg (DOCE's 77 sounds,
+                   generated by doce/tools/audio; docs/AUDIO.md)
     tools/         arena.tscn/.gd + arena_world.gd (combat arena), phys_test.gd (physics self-test),
                    preview.tscn/.gd + preview_rigs.gd (turntable), clip_check.tscn/.gd (rig clipping),
-                   input_map.gd (writes the input map)
+                   input_map.gd (writes the input map), preview_beasts.gd + clip_check_beasts.tscn/.gd (bestiary),
+                   world_check.tscn/.gd (World API + reachability check), world_tour.tscn/.gd (walk bot, route
+                   probes, shots with draw stats), ui_flow_test.tscn/.gd (title / pause / HUD wiring, needs a window)
     web/           shell.html (custom loading screen) and site/ (shell fonts, og.jpg)
 ```
 
 Not copied from PHAROS on purpose: its gameplay (build/, game/, units/, combat/, data.gd, island.gd, props.gd,
-landscape.gd, main.gd, UI screens) and the ambient fauna scripts (`ambient*.gd`: they need PHAROS' Island, Landscape,
-Props and its Game phases). The animal models and rigs are here (`models_animals.gd`); the behaviour is WORLD's.
+landscape.gd, main.gd, UI screens). The ambient fauna (`world/ambient*.gd`) is PHAROS' behaviour adapted to the World
+(an IslandAdapter inside ambient.gd stands in for PHAROS' Island; Game.Phase.PLAY; Interactables for the cats).
 
 ---
 
@@ -292,19 +317,50 @@ func anchors() -> Array                         # ChainRing nodes (also in group
 func boat_dock() -> Vector3                     # on the pier deck at its sea end
 func bounds() -> Rect2                          # XZ rect the world data covers
 ```
-Extras the placeholder also offers (used by `Grass` and tools): `ground_color_at(x, z) -> Color` (rgb ground,
-a = grassiness), `grass_params(x, z) -> Array`, `coast_distance(x, z) -> float`, `terrain_body` (the terrain's
-StaticBody3D, used by tools/phys_test.gd). Nothing outside scripts/world/ may rely on anything else in world.gd.
+Extras (nothing outside scripts/world/ and tools/ may rely on anything else in world.gd; `Sfx` and the UI call
+`coast_distance()` and `cave_amount()` duck-typed, with fallbacks):
+```gdscript
+func coast_distance(x: float, z: float) -> float    # m to the coastline, + inland, - out at sea (Sfx's sea bed)
+func cave_amount(pos: Vector3) -> float              # 0..1: 1 on the cave floor under the lid and in the tunnels,
+                                                     # fading over the last metres of each mouth; 0 on top of the
+                                                     # massif (Sfx's cave bed, the UI's labour card on entering)
+func ground_color_at(x: float, z: float) -> Color    # rgb ground colour, a = grassiness
+func water_depth(x: float, z: float) -> float        # m of water over the ground (0 on land)
+func slope_at(x: float, z: float) -> float           # 1 - normal.y
+func is_walkable(x: float, z: float) -> bool         # dry and gentler than ~35 deg
+func places() -> Dictionary                          # named points: pier, plaza, north_gate, passage_south / _north,
+                                                     # cave_a, cave_b, arena, altar_0..2 (tools, tests, shots)
+func boat() -> Node3D                                # the ship to Lerna (Interactable; signal sail_requested(hero))
+var terrain_body: StaticBody3D                       # the terrain collision (tools/phys_test.gd)
+var ambient: Node3D                                  # the fauna (Ambient), null with fauna=0
+var stats: Dictionary                                # build timings and counts
+```
+`cave()` also carries `dir_a`, `dir_b` (each mouth's outward direction) and `arena_radius` (13.5 m of flat floor)
+for the lion encounter. The placeholder's `grass_params()` is gone (the GPU grass reads the World's textures).
 
-Collision: StaticBody3D on layer 1. The placeholder uses a `HeightMapShape3D` (193 x 193 samples, 2 m apart, scaled
-x2 in X/Z) whose triangles are exactly the mesh's (same diagonal), so `height_at()` = the physics ground (checked by
-phystest to 0.000 m); convex hulls for rocks, cylinders for trunks and pillars, boxes for houses and the pier. Water
-is not solid: the hero swims where the sea is deeper than 1.3 m.
+World places the props, CORE owns their behaviour: `ChainRing.new(stone_height)` (three rings, `anchors()`),
+`Altar.new()` + `title` (three altars, front = +Z = the respawn side), `Boulder.new()` (`cave().boulder`), each added
+to the World and then given its transform; keep these constructors (or tell WORLD). Debug arg: `fauna=0` (no fauna).
 
-The placeholder island (~300 x 300 m of land): beaches all round, gentle hills, forest in the centre, olive grove to
-the east, a flat village with a well and a pier in the south (the hero starts on the pier), a plateau and ridge in
-the north with an open crater (cave stand-in: two passes, four pillars, the boulder), three rings, one altar on the
-highest eastern hill, three spawn groups (two wolf packs in the forest, one boar group to the north-east).
+Collision: StaticBody3D on layer 1. The terrain is a trimesh per 128 m chunk built from exactly the rendered 1 m
+triangles (quad (ix, iz) split a-c when ix + iz is even, b-d when odd), so `height_at()` = the physics ground (0.000 m
+in `tools/world_check` and phystest); convex hulls for rocks and cliffs, cylinders for trunks, pillars and ring stones,
+boxes for houses, walls, fences, the pier and the ships; trimesh for the cave lid, the tunnel roofs and the mouth
+arches. The boulder is on layer 4. Water is not solid: `is_water()` is the ground below the sea; the hero swims
+where it is deeper than 1.3 m.
+
+The island of Nemea (~330 x 350 m of land in a 384 m square, `bounds()` = the heightfield): a hand lying palm down,
+fingers to the north. The village, its beach and the pier (the hero starts on it facing north) at the wrist (south);
+the forest of holm oaks and pines in the palm (two wolf packs); olive benches and the Altar de los Olivos on the east
+hill (a boar); the thumb (west, golden cliffs, boars, the Altar del Promontorio on its headland) cut off from
+the palm by a sea inlet that the broken passage crosses: south rim ring -> ring on the sea stack -> north rim ring
+(each gap ~10-15 m; the way back down is a drop off the escarpment). An escarpment 10 m high separates the forest
+from the upper level (the thumb and the ridge meadow with the Altar de la Sierra); the upper level meets the sea in
+cliffs, so it can only be reached across the passage (checked by `tools/world_check`: flood fills on foot and
+swimming). The Lion's cave in the ridge massif: mouth A (6.6 m wide, from the meadow) and mouth B (a 2.1 m crack with
+the boulder beside it), a 27 m arena with five pillars under a rock lid with light shafts. Main route on foot
+(`tools/world_tour.tscn -- walk=1`): pier -> passage south rim 214 m, north rim -> mouth A -> arena -> mouth B 207 m,
+~70 s at run speed with the zip simulated.
 `tools/arena_world.gd` implements the same API for the arena.
 
 ### 5.6 Hero (class Hero, scripts/player/hero.gd)
@@ -627,18 +683,23 @@ someone else's file goes in the stream's report, not in the file.
 
 | Stream | Owns | Notes |
 |---|---|---|
-| **CORE** (player feel, combat, chain spear, camera, enemy base, main flow) | `scripts/player/*` (hero.gd + new combat / chain spear scripts), `scripts/camera/camera_rig.gd`, `scripts/enemies/enemy.gd`, `training_dummy.gd`, `scripts/main.gd`, `main.tscn`, `scripts/core/game.gd`, `interactables.gd`, `settings.gd`, `scripts/props/*` (behaviour of rings, boulder, altars), `scripts/fx/fx.gd`, `scripts/gfx/toon_screen.gd`, the shared kit (`mesh_builder.gd`, `materials.gd`, `rig.gd`, `pal.gd`, `pal_extra.gd`, `pharos.gdshaderinc`, `lowpoly.gdshader`, `toon_edges`, `toon_post`, `glow`, `fx` shaders), `project.godot` (input via `tools/input_map.gd`, physics, autoloads), `tools/arena*`, `tools/phys_test.gd`, `tools/preview*`, `tools/clip_check*`, `doce/tools/export_web.sh`, `web_test.mjs` | Contracts in game.gd and the shared kit: extend by adding only; other streams ask. Replace the placeholder swing in hero.gd; switch sound names per AUDIO.md when the new audio lands. |
+| **CORE** (player feel, combat, chain spear, camera, enemy base, main flow) | `scripts/player/*` (hero.gd + new combat / chain spear scripts), `scripts/camera/camera_rig.gd`, `scripts/enemies/enemy.gd`, `training_dummy.gd`, `scripts/main.gd`, `main.tscn`, `scripts/core/game.gd`, `interactables.gd`, `settings.gd`, `scripts/props/*` (behaviour of rings, boulder, altars), `scripts/fx/fx.gd`, `scripts/gfx/toon_screen.gd`, the shared kit (`mesh_builder.gd`, `materials.gd`, `rig.gd`, `pal.gd`, `pal_extra.gd`, `pharos.gdshaderinc`, `lowpoly.gdshader`, `toon_edges`, `toon_post`, `glow`, `fx` shaders), `project.godot` (input via `tools/input_map.gd`, physics, autoloads), `tools/arena*`, `tools/phys_test.gd`, `tools/preview.tscn/.gd`, `tools/preview_rigs.gd`, `tools/clip_check.tscn/.gd`, `doce/tools/export_web.sh`, `web_test.mjs` | Contracts in game.gd and the shared kit: extend by adding only; other streams ask. Replace the placeholder swing in hero.gd; switch to the DOCE sound names of AUDIO.md (the new audio has landed; `RENAMES` in audio.gd keeps `title`, `day`, `blessing`, `orb_hit`, `structure_hit` working meanwhile). |
 | **HERO** | `scripts/gfx/rig_heracles.gd` (new), its preview helper (e.g. `tools/preview_hero.gd`) | Implements 5.7; Hero picks it up automatically. Delete `rig_hero_standin.gd` with CORE's agreement. Must pass clip_check (define `clip_volume` / `clip_pairs`). |
-| **WORLD** | `scripts/world/*` (world.gd + helpers, time_of_day.gd, sea.gd, grass.gd, ambient*.gd), world shaders (`terrain`, `water`, `grass`, `sky`, `toon_sky.gdshaderinc`, `mist_column`), `models_nature.gd`, `models_buildings.gd`, `models_animals.gd` (fauna: cats with petting, goats, gulls, dolphins) | Replaces the placeholder island keeping 5.5 exactly (and `Sea.surface_y`, the water depth texture globals, `TimeOfDay` API). Places altars, rings and the boulder (scripts/props, CORE). |
-| **BESTIARY** | `scripts/gfx/rig_wolf.gd`, `rig_boar.gd`, `rig_lion.gd`, their preview helper (e.g. `tools/preview_beasts.gd`) | Implements 5.8; glowing eyes; must pass clip_check (teeth/claws vs bodies, feet on the ground). |
-| **UI + AUDIO** | `scripts/ui/*` (new `ui.gd` root; `title_card.gd` placeholder can go), `scripts/core/audio.gd`, `assets/audio/*`, `assets/fonts/*`, `doce/tools/audio/*`, `docs/AUDIO.md`, `web/shell.html`, `web/site/*` | Implements 5.12; plays UI sounds itself. |
+| **WORLD** | `scripts/world/*` (world.gd, nemea_*.gd, time_of_day.gd, sea.gd, grass.gd, ambient*.gd), world shaders (`terrain`, `water`, `grass`, `sky`, `toon_sky.gdshaderinc`, `mist_column`), `models_nature.gd`, `models_buildings.gd`, `models_animals.gd` (fauna: cats with petting, goats, gulls, dolphins), `tools/world_check.tscn/.gd`, `tools/world_tour.tscn/.gd` | **Landed** (Nemea replaced the placeholder island, 2026-10-10). Keeps 5.5 exactly (+ the extras listed there), `Sea.surface_y`, the water depth texture globals and the `TimeOfDay` API. Places altars, rings and the boulder (scripts/props, CORE). Re-run `tools/world_check.tscn` (0 fails) and `tools/world_tour.tscn -- walk=1` after any terrain or layout change. |
+| **BESTIARY** | `scripts/gfx/rig_wolf.gd` (+ the quadruped kit inside it), `rig_boar.gd`, `rig_lion.gd`, `tools/preview_beasts.gd`, `tools/clip_check_beasts.tscn/.gd` | **Landed** 2026-10-10. Implements 5.8; glowing eyes, no mouths. `godot --headless --path . res://tools/clip_check_beasts.tscn --quit-after 400000 -- beasts=wolf,boar,lion`: wolf x3 and boar 0 issues of 4835 samples, lion 25 of 1602 (paws dipping 1.4-4.3 cm on slopes and in the death fall, one gallop paw 6.8 cm up). |
+| **UI + AUDIO** | `scripts/ui/*` (`ui.gd` root), `scripts/core/audio.gd`, `assets/audio/*`, `assets/fonts/*`, `doce/tools/audio/*`, `docs/AUDIO.md`, `web/shell.html`, `web/site/*`, `tools/ui_flow_test.tscn/.gd` | **Landed** 2026-10-10 (`title_card.gd` removed; main.gd's fallback path to it is dead code). Implements 5.12; plays UI sounds itself. `ui.owns_title()` is true: the title is a menu and swallows keys / pad buttons / clicks, so main.gd's "any key" start never fires (main.gd may check `owns_title()`). Debug: `uitest=<screen>`, `uitour=<dir>`, `uishot=<png>`. |
 | **ENCOUNTERS** (later) | `scripts/enemies/wolf.gd`, `boar.gd`, `lion.gd` (extend Enemy) and the lion fight logic | Spawned by `main.spawn_encounters()` from `World.spawn_groups()`; lion via `World.cave()`; emits `Game.boss_started/ended`, calls `main.victory()`. |
 
 ## 11. Known placeholders
 
-- `world.gd` is a placeholder island (no real cave interior, paths, fences or story props yet).
-- The hero model is the hoplite stand-in; its throw / grapple / pet poses are approximations.
-- Combat is a single placeholder swing; no guard, parry, heavy, chain spear yet (CORE).
-- The UI is only the title text and "Pausa" (UI stream).
-- Audio is PHAROS' set; DOCE's set is described in AUDIO.md and lands with the UI+AUDIO stream.
-- No ambient fauna in the world yet (WORLD; the models exist).
+- The hero model is the hoplite stand-in; its throw / grapple / pet poses are approximations (HERO's `rig_heracles.gd`
+  replaces it).
+- Combat is a single placeholder swing; no guard, parry, heavy, chain spear yet (CORE). The bronze rings are only
+  anchors: until the chain zip exists, the broken passage (and so the thumb, the ridge meadow and the cave) can only be
+  reached with `start=` (e.g. `start=-114,0,-28` on the north rim) or `tools/world_tour.tscn` (it simulates the zip).
+- The boulder's drag is a stub (CORE); the world only places it beside cave mouth B.
+- No enemies on the island yet: `World.spawn_groups()` (2 wolf packs, 3 boar groups) and `World.cave()` wait for the
+  ENCOUNTERS scripts (`scripts/enemies/wolf.gd`, `boar.gd`, `lion.gd`); the beast rigs are ready.
+- The ring on the sea stack faces south: going back from the north rim is a drop off the escarpment, not a zip.
+- The goats call `Sfx.play("goat_bleat")`, which is not in the DOCE set (silent until UI+AUDIO adds it).
+- CORE's files still use a few old PHAROS sound names (mapped by `RENAMES`, see 10).
