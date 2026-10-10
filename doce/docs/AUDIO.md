@@ -17,7 +17,7 @@ Regenerate everything with `python3 doce/tools/audio/render_all.py` (about 1 min
 
 | Old (PHAROS) name in the live code | Use instead | Where |
 |---|---|---|
-| `Sfx.music("title")`, `Sfx.music("day")` | `Sfx.music("explore")` in both (it carries on from the title into the game) | `main.gd` |
+| `Sfx.music("title")`, `Sfx.music("day")` | `Sfx.music("explore")` in both (it carries on from the title into the game). Until then the UI starts `explore` itself when those files are missing (`ui.gd` `_music_bridge`), which restarts the theme at "Comenzar" | `main.gd` |
 | `blessing` | `altar` | `props/altar.gd` |
 | `orb_hit` | `chain_stick` | `props/chain_ring.gd` (the spear biting the ring) |
 | `structure_hit` | `chain_stick` when the spear hooks it; `boulder_thud` when it settles; `boulder_drag` loop while it moves | `props/boulder.gd` |
