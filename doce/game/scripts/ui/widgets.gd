@@ -1,16 +1,16 @@
 extends RefCounted
-## Small reusable controls of the DOCE UI (inherited from PHAROS): icons, bars, text-only menu buttons, option rows and ornaments.
+## Small reusable controls of the DOCE UI: icons, bars, text-only menu buttons, option rows and ornaments.
 
 const S := preload("res://scripts/ui/style.gd")
 
 
 ## A vector icon (see Icons) with a soft drop shadow.
 class IconView extends Control:
-	var icon := "coin"
+	var icon := "helmet"
 	var color := Color.WHITE
 	var shadow := true
 
-	func _init(i: String = "coin", c: Color = Color.WHITE, px: float = 24.0) -> void:
+	func _init(i: String = "helmet", c: Color = Color.WHITE, px: float = 24.0) -> void:
 		icon = i
 		color = c
 		custom_minimum_size = Vector2(px, px)
@@ -25,18 +25,21 @@ class IconView extends Control:
 	func _draw() -> void:
 		var r := Rect2(Vector2.ZERO, size)
 		if shadow:
-			Icons.draw(self, icon, Rect2(r.position + Vector2(0, 1.5), r.size), Color(S.INK, 0.4 * color.a))
+			Icons.draw(self, icon, Rect2(r.position + Vector2(0, 1.5), r.size), Color(S.INK, 0.45 * color.a))
 		Icons.draw(self, icon, r, color)
 
 
-## A thin rounded bar with a delayed "damage trail" that drains after a hit.
+## A slim bar with an ink outline, a delayed "damage trail" that drains after a hit, optional notches
+## (fractions, e.g. the Lion's 66 % and 33 % phases) and a flash on loss.
 class Bar extends Control:
 	var value := 1.0
 	var trail := 1.0
 	var color := S.IVORY
-	var back := Color(S.INK, 0.5)
-	var trail_color := Color(1.0, 0.93, 0.85, 0.75)
+	var back := Color(S.INK, 0.55)
+	var trail_color := Color(1.0, 0.93, 0.85, 0.8)
+	var notches: Array = []
 	var flash := 0.0
+	var gain := 0.0
 	var _hold := 0.0
 	var _sb := StyleBoxFlat.new()
 
@@ -51,8 +54,10 @@ class Bar extends Control:
 		if is_equal_approx(v, value) and not instant:
 			return
 		if v < value and not instant:
-			_hold = 0.45
+			_hold = 0.5
 			flash = 1.0
+		elif v > value + 0.001 and not instant:
+			gain = 1.0
 		value = v
 		if instant or trail < value:
 			trail = value
@@ -64,10 +69,11 @@ class Bar extends Control:
 			if _hold > 0.0:
 				_hold -= rd
 			else:
-				trail = move_toward(trail, value, rd * 0.55)
+				trail = move_toward(trail, value, rd * 0.6)
 			queue_redraw()
-		if flash > 0.0:
+		if flash > 0.0 or gain > 0.0:
 			flash = maxf(0.0, flash - rd * 3.0)
+			gain = maxf(0.0, gain - rd * 1.5)
 			queue_redraw()
 
 	func _rounded(r: Rect2, c: Color) -> void:
@@ -79,18 +85,22 @@ class Bar extends Control:
 
 	func _draw() -> void:
 		var h := size.y
-		_rounded(Rect2(-1, -1, size.x + 2, h + 2), Color(S.INK, 0.35 * back.a / 0.5))
+		_rounded(Rect2(-1.5, -1.5, size.x + 3, h + 3), Color(S.INK, 0.6 * back.a / 0.55))
 		_rounded(Rect2(Vector2.ZERO, size), back)
 		if trail > value:
 			_rounded(Rect2(0, 0, size.x * trail, h), trail_color)
-		var c := color.lerp(Color.WHITE, flash * 0.6)
+		var c := color.lerp(Color.WHITE, flash * 0.55 + gain * 0.35)
 		_rounded(Rect2(0, 0, size.x * value, h), c)
 		if value > 0.02 and h >= 5.0:
-			draw_line(Vector2(h * 0.5, 1.0), Vector2(maxf(h * 0.5, size.x * value - h * 0.5), 1.0), Color(1, 1, 1, 0.28), 1.0)
+			draw_line(Vector2(h * 0.5, 1.2), Vector2(maxf(h * 0.5, size.x * value - h * 0.5), 1.2), Color(1, 1, 1, 0.3), 1.0)
+		for n in notches:
+			var x: float = size.x * float(n)
+			draw_line(Vector2(x, -2.5), Vector2(x, h + 2.5), Color(S.INK, 0.85), 2.0)
+			draw_line(Vector2(x, -2.5), Vector2(x, h + 2.5), Color(S.IVORY, 0.35), 1.0)
 
 
-## Text-only menu button: Cinzel, ivory; when focused or hovered it turns gold and two small diamonds and a
-## hairline slide in. `confirm` makes it ask once before firing (destructive actions).
+## Text-only menu button: Cinzel, ivory; when focused or hovered it turns gold and two small terracotta
+## diamonds and a hairline slide in. `confirm` makes it ask once before firing (destructive actions).
 class Btn extends Button:
 	signal activated
 	var left := false
@@ -111,10 +121,10 @@ class Btn extends Button:
 		alignment = HORIZONTAL_ALIGNMENT_LEFT if left else HORIZONTAL_ALIGNMENT_CENTER
 		add_theme_font_override("font", S.font(S.CINZEL, 3))
 		add_theme_font_size_override("font_size", px)
-		add_theme_color_override("font_color", Color(S.IVORY, 0.88))
+		add_theme_color_override("font_color", Color(S.IVORY, 0.9))
 		for n in ["font_hover_color", "font_focus_color", "font_pressed_color", "font_hover_pressed_color"]:
 			add_theme_color_override(n, S.GOLD)
-		add_theme_color_override("font_outline_color", Color(S.INK, 0.45))
+		add_theme_color_override("font_outline_color", Color(S.INK, 0.5))
 		add_theme_constant_override("outline_size", 5)
 		var e := StyleBoxEmpty.new()
 		e.content_margin_left = 34 if left else 40
@@ -170,16 +180,17 @@ class Btn extends Button:
 		var fs := get_theme_font_size("font_size")
 		var tw := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		var cy := size.y * 0.5 - 1.0
-		var col := Color(S.DANGER if _armed else S.GOLD, _k)
+		var col := Color(S.DANGER if _armed else S.CLAY_LIGHT, _k)
+		var line := Color(S.DANGER if _armed else S.GOLD, 0.55 * _k)
 		if left:
-			S.draw_diamond(self, Vector2(16.0 - 8.0 * (1.0 - _k), cy), 4.0, col)
-			draw_line(Vector2(34, size.y - 6), Vector2(34 + tw * _k, size.y - 6), Color(col, 0.5 * _k), 1.0, true)
+			S.draw_diamond(self, Vector2(16.0 - 8.0 * (1.0 - _k), cy), 4.5, col)
+			draw_line(Vector2(34, size.y - 6), Vector2(34 + tw * _k, size.y - 6), line, 1.0, true)
 		else:
 			var cx := size.x * 0.5
 			var off := tw * 0.5 + 20.0 + 10.0 * (1.0 - _k)
-			S.draw_diamond(self, Vector2(cx - off, cy), 4.0, col)
-			S.draw_diamond(self, Vector2(cx + off, cy), 4.0, col)
-			draw_line(Vector2(cx - tw * 0.45 * _k, size.y - 5), Vector2(cx + tw * 0.45 * _k, size.y - 5), Color(col, 0.5 * _k), 1.0, true)
+			S.draw_diamond(self, Vector2(cx - off, cy), 4.5, col)
+			S.draw_diamond(self, Vector2(cx + off, cy), 4.5, col)
+			draw_line(Vector2(cx - tw * 0.45 * _k, size.y - 5), Vector2(cx + tw * 0.45 * _k, size.y - 5), line, 1.0, true)
 
 
 ## One line of the options screen: a label on the left and a slider or a choice (segmented) on the right.
@@ -203,7 +214,7 @@ class OptionRow extends Control:
 		options = opts
 		focus_mode = Control.FOCUS_ALL
 		mouse_filter = Control.MOUSE_FILTER_STOP
-		custom_minimum_size = Vector2(540, 52)
+		custom_minimum_size = Vector2(660, 50)
 		mouse_entered.connect(_on_hover)
 		focus_entered.connect(_on_focus.bind(true))
 		focus_exited.connect(_on_focus.bind(false))
@@ -225,7 +236,7 @@ class OptionRow extends Control:
 		queue_redraw()
 
 	func _widget_rect() -> Rect2:
-		var x0 := size.x * 0.5
+		var x0 := size.x * 0.56
 		return Rect2(x0, 0, size.x - x0 - 22.0, size.y)
 
 	func _gui_input(e: InputEvent) -> void:
@@ -255,8 +266,6 @@ class OptionRow extends Control:
 		elif e is InputEventMouseMotion and _drag:
 			_slide_to((e as InputEventMouseMotion).position.x)
 			accept_event()
-		elif e is InputEventScreenDrag and _drag:
-			_slide_to((e as InputEventScreenDrag).position.x)
 
 	func _track() -> Rect2:
 		var w := _widget_rect()
@@ -297,24 +306,23 @@ class OptionRow extends Control:
 	func _draw() -> void:
 		var h := size.y
 		if _k > 0.01:
-			var sb := S.box(Color(S.PANEL, 0.45 * _k), 8)
-			sb.border_color = Color(S.GOLD, 0.3 * _k)
+			var sb := S.box(Color(S.PANEL, 0.5 * _k), 4)
+			sb.border_color = Color(S.CLAY, 0.45 * _k)
 			sb.set_border_width_all(1)
 			draw_style_box(sb, Rect2(Vector2.ZERO, size))
-			S.draw_diamond(self, Vector2(14.0 - 6.0 * (1.0 - _k), h * 0.5), 3.5, Color(S.GOLD, _k))
+			S.draw_diamond(self, Vector2(14.0 - 6.0 * (1.0 - _k), h * 0.5), 3.5, Color(S.CLAY_LIGHT, _k))
 		var f := S.font(S.CINZEL, 3)
 		var col := Color(S.IVORY, 0.9).lerp(S.GOLD, _k)
 		S.draw_text(self, f, title, 19, Vector2(28, h * 0.5 + 7), col, 0, 4)
 		if kind == "slider":
 			var t := _track()
 			draw_line(t.position + Vector2(0, 1.5), Vector2(t.end.x, t.position.y + 1.5), Color(S.IVORY, 0.22), 3.0, true)
-			draw_line(t.position + Vector2(0, 1.5), Vector2(t.position.x + t.size.x * value, t.position.y + 1.5), S.GOLD, 3.0, true)
+			draw_line(t.position + Vector2(0, 1.5), Vector2(t.position.x + t.size.x * value, t.position.y + 1.5), S.CLAY_LIGHT, 3.0, true)
 			var kx := t.position.x + t.size.x * value
-			draw_circle(Vector2(kx, h * 0.5), 8.0, Color(S.INK, 0.5))
-			draw_circle(Vector2(kx, h * 0.5), 6.5, S.IVORY.lerp(S.GOLD, _k))
+			S.draw_diamond(self, Vector2(kx, h * 0.5), 9.0, Color(S.INK, 0.6))
+			S.draw_diamond(self, Vector2(kx, h * 0.5), 7.0, S.IVORY.lerp(S.GOLD, _k))
 			S.draw_text(self, S.font(S.CINZEL_BOLD), str(int(round(value * 100.0))), 17, Vector2(t.end.x + 52.0, h * 0.5 + 6), Color(S.IVORY, 0.85), 2, 3)
 		else:
-			# Choices right-aligned to the same edge as the slider values, evenly spaced, small dots between.
 			_seg_rects.clear()
 			var fo := S.font(S.CINZEL, 2)
 			var fs := 17
@@ -337,29 +345,33 @@ class OptionRow extends Control:
 				var c: Color = S.GOLD if sel else Color(S.IVORY, 0.48)
 				S.draw_text(self, fo, String(options[i]), fs, Vector2(x, h * 0.5 + 6), c, 0, 3)
 				if sel:
-					draw_line(Vector2(x, h * 0.5 + 13), Vector2(x + tw, h * 0.5 + 13), Color(S.GOLD, 0.8), 1.0, true)
+					draw_line(Vector2(x, h * 0.5 + 13), Vector2(x + tw, h * 0.5 + 13), Color(S.CLAY_LIGHT, 0.9), 1.0, true)
 				if i < n - 1:
 					S.draw_diamond(self, Vector2(x + tw + gap * 0.5, h * 0.5), 2.0, Color(S.IVORY, 0.3))
 				x += tw + gap
 
 
-## A decorative separator: "rule" (hairline + diamond) or "meander" (Greek key band).
+## A decorative separator: "rule" (hairline + diamond), "meander" (Greek key fading at the ends) or "band"
+## (a solid frieze band, keys edge to edge).
 class Ornament extends Control:
 	var style := "rule"
-	var color := Color(S.GOLD, 0.7)
+	var color := Color(S.CLAY, 0.8)
 
-	func _init(st: String = "rule", w: float = 240.0, c: Color = Color(S.GOLD, 0.7)) -> void:
+	func _init(st: String = "rule", w: float = 240.0, c: Color = Color(S.CLAY, 0.8)) -> void:
 		style = st
 		color = c
-		custom_minimum_size = Vector2(w, 20.0 if st == "meander" else 9.0)
+		custom_minimum_size = Vector2(w, 24.0 if st == "meander" else (16.0 if st == "band" else 9.0))
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	func _draw() -> void:
 		var c := size * 0.5
-		if style == "meander":
-			S.draw_meander(self, c + Vector2(0, 1.5), size.x * 0.5, 13.0, color)
-		else:
-			S.draw_rule(self, c, size.x * 0.5, color)
+		match style:
+			"meander":
+				S.draw_meander(self, c + Vector2(0, 1.5), size.x * 0.5, 15.0, color)
+			"band":
+				S.draw_meander_band(self, Rect2(Vector2.ZERO, size), color, Color(0, 0, 0, 0), 1.4)
+			_:
+				S.draw_rule(self, c, size.x * 0.5, color)
 
 
 ## Glyph-by-glyph text with animatable tracking and reveal (titles).

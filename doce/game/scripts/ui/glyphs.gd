@@ -1,11 +1,11 @@
 extends Control
-## Input glyphs: remembers the last device used (keyboard+mouse, gamepad or touch) and draws the matching key
-## caps for an action — [E] on keyboard, (A) on a pad, a tap ring on touch. Instances refresh by themselves
-## when the device changes.
+## Input glyphs: remembers the last device used (keyboard+mouse or gamepad) and draws the matching caps for an
+## action — [E] on keyboard, (Y) on a pad. Instances refresh by themselves when the device changes.
+## The table follows the controls in docs/GDD.md (gamepad names are Xbox-style: A B X Y, LB RB LT RT, L3 R3).
 
 const S := preload("res://scripts/ui/style.gd")
 
-static var device := "kb" # "kb" | "pad" | "touch"
+static var device := "kb" # "kb" | "pad"
 static var revision := 0
 
 var action := ""
@@ -25,9 +25,7 @@ static func set_device(d: String) -> void:
 
 ## Tracks the device from raw input. Touch-emulated mouse events (device -1) are ignored.
 static func observe(e: InputEvent) -> void:
-	if e is InputEventScreenTouch or e is InputEventScreenDrag:
-		set_device("touch")
-	elif e is InputEventKey and e.pressed:
+	if e is InputEventKey and e.pressed:
 		set_device("kb")
 	elif e is InputEventMouseButton and e.pressed and e.device != InputEvent.DEVICE_ID_EMULATION:
 		set_device("kb")
@@ -37,45 +35,45 @@ static func observe(e: InputEvent) -> void:
 		set_device("pad")
 
 
-## How to trigger `action` on `dev`. Each cap is [kind, text]: kind is "key" (rounded square), "pad" (round
-## face button), "pill" (shoulder / menu button), "icon" (vector icon) or "word" (plain small text).
-## Actions are the DOCE input map (project.godot, docs/ARCHITECTURE.md); "heavy" = hold attack, "look" = camera.
-static func caps_for(action: String, dev: String = "") -> Array:
+## How to trigger `action` on `dev`. Each cap is [kind, text]: "key" (rounded square), "pad" (round face
+## button), "pill" (shoulder / menu button), "icon" (vector icon) or "word" (plain small text).
+static func caps_for(act: String, dev: String = "") -> Array:
 	if dev == "":
 		dev = device
 	if dev == "pad":
-		match action:
-			"move", "look": return [["icon", "stick"]]
-			"jump", "accept": return [["pad", "A"]]
-			"dodge", "back": return [["pad", "B"]]
+		match act:
+			"move": return [["icon", "stick_l"]]
+			"camera", "look": return [["icon", "stick_r"]]
 			"sprint": return [["pill", "L3"]]
+			"jump": return [["pad", "A"]]
+			"dodge": return [["pad", "B"]]
 			"attack": return [["pad", "X"]]
 			"heavy": return [["word", "mantener"], ["pad", "X"]]
-			"guard": return [["pill", "LT"]]
-			"chain": return [["pill", "RT"]]
-			"lock_on": return [["pill", "R3"]]
-			"interact": return [["pad", "Y"]]
+			"guard", "parry", "shield": return [["pill", "LT"]]
+			"chain", "spear", "throw": return [["pill", "RT"]]
+			"lock", "lock_on": return [["pill", "R3"]]
+			"interact", "grab", "pet", "wrestle": return [["pad", "Y"]]
+			"accept": return [["pad", "A"]]
+			"back": return [["pad", "B"]]
 			"pause": return [["pill", "Start"]]
-	elif dev == "touch":
-		match action:
-			"interact", "accept": return [["icon", "tap"]]
-			"move", "look": return [["icon", "stick"]]
-			"pause": return [["icon", "pause"]]
-			"back": return []
-	match action:
-		"move": return [["key", "WASD"]]
-		"look": return [["word", "ratón"]]
+			"navigate": return [["icon", "dpad"]]
+		return []
+	match act:
+		"move": return [["key", "W"], ["key", "A"], ["key", "S"], ["key", "D"]]
+		"camera", "look": return [["icon", "mouse"]]
+		"sprint": return [["word", "mantener"], ["key", "Shift"]]
 		"jump": return [["key", "Espacio"]]
 		"dodge": return [["key", "Shift"]]
-		"sprint": return [["word", "mantener"], ["key", "Shift"]]
 		"attack": return [["icon", "mouse_l"]]
 		"heavy": return [["word", "mantener"], ["icon", "mouse_l"]]
-		"guard": return [["icon", "mouse_r"]]
-		"chain": return [["key", "Q"]]
-		"lock_on": return [["key", "Tab"]]
-		"interact": return [["key", "E"]]
+		"guard", "parry", "shield": return [["icon", "mouse_r"]]
+		"chain", "spear", "throw": return [["key", "Q"]]
+		"lock", "lock_on": return [["key", "Tab"]]
+		"interact", "grab", "pet", "wrestle": return [["key", "E"]]
 		"accept": return [["key", "Intro"]]
-		"back", "pause": return [["key", "Esc"]]
+		"back": return [["key", "Esc"]]
+		"pause": return [["key", "Esc"]]
+		"navigate": return [["icon", "arrows"]]
 	return []
 
 
@@ -83,6 +81,9 @@ static func cap_width(cap: Array, h: float) -> float:
 	match cap[0]:
 		"pad", "icon":
 			return h
+		"word":
+			var fw := S.font(S.ITALIC)
+			return fw.get_string_size(cap[1], HORIZONTAL_ALIGNMENT_LEFT, -1, int(h * 0.62)).x + 2.0
 		_:
 			var f := S.font(S.CINZEL_BOLD)
 			var fs := int(h * (0.5 if cap[0] == "key" else 0.44))
@@ -91,13 +92,20 @@ static func cap_width(cap: Array, h: float) -> float:
 
 
 ## Draws one cap in `r` (height = r.size.y).
-static func draw_cap(ci: CanvasItem, cap: Array, r: Rect2, col: Color, bg_alpha: float = 0.55) -> void:
+static func draw_cap(ci: CanvasItem, cap: Array, r: Rect2, col: Color, bg_alpha: float = 0.6) -> void:
 	var h := r.size.y
 	var kind: String = cap[0]
 	var text: String = cap[1]
 	match kind:
 		"icon":
-			Icons.draw(ci, text, r.grow(-h * 0.06), col)
+			Icons.draw(ci, text, r.grow(-h * 0.04), col)
+			return
+		"word":
+			var fw := S.font(S.ITALIC)
+			var fsw := int(h * 0.62)
+			var yw := r.position.y + (h + fw.get_ascent(fsw) - fw.get_descent(fsw)) * 0.5
+			ci.draw_string_outline(fw, Vector2(r.position.x, yw), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsw, 4, Color(S.INK, 0.4 * col.a))
+			ci.draw_string(fw, Vector2(r.position.x, yw), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsw, Color(col, col.a * 0.85))
 			return
 		"pad":
 			var c := r.get_center()
@@ -109,7 +117,7 @@ static func draw_cap(ci: CanvasItem, cap: Array, r: Rect2, col: Color, bg_alpha:
 			sb.border_color = Color(col, 0.8 * col.a)
 			sb.set_border_width_all(1)
 			sb.border_width_bottom = 2
-			sb.set_corner_radius_all(int(h * (0.24 if kind == "key" else 0.5)))
+			sb.set_corner_radius_all(int(h * (0.22 if kind == "key" else 0.5)))
 			sb.anti_aliasing = true
 			ci.draw_style_box(sb, r)
 	var f := S.font(S.CINZEL_BOLD)
@@ -119,6 +127,26 @@ static func draw_cap(ci: CanvasItem, cap: Array, r: Rect2, col: Color, bg_alpha:
 	var desc := f.get_descent(fs)
 	var y := r.position.y + (h + asc - desc) * 0.5 - h * 0.02
 	ci.draw_string(f, Vector2(r.position.x + (r.size.x - tw) * 0.5, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+
+
+## Width of a row of caps (with the gaps used by draw_caps).
+static func caps_width(caps: Array, h: float) -> float:
+	var w := 0.0
+	for i in caps.size():
+		w += cap_width(caps[i], h) + (h * 0.18 if i > 0 else 0.0)
+	return w
+
+
+## Draws a row of caps starting at `pos` (top-left); returns the width used.
+static func draw_caps(ci: CanvasItem, caps: Array, pos: Vector2, h: float, col: Color, bg_alpha: float = 0.6) -> float:
+	var x := pos.x
+	for i in caps.size():
+		if i > 0:
+			x += h * 0.18
+		var cw := cap_width(caps[i], h)
+		draw_cap(ci, caps[i], Rect2(x, pos.y, cw, h), col, bg_alpha)
+		x += cw
+	return x - pos.x
 
 
 # --- instance: a row of caps -------------------------------------------------------------------------------
@@ -155,16 +183,8 @@ func _process(_delta: float) -> void:
 
 
 func _get_minimum_size() -> Vector2:
-	var w := 0.0
-	for i in _caps.size():
-		w += cap_width(_caps[i], cap_h) + (cap_h * 0.22 if i > 0 else 0.0)
-	return Vector2(w, cap_h)
+	return Vector2(caps_width(_caps, cap_h), cap_h)
 
 
 func _draw() -> void:
-	var x := 0.0
-	var y := (size.y - cap_h) * 0.5
-	for i in _caps.size():
-		var cw := cap_width(_caps[i], cap_h)
-		draw_cap(self, _caps[i], Rect2(x, y, cw, cap_h), color)
-		x += cw + cap_h * 0.22
+	draw_caps(self, _caps, Vector2(0, (size.y - cap_h) * 0.5), cap_h, color)
