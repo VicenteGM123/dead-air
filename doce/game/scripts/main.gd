@@ -69,6 +69,7 @@ func _ready() -> void:
 	add_child(gate)
 	Settings.apply_quality(get_viewport())
 	spawn_encounters()
+	spawn_boss()
 	Game.hero_died.connect(_on_hero_died)
 	Game.world_ready(Time.get_ticks_msec() - t0)
 	if Game.arg_on("phystest"):
@@ -152,6 +153,20 @@ func spawn_encounters() -> void:
 			d.teleport(world.ground(xf * off), hero.facing + PI)
 
 
+## The Nemean Lion's encounter (ENCOUNTERS lane L: scripts/encounters/lion_encounter.gd spawns the lion in its cave
+## from World.cave() and runs the fight, the reset and the victory). Only on the island (a world with the cave
+## builder: not the arena), not under CORE's island bot (its cave walk wants an empty arena), not with lion=0.
+func spawn_boss() -> void:
+	var path := "res://scripts/encounters/lion_encounter.gd"
+	if not ResourceLoader.exists(path) or world == null or world.get("cave_builder") == null:
+		return
+	if Game.has_arg("corebot") or Game.arg("lion", "1") == "0":
+		return
+	var enc: Node = (load(path) as Script).new()
+	enc.name = "LionEncounter"
+	add_child(enc)
+
+
 # --- flow ------------------------------------------------------------------------------------------------------
 
 func show_title() -> void:
@@ -198,6 +213,13 @@ func victory() -> void:
 	Sfx.play("stinger_victory")
 	if hero.rig:
 		hero.rig.play("victory")
+	_victory_t = VICTORY_ROAM
+
+
+## (lane L) Seconds of real time the VICTORY phase lasts (the victory pose and the UI's victory card: shown 1.6 s
+## in, ~7.9 s long) before the game goes back to PLAY: free roam in the lion's pelt (the boat to Lerna sails now).
+const VICTORY_ROAM := 9.5
+var _victory_t := -1.0
 
 
 func _process(delta: float) -> void:
@@ -205,6 +227,10 @@ func _process(delta: float) -> void:
 		_respawn_t -= Game.real_delta(delta)
 		if _respawn_t <= 0.0:
 			_respawn()
+	if _victory_t > 0.0:
+		_victory_t -= Game.real_delta(delta)
+		if _victory_t <= 0.0 and Game.phase == Game.Phase.VICTORY:
+			Game.set_phase(Game.Phase.PLAY)
 
 
 func _gate_input(event: InputEvent) -> void:

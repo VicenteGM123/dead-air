@@ -11,6 +11,7 @@ extends Rig
 ##             horizontally (leap at LUNGE_LEAP s, impact LUNGE_HIT s, land at LUNGE_LAND s; ~2.5 m is a good jump).
 ##   howl      sits, head to the sky, mouth closed event howl
 ##   hit, stagger (bigger knock, stumbling steps), death (falls on its side and stays down; event fall)
+##   evade     (ENCOUNTERS) a hop back out of a sword's reach (the encounter moves the root ~1.9 m back)
 ## Locomotion: walk (~1.3 m/s), trot (~3.4 m/s), gallop (~8 m/s); the gait follows the speed given.
 ## Extras: set_alert(0..1) menacing stance (head low, ears pinned) for circling packs; set_look_target(p);
 ## set_hit_dir(world_dir) before play("hit"/"stagger"/"death"); attach points head(), muzzle(), neck(), chest(),
@@ -104,6 +105,11 @@ var _frozen := false
 var _life := 1.0
 var _hit_side := 1.0
 var _death_side := 1.0
+## Holds the current action at this time (s) while >= 0 (ENCOUNTERS: the lunge's crouch held as the readable part of
+## the wind-up, released by setting it back to -1); the held pose trembles with a growl.
+var hold_t := -1.0
+## Caps the eyes' glow (>= 0; ENCOUNTERS: a feint snaps like a bite but must not flare like a real wind-up).
+var glow_cap := -1.0
 
 ## Construction tables (shared by the mesh and the clip-check volumes). Torso rows [z, y, half width, half
 ## height above, below] from the rump; neck rows [f along the neck, w, ht, hb]; head rows in head space;
@@ -290,6 +296,8 @@ func debug_seek(a: String, time: float, move_speed: float = 0.0) -> void:
 func _animate(delta: float) -> void:
 	if _frozen:
 		return
+	if hold_t >= 0.0 and action != "" and action_t > hold_t:
+		action_t = hold_t
 	var c := q.begin(delta)
 	var tt := t
 	_alert_s = lerpf(_alert_s, 0.0 if _dead else alert, 1.0 - exp(-delta * 4.0))
@@ -310,6 +318,8 @@ func _animate(delta: float) -> void:
 	c[Quadruped.STAB] = 0.75
 	# Actions (with a short crossfade from the previous one).
 	q.run_actions(self, actions, _dead, _proc, delta)
+	if glow_cap >= 0.0:
+		c[Quadruped.GLOW] = minf(c[Quadruped.GLOW], glow_cap)
 	q.solve(delta)
 	q.apply()
 	q.update_halos(_halos, 0.45 * clampf(c[Quadruped.GLOW], 0.0, 3.0) * clampf(c[Quadruped.EYES], 0.0, 1.0))
@@ -349,6 +359,12 @@ func _proc(a: String, p: float, at: float, w: float) -> void:
 				var lift := maxf(0.0, sin(ph * TAU)) * 0.07 * k2
 				c[Quadruped.leg(i, Quadruped.LY)] += lift
 				c[Quadruped.leg(i, Quadruped.LX)] += 0.09 * _hit_side * k2
+		"lunge":
+			# the held crouch (hold_t): a growling tremble, the head low and the hackles shaking
+			if hold_t >= 0.0 and at >= hold_t - 0.02:
+				c[Quadruped.HEAD_R] += sin(t * 41.0) * 0.035 * w
+				c[Quadruped.NECK_P] += sin(t * 29.0) * 0.025 * w
+				c[Quadruped.Y_FRONT] += sin(t * 37.0) * 0.006 * w
 		"howl":
 			var k3 := Rig.smooth((p - 0.25) / 0.1) * (1.0 - Rig.smooth((p - 0.8) / 0.1)) * w
 			c[Quadruped.HEAD_P] += sin(at * 9.0) * 0.025 * k3
@@ -444,6 +460,28 @@ func _define_actions() -> void:
 			Quadruped.leg(2, Quadruped.LX): K.call([0.0, 0.0, 0, 0.18, -0.03, 0, 0.84, -0.03, 0, 0.98, 0.0, 0]),
 			Quadruped.leg(3, Quadruped.LX): K.call([0.0, 0.0, 0, 0.18, 0.03, 0, 0.84, 0.03, 0, 0.98, 0.0, 0]),
 		}, {"howl": 0.3}],
+		# (ENCOUNTERS) a quick hop back out of a sword's reach: a dip, a spring up and back with the legs tucked, the
+		# head up and the ears pinned, then down on all fours (the encounter moves the root back ~1.9 m)
+		"evade": [0.42, false, {
+			Y_REAR: K.call([0.0, 0.0, 0, 0.12, -0.08, 0, 0.3, 0.17, 1, 0.6, 0.1, 0, 0.84, -0.04, 0, 1.0, 0.0, 0]),
+			Y_FRONT: K.call([0.0, 0.0, 0, 0.12, -0.05, 0, 0.3, 0.26, 1, 0.58, 0.14, 0, 0.82, -0.05, 0, 1.0, 0.0, 0]),
+			Z: K.call([0.0, 0.0, 0, 0.3, 0.06, 0, 1.0, 0.0, 0]),
+			NP: K.call([0.0, 0.0, 0, 0.25, 0.22, 1, 0.8, 0.06, 0, 1.0, 0.0, 0]),
+			HP: K.call([0.0, 0.0, 0, 0.25, 0.14, 1, 1.0, 0.0, 0]),
+			EARS: K.call([0.0, 0.0, 0, 0.15, -1.4, 1, 0.85, -1.0, 0, 1.0, 0.0, 0]),
+			EYES: K.call([0.0, 0.0, 0, 0.15, -0.3, 1, 1.0, 0.0, 0]),
+			TP: K.call([0.0, 0.0, 0, 0.2, -0.2, 1, 1.0, 0.0, 0]),
+			STAB: K.call([0.0, 0.0, 0, 0.2, -0.5, 0, 0.85, -0.5, 0, 1.0, 0.0, 0]),
+			GAIT: K.call([0.0, 0.0, 0, 0.08, -1.0, 0, 0.85, -1.0, 0, 1.0, 0.0, 0]),
+			Quadruped.leg(0, Quadruped.LREL): K.call([0.0, 0.0, 0, 0.24, 0.0, 0, 0.32, 1.0, 1, 0.6, 1.0, 0, 0.7, 0.0, 0]),
+			Quadruped.leg(1, Quadruped.LREL): K.call([0.0, 0.0, 0, 0.24, 0.0, 0, 0.32, 1.0, 1, 0.6, 1.0, 0, 0.7, 0.0, 0]),
+			Quadruped.leg(2, Quadruped.LREL): K.call([0.0, 0.0, 0, 0.22, 0.0, 0, 0.3, 1.0, 1, 0.62, 1.0, 0, 0.72, 0.0, 0]),
+			Quadruped.leg(3, Quadruped.LREL): K.call([0.0, 0.0, 0, 0.22, 0.0, 0, 0.3, 1.0, 1, 0.62, 1.0, 0, 0.72, 0.0, 0]),
+			Quadruped.leg(0, Quadruped.LFLEX): K.call([0.0, 0.0, 0, 0.24, 0.0, 0, 0.36, -0.6, 1, 0.6, 0.0, 0]),
+			Quadruped.leg(1, Quadruped.LFLEX): K.call([0.0, 0.0, 0, 0.24, 0.0, 0, 0.36, -0.6, 1, 0.6, 0.0, 0]),
+			Quadruped.leg(2, Quadruped.LFLEX): K.call([0.0, 0.0, 0, 0.22, 0.0, 0, 0.34, -0.4, 1, 0.62, 0.0, 0]),
+			Quadruped.leg(3, Quadruped.LFLEX): K.call([0.0, 0.0, 0, 0.22, 0.0, 0, 0.34, -0.4, 1, 0.62, 0.0, 0]),
+		}, {}],
 		"hit": [0.34, false, {
 			Z: K.call([0.0, 0.0, 0, 0.25, 0.06, 1, 1.0, 0.0, 0]),
 			Y_FRONT: K.call([0.0, 0.0, 0, 0.25, -0.02, 1, 1.0, 0.0, 0]),

@@ -882,6 +882,17 @@ func _frame_score(tp: Vector3, fp: Vector3, off: float, dist: float, pitch_deg: 
 		var d2 := Combat.seg_seg_dist2(cam_p, hold, tp + Vector3(0, 0.95, 0), tp + Vector3(0, 1.6, 0), _hold_pts)
 		if d2 < 0.3 * 0.3:
 			sc -= 1.0
+	# the beast he holds hiding him itself (a big maned head beside the hold): a beast that can say where its bulk
+	# stands in the struggle answers `wrestle_view_block() -> Vector4` (centre, radius; the lion, ENCOUNTERS lane L)
+	if target is Hero:
+		var g: Node3D = (target as Hero).grapple_target
+		if g != null and is_instance_valid(g) and g.has_method("wrestle_view_block"):
+			var vb: Vector4 = g.call("wrestle_view_block")
+			var vc := Vector3(vb.x, vb.y, vb.z)
+			if Combat.seg_seg_dist2(cam_p, tp + Vector3(0, 1.6, 0), vc, vc, _hold_pts) < vb.w * vb.w:
+				sc -= 0.7
+			if Combat.seg_seg_dist2(cam_p, tp + Vector3(0, 1.2, 0), vc, vc, _hold_pts) < vb.w * vb.w:
+				sc -= 0.7
 	return sc - absf(absf(off) - 48.0) / 150.0
 
 

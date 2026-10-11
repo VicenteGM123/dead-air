@@ -271,6 +271,9 @@ func screen_flash(col: Color, dur: float) -> void:
 	_flash_col = col
 	_flash_dur = maxf(0.05, dur)
 	_flash_t = _flash_dur
+	# (lane L) its colour now, not at the next _process: a flash asked for after the UI's _process in a frame (a
+	# blow landed from a rig event) showed the ColorRect's default opaque white for that frame
+	_flash.color = Color(col, 0.55)
 	_flash.visible = true
 
 

@@ -228,9 +228,26 @@ func play(a: String) -> float:
 		return 0.0
 	q.push_prev(action, action_t, actions.get(action, []), 0.22)
 	super.play(a)
+	action_speed = 1.0
 	if a == "death":
 		_dead = true
 	return float(actions[a][0])
+
+
+## (ENCOUNTERS lane L) 0..1: enraged (set by the lion in its last phase): see _animate.
+var enrage := 0.0
+
+
+## (ENCOUNTERS lane L) Playback speed of the current action (1 = as authored; play() resets it): the lion stretches
+## the pounce's crouch into a longer, readable wind-up and its flight over the real length of the leap, slows the
+## roar's inhale. Events still fire at their place in the action.
+var action_speed := 1.0
+
+
+func _process(delta: float) -> void:
+	if action != "" and action_speed != 1.0:
+		action_t += delta * (action_speed - 1.0)
+	super._process(delta)
 
 
 func _action_length(a: String) -> float:
@@ -349,6 +366,14 @@ func _animate(delta: float) -> void:
 	c[Q.TAIL_SWAY] = (0.16 + al * 0.18) * _life
 	c[Q.GLOW] = 1.15 + al * 0.4
 	c[Q.STAB] = 0.8
+	# (lane L) enraged (the last third of the fight): eyes blazing, ears pinned, mane bristling, the tail lashing
+	if enrage > 0.0:
+		var en := enrage * _life
+		c[Q.GLOW] += 0.7 * en
+		c[Q.EARS] -= 0.45 * en
+		c[Q.MANE] += 0.18 * en
+		c[Q.TAIL_SWAY] += 0.14 * en
+		c[Q.TAIL_Y] += sin(tt * 6.5) * 0.18 * en
 	q.cadence_k = lerpf(1.0, 0.72, al)
 	q.run_actions(self, actions, _dead, _proc, delta)
 	q.solve(delta)
@@ -449,6 +474,24 @@ func _proc(a: String, p: float, at: float, w: float) -> void:
 			c[Q.X_SHIFT] += 0.06 * _hit_side * kh
 			c[Q.ROLL] -= 0.08 * _hit_side * kh
 			c[Q.HEAD_Y] -= 0.3 * _hit_side * kh
+		"downed":
+			# (lane L) thrown onto its side by the wrestle, then back on its feet: the death's fall, undone
+			var kd := Rig.smooth((p - 0.1) / 0.2) * (1.0 - Rig.smooth((p - 0.58) / 0.24)) * w
+			c[Q.ROLL] -= 1.3 * _death_side * kd
+			c[Q.X_SHIFT] += 0.28 * _death_side * kd
+			c[Q.HEAD_R] -= 0.3 * _death_side * kd
+			var kl2 := Rig.smooth((p - 0.14) / 0.2) * (1.0 - Rig.smooth((p - 0.56) / 0.2)) * w
+			for i in 4:
+				var fr2 := i < 2
+				if q.leg_side[i] * _death_side > 0.0:
+					c[Q.leg(i, Q.LZ)] += (-0.2 if fr2 else 0.2) * kl2
+					c[Q.leg(i, Q.LX)] += q.leg_side[i] * 0.04 * kl2
+				else:
+					# the upper legs kick at the air
+					c[Q.leg(i, Q.LY)] += (0.08 + 0.06 * sin(at * 13.0 + float(i))) * kl2
+					c[Q.leg(i, Q.LX)] += q.leg_side[i] * 0.08 * kl2
+					c[Q.leg(i, Q.LZ)] += (0.06 if fr2 else -0.06) * kl2
+			c[Q.TAIL_Y] += sin(at * 9.0) * 0.5 * kd
 		"death":
 			var k4 := Rig.smooth((p - 0.3) / 0.36) * w
 			c[Q.ROLL] -= 1.45 * _death_side * k4
@@ -612,6 +655,23 @@ func _define_actions() -> void:
 			Q.EYES: K.call([0.0, 0.0, 0, 0.2, -0.8, 1, 0.6, -0.4, 0, 1.0, 0.0, 0]),
 			Q.MANE: K.call([0.0, 0.0, 0, 0.2, 0.4, 1, 1.0, 0.0, 0]),
 		}, {}],
+		# (lane L) a won wrestle throws it onto its side; it lies a moment, legs kicking, and rights itself (_proc)
+		"downed": [2.0, false, {
+			Q.Y_FRONT: K.call([0.0, 0.0, 0, 0.12, -0.2, 0, 0.3, -0.62, 2, 0.58, -0.6, 0, 0.84, -0.08, 0, 1.0, 0.0, 0]),
+			Q.Y_REAR: K.call([0.0, 0.0, 0, 0.16, -0.16, 0, 0.32, -0.6, 2, 0.58, -0.58, 0, 0.86, -0.06, 0, 1.0, 0.0, 0]),
+			Q.NECK_P: K.call([0.0, 0.0, 0, 0.12, 0.28, 1, 0.34, -0.28, 2, 0.58, -0.32, 0, 0.84, 0.08, 0, 1.0, 0.0, 0]),
+			Q.HEAD_P: K.call([0.0, 0.0, 0, 0.12, 0.3, 1, 0.5, 0.0, 0, 1.0, 0.0, 0]),
+			Q.EARS: K.call([0.0, 0.0, 0, 0.15, -1.3, 0, 0.75, -1.1, 0, 1.0, 0.0, 0]),
+			Q.EYES: K.call([0.0, 0.0, 0, 0.15, -0.55, 1, 0.6, -0.6, 0, 0.85, -0.1, 0, 1.0, 0.0, 0]),
+			Q.GLOW: K.call([0.0, 0.0, 0, 0.2, -0.3, 0, 0.7, -0.2, 0, 0.9, 0.6, 0, 1.0, 0.0, 0]),
+			Q.MANE: K.call([0.0, 0.0, 0, 0.12, 0.35, 1, 0.34, -0.5, 0, 0.6, -0.5, 0, 0.86, 0.1, 0, 1.0, 0.0, 0]),
+			Q.STAB: K.call([0.0, 0.0, 0, 0.12, -0.75, 0, 0.85, -0.75, 0, 1.0, 0.0, 0]),
+			Q.GAIT: K.call([0.0, 0.0, 0, 0.06, -1.0, 0, 0.88, -1.0, 0, 1.0, 0.0, 0]),
+			Q.leg(0, Q.LREL): K.call([0.0, 0.0, 0, 0.22, 0.0, 0, 0.34, 1.0, 0, 0.6, 1.0, 0, 0.76, 0.0, 0]),
+			Q.leg(1, Q.LREL): K.call([0.0, 0.0, 0, 0.22, 0.0, 0, 0.34, 1.0, 0, 0.6, 1.0, 0, 0.76, 0.0, 0]),
+			Q.leg(2, Q.LREL): K.call([0.0, 0.0, 0, 0.24, 0.0, 0, 0.36, 1.0, 0, 0.6, 1.0, 0, 0.78, 0.0, 0]),
+			Q.leg(3, Q.LREL): K.call([0.0, 0.0, 0, 0.24, 0.0, 0, 0.36, 1.0, 0, 0.6, 1.0, 0, 0.78, 0.0, 0]),
+		}, {"fall": 0.3}],
 		"death": [2.6, false, {
 			Q.Y_FRONT: K.call([0.0, 0.0, 0, 0.15, -0.1, 0, 0.3, -0.42, 2, 0.42, -0.4, 0, 0.62, -0.78, 2, 0.72, -0.74, 0, 1.0, -0.76, 0]),
 			Q.Y_REAR: K.call([0.0, 0.0, 0, 0.3, -0.12, 0, 0.45, -0.3, 2, 0.62, -0.74, 2, 0.72, -0.7, 0, 1.0, -0.72, 0]),

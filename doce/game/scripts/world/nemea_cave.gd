@@ -71,9 +71,11 @@ func build(w: Node3D, terrain: RefCounted, pr: RefCounted) -> void:
 	_tunnel(L.MOUTH_A, L.TUNNEL_HW, L.TUNNEL_H, 1)
 	_tunnel(L.MOUTH_B, L.TUNNEL_B_HW, L.TUNNEL_B_H, 2)
 	_pillars()
+	_perch_layout()
 	_floor_details()
 	_light_shafts()
 	_boulder()
+	_dress()
 	var c := Vector3(L.CAVE_C.x, L.CAVE_FLOOR, L.CAVE_C.y)
 	var ma: Array = mouths["a"]
 	var mb: Array = mouths["b"]
@@ -596,20 +598,33 @@ func _pillars() -> void:
 	var angles := [0.35, 1.55, 2.75, 3.95, 5.2]
 	var radii := [7.2, 8.0, 6.8, 7.8, 7.4]
 	var mb := MeshBuilder.new(930)
-	mb.vary = 0.04
+	mb.vary = 0.0 # (lane L: the rock colour varies smoothly by itself; per-face jitter read as a checkerboard)
 	for i in angles.size():
 		var a: float = angles[i] + rng.randf_range(-0.12, 0.12)
 		var r: float = radii[i]
 		var p := Vector3(c.x + cos(a) * r, L.CAVE_FLOOR, c.y + sin(a) * r)
 		var pr := rng.randf_range(0.7, 0.84)
 		var top := lid_under(r, a) - L.CAVE_FLOOR + 0.8
-		mb.push_at(p, rng.randf() * TAU)
-		ModelsNature.add_cave_pillar(mb, rng, pr, top)
+		var yaw := rng.randf() * TAU
+		# (lane L) the same column (its profile comes from the same random numbers, which advance exactly as
+		# before, so nothing after it moves), dressed as fluted flowstone rock with strata and cracks
+		var prof_rng := RandomNumberGenerator.new()
+		prof_rng.seed = rng.seed
+		prof_rng.state = rng.state
+		ModelsNature.add_cave_pillar(MeshBuilder.new(1), rng, pr, top)
+		mb.push_at(p, yaw)
+		_rock_pillar(mb, prof_rng, pr, top, i)
 		mb.pop()
 		pillars.append(p)
-		# Collision: the flared foot in two steps, then the shaft.
-		_cyl(pr * 1.62, 0.9, p + Vector3(0, -0.3, 0))
-		_cyl(pr * 1.3, 2.2, p + Vector3(0, -0.3, 0))
+		pillar_cols[i]["yaw"] = yaw
+		pillar_cols[i]["pos"] = p
+		# Collision: the flared foot in steps that follow the column (0.5 m each, up to 3 m), then the shaft.
+		var pc: Dictionary = pillar_cols[i]
+		var y0 := -0.3
+		while y0 < 3.0:
+			var y1 := y0 + 0.5
+			_cyl(maxf(_prof_r(pc, y0), _prof_r(pc, y1)) * 1.08, y1 - y0, p + Vector3(0, y0, 0))
+			y0 = y1
 		_cyl(pr * 1.02, top, p + Vector3(0, -0.3, 0))
 		t.splat_ao(Vector2(p.x, p.z), pr * 2.2, 0.55)
 	# the camera cuts them away (a screen door, lowpoly cut_*) where they stand between the lens and the hero or a
@@ -637,6 +652,10 @@ func _floor_details() -> void:
 		for q in pillars:
 			if Vector2(q.x - p.x, q.z - p.z).length() < 3.2:
 				ok = false
+		for o: Dictionary in outcrops:
+			var oc: Vector3 = o["center"]
+			if Vector2(oc.x - p.x, oc.z - p.z).length() < PERCH_R + 1.6:
+				ok = false
 		if not ok:
 			continue
 		var s := rng.randf_range(0.8, 1.3)
@@ -647,8 +666,9 @@ func _floor_details() -> void:
 		placed += 1
 	# The lion's corner: bones and a goat skull by the north wall.
 	for i in 3:
-		var a := -PI * 0.5 + rng.randf_range(-0.5, 0.5)
-		var r := rng.randf_range(9.0, 11.5)
+		# (lane L) in front of the den rock, clear of the pillars either side
+		var a := -PI * 0.5 + rng.randf_range(-0.5, 0.5) * 0.35
+		var r := rng.randf_range(6.0, 7.2)
 		var p := Vector3(c.x + cos(a) * r, L.CAVE_FLOOR + 0.02, c.y + sin(a) * r)
 		mb.push_at(p, rng.randf() * TAU)
 		ModelsNature.add_bones(mb, rng, i == 0)
@@ -760,3 +780,574 @@ func _boulder() -> void:
 	props.reserve(Vector2(best.x, best.z), 3.4)
 	props.reserve(Vector2(seal.x, seal.z).lerp(Vector2(best.x, best.z), 0.5), 3.2)
 	props.reserve(Vector2(seal.x, seal.z), 3.0)
+
+
+# --- (ENCOUNTERS lane L) the lion's arena dressed: rock pillars, perches, cracks, rubble, the den --------------------
+# Nothing here moves the pillars, the floor or World.cave()'s keys: the columns keep their places and profiles (only
+# their surface and their collision steps change), the rest is added round the walls.
+
+## The lion's perches: flat-topped tors of layered cave rock by the walls, [angle (degrees, atan2(z, x) round the
+## arena centre), distance (m)]; the third is its den rock (north, over the bones). Tops PERCH_H over the floor,
+## collision radius PERCH_R (a cylinder: the sides are walls the lion is stunned against).
+const PERCH_AT := [[115.0, 11.0], [197.0, 11.0], [265.0, 11.0], [335.0, 11.0]]
+const PERCH_H := 2.3
+const PERCH_R := 2.25
+## The flat top (m from the tor's centre): the lion stands there.
+const PERCH_TOP_R := 1.75
+const CRACK_COL := Color("2E2420")
+
+## Per pillar: {y, r (profile rings), ph (flute phase), k (index), pos, yaw} (the rock surface: col_radius()).
+var pillar_cols: Array = []
+## The perches (see perches()).
+var outcrops: Array = []
+## Cracks grown by the lion's slams, per pillar (0..4).
+var pillar_damage := PackedInt32Array()
+var _pn := FastNoiseLite.new()
+
+
+## The lion's perches for the encounter: [{center (on the floor), top (y), r (flat top radius), spot (where it
+## lands on top), launch (where it takes off from the floor), ang (degrees), den (bool)}].
+func perches() -> Array:
+	return outcrops
+
+
+func _perch_layout() -> void:
+	var c := L.CAVE_C
+	for k in PERCH_AT.size():
+		var a := deg_to_rad(float(PERCH_AT[k][0]))
+		var dist: float = PERCH_AT[k][1]
+		var p2 := c + Vector2(cos(a), sin(a)) * dist
+		var center := Vector3(p2.x, t.height_at(p2.x, p2.y), p2.y)
+		var inward := Vector3(-cos(a), 0, -sin(a))
+		var top := center.y + PERCH_H
+		var spot := Vector3(center.x, top, center.z) + inward * 0.3
+		var lp := center + inward * (PERCH_R + 5.0)
+		outcrops.append({"center": center, "top": top, "r": PERCH_TOP_R, "spot": spot,
+			"launch": Vector3(lp.x, t.height_at(lp.x, lp.z), lp.z), "ang": float(PERCH_AT[k][0]), "den": k == 2})
+		props.reserve(p2, PERCH_R + 0.5)
+
+
+## A flowstone column on the profile of ModelsNature.add_cave_pillar (the same random numbers: `prof_rng` is a copy
+## of the cave's generator at that point), with fluting (five shallow ribs), lumps, strata bands in the colour, a
+## damp foot and two or three old cracks. Origin at the floor, in the column's own turned frame (push_at).
+func _rock_pillar(mb: MeshBuilder, prof_rng: RandomNumberGenerator, r: float, h: float, idx: int) -> void:
+	if pillar_cols.is_empty():
+		_pn.seed = 4242
+		_pn.frequency = 0.9
+	var n := 9
+	var ys := PackedFloat32Array()
+	var rs := PackedFloat32Array()
+	for i in n + 1:
+		var tt := float(i) / float(n)
+		var w := 1.0 + 0.75 * pow(1.0 - tt, 4.0) + 0.6 * pow(tt, 5.0) - 0.18 * sin(tt * PI)
+		w *= prof_rng.randf_range(0.9, 1.08)
+		ys.append(-0.3 + (h + 0.6) * tt)
+		rs.append(r * w)
+	var fy := PackedFloat32Array()
+	var fr := PackedFloat32Array()
+	for i in n:
+		for sub in 3:
+			var u := float(sub) / 3.0
+			fy.append(lerpf(ys[i], ys[i + 1], u))
+			fr.append(_catmull(rs[maxi(i - 1, 0)], rs[i], rs[i + 1], rs[mini(i + 2, n)], u))
+	fy.append(ys[n])
+	fr.append(rs[n])
+	var col := {"y": fy, "r": fr, "ph": float(idx) * 1.7 + 0.4, "k": idx, "pos": Vector3.ZERO, "yaw": 0.0}
+	pillar_cols.append(col)
+	pillar_damage.append(0)
+	var sides := 14
+	var grid: Array = []
+	for j in fy.size():
+		var ring: Array[Vector3] = []
+		for k in sides:
+			var a := TAU * float(k) / float(sides)
+			var rad := col_radius(col, a, fy[j])
+			ring.append(Vector3(cos(a) * rad, fy[j], sin(a) * rad))
+		grid.append(ring)
+	for j in fy.size() - 1:
+		for k in sides:
+			var k2 := (k + 1) % sides
+			var a0: Vector3 = grid[j][k]
+			var a1: Vector3 = grid[j][k2]
+			var b0: Vector3 = grid[j + 1][k]
+			var b1: Vector3 = grid[j + 1][k2]
+			var fc := (a0 + a1 + b0 + b1) * 0.25
+			var ang := atan2(fc.z, fc.x)
+			_qn(mb, a0, b0, b1, a1, Vector3(fc.x, 0, fc.z), _rock_col(col, ang, fc.y))
+	# old cracks: two or three jagged lines down the shaft
+	var crng := RandomNumberGenerator.new()
+	crng.seed = 9100 + idx
+	for c in 2 + crng.randi() % 2:
+		var a := crng.randf() * TAU
+		var y := crng.randf_range(0.5, 2.2)
+		_crack_line(mb, col, a, y, crng.randf_range(1.2, 2.6), 0.03, crng, Vector2(0.0, 1.0), 2)
+
+
+## Surface radius of a column at local angle `a` (radians, the column's own frame) and height `y` over the floor.
+func col_radius(col: Dictionary, a: float, y: float) -> float:
+	var fy: PackedFloat32Array = col["y"]
+	var fr: PackedFloat32Array = col["r"]
+	var base := _prof_r(col, y)
+	var rib := pow(maxf(0.0, sin(a * 5.0 + float(col["ph"]))), 2.0) * 0.075
+	var lump := _pn.get_noise_3d(cos(a) * 1.3, y * 0.8 + float(col["k"]) * 17.0, sin(a) * 1.3) * 0.03
+	return base * (1.0 + rib + lump)
+
+
+## The profile's radius at height y (linear between the fine rings).
+func _prof_r(col: Dictionary, y: float) -> float:
+	var fy: PackedFloat32Array = col["y"]
+	var fr: PackedFloat32Array = col["r"]
+	if y <= fy[0]:
+		return fr[0]
+	for j in fy.size() - 1:
+		if y <= fy[j + 1]:
+			return lerpf(fr[j], fr[j + 1], (y - fy[j]) / maxf(fy[j + 1] - fy[j], 1e-4))
+	return fr[fr.size() - 1]
+
+
+static func _catmull(p0: float, p1: float, p2: float, p3: float, u: float) -> float:
+	var u2 := u * u
+	var u3 := u2 * u
+	return 0.5 * ((2.0 * p1) + (-p0 + p2) * u + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * u2 + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * u3)
+
+
+## Smooth, low-contrast colour of the rock (no per-face noise: neighbouring faces differ only a little): broad
+## strata bands, the flutes' grooves a shade darker, a damp foot.
+func _rock_col(col: Dictionary, a: float, y: float) -> Color:
+	# strata: broad horizontal bands, one tone per ring of faces (a colour that changed round the column, face by
+	# face, read as a checkerboard under the toon light); their heights wander a little from column to column
+	var nz := _pn.get_noise_2d(y * 0.35, float(col["k"]) * 9.0)
+	var st := fposmod(y * 0.85 + nz * 1.2 + float(col["k"]) * 0.37, 3.0)
+	var c := ModelsNature.CAVE_ROCK
+	if st >= 1.3 and st < 2.2:
+		c = ModelsNature.CAVE_ROCK.lerp(ModelsNature.CAVE_ROCK_TOP, 0.4)
+	elif st >= 2.2:
+		c = ModelsNature.CAVE_ROCK.lerp(ModelsNature.CAVE_ROCK_LOW, 0.22)
+	# the damp foot
+	return c.lerp(Color("6A5C55"), (1.0 - smoothstep(0.1, 0.7, y)) * 0.35)
+
+
+## A jagged crack drawn on a column's surface: from (a, y) along `dir` (Vector2(angle-ish, up): metres along the
+## surface), `len` m in steps, `w` wide, with `branches` side cracks. A dark strip 1.2 cm proud of the rock.
+func _crack_line(mb: MeshBuilder, col: Dictionary, a: float, y: float, length: float, w: float, rng2: RandomNumberGenerator, dir: Vector2, branches: int) -> void:
+	var pts: Array[Vector2] = [Vector2(a, y)]
+	var d := dir.normalized()
+	var made := 0.0
+	while made < length:
+		var step := rng2.randf_range(0.12, 0.26)
+		d = d.rotated(rng2.randf_range(-0.6, 0.6)).lerp(dir.normalized(), 0.35).normalized()
+		var last: Vector2 = pts[pts.size() - 1]
+		var rad := _prof_r(col, last.y)
+		pts.append(last + Vector2(d.x * step / maxf(rad, 0.3), d.y * step))
+		made += step
+	for i in pts.size() - 1:
+		var p0 := pts[i]
+		var p1 := pts[i + 1]
+		var k := 1.0 - float(i) / float(pts.size())
+		var hw := w * (0.35 + 0.65 * k)
+		_crack_seg(mb, col, p0, p1, hw)
+		if branches > 0 and i > 0 and rng2.randf() < 0.3:
+			branches -= 1
+			var side := Vector2(-d.y, d.x) * (1.0 if rng2.randf() < 0.5 else -1.0)
+			_crack_line(mb, col, p0.x, p0.y, length * 0.3, w * 0.6, rng2, (dir.normalized() * 0.4 + side).normalized(), 0)
+
+
+func _surf(col: Dictionary, a: float, y: float, out: float) -> Vector3:
+	var rad := col_radius(col, a, y) + out
+	return Vector3(cos(a) * rad, y, sin(a) * rad)
+
+
+func _crack_seg(mb: MeshBuilder, col: Dictionary, p0: Vector2, p1: Vector2, hw: float) -> void:
+	var d := p1 - p0
+	var rad := _prof_r(col, p0.y)
+	var dm := Vector2(d.x * rad, d.y) # metres on the surface
+	if dm.length() < 1e-4:
+		return
+	var nrm := Vector2(-dm.y, dm.x).normalized() * hw
+	var na := Vector2(nrm.x / maxf(rad, 0.3), nrm.y)
+	var a0 := _surf(col, p0.x + na.x, p0.y + na.y, 0.012)
+	var b0 := _surf(col, p0.x - na.x, p0.y - na.y, 0.012)
+	var a1 := _surf(col, p1.x + na.x * 0.8, p1.y + na.y * 0.8, 0.012)
+	var b1 := _surf(col, p1.x - na.x * 0.8, p1.y - na.y * 0.8, 0.012)
+	var mid := (a0 + b1) * 0.5
+	_qn(mb, a0, a1, b1, b0, Vector3(mid.x, 0, mid.z), CRACK_COL)
+
+
+## (lane L) The lion slammed into something at `point` (its head, ~1 m up), coming from `normal` (from the surface
+## towards the lion): a column there cracks a little more each time (a star of cracks round the blow, up to four
+## times), chips and dust fall and a few stones stay at its foot. Elsewhere (the walls, a perch) only the dust.
+func crack_at(point: Vector3, normal: Vector3, power: float) -> void:
+	var best := -1
+	var best_d := 1.0
+	for i in pillars.size():
+		if i >= pillar_cols.size():
+			break
+		var col: Dictionary = pillar_cols[i]
+		var p: Vector3 = pillars[i]
+		var d := Vector2(point.x - p.x, point.z - p.z)
+		var gap := absf(d.length() - _prof_r(col, clampf(point.y - p.y, 0.0, 3.0)))
+		if gap < best_d:
+			best_d = gap
+			best = i
+	if Game.fx:
+		Game.fx.call("dust", point + normal * 0.3, 10, 0.9)
+		Game.fx.call("smoke", point + normal * 0.2, 3, Color(0.6, 0.55, 0.5))
+	if best < 0:
+		return
+	var stage := mini(pillar_damage[best] + 1, 4)
+	if pillar_damage[best] >= 4:
+		return
+	pillar_damage[best] = stage
+	var col2: Dictionary = pillar_cols[best]
+	var pp: Vector3 = pillars[best]
+	var world_ang := atan2(point.z - pp.z, point.x - pp.x)
+	var la := world_ang + float(col2["yaw"])
+	var y := clampf(point.y - pp.y, 0.5, 2.6)
+	var crng := RandomNumberGenerator.new()
+	crng.seed = 7000 + best * 31 + stage * 7
+	var mb := MeshBuilder.new(8000 + best * 10 + stage)
+	var arms := 4 + stage * 2
+	var length := (0.35 + 0.28 * float(stage)) * (0.7 + 0.5 * clampf(power, 0.0, 1.0))
+	for k in arms:
+		var ang := TAU * float(k) / float(arms) + crng.randf_range(-0.3, 0.3)
+		_crack_line(mb, col2, la, y, length * crng.randf_range(0.6, 1.2), 0.035 + 0.01 * stage, crng, Vector2(cos(ang), sin(ang)), 1)
+	# the dent: a dark star at the centre
+	_crack_line(mb, col2, la, y, 0.12, 0.09, crng, Vector2(1, 0), 0)
+	_crack_line(mb, col2, la, y, 0.12, 0.09, crng, Vector2(-1, 0), 0)
+	var mi := MeshInstance3D.new()
+	mi.name = "PillarCrack%d_%d" % [best, stage]
+	mi.mesh = mb.commit()
+	mi.material_override = Materials.lowpoly()
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	world.add_child(mi)
+	mi.global_transform = Transform3D(Basis(Vector3.UP, float(col2["yaw"])), pp)
+	mi.add_to_group("camera_cut")
+	# chips at its foot (no collision: flat stones)
+	var rb := MeshBuilder.new(8500 + best * 10 + stage)
+	rb.vary = 0.05
+	var foot := _prof_r(col2, 0.0)
+	for k in 2 + stage:
+		var a2 := world_ang + crng.randf_range(-0.6, 0.6)
+		var rr := crng.randf_range(0.08, 0.16) * (1.0 + 0.2 * stage)
+		var q := pp + Vector3(cos(a2), 0, sin(a2)) * (foot + crng.randf_range(0.15, 0.9))
+		q.y = t.height_at(q.x, q.z) - rr * 0.35
+		ModelsNature.chunk(rb, crng, q, rr, rr * 0.7, 5, ModelsNature.CAVE_ROCK, ModelsNature.CAVE_ROCK_LOW, ModelsNature.CAVE_ROCK_TOP)
+	var rm := MeshInstance3D.new()
+	rm.name = "PillarChips%d_%d" % [best, stage]
+	rm.mesh = rb.commit()
+	rm.material_override = Materials.lowpoly()
+	world.add_child(rm)
+
+
+## The rest of the dressing: the perches (tors), rubble along the walls and round the columns' feet, more bones,
+## the gear of a hunter who came before Heracles, small stalagmites at the foot of the walls, a shaft of light on
+## the den rock.
+func _dress() -> void:
+	var c := L.CAVE_C
+	for i in pillars.size():
+		if i < pillar_cols.size():
+			# (the columns were built in their own turned frame: keep it for the cracks)
+			pillar_cols[i]["pos"] = pillars[i]
+	var drng := RandomNumberGenerator.new()
+	drng.seed = 5150
+	# the tors
+	var mb := MeshBuilder.new(5151)
+	mb.vary = 0.0
+	for o: Dictionary in outcrops:
+		var center: Vector3 = o["center"]
+		var one := MeshBuilder.new(5155)
+		var inward := Vector3(c.x - center.x, 0.0, c.y - center.z).normalized()
+		_tor(one, drng, PERCH_R, PERCH_H, inward)
+		var hull := one.commit()
+		var cs := CollisionShape3D.new()
+		cs.shape = hull.create_convex_shape(true, false)
+		cs.position = center
+		body.add_child(cs)
+		mb.push_at(center, 0.0)
+		mb.append_builder(one)
+		mb.pop()
+		t.splat_ao(Vector2(center.x, center.z), PERCH_R + 1.4, 0.5)
+	# (the camera cuts them away too where they stand between the lens and the hero: they are big and near the walls,
+	# where the arm often ends up behind one)
+	_add_mesh(mb.commit(), "LionPerches", false).add_to_group("camera_cut")
+	# the lion's marks: claws raked down the two columns by its den (on the side it passes) and on the floor before it
+	var cm := MeshBuilder.new(5157)
+	cm.vary = 0.0
+	var den: Vector3 = (outcrops[2] as Dictionary)["center"] if outcrops.size() > 2 else Vector3(c.x, L.CAVE_FLOOR, c.y - 11.0)
+	var by_den: Array = []
+	for i in pillars.size():
+		by_den.append([Vector2(pillars[i].x - den.x, pillars[i].z - den.z).length(), i])
+	by_den.sort()
+	for k in mini(2, by_den.size()):
+		var i: int = by_den[k][1]
+		if i >= pillar_cols.size():
+			continue
+		var pc: Dictionary = pillar_cols[i]
+		var pp: Vector3 = pillars[i]
+		# facing the arena's middle, a little round towards the den
+		var wa := atan2(c.y - pp.z, c.x - pp.x) + (0.35 if k == 0 else -0.35)
+		cm.push_at(pp, float(pc["yaw"]))
+		_claw_marks(cm, pc, wa + float(pc["yaw"]), 1.75 + 0.15 * float(k))
+		_claw_marks(cm, pc, wa + float(pc["yaw"]) + 0.5, 1.45)
+		cm.pop()
+	var claws := _add_mesh(cm.commit(), "PillarClaws", false, false)
+	claws.add_to_group("camera_cut")
+	var fm := MeshBuilder.new(5158)
+	fm.vary = 0.0
+	var to_c := Vector3(c.x - den.x, 0.0, c.y - den.z).normalized()
+	var sd := Vector3(-to_c.z, 0.0, to_c.x)
+	for fc in [[3.6, 0.9, 0.3], [4.4, -1.1, -0.25], [5.6, 0.2, 0.1]]:
+		var at := den + to_c * float(fc[0]) + sd * float(fc[1])
+		_floor_claws(fm, at, to_c.rotated(Vector3.UP, float(fc[2])), 0.9)
+	_add_mesh(fm.commit(), "FloorClaws", false, false)
+	# rubble: flat stones (no collision) along the walls, round the columns' feet and the tors
+	var rb := MeshBuilder.new(5152)
+	rb.vary = 0.05
+	var da := (L.MOUTH_A - c).angle()
+	var db := (L.MOUTH_B - c).angle()
+	var placed := 0
+	var tries := 0
+	while placed < 46 and tries < 400:
+		tries += 1
+		var a := drng.randf() * TAU
+		var r := drng.randf_range(11.6, 13.5) if drng.randf() < 0.7 else drng.randf_range(5.0, 11.0)
+		if absf(angle_difference(a, da)) < 0.32 or absf(angle_difference(a, db)) < 0.2:
+			continue
+		var p := Vector3(c.x + cos(a) * r, 0.0, c.y + sin(a) * r)
+		if not _clear_of_solids(p, 0.5):
+			continue
+		var s := drng.randf_range(0.07, 0.2) * (1.0 if r > 11.0 else 0.7)
+		p.y = t.height_at(p.x, p.z) - s * 0.3
+		ModelsNature.chunk(rb, drng, p, s, s * drng.randf_range(0.45, 0.7), 5, ModelsNature.CAVE_ROCK, ModelsNature.CAVE_ROCK_LOW, ModelsNature.CAVE_ROCK_TOP)
+		placed += 1
+	for i in pillars.size():
+		var pp: Vector3 = pillars[i]
+		for k in 3:
+			var a := drng.randf() * TAU
+			var q := pp + Vector3(cos(a), 0, sin(a)) * (_prof_r(pillar_cols[i], 0.0) + drng.randf_range(0.2, 0.7))
+			var s := drng.randf_range(0.06, 0.13)
+			q.y = t.height_at(q.x, q.z) - s * 0.3
+			ModelsNature.chunk(rb, drng, q, s, s * 0.6, 5, ModelsNature.CAVE_ROCK, ModelsNature.CAVE_ROCK_LOW, ModelsNature.CAVE_ROCK_TOP)
+	_add_mesh(rb.commit(), "CaveRubble", false, false)
+	# bones: a second skull and scattered bones in front of the den rock and by the west tor; the old hunter's gear
+	var bm := MeshBuilder.new(5153)
+	bm.vary = 0.03
+	for b in [[268.0, 8.0, true], [255.0, 8.4, false], [282.0, 8.2, false], [205.0, 8.4, true], [128.0, 8.3, false]]:
+		var a := deg_to_rad(float(b[0]))
+		var q := Vector3(c.x + cos(a) * float(b[1]), L.CAVE_FLOOR + 0.02, c.y + sin(a) * float(b[1]))
+		if not _clear_of_solids(q, 0.6):
+			continue
+		q.y = t.height_at(q.x, q.z) + 0.02
+		bm.push_at(q, drng.randf() * TAU)
+		ModelsNature.add_bones(bm, drng, bool(b[2]))
+		bm.pop()
+	# a bronze shield face-down in the dust and a broken spear: someone came for the lion before Heracles
+	var ga := deg_to_rad(188.0)
+	var gq := Vector3(c.x + cos(ga) * 8.0, 0.0, c.y + sin(ga) * 8.0)
+	gq.y = t.height_at(gq.x, gq.z)
+	# (an old aspis lying on its back, tilted on a stone: dull green-brown patina, a darker rim, a dent of rust)
+	var patina := Pal.BRONZE_DARK.lerp(Color("5E7458"), 0.45)
+	bm.push(Transform3D(Basis(Vector3.UP, 0.7) * Basis(Vector3.RIGHT, -0.22), gq + Vector3(0, 0.1, 0)))
+	bm.cyl(Vector3(0, -0.04, 0), 0.07, 0.47, 0.44, 16, patina.darkened(0.25), true, 0.0, patina)
+	bm.cyl(Vector3(0, 0.03, 0), 0.08, 0.4, 0.2, 16, patina, true, 0.0, patina.lightened(0.08))
+	bm.ring(Vector3(0, 0.035, 0), 0.47, 0.41, 0.035, 16, Pal.BRONZE_DARK.darkened(0.2))
+	bm.pop()
+	var sp0 := gq + Vector3(0.9, 0.05, -0.5)
+	bm.limb(sp0, sp0 + Vector3(1.3, 0.02, 0.35), 0.025, 0.022, 5, Pal.WOOD_DARK)
+	bm.limb(sp0 + Vector3(1.55, 0.0, 0.7), sp0 + Vector3(2.3, 0.03, 1.15), 0.024, 0.02, 5, Pal.WOOD_DARK)
+	bm.cyl(sp0 + Vector3(2.3, 0.03, 1.15), 0.22, 0.04, 0.0, 4, Pal.BRONZE_DARK)
+	_add_mesh(bm.commit(), "CaveBones", false)
+	# small stalagmites at the foot of the walls (they are part of the wall: solid)
+	var sm := MeshBuilder.new(5154)
+	sm.vary = 0.04
+	placed = 0
+	tries = 0
+	while placed < 10 and tries < 200:
+		tries += 1
+		var a := drng.randf() * TAU
+		if absf(angle_difference(a, da)) < 0.45 or absf(angle_difference(a, db)) < 0.32:
+			continue
+		var r := drng.randf_range(12.9, 13.4)
+		var p := Vector3(c.x + cos(a) * r, 0.0, c.y + sin(a) * r)
+		if not _clear_of_solids(p, 1.3):
+			continue
+		p.y = t.height_at(p.x, p.z)
+		var s := drng.randf_range(0.4, 0.65)
+		sm.push_at(p, drng.randf() * TAU, Vector3.ONE * s)
+		ModelsNature.add_stalagmite(sm, drng, 1.0)
+		sm.pop()
+		_cyl(0.75 * s, 2.0 * s, p)
+		placed += 1
+	_add_mesh(sm.commit(), "CaveWallStalagmites", false)
+	# a shaft of light on the den rock (the lion's throne)
+	_den_shaft(outcrops[2] if outcrops.size() > 2 else {})
+
+
+## True when (x, z) of `p` is `margin` m clear of the columns, the tors and the stalagmites' collision (rough).
+func _clear_of_solids(p: Vector3, margin: float) -> bool:
+	for i in pillars.size():
+		var q: Vector3 = pillars[i]
+		if Vector2(p.x - q.x, p.z - q.z).length() < _prof_r(pillar_cols[i], 0.0) + margin:
+			return false
+	for o: Dictionary in outcrops:
+		var oc: Vector3 = o["center"]
+		if Vector2(p.x - oc.x, p.z - oc.z).length() < PERCH_R + margin:
+			return false
+	for cs in body.get_children():
+		var sh := (cs as CollisionShape3D).shape if cs is CollisionShape3D else null
+		if sh is CylinderShape3D and (sh as CylinderShape3D).height < 3.0:
+			var q2 := (cs as CollisionShape3D).position
+			if Vector2(p.x - q2.x, p.z - q2.z).length() < (sh as CylinderShape3D).radius + margin * 0.6:
+				return false
+	return true
+
+
+## A tor: an outcrop of cave rock by the wall, its outline irregular (a smooth noise round it, the same on every
+## course, so its joints run down it like cleavage), stepped in three courses with small ledges, a rounded shoulder
+## and a flat top at `h` (the lion stands on it, at least PERCH_TOP_R m round); a few stones fallen at its foot.
+## One tone per course (no face-by-face patches). Every part of it is inside the convex hull the collision is built
+## from (the sides are walls the lion is stunned against).
+func _tor(mb: MeshBuilder, rng2: RandomNumberGenerator, rr: float, h: float, inward: Vector3 = Vector3.RIGHT) -> void:
+	var sides := 10
+	# (its long axis points into the arena: the lion stands on it facing that way)
+	var rot := atan2(-inward.z, inward.x)
+	var ph1 := rng2.randf() * TAU
+	var ph2 := rng2.randf() * TAU
+	# an elongated, angular footprint (a block of rock, not a drum)
+	var ex := rng2.randf_range(1.05, 1.1)
+	var ang := PackedFloat32Array()
+	var rad := PackedFloat32Array()
+	for i in sides:
+		var aa := TAU * float(i) / float(sides) + rng2.randf_range(-0.16, 0.16)
+		ang.append(aa)
+		rad.append(1.0 + 0.08 * sin(aa * 2.0 + ph1) + 0.06 * sin(aa * 3.0 + ph2) + rng2.randf_range(-0.07, 0.07))
+	# [y, radius factor, tone]: the foot, three courses (each set off a little from the one under it, a ledge at each
+	# joint), the shoulder, the top's edge
+	var rings := [[-0.35, 1.0, 0], [0.3, 1.03, 0], [0.8, 0.99, 0], [0.84, 1.04, 1], [1.48, 0.99, 1], [1.52, 1.02, 2],
+		[h - 0.3, 0.98, 2], [h - 0.1, 0.92, 2], [h, 0.86, 2]]
+	var offs := [Vector3.ZERO, Vector3(rng2.randf_range(-0.12, 0.12), 0, rng2.randf_range(-0.12, 0.12)),
+		Vector3(rng2.randf_range(-0.12, 0.12), 0, rng2.randf_range(-0.12, 0.12))]
+	var tones := [ModelsNature.CAVE_ROCK.lerp(ModelsNature.CAVE_ROCK_LOW, 0.25), ModelsNature.CAVE_ROCK,
+		ModelsNature.CAVE_ROCK.lerp(ModelsNature.CAVE_ROCK_TOP, 0.3)]
+	var basis := Basis(Vector3.UP, rot) * Basis.from_scale(Vector3(ex, 1.0, 1.0 / ex))
+	var pts: Array = []
+	for rg: Array in rings:
+		var row: Array[Vector3] = []
+		var wob := rng2.randf_range(-0.02, 0.02)
+		var off: Vector3 = offs[int(rg[2])]
+		for i in sides:
+			var r: float = rr * float(rg[1]) * (rad[i] + wob)
+			row.append(basis * Vector3(cos(ang[i]) * r, 0.0, sin(ang[i]) * r) + off + Vector3(0, float(rg[0]), 0))
+		pts.append(row)
+	for j in rings.size() - 1:
+		var tone: Color = tones[int(rings[j + 1][2])]
+		for i in sides:
+			var i2 := (i + 1) % sides
+			var a0: Vector3 = pts[j][i]
+			var a1: Vector3 = pts[j][i2]
+			var b0: Vector3 = pts[j + 1][i]
+			var b1: Vector3 = pts[j + 1][i2]
+			var mid := (a0 + a1 + b0 + b1) * 0.25
+			_qn(mb, a0, b0, b1, a1, Vector3(mid.x, 0.0, mid.z), tone)
+	# the flat top
+	var top: Array = pts[rings.size() - 1]
+	var ctop := Vector3(0, h, 0) + (offs[2] as Vector3)
+	var top_col := ModelsNature.CAVE_ROCK_TOP.lerp(ModelsNature.LIME_TOP, 0.2)
+	for i in sides:
+		mb.tri(ctop, top[(i + 1) % sides], top[i], top_col)
+	# joints: two dark cracks down the courses
+	for k in 2:
+		var i := (rng2.randi() % sides)
+		var t0: Vector3 = pts[rings.size() - 3][i]
+		var b0: Vector3 = pts[1][i]
+		var out := Vector3(t0.x, 0, t0.z).normalized() * 0.025
+		var sd := Vector3(-out.z, 0, out.x).normalized() * 0.035
+		_qn(mb, b0 + out - sd, t0 + out - sd, t0 + out + sd, b0 + out + sd, out, CRACK_COL)
+	# stones fallen at its foot, half sunk
+	for i in 4:
+		var aa := TAU * float(i) / 4.0 + rng2.randf_range(-0.4, 0.4)
+		var q := basis * (Vector3(cos(aa), 0.0, sin(aa)) * rr * rng2.randf_range(1.04, 1.12))
+		var sr := rng2.randf_range(0.26, 0.4)
+		ModelsNature.chunk(mb, rng2, q + Vector3(0, -0.1, 0), sr, sr * 0.8, 6, ModelsNature.CAVE_ROCK, ModelsNature.CAVE_ROCK_LOW, ModelsNature.CAVE_ROCK_TOP)
+
+
+## Four parallel gouges raked down a column at a lion's shoulder height (it sharpens its claws there): `a` the angle
+## round the column (its own frame), `y` the top of the strokes.
+func _claw_marks(mb: MeshBuilder, col: Dictionary, a: float, y: float) -> void:
+	var rad := _prof_r(col, y)
+	for i in 4:
+		var off := (float(i) - 1.5) * 0.08 / rad
+		var len_k := 1.0 - absf(float(i) - 1.5) * 0.12
+		var p0 := Vector2(a + off, y - absf(float(i) - 1.5) * 0.04)
+		var p1 := Vector2(a + off + 0.16 / rad, y - 0.62 * len_k)
+		var pm := (p0 + p1) * 0.5 + Vector2(0.035 / rad, 0.0)
+		_crack_seg(mb, col, p0, pm, 0.02)
+		_crack_seg(mb, col, pm, p1, 0.014)
+
+
+## Claw scratches on the floor: four parallel gouges `length` m along `dir` from `at` (on the floor).
+func _floor_claws(mb: MeshBuilder, at: Vector3, dir: Vector3, length: float) -> void:
+	var d := Vector3(dir.x, 0.0, dir.z).normalized()
+	var side := Vector3(-d.z, 0.0, d.x)
+	var gouge := Color("4E413C")
+	for i in 4:
+		var o := side * (float(i) - 1.5) * 0.1
+		var ln := length * (1.0 - absf(float(i) - 1.5) * 0.1)
+		var a0 := at + o
+		var a1 := at + o + d * ln * 0.5 + side * 0.03
+		var a2 := at + o + d * ln
+		for seg in [[a0, a1, 0.022], [a1, a2, 0.014]]:
+			var p0: Vector3 = seg[0]
+			var p1: Vector3 = seg[1]
+			var hw: float = seg[2]
+			var y0: float = t.height_at(p0.x, p0.z) + 0.012
+			var y1: float = t.height_at(p1.x, p1.z) + 0.012
+			var q0 := Vector3(p0.x, y0, p0.z)
+			var q1 := Vector3(p1.x, y1, p1.z)
+			_qn(mb, q0 - side * hw, q1 - side * hw * 0.6, q1 + side * hw * 0.6, q0 + side * hw, Vector3.UP, gouge)
+
+
+func _den_shaft(o: Dictionary) -> void:
+	if o.is_empty():
+		return
+	var spot: Vector3 = o["spot"]
+	var c := L.CAVE_C
+	var off := Vector2(spot.x - c.x, spot.z - c.y)
+	var yc := lid_under(off.length(), off.angle()) - 0.05
+	var top := Vector3(spot.x, yc, spot.z)
+	var length := yc - spot.y + 0.4
+	var beam := MeshInstance3D.new()
+	beam.name = "DenShaft"
+	beam.mesh = Materials.cone_mesh(length, 0.8, 2.0, 12)
+	beam.material_override = Materials.beam_cone(length, Color(1.0, 0.9, 0.68))
+	Materials.set_param(beam, &"intensity", 1.8)
+	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	beam.position = top
+	beam.rotation = Vector3(PI * 0.5, 0, 0)
+	world.add_child(beam)
+	var mb := MeshBuilder.new(5160)
+	var glow := Color(1.0, 0.93, 0.72, 0.5)
+	var pts: Array[Vector3] = []
+	for k in 6:
+		var u := -1.8 + 3.6 * float(k) / 5.0
+		pts.append(top + Vector3(u, 0, (0.16 + rng.randf_range(0.0, 0.14)) * (1.0 - absf(u) / 2.2)))
+	for k in 6:
+		var u := 1.8 - 3.6 * float(k) / 5.0
+		pts.append(top + Vector3(u, 0, -(0.16 + rng.randf_range(0.0, 0.14)) * (1.0 - absf(u) / 2.2)))
+	for k in range(1, pts.size() - 1):
+		mb.tri(pts[0], pts[k + 1], pts[k], glow)
+		mb.tri(pts[0], pts[k], pts[k + 1], glow)
+	_add_mesh(mb.commit(), "DenCrack", false, false)
+	var spot_l := SpotLight3D.new()
+	spot_l.name = "DenLight"
+	spot_l.light_color = Color(1.0, 0.86, 0.62)
+	spot_l.light_energy = 2.4
+	spot_l.spot_range = length + 5.0
+	spot_l.spot_angle = 11.0
+	spot_l.spot_attenuation = 0.0
+	spot_l.shadow_enabled = false
+	spot_l.light_specular = 0.0
+	spot_l.position = top + Vector3(0, -0.3, 0)
+	spot_l.rotation = Vector3(-PI * 0.5, 0, 0)
+	world.add_child(spot_l)
+	lights.append(spot_l)

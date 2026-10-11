@@ -11,7 +11,8 @@ extends Rig
 ##   charge         LOOP: head-down gallop (gallops even at speed 0)        events step
 ##   gore           tusk toss: head down then up and sideways               event impact
 ##   stunned        LOOP: dazed wobble, head lolling, legs splayed
-##   hit, death (topples onto its side away from the hit: set_hit_dir() first; stays down; event fall)
+##   hit, stagger (thrown back on its haunches, stumbling: a parried charge, a heavy blow), death (topples onto its
+##   side away from the hit: set_hit_dir() first; stays down; event fall)
 ## Loops play until another play() or stop(); play() returns one cycle's length for them.
 ## Locomotion: walk (~1.2 m/s), trot (~3 m/s), gallop (~7 m/s). Extras as RigWolf: set_alert(0..1) (head
 ## low, bristles up, tail up), set_look_target(), set_hit_dir(), head()/muzzle()/neck()/chest()/paw(i),
@@ -115,6 +116,9 @@ var _frozen := false
 var _life := 1.0
 var _hit_side := 1.0
 var _death_side := 1.0
+## Holds the current action at this time (s) while >= 0 (ENCOUNTERS: the gore's head-down anticipation held as the
+## readable part of its wind-up, released by setting it back to -1).
+var hold_t := -1.0
 var _ridge: Array[int] = []
 var _ridge_local: Array[Transform3D] = []
 var _ridge_parent: Array[int] = []
@@ -272,6 +276,8 @@ func debug_seek(a: String, time: float, move_speed: float = 0.0) -> void:
 func _animate(delta: float) -> void:
 	if _frozen:
 		return
+	if hold_t >= 0.0 and action != "" and action_t > hold_t:
+		action_t = hold_t
 	q.speed_floor = CHARGE_SPEED if action == "charge" else 0.0
 	var c := q.begin(delta)
 	var tt := t
@@ -351,6 +357,17 @@ func _proc(a: String, p: float, at: float, w: float) -> void:
 			c[Q.BEND] += sin(at * 1.2) * 0.03 * k3
 			for i in 4:
 				c[Q.leg(i, Q.LX)] += q.leg_side[i] * 0.05 * k3
+		"stagger":
+			# thrown back on its haunches (a parried charge, a heavy blow): stumbling steps, the head shaking
+			var k2 := sin(clampf(p * 1.25, 0.0, 1.0) * PI) * w
+			c[Q.X_SHIFT] += 0.06 * _hit_side * k2
+			c[Q.ROLL] -= 0.12 * _hit_side * k2
+			c[Q.HEAD_R] += sin(at * 20.0) * 0.14 * k2
+			c[Q.HEAD_Y] += -0.25 * _hit_side * k2
+			for i in 4:
+				var ph := p * 3.0 + float(i) * 0.37
+				c[Q.leg(i, Q.LY)] += maxf(0.0, sin(ph * TAU)) * 0.05 * k2
+				c[Q.leg(i, Q.LX)] += 0.05 * _hit_side * k2
 		"hit":
 			var kh := sin(p * PI) * w
 			c[Q.X_SHIFT] += 0.04 * _hit_side * kh
@@ -425,6 +442,20 @@ func _define_actions() -> void:
 			Q.TAIL_SWAY: K.call([0.0, -0.15, 0, 1.0, -0.15, 0]),
 			Q.STAB: K.call([0.0, -0.5, 0, 1.0, -0.5, 0]),
 			Q.GAIT: K.call([0.0, -0.7, 0, 1.0, -0.7, 0]),
+		}, {}],
+		# (ENCOUNTERS) thrown back: a parried charge or gore, the finisher or the heavy blow
+		"stagger": [0.95, false, {
+			Q.Z_SHIFT: K.call([0.0, 0.0, 0, 0.16, 0.16, 1, 0.5, 0.1, 0, 1.0, 0.0, 0]),
+			Q.Y_FRONT: K.call([0.0, 0.0, 0, 0.16, 0.08, 1, 0.45, 0.03, 0, 1.0, 0.0, 0]),
+			Q.Y_REAR: K.call([0.0, 0.0, 0, 0.2, -0.05, 1, 1.0, 0.0, 0]),
+			Q.NECK_P: K.call([0.0, 0.0, 0, 0.16, 0.38, 1, 0.55, 0.2, 0, 1.0, 0.0, 0]),
+			Q.HEAD_P: K.call([0.0, 0.0, 0, 0.16, 0.3, 1, 0.55, 0.15, 0, 1.0, 0.0, 0]),
+			Q.EARS: K.call([0.0, 0.0, 0, 0.15, -1.4, 1, 0.8, -1.0, 0, 1.0, 0.0, 0]),
+			Q.EYES: K.call([0.0, 0.0, 0, 0.15, -0.85, 1, 0.6, -0.6, 0, 1.0, 0.0, 0]),
+			Q.GLOW: K.call([0.0, 0.0, 0, 0.15, -0.5, 1, 1.0, 0.0, 0]),
+			Q.MANE: K.call([0.0, 0.0, 0, 0.15, 0.8, 1, 1.0, 0.0, 0]),
+			Q.TAIL_P: K.call([0.0, 0.0, 0, 0.2, 0.6, 1, 1.0, 0.0, 0]),
+			Q.GAIT: K.call([0.0, 0.0, 0, 0.1, -0.8, 0, 0.8, -0.6, 0, 1.0, 0.0, 0]),
 		}, {}],
 		"hit": [0.36, false, {
 			Q.Z_SHIFT: K.call([0.0, 0.0, 0, 0.25, 0.06, 1, 1.0, 0.0, 0]),

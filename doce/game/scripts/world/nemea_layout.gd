@@ -170,7 +170,7 @@ const PATHS := [
 # --- encounters ----------------------------------------------------------------------------------------------
 const SPAWNS := [
 	{"kind": &"wolf", "at": Vector2(-24, 14), "radius": 9.0, "count": 3},
-	{"kind": &"wolf", "at": Vector2(6, -30), "radius": 11.0, "count": 4},
+	{"kind": &"wolf", "at": Vector2(6, -30), "radius": 11.0, "count": 5},
 	{"kind": &"boar", "at": Vector2(-104, -47), "radius": 11.0, "count": 1},
 	{"kind": &"boar", "at": Vector2(-78, -72), "radius": 12.0, "count": 2},
 	{"kind": &"boar", "at": Vector2(60, 34), "radius": 10.0, "count": 1},

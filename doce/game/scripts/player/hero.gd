@@ -143,8 +143,10 @@ var interact_target: Node = null
 var alive := true
 ## Stamina ran out: no sprint, roll or heavy blow until it is back to EXHAUST_RECOVER (the UI reads it).
 var exhausted := false
-## &"helmet" or &"lion" (the lion's pelt: blades hurt 40 % less).
+## &"helmet" or &"lion" (the lion's pelt: blades hurt PELT_BLADE as much, i.e. 50 % less).
 var outfit: StringName = &"helmet"
+## (lane L) Blade damage taken in the lion's pelt (GDD: "menos daño de armas cortantes"): x0.5.
+const PELT_BLADE := 0.5
 
 # --- state -----------------------------------------------------------------------------------------------------
 var input_enabled := true
@@ -446,7 +448,7 @@ func attack() -> void:
 		melee.start_light()
 
 
-## The lion's pelt: blades hurt 40 % less (the rig plays don_skin and changes the outfit itself). He lays his
+## The lion's pelt: blades hurt 50 % less (PELT_BLADE; the rig plays don_skin and changes the outfit itself). He lays his
 ## sword and shield down to put it on (the right hand pulls the hood over the helmet) and takes them back after.
 func don_lion_skin() -> void:
 	outfit = &"lion"
@@ -528,7 +530,7 @@ func take_hit(hit: Dictionary) -> bool:
 		_shove(hit, false)
 		return false
 	if outfit == &"lion" and hit.get("kind", &"") == &"blade":
-		amount *= 0.6
+		amount *= PELT_BLADE
 	_hurt(hit, amount)
 	return true
 
@@ -2152,6 +2154,9 @@ func _end_grapple(won: bool, thrown: bool) -> void:
 	grapple_target = null
 	collision_mask = 1 | 4 | 8
 	_lay_weapons(false)
+	# (lane L) the presses that were meant for the wrestle do not swing the sword once it is over (mashing out of
+	# rhythm, a buffered attack sent him straight back at the beast that had just thrown him off)
+	_buf_attack = 0.0
 	if t != null and is_instance_valid(t) and t.has_method("grapple_end"):
 		t.call("grapple_end", self, won)
 	if not alive:
