@@ -51,6 +51,17 @@ var _hitstop_until_us := 0
 var _slowmo_until_us := 0
 var _slowmo_scale := 1.0
 var _world_ready_done := false
+## The feel timers (hit-stop, slow motion) run on this clock: unscaled frame time (real_delta), the wall clock in
+## normal play, and frame time in --fixed-fps / --write-movie runs (bots, renders), so a 0.1 s hit-stop is 0.1 s
+## of the recorded game, not of the machine.
+var _clock := 0.0
+## The Engine.time_scale this frame's process delta was computed with. The main loop reads the time scale once at
+## the start of each iteration, so a hit-stop that starts during this frame's physics only scales the NEXT frame:
+## real_delta() must divide by this, never by the current Engine.time_scale.
+var frame_scale := 1.0
+var _applied_scale := 1.0
+## Unscaled length (s) of the last frame (hitstop's estimate of the current one).
+var _last_frame := 1.0 / 60.0
 
 
 func _init() -> void:
@@ -151,10 +162,21 @@ func set_paused(on: bool) -> void:
 
 # --- feel --------------------------------------------------------------------------------------------------
 
-## Freezes the world for `seconds` of wall-clock time (heavy hits, parries). Overlapping calls extend it.
+## Microseconds of the feel clock (unscaled frame time).
+func _now_us() -> int:
+	return int(_clock * 1e6)
+
+
+## Freezes the world for `seconds` of real time (heavy hits, parries). Overlapping calls extend it.
+## A hit-stop asked for during a frame's physics only starts with the next frame (the engine has already read the
+## time scale for this one), so the deadline counts from the end of this frame (the last frame's length is the
+## estimate) and half a frame is taken off: the number of frozen frames is `seconds` x the frame rate, rounded
+## (0.07 s: 4 frames at 60 fps, 2 at 30).
 func hitstop(seconds: float) -> void:
-	_hitstop_until_us = maxi(_hitstop_until_us, Time.get_ticks_usec() + int(seconds * 1e6))
+	_hitstop_until_us = maxi(_hitstop_until_us, _now_us() + int((seconds + _last_frame * 0.5) * 1e6))
 	Engine.time_scale = HITSTOP_SCALE
+	if args.has("feeldebug"):
+		print("FEEL hitstop %.3f s at clock %.3f frame %d" % [seconds, _now_us() * 1e-6, Engine.get_process_frames()])
 
 
 ## Camera shake: adds trauma (0..1) to the camera rig; the shake grows with trauma squared and decays by itself.
@@ -163,18 +185,26 @@ func shake(trauma: float) -> void:
 		camera.call("add_trauma", trauma)
 
 
-## Slow motion at `scale` for `seconds` of wall-clock time (finishers, the lion's defeat).
+## Slow motion at `scale` for `seconds` of real time (finishers, the lion's defeat).
 func slowmo(scale: float, seconds: float) -> void:
 	_slowmo_scale = clampf(scale, 0.05, 1.0)
-	_slowmo_until_us = Time.get_ticks_usec() + int(seconds * 1e6)
+	_slowmo_until_us = _now_us() + int(seconds * 1e6)
 
 
 func in_hitstop() -> bool:
-	return Time.get_ticks_usec() < _hitstop_until_us
+	return _now_us() < _hitstop_until_us
 
 
-func _process(_delta: float) -> void:
-	var now := Time.get_ticks_usec()
+## Unscaled seconds of this frame (hit-stop and slow motion removed): look input, UI, timers in real time.
+func real_delta(delta: float) -> float:
+	return delta / maxf(frame_scale, 1e-4)
+
+
+func _process(delta: float) -> void:
+	frame_scale = _applied_scale
+	_last_frame = clampf(real_delta(delta), 0.001, 0.1)
+	_clock += minf(real_delta(delta), 0.25)
+	var now := _now_us()
 	var ts := time_scale_target
 	if now < _slowmo_until_us:
 		ts *= _slowmo_scale
@@ -182,3 +212,4 @@ func _process(_delta: float) -> void:
 		ts = HITSTOP_SCALE
 	if not is_equal_approx(Engine.time_scale, ts):
 		Engine.time_scale = ts
+	_applied_scale = ts

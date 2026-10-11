@@ -21,7 +21,18 @@ var action_t := 0.0
 var action_len := 0.0
 var t := 0.0
 var _flash := 0.0
+## How fast a hit flash fades, per second of real time: it fades through the hit-stop's freeze, so the frozen frames
+## show the blow's pose and the body's reaction, not a white silhouette. The flash is strong (lowpoly's `flash` reads
+## pale at 0.1 and white from about 0.3 on a sunlit body): a light blow is white for its first frame only (30 fps;
+## two at 60), a heavy one white for one frame and pale for the next.
+const FLASH_DECAY := 13.0
+## Hit flash strengths: a light blow, a heavy one (stagger >= 0.5).
+const FLASH_LIGHT := 0.4
+const FLASH_HEAVY := 0.6
 var _dissolve := 0.0
+var _fade := 0.0
+## The flash was set this frame: it shows at full strength once before it starts to fade.
+var _flash_fresh := false
 var _fired := {}
 ## Material used by add_part (creatures override this with Materials.nyx()).
 var part_material: Material = null
@@ -109,6 +120,7 @@ func _action_length(_a: String) -> float:
 
 func hit_flash(strength: float = 1.0) -> void:
 	_flash = maxf(_flash, strength)
+	_flash_fresh = true
 	_apply_flash()
 
 
@@ -116,6 +128,27 @@ func set_dissolve(v: float) -> void:
 	_dissolve = v
 	for m in meshes:
 		Materials.set_param(m, "dissolve", v)
+
+
+## Screen-door fade (lowpoly.gdshader `fade`: 0 solid .. 1 gone, an ordered dither, no glow): the camera fades a
+## body that comes between the lens and the hero.
+func set_fade(v: float) -> void:
+	if is_equal_approx(v, _fade):
+		return
+	_fade = v
+	for m in meshes:
+		Materials.set_param(m, "fade", v)
+
+
+func get_fade() -> float:
+	return _fade
+
+
+## Seconds of real time in this frame (Game.real_delta: unaffected by hit-stop and slow motion); `delta` itself
+## where the Game autoload is absent (tools run with -s).
+func _real_dt(delta: float) -> float:
+	var g := get_node_or_null(^"/root/Game")
+	return float(g.call("real_delta", delta)) if g != null else delta
 
 
 ## Anime metal highlights (lowpoly.gdshader `metal`) on this rig's bronze and gold parts (0 off .. 1 full).
@@ -150,8 +183,11 @@ func _process(delta: float) -> void:
 			action = ""
 			_on_action_done(done)
 	if _flash > 0.0:
-		_flash = maxf(0.0, _flash - delta * 7.0)
-		_apply_flash()
+		if _flash_fresh:
+			_flash_fresh = false
+		else:
+			_flash = maxf(0.0, _flash - _real_dt(delta) * FLASH_DECAY)
+			_apply_flash()
 	_animate(delta)
 
 

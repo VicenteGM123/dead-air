@@ -1,13 +1,28 @@
 extends "res://scripts/main.gd"
-## Combat test arena: the same game (hero, camera, toon screen, sea, golden light) on a round stone platform by the
-## sea (tools/arena_world.gd) with three bronze rings, a boulder, a pillar and three training dummies. No title.
+## Combat test arena: the same game (hero, camera, toon screen, sea, golden light) on a stone platform by the sea
+## (tools/arena_world.gd: training ground, a ledge ring, two rings across a sea gap, a doorway and the boulder, a
+## pillar row, ramps) with three straw posts, a sparring post, two straw sacks (light chain targets) and the beast
+## dummy (a straw bull: chain kind beast, stunned against a pillar, then wrestled), and two straw soldiers that die
+## (a full combo; a new one stands up 3.5 s later). No title.
 ##   godot --path . res://tools/arena.tscn          (or the game with scene=arena; on the web ?dev=1&scene=arena)
-## Debug args work as in the game (tod=..., cam=fly pos=... yaw=... pitch=..., noui=1), plus autotest=1: lock on the
-## nearest dummy (Game.lock_changed), walk up to it and swing three times; prints "ARENA ..." lines.
+## Debug args work as in the game (tod=..., cam=fly pos=... yaw=... pitch=..., noui=1), plus:
+##   autotest=1          the bot (tools/arena_bot.gd) runs every test and prints "ARENA test <name> PASS|FAIL"
+##                       and "ARENA autotest passed=N/M result=PASS|FAIL"
+##   bot=<a,b,...>       only those tests (combo, heavy, guard, parry, dodge, lockon, light, ledge, rings, beast,
+##                       boulder); `show=1` slows the bot down to watch it; frames are logged for strip renders
 
 const ArenaWorld := preload("res://tools/arena_world.gd")
+const ArenaBeast := preload("res://tools/arena_beast.gd")
+const ArenaBot := preload("res://tools/arena_bot.gd")
 
+## The straw posts (kept for older tools: `dummies`).
 var dummies: Array = []
+var sparring: TrainingDummy
+var sacks: Array = []
+## The straw soldiers (they die; replaced 3.5 s later at the same spot).
+var straw: Array = []
+var beast: Enemy
+var bot: Node = null
 
 
 func _make_world() -> Node3D:
@@ -18,57 +33,63 @@ func _make_world() -> Node3D:
 	return w
 
 
+## The arena is a training ground, not the lion's cave: no labour card when the hero stands by its centre (the UI
+## shows it on reaching World.cave().arena_center, which the arena's world answers too).
+func _make_ui() -> void:
+	super._make_ui()
+	if ui != null and "auto_labor_card" in ui:
+		ui.set("auto_labor_card", false)
+
+
 func _wants_title() -> bool:
 	return false
 
 
 func spawn_encounters() -> void:
-	for i in 3:
+	var s: Dictionary = world.call("spots")
+	var posts: Array = s["posts"]
+	for i in posts.size():
 		var d := TrainingDummy.new()
 		d.name = "Dummy_%d" % i
 		add_child(d)
-		d.teleport(world.ground(Vector3((i - 1) * 3.2, 0.0, -4.0 - absf(i - 1) * 1.2)), PI) # facing the hero
+		d.teleport(world.ground(posts[i]), PI if i != 1 else PI) # facing the hero's start (south)
 		dummies.append(d)
+	sparring = TrainingDummy.new(&"sparring")
+	sparring.name = "Sparring"
+	add_child(sparring)
+	sparring.teleport(world.ground(s["sparring"]), PI)
+	for i in (s["sacks"] as Array).size():
+		var k := TrainingDummy.new(&"sack")
+		k.name = "Sack_%d" % i
+		add_child(k)
+		k.teleport(world.ground(s["sacks"][i]), PI * 0.5)
+		sacks.append(k)
+	for i in (s["straw"] as Array).size():
+		_spawn_straw(i)
+	beast = ArenaBeast.new()
+	beast.name = "Beast"
+	add_child(beast)
+	beast.teleport(world.ground(s["beast"]), 0.0) # facing north, towards the pillars
+	if Game.arg_on("autotest") or Game.has_arg("bot"):
+		bot = ArenaBot.new()
+		bot.name = "ArenaBot"
+		bot.set("arena", self)
+		add_child(bot)
 
 
-var _auto_t := 0.0
-var _auto_step := 0
-var _swings := 0
+func _spawn_straw(i: int) -> void:
+	var s: Dictionary = world.call("spots")
+	var m := TrainingDummy.new(&"straw")
+	m.name = "Straw_%d" % i
+	add_child(m)
+	m.teleport(world.ground(s["straw"][i]), PI)
+	while straw.size() <= i:
+		straw.append(null)
+	straw[i] = m
+	m.died.connect(func(_e: Enemy) -> void: _respawn_straw(i))
 
 
-func _physics_process(delta: float) -> void:
-	if not Game.arg_on("autotest") or not Game.is_playing():
-		return
-	_auto_t += delta
-	match _auto_step:
-		0:
-			if _auto_t > 0.5:
-				Game.lock_changed.connect(func(t: Node) -> void: print("ARENA lock_changed -> %s" % (t.name if t else "null")))
-				cam.call("_acquire_lock")
-				_auto_step = 1
-		1:
-			var t: Node3D = cam.lock_target
-			if t == null:
-				print("ARENA autotest FAIL: no lock target")
-				_auto_step = 9
-				return
-			var d := Vector2(t.global_position.x - hero.global_position.x, t.global_position.z - hero.global_position.z).length()
-			hero.debug_move = Vector2(0.0, -1.0) if d > 1.6 else Vector2.ZERO
-			if d <= 1.6 or _auto_t > 8.0:
-				hero.debug_move = Vector2.ZERO
-				_auto_step = 2
-				_auto_t = 0.0
-		2:
-			if _auto_t > 0.55:
-				_auto_t = 0.0
-				hero.attack()
-				_swings += 1
-				if _swings >= 3:
-					_auto_step = 3
-		3:
-			if _auto_t > 1.0:
-				var hits := 0
-				for dm in dummies:
-					hits += int(dm.hits)
-				print("ARENA autotest swings=%d dummy_hits=%d hero_hp=%.0f result=%s" % [_swings, hits, hero.hp, "PASS" if hits >= 3 else "FAIL"])
-				_auto_step = 9
+func _respawn_straw(i: int) -> void:
+	await get_tree().create_timer(3.5, false).timeout
+	if is_inside_tree():
+		_spawn_straw(i)

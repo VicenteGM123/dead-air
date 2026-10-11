@@ -15,17 +15,15 @@ Regenerate everything with `python3 doce/tools/audio/render_all.py` (about 1 min
 - **The ambience and the music run by themselves** (see the last sections): nobody needs to call
   `Sfx.set_ambience()`, and `Sfx.music()` only for something special.
 
-## Old PHAROS names in the live code
+## Old PHAROS names
 
-`audio.gd` maps them to their DOCE sounds before loading anything (`RENAMES`), so nothing goes silent and the
-PHAROS files are gone. Switch the calls to the new names when you touch those files:
-
-| Old name in the live code | Plays | Where | Better |
-|---|---|---|---|
-| `Sfx.music("title")`, `Sfx.music("day")` | `explore` (one name, so the theme carries on from the title into the game) | `main.gd` | `Sfx.music("explore")`, or nothing: the director starts it |
-| `blessing` | `altar` | `props/altar.gd` | `altar` |
-| `orb_hit` | `chain_stick` | `props/chain_ring.gd` (the spear biting the ring) | `chain_stick` |
-| `structure_hit` | `chain_stick` | `props/boulder.gd` | `chain_stick` when the spear hooks it; `boulder_thud` when it settles; `boulder_drag` loop while it moves |
+`audio.gd` still maps the old PHAROS names to their DOCE sounds before loading anything (`RENAMES`: `title` / `day`
+-> `explore`, `blessing` -> `altar`, `orb_hit` / `structure_hit` -> `chain_stick`), but since the merge of CORE no
+code calls them any more: `main.gd` plays `explore`, the altar `altar`, the chain spear `chain_stick` when it bites,
+the boulder `boulder_drag` (loop) and `boulder_thud`. Every name the code plays (`Sfx.play` / `music` / `loop` and
+the UI's `Style.sfx`, the combo's table in `hero_melee.gd`, the footsteps' `step_<surface>_<n>`) exists in
+`assets/audio`; the only optional one is `charge_ready` (not generated: the charged heavy blow plays `parry` pitched
+up and quieter instead).
 
 Kept with the same name: `swing_1..3`, `hit_1..3`, `dodge`, `footstep`, `hero_hurt`, `hero_down`, `splash`,
 `stinger_victory`, `cat_purr`, `cat_meow`, `gull`, `ui_move`, `ui_select`, `ui_back`.
@@ -44,8 +42,8 @@ Kept with the same name: `swing_1..3`, `hit_1..3`, `dodge`, `footstep`, `hero_hu
 | `dodge` | a dodge roll starts | already in `hero.gd` |
 | `jump` | jump take-off | −6 dB |
 | `land` | landing from a jump or a fall (louder and lower pitch for big falls) | |
-| `footstep` | the rig's `step` event when the ground type is unknown | already in `hero.gd` (−14 dB) |
-| `step_grass_1..3`, `step_stone_1..3`, `step_sand_1..3` | the rig's `step` event by surface: sand on beaches (near sea level), stone on rock, paths, paving and in the cave, grass elsewhere | rotate the three takes; −10…−14 dB |
+| `footstep` | the rig's `step` event in shallow water (with a splash) | `hero.gd` (−14 dB) |
+| `step_grass_1..3`, `step_stone_1..3`, `step_sand_1..3` | the rig's `step` event by surface: `World.surface_at(pos)` says sand on the beaches, stone in the cave, on paths, paving, steep rock and anything built (the pier), grass elsewhere | a random take of the three; −12 dB, pitch 0.92–1.08 |
 | `swim` | each swimming stroke (rig `step` while swimming) | |
 | `splash` | entering the water | already used |
 | `hero_hurt` | the hero takes damage | already used |

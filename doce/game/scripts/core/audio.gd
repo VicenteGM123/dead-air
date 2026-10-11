@@ -384,7 +384,9 @@ func loop(sound: String, node: Node3D, vol_db: float = 0.0) -> Node:
 
 func _process(delta: float) -> void:
 	# real seconds: fades and the ambience ignore hit-stop and slow motion
-	var rd := minf(delta / maxf(Engine.time_scale, 0.001), 0.1)
+	# real seconds (hit-stop and slow motion undone): Game.real_delta(), see docs/COMBAT.md 3.5
+	var g: Node = get_node_or_null(^"/root/Game")
+	var rd := minf(float(g.call("real_delta", delta)) if g != null and g.has_method("real_delta") else delta / maxf(Engine.time_scale, 0.001), 0.1)
 	if not _sample_queue.is_empty():
 		_sample_wait -= rd
 		if _sample_wait <= 0.0:

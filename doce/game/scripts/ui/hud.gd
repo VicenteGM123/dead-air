@@ -5,12 +5,17 @@ extends Control
 ##  - stamina: a ring beside the hero (projected from the 3D position) that only appears while stamina is
 ##    being spent or refilling, and fades once full; red while the hero is winded;
 ##  - the boss bar, top-centre: the beast's name and a long bar with notches at its phases (66 % and 33 %);
-##  - the lock-on reticle on the target (four bronze arrowheads closing in, turning slowly).
-## Reads Game.hero (hp, max_hp, stamina, max_stamina, alive, outfit / _exhausted when present), Game.camera.cam,
-## Game.boss_started / boss_ended and Game.lock_changed. Debug values can be forced with sim_* (uitest).
+##  - the lock-on reticle on the target (four bronze arrowheads closing in, turning slowly);
+##  - the chain spear's mark on what it would hook if thrown now (Hero.chain_candidate: a bronze ring rimmed by
+##    four short ticks, with the chain key beside it), hidden while the sword swings or the thing is within reach of
+##    it; on the lock target only the key, beside the reticle.
+## Reads Game.hero (hp, max_hp, stamina, max_stamina, alive, outfit / _exhausted when present, chain_candidate,
+## state_name()), Game.camera.cam, Game.boss_started / boss_ended and Game.lock_changed. Debug values can be forced
+## with sim_* (uitest).
 
 const S := preload("res://scripts/ui/style.gd")
 const W := preload("res://scripts/ui/widgets.gd")
+const G := preload("res://scripts/ui/glyphs.gd")
 
 const RETICLE_R := 24.0
 const BOSS_NOTCHES := [0.33, 0.66]
@@ -35,6 +40,12 @@ var _stam_red := 0.0
 var _drawn := false
 var sim_stamina := -1.0
 var sim_lock_pos := Vector2.INF
+var sim_chain_pos := Vector2.INF
+var _chain: Node3D = null
+var _chain_k := 0.0
+var _chain_in := 0.0
+var _chain_pos := Vector2.INF
+var _chain_on_lock := false
 
 
 # --- vitals: medallion + health bar ------------------------------------------------------------------------
@@ -231,6 +242,8 @@ func boss_active() -> bool:
 func reset_debug() -> void:
 	sim_stamina = -1.0
 	sim_lock_pos = Vector2.INF
+	sim_chain_pos = Vector2.INF
+	_chain_k = 0.0
 	_lock_k = 0.0
 	_stam_k = 0.0
 	_boss.on = false
@@ -338,9 +351,36 @@ func _process(delta: float) -> void:
 		_lock_seen = true
 	_lock_k = move_toward(_lock_k, 1.0 if (lock_ok and lp.is_finite()) else 0.0, rd * (7.0 if lock_ok else 5.0))
 	_lock_in = minf(1.0, _lock_in + rd / 0.22)
-	if _stam_k > 0.0 or _lock_k > 0.0 or _drawn:
+	# --- the chain spear's mark ---
+	var cand: Node3D = null
+	if hero and "chain_candidate" in hero:
+		var c = hero.get("chain_candidate")
+		if c != null and is_instance_valid(c) and (c as Node3D).is_inside_tree() and c.has_method("chain_point"):
+			cand = c as Node3D
+	if cand and hero is Node3D:
+		var busy := false
+		if hero.has_method("state_name"):
+			busy = StringName(hero.call("state_name")) in [&"attack", &"charge", &"heavy", &"grapple", &"dead"]
+		if busy or (hero as Node3D).global_position.distance_to(cand.global_position) < 3.2:
+			cand = null
+	if cand != _chain:
+		if cand != null:
+			_chain_in = 0.0
+		_chain = cand if cand != null else _chain
+	var cp := Vector2.INF
+	if cand != null:
+		_chain_on_lock = lock_ok and cand == _lock
+		cp = _project(cand.call("chain_point"))
+	if sim_chain_pos.is_finite():
+		cp = sim_chain_pos
+		_chain_on_lock = false
+	if cp.is_finite():
+		_chain_pos = cp if (_chain_k <= 0.01 or not _chain_pos.is_finite()) else _chain_pos.lerp(cp, 1.0 - exp(-rd * 30.0))
+	_chain_k = move_toward(_chain_k, 1.0 if cp.is_finite() else 0.0, rd * (8.0 if cp.is_finite() else 6.0))
+	_chain_in = minf(1.0, _chain_in + rd / 0.2)
+	if _stam_k > 0.0 or _lock_k > 0.0 or _chain_k > 0.0 or _drawn:
 		queue_redraw()
-	_drawn = _stam_k > 0.0 or _lock_k > 0.0
+	_drawn = _stam_k > 0.0 or _lock_k > 0.0 or _chain_k > 0.0
 
 
 func _draw() -> void:
@@ -348,6 +388,34 @@ func _draw() -> void:
 		_draw_stamina(_stam_pos, _stam_k)
 	if _lock_k > 0.01:
 		_draw_reticle(_lock_pos, _lock_k)
+	if _chain_k > 0.01 and _chain_pos.is_finite():
+		_draw_chain_mark(_chain_pos, _chain_k)
+
+
+## The chain spear's mark: a thin bronze ring with four short ticks (unlike the reticle's arrowheads), turning the
+## other way, closing in when a new thing is marked; the chain key beside it. On the lock target only the key.
+func _draw_chain_mark(c: Vector2, k: float) -> void:
+	var a := S.ease_out(k) * 0.92
+	var caps := G.caps_for("chain")
+	var cap_h := 18.0
+	if not _chain_on_lock:
+		var r := 11.0 + 14.0 * (1.0 - S.ease_out(_chain_in))
+		var spin := -S.now() * 0.6
+		var bronze := S.CLAY_LIGHT.lerp(S.GOLD, 0.45)
+		draw_arc(c, r, 0.0, TAU, 32, Color(S.INK, 0.45 * a), 3.5, true)
+		draw_arc(c, r, 0.0, TAU, 32, Color(bronze, a), 1.6, true)
+		for i in 4:
+			var ang := spin + TAU * float(i) / 4.0
+			var d := Vector2(cos(ang), sin(ang))
+			draw_line(c + d * (r + 3.0), c + d * (r + 9.0), Color(S.INK, 0.5 * a), 3.5, true)
+			draw_line(c + d * (r + 3.0), c + d * (r + 9.0), Color(bronze, a), 1.8, true)
+		draw_circle(c, 2.0, Color(S.IVORY, 0.85 * a))
+	if caps.is_empty():
+		return
+	var cap: Array = caps[0]
+	var cw := G.cap_width(cap, cap_h)
+	var at := c + (Vector2(RETICLE_R + 14.0, RETICLE_R - 4.0) if _chain_on_lock else Vector2(22.0, 10.0))
+	G.draw_cap(self, cap, Rect2(at, Vector2(cw, cap_h)), Color(S.IVORY, a), 0.0 if cap[0] == "icon" else 0.55 * a)
 
 
 func _draw_stamina(c: Vector2, k: float) -> void:

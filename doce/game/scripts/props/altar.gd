@@ -111,7 +111,7 @@ func interact_press(hero: Node) -> void:
 		hero.call("heal", 99999.0)
 	Game.checkpoint = self
 	_pulse = 1.0
-	Sfx.play("blessing", global_position)
+	Sfx.play("altar", global_position)
 	if Game.fx:
 		Game.fx.call("motes", global_position + Vector3(0, 1.8, 0), 14, Color(1.0, 0.8, 0.45))
 	Game.say(title, "Has recuperado fuerzas. Si caes, volverás aquí.", "altar")

@@ -15,8 +15,19 @@ uniform vec3 rim_color : source_color = vec3(0.0); // ethereal rim for the creat
 uniform float rim_power = 2.5;
 uniform float flash = 0.0;     // hit flash (0..1)
 uniform float dissolve = 0.0;  // 0 = solid, 1 = gone
+uniform float fade = 0.0;      // screen-door fade (ordered dither, no glow): 0 = solid, 1 = gone
+// Camera cut-out (CameraRig, world props in group "camera_cut"): the parts of this mesh near the line from the lens
+// (cut_a) to what it frames (cut_b), in front of it, and the parts within cut_lens m of the lens are dithered away
+// (screen door, strength cut_k 0..1), so a pillar between the camera and the hero (or the wrestle) does not hide it.
+uniform float cut_k = 0.0;
+uniform vec3 cut_a = vec3(0.0);
+uniform vec3 cut_b = vec3(0.0);
+uniform float cut_r = 1.2;
+uniform float cut_lens = 2.5;
 uniform vec3 tint = vec3(1.0);
 uniform float metal = 0.0; // TOON: bronze / gold surfaces of this material get anime metal highlights
+
+const float BAYER4[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
 
 varying vec3 v_albedo;
 varying vec3 v_albedo_day;
@@ -43,6 +54,26 @@ void vertex() {
 }
 
 void fragment() {
+	// (the screen doors are for the view only: never in a shadow map, whose projection is orthographic)
+	bool view_pass = PROJECTION_MATRIX[3][3] < 0.5;
+	float door = view_pass ? fade : 0.0;
+	if (cut_k > 0.0 && view_pass) {
+		vec3 ab = cut_b - cut_a;
+		float u = clamp(dot(v_wpos - cut_a, ab) / max(dot(ab, ab), 1e-4), 0.0, 1.0);
+		// only what stands between the lens and the subject, at least 0.7 m nearer the lens than it (a wall the hero
+		// hangs on, a pillar beside the wrestle are left whole)
+		float u_max = 1.0 - 0.7 / max(length(ab), 0.75);
+		float k = smoothstep(cut_r, cut_r * 0.5, length(cut_a + ab * u - v_wpos)) * (1.0 - smoothstep(u_max - 0.06, u_max, u));
+		k = max(k, smoothstep(cut_lens, cut_lens * 0.55, length(v_wpos - cut_a)));
+		door = max(door, k * cut_k);
+	}
+	if (door > 0.0) {
+		// 4x4 Bayer threshold: an even screen-door that reads as see-through at a glance
+		ivec2 q = ivec2(FRAGCOORD.xy) % 4;
+		if ((BAYER4[q.x + q.y * 4] + 0.5) / 16.0 < door) {
+			discard;
+		}
+	}
 	if (dissolve > 0.0) {
 		float n = ph_noise(v_wpos.xz * 3.1 + v_wpos.y * 2.3) * 0.7 + ph_noise(v_wpos.xy * 7.0) * 0.3;
 		if (n < dissolve) {

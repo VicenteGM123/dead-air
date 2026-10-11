@@ -11,15 +11,26 @@ extends RefCounted
 ##     walls (never in the middle: the floor stays readable), bones in the lion's corner;
 ##   - warm light: a soft glow in the middle and the three shafts (switched on only while the camera is near,
 ##     see set_camera());
-##   - the boulder on the apron of mouth B, beside the crack, on flat open ground.
+##   - the boulder on the apron of mouth B, out in front of the crack on its axis, on flat open ground: hooked with
+##     the chain from the crack and hauled straight in, it comes to rest against the face over the opening (where
+##     the build measured it would: cave()["seal_b"]) and seals it (integration fix: beside the crack it wedged
+##     between the cliff foot and a rise of the apron before it reached the opening).
+## cave() entrance_a / entrance_b are the floor points just inside each opening's outer face (where a boulder
+## sealing it touches); inner_a / inner_b the old points behind the arch (0.9 m out from where the roof starts).
 ## Collision (layer 1): trimesh for the lid, the plugs and the arches; cylinders for pillars and stalagmites.
 
 const L := preload("res://scripts/world/nemea_layout.gd")
 const LID_R := 18.2
 ## Mouth arches: [opening half width, spring height, apex height] (above the floor).
 const ARCH_A := [3.3, 3.8, 6.7]
-const ARCH_B := [1.05, 2.6, 4.3]
+## (merge: mouth B's arch lowered from 2.6 / 4.3 m so the boulder, 2.6 m across, plugs most of it; the hero, 1.9 m,
+## still walks through under its 2.25 m jambs)
+const ARCH_B := [1.05, 2.25, 3.3]
 const LIGHTS_ON_DIST := 46.0
+## The boulder (scripts/props/boulder.gd RADIUS, its centre RADIUS * 0.95 over its origin) for the seal spot.
+const BOULDER_R := 1.3
+## How far out from its seal spot the boulder waits (centre to centre, along the mouth's axis).
+const BOULDER_RUN := [5.5, 6.0, 5.0, 6.5, 4.6]
 
 var world: Node3D
 var t: RefCounted
@@ -38,6 +49,8 @@ var _n := FastNoiseLite.new()
 var _rim := PackedFloat32Array() # mesa height round the lid, per 5 degrees
 var _rim_mean := 0.0
 var _lights_on := true
+## Per mouth ("a" / "b"): [outer face point on the floor, boulder seal point] (see _measure_mouth).
+var _faces := {}
 
 
 func build(w: Node3D, terrain: RefCounted, pr: RefCounted) -> void:
@@ -65,8 +78,12 @@ func build(w: Node3D, terrain: RefCounted, pr: RefCounted) -> void:
 	var ma: Array = mouths["a"]
 	var mb: Array = mouths["b"]
 	info = {
-		"entrance_a": _floor_at(ma[0]),
-		"entrance_b": _floor_at(mb[0]),
+		"entrance_a": _floor_at(ma[2]),
+		"entrance_b": _floor_at(mb[2]),
+		"inner_a": _floor_at(ma[0]),
+		"inner_b": _floor_at(mb[0]),
+		# where the boulder's origin rests when it seals mouth B (Boulder.is_blocking(seal_b, 1.2))
+		"seal_b": _floor_at(mb[3]),
 		"boulder": boulder,
 		"arena_center": c,
 		"pillars": pillars,
@@ -397,7 +414,10 @@ func _tunnel(mouth: Vector2, hw: float, h: float, which: int) -> void:
 	var arch: Array = ARCH_A if which == 1 else ARCH_B
 	var am := c + dir * (s_mouth + 0.6)
 	_mouth_arch(am, dir, float(arch[0]), float(arch[1]), float(arch[2]), which, hw)
-	mouths["a" if which == 1 else "b"] = [Vector3(am.x, fl, am.y) + Vector3(dir.x, 0, dir.y) * 0.9, Vector3(dir.x, 0, dir.y)]
+	var key := "a" if which == 1 else "b"
+	var fs: Array = _faces[key]
+	# [inner point (behind the arch), outward dir, outer face point, boulder seal point]
+	mouths[key] = [Vector3(am.x, fl, am.y) + Vector3(dir.x, 0, dir.y) * 0.9, Vector3(dir.x, 0, dir.y), fs[0], fs[1]]
 	props.reserve(am + dir * 2.0, float(arch[0]) + 4.5)
 	t.splat_ao(am, float(arch[0]) + 1.5, 0.45, c + dir * s_in)
 
@@ -496,6 +516,7 @@ func _mouth_arch(centre: Vector2, dir: Vector2, w: float, spring: float, apex: f
 			row.append(to_w.call(q.x, q.y, ax + lip + rough))
 		grid.append(row)
 		front.append(row[0])
+	_measure_mouth(which, cen3, d3, s3, grid, pts, spring)
 	var mb := MeshBuilder.new(960 + which)
 	mb.vary = 0.04
 	for k in pts.size() - 1:
@@ -528,6 +549,46 @@ func _mouth_arch(centre: Vector2, dir: Vector2, w: float, spring: float, apex: f
 	_add_mesh(mb.commit(), "MouthArch%s" % ("A" if which == 1 else "B"), true, true, true)
 
 
+## The opening's outer face and, for a boulder of BOULDER_R hauled straight in along the axis, where it stops
+## against the face: for each lateral offset within the opening the deepest the sphere gets before it touches a
+## point of the face (the opening's rim and the rock round it), the deepest offset winning (a little preference
+## for the middle). Stores [face point, seal point] (floor level, the seal point = the boulder's origin).
+func _measure_mouth(which: int, cen3: Vector3, d3: Vector3, s3: Vector3, grid: Array, pts: Array[Vector2], spring: float) -> void:
+	var face_sum := 0.0
+	var face_n := 0
+	for k in pts.size():
+		if pts[k].y > 0.0 and pts[k].y < spring:
+			var row: Array = grid[k]
+			face_sum += ((row[0] as Vector3) - cen3).dot(d3)
+			face_n += 1
+	var face_s := face_sum / maxf(1.0, float(face_n))
+	var cy := BOULDER_R * 0.95
+	var best := INF
+	var best_s := face_s + BOULDER_R
+	var best_lat := 0.0
+	for li in 21:
+		var lat0 := lerpf(-1.0, 1.0, float(li) / 20.0)
+		var stop := -INF
+		for row: Array in grid:
+			for q: Vector3 in row:
+				var rel := q - cen3
+				var dl := rel.dot(s3) - lat0
+				var dy := rel.y - cy
+				var r2 := BOULDER_R * BOULDER_R - dl * dl - dy * dy
+				if r2 > 0.0:
+					stop = maxf(stop, rel.dot(d3) + sqrt(r2))
+		if stop == -INF:
+			continue
+		var score := stop + absf(lat0) * 0.15
+		if score < best:
+			best = score
+			best_s = stop
+			best_lat = lat0
+	var face := cen3 + d3 * (face_s - 0.3)
+	var seal := cen3 + d3 * (best_s + 0.05) + s3 * best_lat
+	_faces["a" if which == 1 else "b"] = [face, seal]
+
+
 # --- inside ----------------------------------------------------------------------------------------------------
 
 func _pillars() -> void:
@@ -551,7 +612,9 @@ func _pillars() -> void:
 		_cyl(pr * 1.3, 2.2, p + Vector3(0, -0.3, 0))
 		_cyl(pr * 1.02, top, p + Vector3(0, -0.3, 0))
 		t.splat_ao(Vector2(p.x, p.z), pr * 2.2, 0.55)
-	_add_mesh(mb.commit(), "CavePillars", false)
+	# the camera cuts them away (a screen door, lowpoly cut_*) where they stand between the lens and the hero or a
+	# wrestle (CameraRig, group "camera_cut")
+	_add_mesh(mb.commit(), "CavePillars", false).add_to_group("camera_cut")
 
 
 func _floor_details() -> void:
@@ -660,35 +723,31 @@ func _light_shafts() -> void:
 	lights.append(fill)
 
 
-## The boulder on mouth B's apron: beside the crack (on the open side), on flat ground, with a clear run to the
-## arch (drag it towards the hero standing in the crack and it stops against the arch, sealing it).
+## The boulder on mouth B's apron, out in front of the crack on its axis (in line with where it seals the opening:
+## hauled straight in from the crack it rolls up to the face and stops there, see _measure_mouth), on flat open
+## ground with a flat run to the seal spot, the hero's way round it on either side.
 func _boulder() -> void:
 	var mb: Array = mouths["b"]
-	var mp: Vector3 = mb[0]
 	var out: Vector3 = mb[1]
+	var seal: Vector3 = mb[3]
 	var side := Vector3(-out.z, 0, out.x)
 	var best := Vector3.INF
-	var best_score := INF
-	for sgn in [1.0, -1.0]:
-		for lat in [4.6, 5.2, 4.0, 5.8]:
-			for ax in [3.2, 3.8, 2.6, 4.4]:
-				var q: Vector3 = mp + out * float(ax) + side * float(sgn) * float(lat)
-				var ok := true
-				# Flat, open ground under it and on the way to the arch.
-				for k in 6:
-					var u := float(k) / 5.0
-					var s: Vector3 = q.lerp(mp + out * 1.4, u)
-					if t.normal_at(s.x, s.z).y < 0.95 or absf(t.height_at(s.x, s.z) - (L.CAVE_FLOOR + 0.35)) > 0.7:
-						ok = false
-						break
-				if not ok:
-					continue
-				var score := absf(float(lat) - 4.8) + absf(float(ax) - 3.4)
-				if score < best_score:
-					best_score = score
-					best = q
+	for run in BOULDER_RUN:
+		var q: Vector3 = seal + out * float(run)
+		var ok := true
+		# flat ground under it and on its way in (a band as wide as the boulder)
+		for k in 8:
+			var u := float(k) / 7.0
+			for lat in [-1.0, 0.0, 1.0]:
+				var sp: Vector3 = q.lerp(seal, u) + side * float(lat)
+				if t.normal_at(sp.x, sp.z).y < 0.94 or absf(t.height_at(sp.x, sp.z) - (L.CAVE_FLOOR + 0.3)) > 0.6:
+					ok = false
+		if ok:
+			best = q
+			break
 	if not best.is_finite():
-		best = mp + out * 3.4 + side * 4.8
+		push_warning("NemeaCave: no flat run for the boulder in front of mouth B")
+		best = seal + out * float(BOULDER_RUN[0])
 	var p := Vector3(best.x, t.height_at(best.x, best.z) + 0.05, best.z)
 	if ResourceLoader.exists("res://scripts/props/boulder.gd"):
 		boulder = load("res://scripts/props/boulder.gd").new()
@@ -697,5 +756,7 @@ func _boulder() -> void:
 	boulder.name = "CaveBoulder"
 	world.add_child(boulder)
 	boulder.global_position = p
-	props.reserve(Vector2(best.x, best.z), 3.2)
-	props.reserve(Vector2(mp.x, mp.z) + Vector2(out.x, out.z) * 2.0, 5.5)
+	# keep the scatter off the boulder, its run in and the apron in front of the crack
+	props.reserve(Vector2(best.x, best.z), 3.4)
+	props.reserve(Vector2(seal.x, seal.z).lerp(Vector2(best.x, best.z), 0.5), 3.2)
+	props.reserve(Vector2(seal.x, seal.z), 3.0)

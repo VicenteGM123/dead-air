@@ -6,14 +6,14 @@ extends Node
 ##
 ## Called by main.gd: show_title(), show_play(), show_pause(paused). By Fx: screen_flash(color, seconds).
 ## Also public: show_labor_card(index, title), show_victory(index, title, sub), hurt_flash(amount_0_1),
-## auto_labor_card (labour I's card on first entering the Lion's cave, see _check_cave_entry),
+## auto_labor_card (labour I's card on first entering the Lion's arena, see _check_cave_entry),
 ## owns_title() (true: the title has a menu, main should not start the game on "any key").
 ## Listens to: Game.phase_changed, message, boss_started / boss_ended, labor_card, hero_died, lock_changed,
 ## paused_changed. Reads Game.hero (hp, max_hp, stamina, max_stamina, interact_target, alive, outfit).
 ## Sounds it plays: ui_* (menus, lock-on, toasts, the card), stinger_death with the death screen. The victory
 ## stinger is main.victory()'s.
 ##
-## Debug: `uitest=title|hud|boss|card|death|victory|pause|options|controls|warning|card2` forces a screen for
+## Debug: `uitest=title|hud|boss|wrestle|card|death|victory|pause|options|controls|warning|card2` forces a screen for
 ## screenshots (the game is started when the screen needs it); `pad=1` shows gamepad glyphs;
 ## `uishot=<file.png>` saves the window after `uishotf` frames (default 90) and quits;
 ## `uitour=<dir>` captures every screen in one run as <dir>/live_<screen>.png (`uitouronly=hud,card` for some).
@@ -66,8 +66,10 @@ var _modal := false
 var _shot_frames := -1
 var _debug_death := false
 var _victory_shown := false
-## The labour card shows by itself the first time the hero enters the Lion's cave (World.cave(), or the world's
-## cave_amount(pos) when it has one), unless Game.labor_card(1, ...) came first. Off: only Game.labor_card shows it.
+## The labour card shows by itself the first time the hero walks into the Lion's arena (within arena_radius + 4 m of
+## World.cave().arena_center, inside the cave by the world's cave_amount(pos) when it has one: not at a mouth, where it
+## would hide the boulder being hauled into mouth B), unless Game.labor_card(1, ...) came first. Off: only
+## Game.labor_card shows it.
 var auto_labor_card := true
 var _labors_shown := {}
 var _cave_check := 0.0
@@ -242,14 +244,20 @@ func _check_cave_entry(rd: float) -> void:
 	var w = Game.world
 	if h == null or w == null or not is_instance_valid(h) or not is_instance_valid(w) or not (h is Node3D):
 		return
+	# not while his hands are full (hauling the boulder into mouth B's crack, a wrestle): the card waits
+	if h.has_method("state_name") and not (StringName(h.call("state_name")) in [&"move", &"attack", &"dodge"]):
+		return
 	var p: Vector3 = (h as Node3D).global_position
 	var inside := false
 	if w.has_method("cave_amount"):
 		inside = float(w.call("cave_amount", p)) > 0.5
-	elif w.has_method("cave"):
+	# (merge) in the lion's arena itself, not at a mouth: the card would cover the boulder being hauled into mouth B
+	if w.has_method("cave"):
 		var c: Dictionary = w.call("cave")
 		if c.has("arena_center") and c["arena_center"] is Vector3:
-			inside = p.distance_to(c["arena_center"]) < 20.0
+			var r := float(c.get("arena_radius", 13.5)) + 4.0
+			var near := p.distance_to(c["arena_center"]) < r
+			inside = near and (inside or not w.has_method("cave_amount"))
 	if inside:
 		show_labor_card(1, "El León de Nemea")
 
@@ -460,6 +468,7 @@ func _debug(mode: String) -> void:
 				hero.set("stamina", float(hero.get("max_stamina")) * 0.42)
 			hud.set("sim_stamina", 0.42)
 			hud.set("sim_lock_pos", get_viewport().get_visible_rect().size * Vector2(0.62, 0.42))
+			hud.set("sim_chain_pos", get_viewport().get_visible_rect().size * Vector2(0.8, 0.3))
 			prompt.set("sim_info", {"title": "Altar de Zeus", "verb": "Rezar", "desc": "Cura y guarda el camino", "progress": -1.0})
 			prompt.set("sim_point", get_viewport().get_visible_rect().size * Vector2(0.36, 0.5))
 			await get_tree().create_timer(0.4).timeout
@@ -475,6 +484,11 @@ func _debug(mode: String) -> void:
 			banners.call("post", "Su piel no la corta el bronce", "Hazlo chocar contra las columnas", "warning")
 		"warning":
 			banners.call("post", "Su piel no la corta el bronce", "Hazlo chocar contra las columnas", "warning")
+		"wrestle":
+			# the wrestle's prompt over the struggle (prompt.gd): a squeeze window open, one squeeze of three done
+			prompt.set("sim_info", {"title": "El León de Nemea", "verb": "¡Aprieta!", "desc": "", "progress": 1.0 / 3.0,
+				"action": "interact", "accent": "gold"})
+			prompt.set("sim_point", get_viewport().get_visible_rect().size * Vector2(0.5, 0.42))
 		"card":
 			show_labor_card(1, "El León de Nemea")
 		"card2":
@@ -497,7 +511,7 @@ func _debug(mode: String) -> void:
 ## Debug `uitour=<dir>`: every screen in one run (one island build), each saved as <dir>/live_<screen>.png once
 ## its animations have settled (seconds of game time, so `--fixed-fps 10` renders a third of the frames of 30);
 ## then quits. `hud_pad` is the HUD with gamepad glyphs.
-const TOUR := [["title", 2.7], ["hud", 2.7], ["hud_pad", 1.0], ["boss", 1.7], ["card", 2.8], ["victory", 3.0],
+const TOUR := [["title", 2.7], ["hud", 2.7], ["hud_pad", 1.0], ["boss", 1.7], ["wrestle", 1.0], ["card", 2.8], ["victory", 3.0],
 	["death", 2.7], ["pause", 0.6], ["options", 0.6], ["controls", 0.6]]
 
 

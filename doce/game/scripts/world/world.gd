@@ -21,7 +21,10 @@ extends Node3D
 ## Extras: water_depth(x, z), slope_at(x, z), is_walkable(x, z), places() (named points for tools and tests),
 ## boat() (the Lerna boat interactable), ambient (the fauna node), stats (build timings and counts),
 ## terrain_body (the terrain's StaticBody3D), and for the audio / UI: coast_distance(x, z) (m to the coastline,
-## + inland), ground_color_at(x, z) (rgb ground, a = grassiness), cave_amount(pos) (0..1, 1 inside the Lion's cave).
+## + inland), ground_color_at(x, z) (rgb ground, a = grassiness), cave_amount(pos) (0..1, 1 inside the Lion's cave),
+## for the hero's footsteps surface_at(pos) ("grass" | "sand" | "stone").
+## Two one-shot hints (toasts) teach the island's chain puzzles where they are: the first bronze ring at the
+## broken passage, and the boulder in front of cave mouth B (and a word once it seals the crack).
 ##
 ## Collision: everything solid is a StaticBody3D on layer 1 (terrain trimesh per chunk, simple shapes for trunks,
 ## rocks, houses, walls and fences, trimesh for the cave lid and tunnel roofs). The boulder is on layer 4.
@@ -51,6 +54,8 @@ var _cave := {}
 var _boat: Node3D = null
 var _built := false
 var _grass: Node3D = null
+var _hint_t := 0.0
+var _hints := {}
 
 
 func build(seed_value: int = 1) -> void:
@@ -124,7 +129,7 @@ func _apply_terrain_material() -> void:
 	tm.set_shader_parameter("detail_tex", terrain.detail_tex)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if cave_builder == null:
 		return
 	var cam := get_viewport().get_camera_3d()
@@ -133,6 +138,41 @@ func _process(_delta: float) -> void:
 		# No meadow inside the Lion's cave: the grass grids follow the camera and would cost ~250k vertices there.
 		if _grass != null:
 			_grass.visible = cave_amount(cam.global_position) < 0.6
+	_hint_t -= delta
+	if _hint_t <= 0.0:
+		_hint_t = 0.3
+		_check_hints()
+
+
+## One-shot hints where the island teaches the chain (each once per run, only while playing): the first bronze
+## ring of the broken passage, the boulder in front of mouth B, and a word when the boulder seals the crack.
+func _check_hints() -> void:
+	if not Game.is_playing() or Game.arg_on("nohints"):
+		return
+	var h = Game.hero
+	if h == null or not is_instance_valid(h) or not (h is Node3D):
+		return
+	# not under a frieze card (the labour card shows on reaching the cave): the toast would be hidden behind it
+	var ui = Game.ui
+	if ui != null and is_instance_valid(ui) and "cards" in ui and ui.cards != null and ui.cards.has_method("is_showing") \
+			and bool(ui.cards.call("is_showing")):
+		return
+	var p: Vector3 = (h as Node3D).global_position
+	if not _hints.has("ring") and Vector2(p.x - L.PASS_SOUTH.x, p.z - L.PASS_SOUTH.y).length() < 16.0:
+		_hints["ring"] = true
+		Game.say("Lanza la cadena con {chain}", "Apunta a la argolla de bronce: te llevará hasta ella", "chain")
+	var b = _cave.get("boulder")
+	if b == null or not is_instance_valid(b) or not b.has_method("is_blocking") or not _cave.has("seal_b"):
+		return
+	var sealed: bool = bool(b.call("is_blocking", _cave["seal_b"], 1.2)) and float(b.call("speed")) < 0.2
+	if sealed:
+		if not _hints.has("sealed"):
+			_hints["sealed"] = true
+			_hints["boulder"] = true
+			Game.say("La grieta, tapada", "El león ya no podrá escapar por aquí", "info")
+	elif not _hints.has("boulder") and p.distance_to(_cave["entrance_b"]) < 14.0:
+		_hints["boulder"] = true
+		Game.say("Engancha la roca con {chain}", "Desde la grieta, mantén y tira: la tapará", "chain")
 
 
 # --- API -----------------------------------------------------------------------------------------------------
@@ -178,6 +218,26 @@ func cave_amount(pos: Vector3) -> float:
 	if k <= 0.0:
 		return 0.0
 	return clampf(k, 0.0, 1.0) * (1.0 - smoothstep(L.CAVE_FLOOR + 8.0, L.CAVE_FLOOR + 11.0, pos.y))
+
+
+## The ground's sound under the hero's feet at `pos` (Hero._footstep plays step_<surface>_1..3): "stone" in the
+## cave, on paths and paving, on steep rock and on anything built (the feet above the terrain: the pier, a rock,
+## steps), "sand" on the beaches, "grass" elsewhere.
+func surface_at(pos: Vector3) -> String:
+	if cave_amount(pos) > 0.3:
+		return "stone"
+	var gy: float = terrain.height_at(pos.x, pos.z)
+	if pos.y > gy + 0.3:
+		return "stone"
+	var coast: float = terrain.field(terrain.sd, pos.x, pos.z)
+	var beach: float = (1.0 - terrain.field(terrain.cliff, pos.x, pos.z)) * (1.0 - smoothstep(9.0, 17.0, coast)) * (1.0 - smoothstep(2.6, 3.6, gy))
+	if beach > 0.5 or gy < 0.25:
+		return "sand"
+	if terrain.field(terrain.path_w, pos.x, pos.z) > 0.5 or terrain.field(terrain.pad_w, pos.x, pos.z) > 0.6:
+		return "stone"
+	if terrain.normal_at(pos.x, pos.z).y < 0.78:
+		return "stone"
+	return "grass"
 
 
 ## Gentle (< ~35 degrees), dry ground.

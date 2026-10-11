@@ -106,8 +106,10 @@ func _rings() -> void:
 		[L.PASS_SOUTH + Vector2(2.2, -0.5), PI, 3.2, "Paso roto (sur)"],
 		# On the stack's flat top (faces south: you zip to it from the south rim).
 		[L.PASS_STACK, 0.0, 2.9, "Paso roto (farallón)"],
-		# North rim (faces south, towards the stack).
-		[L.PASS_NORTH + Vector2(-1.6, 1.0), 0.0, 3.2, "Paso roto (norte)"],
+		# North rim (faces south, towards the stack), 2.5 m back from the rim's lip (integration fix: at the lip the
+		# zip set the hero down on the steep edge in front of the stone, wedged between it and the drop; here he
+		# lands on the flat top of the rim).
+		[L.PASS_NORTH + Vector2(-1.6, -1.5), 0.0, 3.2, "Paso roto (norte)"],
 	]
 	var scr: Script = load("res://scripts/props/chain_ring.gd") if ResourceLoader.exists("res://scripts/props/chain_ring.gd") else null
 	for d in defs:

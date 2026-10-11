@@ -98,8 +98,14 @@ static func tween(n: Node) -> Tween:
 	return t
 
 
-## Real seconds for this frame, undoing Engine.time_scale (hit-stop, slow motion).
+## Real seconds for this frame, undoing hit-stop and slow motion: Game.real_delta() (the time scale the frame's
+## delta was really made with; Engine.time_scale already holds the next frame's, 50 times smaller on the first
+## frame of a hit-stop), or delta / Engine.time_scale without the Game autoload.
 static func rdelta(delta: float) -> float:
+	var ml := Engine.get_main_loop()
+	var g: Node = (ml as SceneTree).root.get_node_or_null(^"Game") if ml is SceneTree else null
+	if g != null and g.has_method("real_delta"):
+		return minf(float(g.call("real_delta", delta)), 0.1)
 	return minf(delta / maxf(Engine.time_scale, 0.001), 0.1)
 
 

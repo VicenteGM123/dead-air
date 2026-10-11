@@ -3,12 +3,12 @@ extends Node3D
 ## Builds the scene in this order: TimeOfDay (golden afternoon), Sea, World.build(), Fx, Hero at
 ## World.player_start(), CameraRig, ToonScreen (outlines + grade, always on), UI. Hooks for the other streams:
 ##   world        World (scripts/world/world.gd, WORLD stream)
-##   _make_ui()   the UI root (scripts/ui/ui.gd when the UI stream delivers it; until then the title placeholder)
+##   _make_ui()   the UI root (scripts/ui/ui.gd: title menu, HUD, prompts, cards)
 ##   spawn_encounters()   wolves / boars from World.spawn_groups(): scripts/enemies/<kind>.gd when it exists
 ##   victory()    called by the lion encounter
 ## Debug args (docs/ARCHITECTURE.md): play=1 skips the title, noui=1, tod=<mood>, cam=fly pos=x,y,z yaw=deg
 ## pitch=deg, seed=N, start=x,y,z (hero start), wade=<m> (start in water that deep), face=deg, dummies=1,
-## phystest=1, scene=arena.
+## phystest=1, scene=arena, corebot=1|<tests> (CORE's island bot, tools/nemea_bot.gd; with play=1, quit=1).
 
 const UI_PATH := "res://scripts/ui/ui.gd"
 const RESPAWN_DELAY := 3.0
@@ -74,6 +74,11 @@ func _ready() -> void:
 	if Game.arg_on("phystest"):
 		var pt: Node = load("res://tools/phys_test.gd").new()
 		add_child(pt)
+	if Game.has_arg("corebot") and ResourceLoader.exists("res://tools/nemea_bot.gd"):
+		# CORE's integration bot on the island (tools/nemea_bot.gd): passage, boulder, cave, swim
+		var nb: Node = load("res://tools/nemea_bot.gd").new()
+		nb.set("main", self)
+		add_child(nb)
 	if Game.arg_on("play") or Game.arg("cam", "") == "fly" or not _wants_title():
 		start_game()
 	else:
@@ -112,10 +117,9 @@ func _start_transform() -> Transform3D:
 
 
 func _make_ui() -> void:
-	if Game.arg_on("noui"):
+	if Game.arg_on("noui") or not ResourceLoader.exists(UI_PATH):
 		return
-	var path := UI_PATH if ResourceLoader.exists(UI_PATH) else "res://scripts/ui/title_card.gd"
-	ui = (load(path) as Script).new()
+	ui = (load(UI_PATH) as Script).new()
 	ui.name = "UI"
 	add_child(ui)
 	Game.ui = ui
@@ -155,7 +159,7 @@ func show_title() -> void:
 	hero.input_enabled = false
 	cam.set_orbit(world.ground(Vector3(0, 0, 40)) + Vector3(0, 6, 0), 150.0, 48.0, 2.0)
 	cam.yaw = 160.0
-	Sfx.music("title")
+	Sfx.music("explore")
 	if ui and ui.has_method("show_title"):
 		ui.call("show_title")
 
@@ -165,7 +169,7 @@ func start_game() -> void:
 	hero.input_enabled = true
 	if cam.mode != "fly":
 		cam.follow(hero)
-	Sfx.music("day")
+	Sfx.music("explore")
 	if ui and ui.has_method("show_play"):
 		ui.call("show_play")
 
@@ -198,13 +202,16 @@ func victory() -> void:
 
 func _process(delta: float) -> void:
 	if _respawn_t > 0.0:
-		_respawn_t -= delta / maxf(Engine.time_scale, 0.01)
+		_respawn_t -= Game.real_delta(delta)
 		if _respawn_t <= 0.0:
 			_respawn()
 
 
 func _gate_input(event: InputEvent) -> void:
 	if Game.phase == Game.Phase.TITLE:
+		# a UI whose title is a menu (ui.owns_title()) starts the game itself (main.start_game from "Comenzar")
+		if ui and ui.has_method("owns_title") and bool(ui.call("owns_title")):
+			return
 		var go: bool = (event is InputEventKey and event.pressed and not event.echo) \
 			or (event is InputEventMouseButton and event.pressed) \
 			or (event is InputEventJoypadButton and event.pressed) \

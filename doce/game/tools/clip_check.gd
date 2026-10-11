@@ -8,7 +8,7 @@ extends Node3D
 ##    ellipsoid) when it has one, else the ellipsoid inscribed in that part's mesh AABB, shrunk by TOL;
 ##  - feet in the ground or floating: the lowest vertex of the rig on idle and run poses must stay within
 ##    [-0.03, +0.06] m of the rig origin (rigs stand with their origin on the ground).
-##   godot --headless --path . res://tools/clip_check.tscn -- rig=res://scripts/gfx/rig_hero_standin.gd
+##   godot --headless --path . res://tools/clip_check.tscn -- rig=res://scripts/gfx/rig_heracles.gd
 ##   (optional: actions=attack1,heavy  verbose=1)
 ## Prints the poses with issues and "CLIP_CHECK poses=N with_issues=M".
 
@@ -21,9 +21,7 @@ var _verts := {}
 
 
 func _ready() -> void:
-	var path: String = Game.arg("rig", "res://scripts/gfx/rig_hero_standin.gd")
-	if path == "res://scripts/gfx/rig_hero_standin.gd" and ResourceLoader.exists("res://scripts/gfx/rig_heracles.gd") and not Game.has_arg("rig"):
-		path = "res://scripts/gfx/rig_heracles.gd"
+	var path: String = Game.arg("rig", "res://scripts/gfx/rig_heracles.gd")
 	rig = (load(path) as Script).new()
 	add_child(rig)
 	await get_tree().process_frame

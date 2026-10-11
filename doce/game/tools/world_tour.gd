@@ -176,7 +176,9 @@ func _walk() -> void:
 	leg2.append(Vector2(ac.x, ac.z) + Vector2(-out_a.y, out_a.x) * 3.0)
 	leg2.append(Vector2(ac.x, ac.z) + out_b * 6.0)
 	leg2.append(Vector2(eb.x, eb.z))
-	leg2.append(Vector2(eb.x, eb.z) + out_b * 6.0)
+	# out of the crack onto the apron and round the boulder, which waits ~7 m out on the crack's axis
+	leg2.append(Vector2(eb.x, eb.z) + out_b * 3.0)
+	leg2.append(Vector2(eb.x, eb.z) + out_b * 3.5 + Vector2(-out_b.y, out_b.x) * 4.0)
 	var t0 := Time.get_ticks_msec()
 	var r1 := await _drive(leg1, "pier -> passage south rim")
 	# The crossing: the chain spear's zip (CORE) is simulated by a teleport onto the north rim.

@@ -236,6 +236,7 @@ and the new throw goes at once. A light target's or a beast's death releases it.
 | Recentring | after 1.4 s without look input, behind a hero moving faster than 2.5 m/s (rate 0.7 x clamp(speed / 6, 0.4, 1.4) per s, x0.25 at full combat weight); never while dodging (`Hero.is_dodging()`: a roll sideways does not swing the view) |
 | Chain | not locked on and nothing else framed, while the spear is thrown, flying, zipping, climbing or hanging (`Hero.chain_focus()`): the view turns 25 degrees round to the chain arm's side (the left) and 1.2 m over that shoulder (eased 6/s, at most 120 degrees/s; the right side when the left is blocked), so the chain crosses the screen on a diagonal instead of running away down the view axis behind his back. Measured (`probe=chainscreen`): at least 4 links of chain on screen (not behind his body or the world) in 93 % of the frames from the release to the arrival of a ledge zip thrown at what the camera looks at, 96 % for the ring on the sea stack (about 0 % before this view) |
 | Guarding | not locked on: no shoulder offset to the right (the shield on his left arm shows past his body) |
+| Narrow passages | (merge) walls within 2.4 m on both sides of the line from the hero to what is framed (`_tight_across`, every 0.1 s: mouth B's crack, the cave's tunnels): the interest and chain framings drop their yaw and shoulder offsets (straight behind him, along the passage), their turn is 3x faster, and the obstacle steering (orbit, raise) leaves the view to them; it used to swing the arm round to the open apron while he backed the boulder into the crack, squeezing it into his helmet. Measured on Nemea's boulder haul (with mouth B's final, lower arch): never within 1.2 m of his head (closest 1.40 m; before: 0.98 m for 0.5 s), then 4.5-4.8 m inside the tunnel looking out past him at the boulder. Left: while he is still in front of the face, the boulder's soft framing (32 degrees round) can leave him half hidden by the jamb for ~1 s before he backs into the crack and the view swings in behind him |
 | Foes in the way | foes are not on the camera's layer (the view never swings round a wolf), so one that comes within 0.4 m of the line from the lens to the hero's head, or within 1.5 m of the lens, fades to a 55 % screen door (`Rig.set_fade`, lowpoly `fade`, eased 8/s) and back; never the beast being wrestled |
 | Cut-out | world props in group `camera_cut` (GeometryInstance3Ds with the lowpoly material: the arena's pillars and sea stack; WORLD should add the lion cave's pillars) are cut by a screen door (lowpoly `cut_*`, 80 %) where they stand between the lens and the subject (within 0.8 m of the line from the lens to the hero's chest, 1.2 m to the middle of a wrestle, and at least 0.7 m nearer the lens than it) or within 2.6 m of the lens; never in shadow maps |
 | Framing side | the shoulder side flips only while framing a target hidden from the current side and visible from the other (the camera's own sphere cast for the arm: under 60 % clear) |
@@ -347,7 +348,7 @@ The target drives the rhythm; the hero answers. Group `"grapplable"` plus these 
 
 | Direction | Call | When |
 |---|---|---|
-| hero -> target | `can_grapple(hero) -> bool` | every tick while the hero looks for something to use (true: interact starts the wrestle, the UI shows `interact_info()` if the target has it) |
+| hero -> target | `can_grapple(hero) -> bool` | every tick while the hero looks for something to use (true: interact starts the wrestle, the UI shows `interact_info()`: the Enemy base answers "Agarrar") |
 | hero -> target | `grapple_anchor(hero) -> Transform3D` | at the start and every tick of the wrestle: where the hero's origin goes, its basis -Z the way he faces. `RigHeracles.GRAPPLE_HOLD` (0, 1.17, -0.43) is where his arms lock: put the beast's neck / head there. The hero eases onto it sliding round the world (`move_and_collide`, the beast itself off his mask), so he never enters a pillar, but a spot that is not free leaves him short of it with his arms off the head: pick a free spot (a beast stunned against a pillar: not between its head and the pillar, and preferably on the side away from it, `slam_normal`, so the hero and the camera have room; the straw bull tries its front and 22.5-90 degrees round either side of its head with a capsule query, once per wrestle, scoring the free ones by closeness to the front and to `slam_normal`, else the side with the most room) |
 | hero -> target | `grapple_begin(hero)` | once, when it starts (the hero eases onto the anchor, stops colliding with enemies, plays `grapple_start` then `grapple_loop`) |
 | target -> hero | `hero.grapple_cue(window)` | a squeeze beat: a window of `window` s (the hero shows a glint on the hold) |
@@ -355,6 +356,7 @@ The target drives the rhythm; the hero answers. Group `"grapplable"` plus these 
 | target -> hero | `hero.grapple_thrash(cost)` | the beast throws its weight about: `cost` stamina, a fifth of it if the hero holds guard; out of stamina the hero is thrown off (knockback 6 m/s, `hit_heavy`) |
 | target -> hero | `hero.grapple_release(won)` | the target ends it: `won` = the beast is beaten |
 | hero -> target | `grapple_end(hero, won)` | **always**, once, whatever ended it (released, thrown off, the hero hurt by someone else, dead); must be idempotent |
+| UI -> target | `grapple_progress() -> float` (optional) | 0..1 (good squeezes of the ones it takes; the Enemy base returns -1: unknown): the UI's wrestle prompt fills its ring with it. The prompt also reads `hero.grapple_window_left()` (gold "¡Aprieta!" while a window is open) and the target's `telegraph_left()` ("¡Aguanta!" with the guard key while a thrash winds up) |
 
 The hero lays his sword and shield on the ground beside him when the wrestle starts (bare hands, as Heracles with
 the lion; the shield would cut into the beast's head: `RigHeracles.set_weapons_aside(true)` + two props at his
@@ -490,12 +492,15 @@ pier), and the camera watch (the hero's head always in sight from the camera - a
 query cannot tell "inside" on the island's trimesh terrain and cave -, never within 1.2 m of his head for 0.35 s,
 never under the sea). `corebot=boulder_search` tries 20 pull spots round mouth B and prints where the boulder ends.
 
-Status (2026-10-10, live world of that day, again with the world of commit 330989b and with the step-3 code on the
-live project of commit cb141ba): start, passage, cave, swim and the camera watch PASS. **boulder FAILS
-because of the layout**: from its spot beside mouth B the boulder is wedged between the cliff foot (the cave mesh,
-normal (0.12, 0.42, 0.90)) and a 28-degree rise of the terrain 4.5 m from the mouth point whatever the hero does
-(20 pull spots, best 4.47 m), and the hero cannot walk past ~0.6 m on the far side of the opening. The World's
-"clear run" checks the ground under the path, not the boulder's 1.3 m sphere against the cave mesh. For WORLD: put
-the boulder on the mouth's axis (e.g. `entrance_b + dir_b * 5`, flat ground, nothing of the cave mesh within 1.4 m
-of the line to the arch), or check the run with a sphere cast of radius 1.3 on layer 1; the haul itself works (arena
-test `boulder`).
+Status (merge, 2026-10-11): **6/6 PASS** (start, passage, boulder, cave, swim, camera watch). Until the merge the
+boulder test failed because of the layout (from its spot beside mouth B the boulder wedged between the cliff foot
+and a 28-degree rise of the apron, and mouth B's `entrance_b` lay 4-6 m behind the opening's outer face). The World
+now measures each mouth arch at build time: `entrance_a` / `entrance_b` are the floor points just inside each
+opening's outer face, `cave().seal_b` is where a boulder hauled straight in along the axis comes to rest against the
+face, and the boulder waits 5.5 m out in front of the crack on its axis (mouth B's arch is 2.1 m wide and 3.3 m high).
+The test: bite the boulder from in front of the crack, hold the chain and back into the crack: it rolls up to the face
+and stops 0.25 m from `seal_b`, and no hero-sized capsule fits past it any more. The north rim's ring stone also moved 2.5 m back from the lip (the zip set
+the hero down wedged on the cliff edge in front of it). `corebot=walk` walks the slice with the real hero: pier ->
+village (a cat petted: the hero rig plays `pet`, the camera turns to show the cat) -> the forest road -> the passage by
+the two rings -> the thumb and the ridge meadow -> the Altar de la Sierra (hurt, prayed: healed and the checkpoint;
+then felled: back at the altar) -> cave mouth B -> the boulder hauled into the crack; `walkfast=1` for renders.

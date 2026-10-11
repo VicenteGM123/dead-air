@@ -1,14 +1,10 @@
 extends Object
 ## Static helpers so tools/preview.tscn can show character rigs, e.g.
 ##   godot --path . res://tools/preview.tscn -- script=res://tools/preview_rigs.gd fns=hero,hero_run,dummy cam=low
-## The hero is rig_heracles.gd when the HERO stream has delivered it, else the stand-in. Add the beasts here as the
-## BESTIARY stream delivers them (wolf, boar, lion).
+## The hero is RigHeracles. Add the beasts here as the BESTIARY stream delivers them (wolf, boar, lion).
 
 static func _hero_rig() -> Rig:
-	var path := "res://scripts/gfx/rig_heracles.gd"
-	if ResourceLoader.exists(path):
-		return (load(path) as Script).new()
-	return RigHeroStandIn.new()
+	return RigHeracles.new()
 
 
 static func hero(_seed: int) -> Node3D:
