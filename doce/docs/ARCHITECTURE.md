@@ -7,7 +7,9 @@ Combat, the chain spear, the camera and every feel number: `docs/COMBAT.md`.
 
 This file describes the game as it is implemented after the merge of the streams (2026-10-11: the skeleton, CORE's
 combat / chain spear / camera / hero rig, WORLD's Nemea, BESTIARY's beasts, UI+AUDIO) and the ENCOUNTERS merge (later
-on 2026-10-11: the wolf packs and boars, the Nemean Lion; the slice is playable from the title to the boat):
+on 2026-10-11: the wolf packs and boars, the Nemean Lion; the slice is playable from the title to the boat) and the
+final integration (the night of 2026-10-11: the anime meadow over the whole island, the wheat field, the shared wind,
+the hero's free hand brushing the wheat; the published web build, section 10.3):
 layout, autoloads, every contract between the work streams (with real signatures), physics, input, debug arguments,
 how to run, render and test, and who owns what. The encounters themselves (behaviours, numbers, tests):
 `docs/ENCOUNTERS.md`.
@@ -27,6 +29,7 @@ godot --path . -- play=1 corebot=walk        # the island bot walking the slice 
 godot --path . res://tools/encounters.tscn -- encbot=all quit=1   # the wolves and boars bot (docs/ENCOUNTERS.md 1.8)
 godot --path . -- play=1 lionbot=units quit=1                    # the lion's bot (docs/ENCOUNTERS.md 2.9)
 godot --path . res://tools/playthrough.tscn -- ptbot=1 quit=1    # the whole slice, title to boat (section 9)
+godot --path . res://tools/wheat_walk.tscn -- enemies=0          # the free hand in the wheat (test; section 9)
 godot --headless --path . --import           # (re)import after adding class_name files or assets
 ```
 
@@ -93,7 +96,7 @@ doce/
       combat/blade_trail.gd   BladeTrail: the sword's crescent trail · combat/motion_trail.gd: the flying spear's trail
       camera/camera_rig.gd    CameraRig: third-person follow (own sphere-cast arm, obstacle orbit, whiskers), lock-on,
                               soft framing of what the hero fights / hauls / wrestles, the chain's diagonal view,
-                              foes faded and pillars cut away in front of the lens, shake + nudge, fly / orbit
+                              foes faded, pillars and foliage cut away in front of the lens, shake + nudge, fly / orbit
       enemies/enemy.gd        Enemy (CharacterBody3D): base class with the damage / lock / chain / grapple contracts,
                               telegraphs, poise and flinch, stun, the beast's slide and slam (docs/COMBAT.md 6)
       enemies/training_dummy.gd  TrainingDummy: straw posts, sacks (light chain targets), straw soldiers, a sparring post
@@ -128,8 +131,19 @@ doce/
                               dolphins, butterflies / fireflies, hearts and splashes (no PHAROS dependency)
       world/time_of_day.gd    TimeOfDay: environment, sun, moods (golden by default), every lighting global
       world/sea.gd            Sea: the toon sea planes that follow the camera; surface_y() = the animated swell
-      world/grass.gd          Grass: GPU grass, three camera-following MultiMesh grids (near, far, flowers) fed by
-                              the World's textures (shaders/grass.gdshader); hidden while the camera is in the cave
+      world/anime_meadow.gd   AnimeMeadow: the grass of the whole island (Trung Duy Nguyen's anime-grass method):
+                              low-poly clumps on the GPU in three camera-following MultiMesh rings (near 3D clumps, mid
+                              and far painted billboards), the mound field that shades grass and ground as one surface,
+                              wild-flower drifts; the ground under it is painted as the grass mass (terrain.gdshader);
+                              green meadows, darker forest floor, lighter village lawns and the sunburnt gold of the
+                              dry zones (the thumb, the west plateau, the hill tops) all come from the ground colour;
+                              hidden while the camera is in the cave
+      world/wheat_field.gd    WheatField: the golden wheat on the west ramp (the main road climbs through it): ground
+                              ramp, ear canopy, 3D ear clumps near the camera, painted ear cards, edge cards, the farm
+                              (threshing floor, sheaves, dry-stone wall, olive, cypresses); in_field(), ear_top()
+      world/wind.gd           Wind: the one wind (global shader uniforms every frame) and the pushers that part the
+                              grass and the wheat (the hero, his brushing hand, the nearest live beasts)
+      world/grass.gd          Grass: the island's previous GPU grass, built only with grassold=1 (debug fallback)
       gfx/toon_screen.gd      ToonScreen: always-on outline/rim quad + final grade (Wind Waker look)
       gfx/mesh_builder.gd     MeshBuilder: low-poly mesh kit (flat/auto-smoothed normals, vertex colours, xf stack)
       gfx/materials.gd        Materials (static): shared materials + set_param() (per-node, web-safe)
@@ -144,6 +158,9 @@ doce/
                               per beast; RigWolf.Quadruped: spine, two-bone leg IK, planted feet, body ground clamp)
       gfx/rig_boar.gd         RigBoar · gfx/rig_lion.gd  RigLion (section 5.8; glowing eyes, closed mouths)
       gfx/pal_extra.gd        PalExtra: extra rock/sea tones
+      gfx/meadow_kit.gd       MeadowKit: meshes and textures of the meadow and the wheat (clumps, billboards, flowers,
+                              ear clumps, the mound texture, ground strokes) + shader_variant() (#define variants)
+      gfx/meadow_paint.gd     MeadowPaint: code-painted textures (wheat card atlas, wheat top, brushes)
       fx/fx.gd                Fx: pooled particles (dust, smoke, splash, sparks, motes), rings, lightning
       ui/ui.gd                the UI root (Game.ui, Game.hud): title / pause / options / controls menus, HUD (+ the
                               lock reticle and the chain spear's mark), world prompt (+ the wrestle's), banners,
@@ -152,7 +169,9 @@ doce/
       ui/style.gd widgets.gd glyphs.gd icons.gd   UI kit (fonts, panels, key caps for DOCE's actions, icons)
     shaders/       pharos.gdshaderinc (shared lighting pipeline: sRGB, toon ramp, fog, ambient, cloud shade),
                    lowpoly, terrain, grass, water, sky + toon_sky.gdshaderinc, toon_edges, toon_post, glow, fx,
-                   nyx, beam, beam_cone, mist_column
+                   nyx, beam, beam_cone, mist_column; the meadow and the wheat: meadow_grass, meadow_bloom,
+                   meadow_lib.gdshaderinc, grass_common.gdshaderinc, wind.gdshaderinc, wheat_canopy, wheat_ears,
+                   wheat_lib.gdshaderinc
     assets/fonts/  Cinzel, EB Garamond (+ SIL OFL) · assets/audio/{sfx,music,amb}/*.ogg (DOCE's 78 sounds,
                    generated by doce/tools/audio; docs/AUDIO.md)
     tools/         arena.tscn/.gd + arena_world.gd (combat arena: posts, sacks, sparring post, ring zones, sea gap,
@@ -166,7 +185,8 @@ doce/
                    with draw stats), ui_flow_test.tscn/.gd (title / pause / HUD wiring, needs a window),
                    encounters.tscn/.gd + encounter_bot.gd (the wolves and boars bot, lane P), lion_bot.gd (the
                    lion's bot, loaded by the encounter with lionbot=), playthrough.tscn/.gd + playthrough_bot.gd (the
-                   whole slice from the title to the boat, section 9)
+                   whole slice from the title to the boat, section 9), wheat_walk.tscn/.gd (the free hand in the
+                   wheat: test, stills, GIF frames)
     web/           shell.html (custom loading screen) and site/ (shell fonts, og.jpg)
 ```
 
@@ -430,7 +450,16 @@ func boat() -> Node3D                                # the ship to Lerna (Intera
 var terrain_body: StaticBody3D                       # the terrain collision (tools/phys_test.gd)
 var ambient: Node3D                                  # the fauna (Ambient), null with fauna=0
 var stats: Dictionary                                # build timings and counts
+var grass: Node3D        # AnimeMeadow (null with grassold=1: then the old Grass is built; _grass is either one)
+var wheat: Node3D        # WheatField (null with wheat=0): in_field(x, z) -> 0..1 field weight (0 on the road and
+                         # its verges), ear_top(x, z) -> m of wheat over the ground there, edge_poppies(x, z)
+var wind: Wind           # the shared wind (always built)
 ```
+Pushers (Wind, every frame): slot 0 is `Game.hero` (radius 0.95 m, or his meta `push_radius`: 0.5 m while his hand
+brushes the wheat, so the ears stand where the hand is), slots 1-3 the nodes nearest the camera among the group
+`grass_pushers` (meta `push_radius`, default 0.9 m: the hero's brushing hand, 0.15 m) and the live beasts of group
+`enemy` within 40 m of the camera (radius = their body radius x 2.2, 0.8-1.4 m: wolves and boars part the grass and
+the wheat by themselves). Each has a ~1 s trail, so the stalks spring back behind it.
 `cave()`: `entrance_a` / `entrance_b` are the floor points just inside each opening's outer face in the cliff (the
 mouth arches are measured at build time: their faces stand 4-6 m out from where the tunnel roofs start); it also
 carries `inner_a` / `inner_b` (the points behind the arches, at the tunnels' ends), `seal_b` (where the boulder's
@@ -526,6 +555,15 @@ func grapple_window_left() -> float      # the open squeeze window (s), for the 
 func recoil(point: Vector3, strong: bool)         # a deflected blade (HeroMelee)
 func on_spear_stuck(target, kind); func on_spear_missed()   # ChainSpear -> hero
 ```
+**The free hand in the wheat** (FINAL, the client's "Gladiator" shot; `Hero._feed_brush`, called from `_feed_rig`
+every tick): walking, or at his normal pace (not sprinting), on the ground, in MOVE, no guard, no lock, no action on
+the rig and no live foe within 9 m for 1.2 s, with wheat (`world.wheat.in_field`) where his left hand would be (0.62 m
+to his left), he asks the rig for `set_brush(weight, wrist_height)`: the weight (full up to 3 m/s, 0.85 at run speed,
+none when sprinting) and the wrist height (the ears' tops there, `wheat.ear_top`, + 4.5 cm). While the hand is out
+his own push radius shrinks (meta `push_radius` 0.95 -> 0.5 m) and the hand's pivot joins `grass_pushers` (0.15 m):
+the ears it passes dip and spring back. On keyboard the normal pace is the run (6.2 m/s), so the brush works at it
+too, with the hand trailing a little lower and further out; with a stick tilted halfway he walks (2.2 m/s).
+
 The hero is CORE's combat character; every number (speeds, the combo's frames, hit-stops, shakes, stamina, the
 roll, the guard and parry, the chain's moves, the camera) is in docs/COMBAT.md. In short: a 3-blow combo that starts
 on the press, a heavy spin coiled out of the follow-through when the button stays down, magnetism and a lunge
@@ -585,10 +623,20 @@ func play_at(action: String, speed := 1.0, upper := false) -> float   # upper: t
 func stop_action(blend := 0.15); var charge: float; var tired: float; func guard_impact(k := 1.0)
 func set_ground(dy_r: float, dy_l: float, normal: Vector3, on: bool)  # foot IK (Hero._probe_feet)
 func reset_cloth()                      # the cape and crest restart at rest (Hero.teleport; > 3 m jumps)
+func set_brush(amount: float, wrist_height := 1.06)   # FINAL: the free hand over the wheat, 0..1 (eased in ~0.45 s,
+                                        # out ~0.3 s, faded by the guard, overridden by any action); brush_amount()
 # play(): attack1 attack2 attack3 heavy parry dodge backstep recoil jump land hit hit_heavy death throw pull catch
 #         climb grapple_start grapple_loop grapple_end interact pet don_skin victory
 #         (events: impact, swing, release, pull, step, rearm, move ...)
 ```
+The brush (`_brush_pose` in `_ground_pose`, `_brush_shield` in `_apply_bones`): the left hand lets go of the shield's
+grip, opens palm down with the fingers fanned out, back and down into the ears, out beside the hip (rig space, so it
+glides level while the body bobs), swaying with the stride and riding over the ears twice a stride; the shield rides
+up the arm onto the upper arm (walking: strapped there, face out and forward, its inside showing from behind; at a
+run: its band at the elbow, face out) so the forearm and the hand come out free under its rim; the cape's shield
+collider follows it. `tools/wheat_walk.tscn` measures it (the shield's rim and lip against the body's keep-out volumes
+and the pauldron: clear at a walk and at a run). `tools/preview.tscn -- script=res://tools/preview_heracles.gd
+fns=hero speed=1.6 brush=1` poses it without the wheat.
 `tools/clip_check_heracles.tscn` checks it (2602 samples: 847-900 contacts deeper than 8 mm, varying run to run with
 the cape cloth; the deepest are the cape against the left arm and the shield in the heavy spin and the strafe,
 docs/COMBAT.md 7). `tools/preview.tscn -- script=res://tools/preview_heracles.gd fns=sheet` draws turntables. The
@@ -654,7 +702,9 @@ what is framed: mouth B's crack, the tunnels) those framings sit straight behind
 obstacle steering leaves the view to them (merge fix: hauling the boulder into the crack swung the arm round to the
 open apron and squeezed it into his helmet). Foes in front of the lens fade to a screen door (`Rig.set_fade`);
 props in group `camera_cut` (the arena's pillars and sea stack, the cave's pillars) are cut by a screen door
-(lowpoly `cut_*`) where they stand between the lens and the subject. Fly mode: WASD, E/Q up/down, Shift fast, mouse
+(lowpoly `cut_*`) where they stand between the lens and the subject; so is all the island's foliage (FINAL: materials
+with `cut_foliage`, through the globals `g_cut_a` / `g_cut_b`, a 1.3 m tube to the hero and everything within 2.6 m of
+the lens). Fly mode: WASD, E/Q up/down, Shift fast, mouse
 look after a click. Debug: `camdebug=1` prints the camera every frame. (ENCOUNTERS lane L, additive) the wrestle's
 view score (`_frame_score`) also asks the held beast for `wrestle_view_block() -> Vector4` (a centre and a radius:
 the lion's head and mane) and marks down a view that looks at the hero through it.
@@ -732,7 +782,8 @@ poise 99, blades deflected, `grapplable`: hurt only by the wrestle's squeezes) i
   `g_amb_ground`, `g_fog_color`, `g_fog_near`, `g_fog_far`, `g_sun_comp`, `g_night`, `g_time`, `g_sun_dir`,
   `g_sun_color`, `g_window`, `g_water_shallow`, `g_water_deep`, `g_foam`, `g_sky_top`, `g_sky_horizon`, `g_moon_dir`,
   `g_wind`, `g_toon`, `g_toon_shade`, `g_cloud_shadow`, `g_cloud_lit`, `g_cloud_shade`, `g_cloud_cover`,
-  `g_water_tex`, `g_water_rect`.
+  `g_water_tex`, `g_water_rect`; the grass lane's `g_wind_dir`, `g_wind_gust`, `g_push_a`, `g_push_b` (Wind) and the
+  camera's foliage cut `g_cut_a`, `g_cut_b` (CameraRig: lens and strength, subject and radius).
 - **Materials**: `lowpoly()`, `foliage(amount)`, `terrain()`, `grass()`, `water()`, `glow_add()`, `glow_star()`,
   `glow_flat()`, `fx_alpha()`, `nyx(rim)`, ...; per-node parameters only through
   `Materials.set_param(node, &"param", value)` (gives that node its own material copy). MeshBuilder vertex colour
@@ -741,6 +792,18 @@ poise 99, blades deflected, `grapplable`: hurt only by the wrestle's squeezes) i
   the lens) and `cut_k`, `cut_a`, `cut_b`, `cut_r`, `cut_lens` (the camera's cut-out of `camera_cut` props between
   the lens and the subject); both act in the view pass only, never in shadow maps. `fx.gdshader` `view_pull` draws
   a mesh nearer the camera in depth (the blade trail shows over the hero's own body).
+- **Grass, flowers and wheat** (AnimeMeadow, WheatField) are drawn in the ALPHA list (ALPHA = 1, depth_draw_always,
+  render_priority < 0: first among the transparents, front to back by ring) and write stencil 32;
+  `toon_edges.gdshader` draws no ink line / rim where stencil == 32. Do not use stencil value 32 for anything else.
+  (An opaque material that writes stencil would force Godot's depth prepass of the whole opaque list.) The meadow's
+  palette (meadow_lib.gdshaderinc) takes the zone from the ground colour: the dry zones' straw and olive garrigue turn
+  the same painted grass sunburnt gold (`mlib_dry`: red over green from -0.075 to 0.03).
+- **Wind** (scripts/world/wind.gd + shaders/wind.gdshaderinc): shader globals `g_wind_dir` (vec2, XZ direction),
+  `g_wind_gust` (vec4: strength, wavelength m, speed m/s, flutter), `g_push_a` / `g_push_b` (mat4: pusher heads /
+  tails); the mood's `g_wind` still scales everything. `lowpoly.gdshader`'s `sway` uses the same travelling gusts
+  (`wind_foliage()`), so trees and shrubs move with the meadow.
+- **Quality** (Settings "quality", read at build like the old Grass): density 0.6 / 0.85 / 1.0 (meadow) and
+  0.75 / 0.9 / 1.0 (wheat cards and clumps); the near wheat clumps have 4 stalks at quality 0, 6 above.
 - **Fx** (scripts/fx/fx.gd, `Game.fx`, packed-array pools: no allocation per particle): `dust(at, n, spread)`,
   `smoke(at, n, col)`, `splash(at, size)`, `hit_spark(at, dir, scale)`, `impact(at, dir, power, col)` (the blow's
   star flash, radial streaks and sparks), `glint(at, size, col, dur)` (telegraphs, the chain, the charged blow),
@@ -842,7 +905,11 @@ contains `dev=1`** (`index.html?dev=1&play=1&scene=arena`); the published page i
 | `phystest=1` | physics self-test; prints `DOCE phystest ... result=PASS/FAIL` |
 | `speed=k` | Engine.time_scale (0.1..8) |
 | `shadows=0/1`, `scale3d=k` | sun shadows; 3D resolution scale (cheap software-rendered tests) |
-| `grass=0` | no grass |
+| `grass=0` | no meadow at all: no clumps, billboards or flowers, and the ground keeps the plain terrain shading |
+| `grassold=1` | the island's previous Grass instead of the anime meadow (and the low-poly flower drifts back): debug only |
+| `clumps=0`, `flowers=0`, `mound=0`, `meadowk=k` | meadow: ground only / no flowers / no mound normal / mound strength |
+| `wheat=0` | no wheat and no farm (the field's ground ramp and the road through it stay); `canopy=0`, `wheatears=0`, `wheatcards=0`: one layer off |
+| `grassopaque=1` | A/B test only: grass, flowers and wheat in the opaque list (not for shipping) |
 | `noedges=1`, `nopost=1`, `edgedebug=1`, `mipdebug=n`, `stats=1` | toon passes off / debug views / draw stats |
 | `fogmul=k` | push the haze out (overview renders) |
 | `sbias=`, `snbias=`, `sblur=` | sun shadow bias / normal bias / blur |
@@ -853,6 +920,7 @@ contains `dev=1`** (`index.html?dev=1&play=1&scene=arena`); the published page i
 | `lionbot=<tests>` | (with `play=1`) the lion's bot: `units` (12 tests), `careless`, `fight_sealed`, `fight_open` (docs/ENCOUNTERS.md 2.9); `nocard=1`, `linger=<s>`, `fight_t=<s>` |
 | `ptbot=1` | (tools/playthrough.tscn) the playthrough bot: the whole slice from the title to the boat (section 9); `ptshots=<dir>` saves a PNG at each step (with a window) |
 | `wolfdebug=1`, `liondebug=1` | a line per broken-off wolf attack / per lion state change |
+| `outdir=<abs dir>`, `run=1`, `seq=<n>`, `seqcam=low\|close\|game`, `clipdebug=1` | (tools/wheat_walk.tscn) stills from the gameplay and cinematic cameras / at run speed / n frames at 15 fps for a GIF / print each shield clearance sample |
 
 Preview (`tools/preview.tscn`): `script=res://… fns=a,b n=3 spacing=6 cols=4 cam=game|low|top yaw=deg fov=30
 zoom=1 pose=action:seconds move=speed ground=RRGGBB tod=…`. Clip check: `rig=res://… actions=a,b verbose=1`.
@@ -905,6 +973,21 @@ timeout 2400 godot --headless --path doce/game res://tools/playthrough.tscn --fi
 timeout 3600 xvfb-run -a -s "-screen 0 1600x900x24" godot --path doce/game --rendering-driver opengl3 --resolution 1600x900 \
   --fixed-fps 30 --quit-after 120000 res://tools/playthrough.tscn -- ptbot=1 ptshots=<abs dir> quit=1
 ```
+**The free hand in the wheat** (tools/wheat_walk.tscn: the hero walks west through the wheat into the low sun; the
+hand must be out within 2.6 s of walking in, its fingers within 12 cm of the ears' tops, the shield it carries up the
+arm clear of his body, and back in under the guard and out of the field; `WHEAT brush ... result=PASS`; with a window
+and `outdir=` it saves stills from the gameplay camera and two low cinematic cameras; `run=1` at run speed;
+`seq=45 seqcam=low` 45 frames for a GIF):
+```sh
+timeout 600 godot --headless --path doce/game res://tools/wheat_walk.tscn --fixed-fps 60 --quit-after 4000 -- enemies=0 | grep WHEAT
+timeout 600 godot --headless --path doce/game res://tools/wheat_walk.tscn --fixed-fps 60 --quit-after 4000 -- enemies=0 run=1 | grep WHEAT
+```
+The grass everywhere, from the gameplay camera (world_tour shots: village_edge, forest, gl_wheat, gl_wheat_in,
+passage, boar_clear, herd, ridge, altar, cave_b, coast_sw, coast_e, gl_meadow, olives, village):
+```sh
+timeout 1500 xvfb-run -a -s "-screen 0 1600x900x24" godot --path doce/game --rendering-driver opengl3 --resolution 1600x900 \
+  res://tools/world_tour.tscn --quit-after 20000 -- shots=village_edge,gl_wheat,boar_clear,ridge,coast_sw outdir=<abs dir>
+```
 **Physics self-test** (also in water: add `start=-30,0,175 wade=1.6`):
 ```sh
 timeout 600 godot --headless --path doce/game --quit-after 900 -- play=1 phystest=1 | grep phystest
@@ -932,7 +1015,9 @@ node doce/tools/web_test.mjs <scratch>/report --dir <scratch>/web --only title,p
      --play-query "?dev=1&play=1&phystest=1&scale3d=0.25&nopost=1&noedges=1&grass=0&shadows=0"
 ```
 The test waits for `DOCE world ready` and `DOCE phase <NAME>` on the console (scenarios: shell, gate, title, flow,
-play, mobile, og). FPS numbers there come from SwiftShader (CPU) and mean nothing about real devices. Only a build
+play, mobile, og). FPS numbers there come from SwiftShader (CPU) and mean nothing about real devices. On a slow
+machine (frames of several seconds) the flow scenario can fail its check that the sound keeps running, older builds
+too (the single-threaded build mixes sound only between frames): run it again before reading that as a fault. Only a build
 that passes goes to `doce/web` (published at https://vicentegm123.github.io/dead-air/doce/web/).
 
 ---
@@ -951,6 +1036,7 @@ into `doce/game` and made the glue changes listed at the end of this section.
 | **BESTIARY** | `scripts/gfx/rig_wolf.gd` (+ the quadruped kit inside it), `rig_boar.gd`, `rig_lion.gd`, `tools/preview_beasts.gd`, `tools/clip_check_beasts.tscn/.gd` | **Landed** 2026-10-10. Implements 5.8; glowing eyes, no mouths. `godot --headless --path . res://tools/clip_check_beasts.tscn --quit-after 400000 -- beasts=wolf,boar,lion`: wolf x3 and boar 0 issues of 4835 samples, lion 25 of 1602 (paws dipping 1.4-4.3 cm on slopes and in the death fall, one gallop paw 6.8 cm up). |
 | **UI + AUDIO** | `scripts/ui/*` (`ui.gd` root), `scripts/core/audio.gd`, `assets/audio/*`, `assets/fonts/*`, `doce/tools/audio/*`, `docs/AUDIO.md`, `web/shell.html`, `web/site/*`, `tools/ui_flow_test.tscn/.gd` | **Landed** 2026-10-10. Implements 5.12; plays UI sounds itself. `ui.owns_title()` is true: the title is a menu. Debug: `uitest=<screen>`, `uitour=<dir>`, `uishot=<png>`. |
 | **ENCOUNTERS** (lane P: wolves and boars; lane L: the lion) | lane P: `scripts/enemies/wolf.gd`, `boar.gd`, `pack.gd` (BeastPack), `pack_nav.gd` (PackNav), `tools/encounters.tscn/.gd`, `tools/encounter_bot.gd`; lane L: `scripts/enemies/lion.gd`, `scripts/encounters/lion_encounter.gd`, `tools/lion_bot.gd`, the arena's dressing at the end of `scripts/world/nemea_cave.gd` (`perches()`, `crack_at()`, `_dress()`); the merge: `tools/playthrough.tscn/.gd`, `tools/playthrough_bot.gd`; `docs/ENCOUNTERS.md` | **Merged** 2026-10-11 (section 10.2). Spawned by `main.spawn_encounters()` from `World.spawn_groups()` (the packs form themselves) and `main.spawn_boss()` (the lion's encounter from `World.cave()`); emits `Game.boss_started/ended`, `labor_card`, calls `main.victory()`. Contracts: docs/COMBAT.md 6. Re-run `encbot=all`, `lionbot=units` (+ `fight_sealed`) and the playthrough after any change to the beasts, the hero's combat, the cave or the route. |
+| **GRASS** (lane G: the anime meadow, the wheat, the wind) | `scripts/world/anime_meadow.gd`, `wheat_field.gd`, `wind.gd`, `scripts/gfx/meadow_kit.gd`, `meadow_paint.gd`, `shaders/meadow_grass`, `meadow_bloom`, `meadow_lib.gdshaderinc`, `grass_common.gdshaderinc`, `wind.gdshaderinc`, `wheat_canopy`, `wheat_ears`, `wheat_lib.gdshaderinc`, `tools/wheat_walk.tscn/.gd` | **Landed** 2026-10-11 (section 10.3). Hooks in WORLD's `world.gd`, `nemea_layout.gd` (the main road through the wheat, `WHEAT_FIELD`), `nemea_terrain.gd` (`_wheat_ramp`), `nemea_props.gd` (`meadow_flowers`), `terrain.gdshader`; in CORE's `project.godot` (6 globals), `lowpoly.gdshader` (sway = the shared wind; the foliage cut), `toon_edges.gdshader` (stencil 32), the hero's brush (`hero.gd`, `rig_heracles.gd`). Re-run `tools/world_check`, `world_tour -- walk=1`, `wheat_walk` and the playthrough after any change to the field, the road or the hero's arms. |
 
 ### 10.1 The first merge
 
@@ -1002,6 +1088,65 @@ the fight with mouth B open on the merged tree); the playthrough 14/14 three tim
 live, and with 68 shots from the gameplay camera); the UI tour (11 screens); a web export (non-STRICT, to a scratch
 directory) and the web smoke test (title, play with `phystest`: PASS, no problems).
 
+### 10.3 The final integration (2026-10-11)
+
+On commit 608d790 (the ENCOUNTERS merge), the grass lane's delivery (13 new files, 8 shared files patched, with its
+`apply_live.sh`: every patch applied cleanly; `nemea_layout.gd` keeps lane P's 5-wolf pack), then this step's own
+work. Changes in other streams' files (all additive unless said):
+- **WORLD** (the delivery): `world.gd` (vars `grass`, `wheat`, `wind`; WheatField set up after the ground map, reserved
+  and given its farm; AnimeMeadow **replaces** the old Grass, which only `grassold=1` builds now; the Wind node),
+  `nemea_layout.gd` (the main road's 6 points from the wolf clearing to the passage **replaced** by 7 that climb
+  through the wheat; `WHEAT_FIELD`, the farm's constants), `nemea_terrain.gd` (`_wheat_ramp()`), `nemea_props.gd`
+  (`meadow_flowers`: the low-poly flower drifts are not drawn, their spots stay reserved), `terrain.gdshader` (the
+  ground under the meadow and the wheat painted as the grass mass; 5 lines replaced, the same result off the meadow).
+  This step: `tools/world_tour.gd` (12 more SHOTS: the grass everywhere from the gameplay camera).
+- **CORE** (the delivery): `project.godot` (globals `g_wind_dir`, `g_wind_gust`, `g_push_a`, `g_push_b`),
+  `lowpoly.gdshader` (the old sine sway **replaced** by the shared wind, `wind_foliage()`), `toon_edges.gdshader`
+  (no ink lines where stencil == 32). This step: the free hand in the wheat (`rig_heracles.gd`: `set_brush()`,
+  `brush_amount()`, `_brush_pose()` at the end of `_ground_pose()`, `_brush_shield()` from `_apply_bones()`, the
+  cape's shield collider follows the shield; `hero.gd`: `_feed_brush()` from `_feed_rig()`; `tools/preview_heracles.gd`:
+  `brush=`); the foliage cut-away (`project.godot`: globals `g_cut_a`, `g_cut_b`; `lowpoly.gdshader`: `cut_foliage`
+  and the capsule cut from those globals; `materials.gd`: `foliage()` sets `cut_foliage` 1; `camera_rig.gd`
+  `_cut_props()` writes the globals every frame, `CUT_R_FOLIAGE` 1.3 m): tree crowns and shrubs between the lens and
+  the hero, or within 2.6 m of the lens, are dithered away like the cave's pillars (the playthrough's shots showed the
+  view filled by a crown on the way back through the forest and the hero hidden behind a cistus in a boar clearing).
+- **GRASS** (this step, in the delivery's own files): `meadow_lib.gdshaderinc` `mlib_dry()` (from -0.075 to 0.03 of
+  red over green: the olive garrigue counted as green, so the thumb's boar clearings read as a green meadow where the
+  old grass was golden; now the dry zones are the same painted grass in straw gold, the green meadows unchanged);
+  `wind.gd` (the hero's radius from his meta `push_radius`; the live beasts of group `enemy` as pushers by
+  themselves; the 3 nearest picked without sorting or temporary arrays; freed pushers forgotten, which printed
+  "invalid (previously freed?) object" errors when a beast's body dissolved); `wheat_field.gd` (`ear_top()`).
+- **ENCOUNTERS** (lane P's tool): `tools/encounter_bot.gd` `BALANCE_AT` (-48, 46) -> (-58, 64): the farm's dry-stone
+  wall now stands at the old "open meadow" spot (the `clip` test's pack put paws 14 cm into it); the new spot has no
+  collider within 9 m of it or of the hero's spot. The merge's tool `tools/playthrough_bot.gd`: the wheat step walks a
+  few steps into the wheat at a walk and requires the hand out (brush > 0.8), with a shot `wheat_brush`.
+- New: `tools/wheat_walk.tscn/.gd` (section 9).
+
+Verified in the integration copy: headless `play=1` clean; the playthrough 14/14 (twice, once with 67 shots from the
+gameplay camera, every one looked at); the arena bot 16/16; CORE's island bot 6/6 and the slice walk; the encounter
+bot 12/12 (after the `BALANCE_AT` move; 11/12 before it); the lion's 12 units, the fights with mouth B sealed and
+open, the careless hero; `world_check` fails=0; `world_tour -- walk=1` PASS (428 m, stuck 0, below ground 0, the road
+through the wheat); `wheat_walk` PASS at a walk and at a run (the hand out 0.4 s after walking into the wheat, its
+fingers 0-4 cm over the ears' tops, the shield clear of the body, back in under the guard and out of the field);
+renders of every grass area from the gameplay camera (village edge, forest road, wheat, passage, both boar clearings,
+ridge, altar, mouth B's slope, two coasts, the east hill, the village). In the live tree after the copy (16 changed
+and 29 new files over a clean 608d790, nothing of live's own removed; checkpoint commit c58ec2e): the import and
+headless `play=1` clean; the playthrough 14/14 twice (headless, and with 66 shots from the gameplay camera); the arena
+bot 16/16; CORE's island bot 6/6 and the slice walk 2/2; `wheat_walk` PASS at a walk and at a run; the lion's 12
+units; `world_check` fails=0.
+
+**The web build** (`STRICT=1 sh doce/tools/export_web.sh` of the live tree into a scratch folder and tested there;
+`doce/web` is the same export of c58ec2e, its `index.*` byte for byte the tested ones): 44.27 MB, 15.36 MB with gzip
+(`index.wasm` 37.68 MB, `index.pck` 6.08 MB; 0.15 MB more than 608d790's). `web_test.mjs` in Chromium 141 (WebGL 2 on
+SwiftShader), every scenario with 0 console errors: **title** passed; **play** passed with
+`?dev=1&play=1&phystest=1&start=-52,0,24&face=90` (the hero starts in the wheat, so the meadow's and the wheat's
+shaders compile and draw on WebGL 2; the physics self-test PASS); **flow** (no parameters: the title, Enter, PLAY 5.6
+s later, sound with no gaps) passed on its third run. Its first two runs failed only the check that the sound keeps
+running (no 0.5 s of audio within 30 s after PLAY): SwiftShader on this machine drew a frame every ~5 s on median, up
+to 26-35 s while shaders compiled, and the single-threaded build mixes sound only between frames; the previous
+commit's build (608d790) failed that check the same way on this machine (median 5.2 s, max 31 s). No frame time on a
+real GPU in a browser has been measured yet.
+
 ## 11. Known placeholders and open points
 
 - The slice is playable from the title to the boat (wolves, boars, the lion, the pelt, the Lerna teaser; the
@@ -1010,9 +1155,22 @@ directory) and the web smoke test (title, play with `phystest`: PASS, no problem
   rolls or guards; the lion's wrestle windows); no healing between the first wolf pack and the Altar de la Sierra;
   in the wrestle the lion's head can hide the hero for a moment (CORE frames round the beast's middle, not the hold);
   a perched lion is often out of the follow camera's view; every wind-up starts with a near-white flash
-  (`Enemy.telegraph()`); a boar winding up is half hidden in the thumb's tall golden grass.
-- The wheat field (the grass lane) is not in this build; the playthrough walks the fields where it is planned.
-- Camera (CORE): in the forest a tree crown can fill part of the view (no foliage handling); in the crack's tunnel
+  (`Enemy.telegraph()`).
+- Grass and wheat: their cost is measured only with software GL (llvmpipe, 1600x900; the grass lane's runs: the
+  meadow ~1.2x the frame time of bare ground, the wheat road ~1.3-1.4x); no real-GPU, laptop or browser frame time
+  yet. Quality 0 thins them. Changing "quality" in the options re-thins them only at the next start. The grass grows
+  a few metres into each cave mouth's tunnel (the terrain's cave darkness starts 2-7 m in; the floor of the crack's
+  tunnel shows painted grass in its shade).
+- The free hand in the wheat: on keyboard the normal pace is the run (6.2 m/s), so the hand also brushes at a run
+  (lower and trailing); it goes out only where the wheat is within reach of his left side (walking into the field or
+  along its edge, not in the middle of the 3.8 m road); while it is out the shield rides on his upper arm. The meadow
+  grass gets no brush (only the wheat).
+- The farm's dry-stone wall (south edge of the wheat): the first wolf pack's fight would have to drift ~25 m
+  south-west of its den to reach it, but if it did, a wolf's paws can go into a wall piece's collider (the old test spot
+  showed 14 cm). Wolves in the wheat part the ears now but stand lower than them (half hidden).
+- The foliage cut-away dithers whole crowns near the lens (a Bayer screen door like the cave's pillars); in a dense
+  stand the hero shows through a pattern of dots rather than a clean hole.
+- Camera (CORE): in the crack's tunnel
   the camera stays in front of the hero walking inwards; aiming the chain at something high (the perched lion) the
   over-the-shoulder view is filled by the hero; `Fx._step_dazes` casts the daze node before checking
   `is_instance_valid` (the lion works round it).

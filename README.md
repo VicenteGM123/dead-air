@@ -148,3 +148,12 @@ aldea alrededor del faro y de noche peleas con Fanós, el autómata del faro. Go
 Detalles en [`pharos/README.md`](pharos/README.md);
 **[jugar en el navegador](https://vicentegm123.github.io/dead-air/pharos/web/)** (build en `pharos/web/`, unos 17 MB de
 descarga).
+
+## Otro juego en este repositorio: DOCE — Los trabajos de Heracles
+
+Acción y aventura en tercera persona por islas griegas, con estilo *Wind Waker*: cada trabajo de Heracles es una bestia
+con su propia regla. Primer tramo jugable: la isla de Nemea y el León (combate con peso, lanza con cadena, lobos,
+jabalíes, el campo de trigo y la pelea con el León). Godot 4.7, todo generado por código.
+Detalles y controles en [`doce/README.md`](doce/README.md);
+**[jugar en el navegador](https://vicentegm123.github.io/dead-air/doce/web/)** (build en `doce/web/`, unos 15 MB de
+descarga).
