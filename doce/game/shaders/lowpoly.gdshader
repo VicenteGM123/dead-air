@@ -7,6 +7,8 @@ shader_type spatial;
 render_mode cull_back, depth_draw_opaque, specular_disabled;
 
 #include "res://shaders/pharos.gdshaderinc"
+// GRASSLAB: the shared wind (wind.gdshaderinc, driven by scripts/world/wind.gd): foliage sways with the meadow's gusts.
+#include "res://shaders/wind.gdshaderinc"
 
 uniform float sway = 0.0;          // wind sway for foliage (metres per metre of height)
 uniform float wrap = 0.35;         // wrapped diffuse amount
@@ -24,6 +26,12 @@ uniform vec3 cut_a = vec3(0.0);
 uniform vec3 cut_b = vec3(0.0);
 uniform float cut_r = 1.2;
 uniform float cut_lens = 2.5;
+// FINAL: foliage (Materials.foliage: trees, shrubs, flowers; cut_foliage = 1) is cut away the same way between the lens
+// and what the follow camera frames, from two globals the camera sets every frame (no per-node material copies):
+// g_cut_a = (lens, strength), g_cut_b = (subject, radius). A crown the camera backs into no longer fills the view.
+global uniform vec4 g_cut_a;
+global uniform vec4 g_cut_b;
+uniform float cut_foliage = 0.0;
 uniform vec3 tint = vec3(1.0);
 uniform float metal = 0.0; // TOON: bronze / gold surfaces of this material get anime metal highlights
 
@@ -45,10 +53,10 @@ void vertex() {
 	if (sway > 0.0) {
 		vec3 wp = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 		float h = max(VERTEX.y, 0.0);
-		float t = g_time * 1.3 + wp.x * 0.21 + wp.z * 0.17;
-		float s = sin(t) * 0.6 + sin(t * 2.3 + 1.7) * 0.25;
-		VERTEX.x += s * h * sway * g_wind;
-		VERTEX.z += cos(t * 0.8) * 0.4 * h * sway * g_wind;
+		// GRASSLAB: the shared wind's travelling gusts (world space), back into model space (rotation + scale).
+		vec3 o = wind_foliage(wp, VERTEX, h, sway * 1.4);
+		mat3 m = mat3(MODEL_MATRIX);
+		VERTEX += (transpose(m) * o) / max(dot(m[0], m[0]), 1e-4);
 	}
 	v_wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
@@ -66,6 +74,14 @@ void fragment() {
 		float k = smoothstep(cut_r, cut_r * 0.5, length(cut_a + ab * u - v_wpos)) * (1.0 - smoothstep(u_max - 0.06, u_max, u));
 		k = max(k, smoothstep(cut_lens, cut_lens * 0.55, length(v_wpos - cut_a)));
 		door = max(door, k * cut_k);
+	}
+	if (cut_foliage > 0.0 && g_cut_a.w > 0.0 && view_pass) {
+		vec3 fab = g_cut_b.xyz - g_cut_a.xyz;
+		float fu = clamp(dot(v_wpos - g_cut_a.xyz, fab) / max(dot(fab, fab), 1e-4), 0.0, 1.0);
+		float fu_max = 1.0 - 0.7 / max(length(fab), 0.75);
+		float fk = smoothstep(g_cut_b.w, g_cut_b.w * 0.5, length(g_cut_a.xyz + fab * fu - v_wpos)) * (1.0 - smoothstep(fu_max - 0.06, fu_max, fu));
+		fk = max(fk, smoothstep(2.6, 1.4, length(v_wpos - g_cut_a.xyz)));
+		door = max(door, fk * g_cut_a.w);
 	}
 	if (door > 0.0) {
 		// 4x4 Bayer threshold: an even screen-door that reads as see-through at a glance

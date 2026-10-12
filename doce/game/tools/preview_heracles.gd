@@ -44,6 +44,9 @@ class Stage extends Node3D:
 			var r := rigs[i]
 			r.position = right * (float(i) - float(n - 1) * 0.5) * spacing
 			var s: Array = setups[i]
+			# FINAL: brush=<0..1> [brushh=<wrist height>] poses the free hand brushing the wheat (RigHeracles.set_brush)
+			if _arg("brush", "") != "":
+				r.set_brush(float(_arg("brush", "1")), float(_arg("brushh", "1.06")))
 			r.preview_pose(s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7])
 		_place_camera(view, yaw, n)
 

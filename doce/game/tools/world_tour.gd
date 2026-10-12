@@ -41,6 +41,19 @@ const SHOTS := {
 	"cats": [Vector2(5, 89), 34.0, 0.0, -18.0, 5.0, 60.0],
 	"goats": [Vector2(20, 42), -43.0, 0.0, -14.0, 6.5, 60.0],
 	"paws": [Vector2(14.5, 12.0), 10.0, 0.0, -24.0, 6.0, 60.0],
+	# FINAL (grass + wheat integration): the anime meadow and the wheat from the gameplay camera, place by place
+	"gl_meadow": [Vector2(48, 53), -47.0, 0.0, -14.0, 5.5, 60.0],
+	"gl_wheat": [Vector2(-64, 17.6), 95.0, 0.0, -14.0, 5.5, 60.0],
+	"gl_wheat_in": [Vector2(-74, 28.0), 80.0, 0.0, -14.0, 5.5, 60.0],
+	"village_edge": [Vector2(-14, 58), -139.0, 0.0, -14.0, 6.0, 60.0],
+	"boar_clear": [Vector2(-112, -37), -36.0, 0.0, -12.0, 6.0, 60.0],
+	"herd": [Vector2(-90, -64), -56.0, 0.0, -12.0, 6.0, 60.0],
+	"ridge": [Vector2(-40, -79), -80.0, 0.0, -12.0, 6.0, 60.0],
+	"coast_sw": [Vector2(-50, 92), 115.0, 0.0, -12.0, 6.0, 60.0],
+	"coast_e": [Vector2(112, 40), -100.0, 0.0, -12.0, 6.0, 60.0],
+	"olives": [Vector2(60, 30), -60.0, 0.0, -12.0, 6.0, 60.0],
+	"escarp": [Vector2(-28, -48), 180.0, 0.0, -12.0, 5.5, 60.0],
+	"forest_s": [Vector2(-31, -22), 178.0, 0.0, -12.0, 5.5, 60.0],
 }
 ## Fly-camera shots: [camera position, look target, fov].
 const FLY := {

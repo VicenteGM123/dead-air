@@ -45,6 +45,11 @@ var cave_builder: RefCounted = null
 var passage: RefCounted = null
 var stats := {}
 var ambient: Node3D = null
+## GRASSLAB: the anime meadow, the wheat field and the shared wind (scripts/world/anime_meadow.gd,
+## scripts/world/wheat_field.gd, scripts/world/wind.gd).
+var grass: Node3D = null
+var wheat: Node3D = null
+var wind: Wind = null
 ## The terrain's StaticBody3D (layer 1; tools/phys_test.gd compares its ray hits with height_at()).
 var terrain_body: StaticBody3D = null
 
@@ -66,8 +71,15 @@ func build(seed_value: int = 1) -> void:
 	terrain = NemeaTerrain.new()
 	terrain.generate()
 	terrain.init_ground_map()
+	# GRASSLAB: the wheat field's layout (its field map): the scatter keeps out of it, the meadow gives way to it.
+	if Game.arg("wheat", "1") != "0":
+		wheat = WheatField.new()
+		wheat.name = "Wheat"
+		wheat.setup(terrain)
 	props = NemeaProps.new()
 	props.setup(self, terrain, seed_value * 7919 + 13)
+	# GRASSLAB: the anime meadow draws the wild flowers (no low-poly flower drifts with ink lines in its grass).
+	props.meadow_flowers = Game.arg("grassold", "0") != "1"
 	_reserve_places()
 	village = NemeaVillage.new()
 	village.build(self, terrain, props)
@@ -88,12 +100,32 @@ func build(seed_value: int = 1) -> void:
 	terrain_body = terrain.body
 	terrain.build_water_texture()
 	_apply_terrain_material()
-	var grass := Grass.new()
-	grass.name = "Grass"
-	add_child(grass)
-	grass.build(self)
-	_grass = grass
-	stats["grass_instances"] = grass.instances
+	# GRASSLAB: the anime meadow (AnimeMeadow, Trung Duy Nguyen's method) and the shared wind (Wind) replace the old
+	# Grass. Fallback switch: grassold=1 builds the island's original grass instead. _grass (hidden inside the cave)
+	# is whichever meadow was built.
+	if Game.arg("grassold", "0") == "1":
+		var old_grass := Grass.new()
+		old_grass.name = "Grass"
+		add_child(old_grass)
+		old_grass.build(self)
+		_grass = old_grass
+		stats["grass_instances"] = old_grass.instances
+	else:
+		var am := AnimeMeadow.new()
+		am.name = "Grass"
+		am.field = wheat
+		add_child(am)
+		am.build(self)
+		grass = am
+		_grass = am
+		stats["grass_instances"] = am.instances
+	if wheat != null:
+		add_child(wheat)
+		wheat.build(self, grass)
+		stats["wheat"] = wheat.stats
+	wind = Wind.new()
+	wind.name = "Wind"
+	add_child(wind)
 	if Game.arg("fauna", "1") != "0":
 		ambient = Ambient.new()
 		add_child(ambient)
@@ -119,6 +151,10 @@ func _reserve_places() -> void:
 	props.reserve(L.GOAT_PEN, 7.0)
 	for al in L.ALTARS:
 		props.reserve(al[0], 5.5)
+	# GRASSLAB: the wheat field (no scatter inside) and its farm (threshing floor, sheaves, wall, olive, cypresses).
+	if wheat != null:
+		wheat.reserve(props)
+		wheat.place_props(props)
 
 
 func _apply_terrain_material() -> void:

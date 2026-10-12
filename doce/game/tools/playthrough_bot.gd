@@ -10,8 +10,8 @@ extends "res://tools/nemea_bot.gd"
 ##   village   down the pier and up the main road into the village
 ##   cat       a cat petted (E held: it purrs, the hero plays "pet")
 ##   wolves    the forest road: the first pack (3) notices him on the way and is beaten (rolls, punishes)
-##   wheat     on along the road through the fields west of the forest (where the wheat field is planned) to the
-##             broken passage's south rim
+##   wheat     on along the road through the wheat field west of the forest, a few steps into the wheat at a walk
+##             (the free hand brushes the ears: RigHeracles.set_brush), back to the road and the broken passage's south rim
 ##   passage   the bronze rings: the sea stack, the north rim
 ##   boars     the thumb path: the boar of the first clearing (he waits in front of a standing rock: its charge
 ##             crashes into it) and the herd of two further on, beaten
@@ -751,13 +751,35 @@ func _st_road() -> bool:
 	if not ok:
 		return false
 	await _shot("fields")
+	# FINAL: off the road a few steps into the wheat at a walk: the free hand goes out over the ears (Gladiator)
+	var brush := await _brush_walk([Vector2(-60.0, 23.0), Vector2(-71.0, 27.0)])
 	var rest: Array[Vector2] = []
-	for k in range(11, road.size()):
+	for k in range(12, road.size()):
 		rest.append(road[k])
 	ok = await _travel(rest, 60.0)
 	await _shot("south_rim")
-	_step("wheat", ok, "at %s (no wheat field in this build: the grass lane's wheat is not merged)" % str(hero.global_position.snapped(Vector3.ONE * 0.1)))
-	return ok
+	_step("wheat", ok and brush > 0.8, "at %s, through the wheat field: the hand brushed the ears (brush %.2f)" % [str(hero.global_position.snapped(Vector3.ONE * 0.1)), brush])
+	return ok and brush > 0.8
+
+
+## FINAL: walks (stick at 0.45: walking pace) through `pts` and returns how far the hand's brush went (0..1); a shot when
+## it is fully out.
+func _brush_walk(pts: Array) -> float:
+	var best := 0.0
+	var shot := false
+	for q: Vector2 in pts:
+		var p: Vector3 = world.call("ground", Vector3(q.x, 0.0, q.y))
+		var t0 := _time
+		while _time - t0 < 20.0 and Combat.flat(p - hero.global_position).length() > 0.6:
+			hero.debug_move = _stick_to(p) * 0.45
+			await get_tree().physics_frame
+			var b: float = hero.rig.brush_amount()
+			best = maxf(best, b)
+			if b > 0.95 and not shot:
+				shot = true
+				_shot("wheat_brush")
+	hero.debug_move = Vector2.ZERO
+	return best
 
 
 ## The broken passage by the two bronze rings (CORE's walk moves).

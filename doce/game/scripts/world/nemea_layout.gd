@@ -144,9 +144,12 @@ const LID_TOP := 15.0 # lid height above the floor at its centre
 ## [points, half width]. The first one is the main road from the pier to the passage.
 const PATHS := [
 	# 0 main road: pier -> plaza -> north gate -> forest -> west ramp -> passage (south rim)
+	# GRASSLAB: from the wolf clearing the road now climbs the west ramp through the middle of the wheat field
+	# (WHEAT_FIELD) instead of dipping to the inlet beach: everyone walks through the wheat towards the sea and the
+	# sunset. Was: ... (-33, 9), (-48, 3), (-62, 1), (-76, -1), (-90, 2), (-102, 4), (-113, 4).
 	[[Vector2(14, 106), Vector2(12, 98), Vector2(7, 90), Vector2(2, 83), Vector2(-2, 68), Vector2(-4, 58),
-		Vector2(-7, 46), Vector2(-14, 33), Vector2(-22, 20), Vector2(-33, 9), Vector2(-48, 3), Vector2(-62, 1),
-		Vector2(-76, -1), Vector2(-90, 2), Vector2(-102, 4), Vector2(-113, 4.0)], 1.9],
+		Vector2(-7, 46), Vector2(-14, 33), Vector2(-22, 20), Vector2(-33, 12), Vector2(-45, 13), Vector2(-57, 16),
+		Vector2(-70, 19), Vector2(-84, 20), Vector2(-96, 17), Vector2(-105, 10), Vector2(-113, 4.0)], 1.9],
 	# 1 thumb: passage (north rim) -> boar clearing -> ridge meadow -> altar
 	[[Vector2(-114, -29.5), Vector2(-112, -38), Vector2(-106, -48), Vector2(-96, -60), Vector2(-84, -70),
 		Vector2(-70, -77), Vector2(-52, -80), Vector2(-34, -79), Vector2(-18, -75), Vector2(-6, -71)], 1.7],
@@ -166,6 +169,26 @@ const PATHS := [
 	# 8 goat pen lane: main road -> broken pen
 	[[Vector2(-6, 50), Vector2(6, 44), Vector2(18, 37), Vector2(26, 32)], 1.1],
 ]
+
+# --- the wheat field (GRASSLAB) ------------------------------------------------------------------------------
+## The golden wheat field ("Gladiator", scripts/world/wheat_field.gd) on the west ramp, between the forest's west
+## edge (the first wolf pack) and the plateau above the sea: the main road climbs through the middle of it, westwards,
+## towards the sea and the sunset. The terrain inside is smoothed into a gentle ramp (NemeaTerrain._wheat_ramp), the
+## scatter keeps out of it (World._reserve_places), and the meadow grass gives way to the wheat.
+## Polygon (xz, counter-clockwise does not matter), ~68 x 44 m:
+const WHEAT_FIELD := [
+	Vector2(-103, 9), Vector2(-96, 5), Vector2(-84, 4), Vector2(-70, 5), Vector2(-56, 4), Vector2(-44, 5),
+	Vector2(-36, 10), Vector2(-35, 22), Vector2(-38, 34), Vector2(-46, 43), Vector2(-60, 48), Vector2(-76, 48),
+	Vector2(-90, 45), Vector2(-100, 39), Vector2(-104, 28), Vector2(-104, 17),
+]
+## The ramp: ground height at the west (plateau) and east (forest) ends of the field.
+const WHEAT_H_WEST := 19.8
+const WHEAT_H_EAST := 11.6
+## The threshing floor (on the plateau, just outside the field's north-west corner, by the road) and the farm's
+## corner: sheaves, a lone olive, two cypresses at the road's entry into the field.
+const THRESHING := Vector2(-110, 21)
+const WHEAT_OLIVE := Vector2(-66, 36)
+const WHEAT_CYPRESSES := [Vector2(-34, 6), Vector2(-33, 18)]
 
 # --- encounters ----------------------------------------------------------------------------------------------
 const SPAWNS := [

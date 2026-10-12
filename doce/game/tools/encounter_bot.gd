@@ -43,8 +43,10 @@ const ALL := ["yank", "parry", "leash", "death", "pack3", "boar_parry", "boar_bl
 const PACK1 := Vector3(-24.0, 0.0, 14.0)
 const BOAR1 := Vector3(-104.0, 0.0, -47.0)
 const HERD := Vector3(-78.0, 0.0, -72.0)
-## An open meadow for the balance pack (the south meadows, away from the others).
-const BALANCE_AT := Vector3(-48.0, 0.0, 46.0)
+## An open meadow for the balance pack (the south meadows, away from the others). FINAL: moved from (-48, 46), where the
+## wheat field's farm now has its dry-stone wall (the pack's fight there put paws into the wall), to the meadow
+## south-west of the field: no collider within 9 m of it or of the hero's spot 12 m south, gentle slopes.
+const BALANCE_AT := Vector3(-58.0, 0.0, 64.0)
 
 var main: Node = null
 var hero: Hero

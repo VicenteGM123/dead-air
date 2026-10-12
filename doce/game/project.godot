@@ -285,3 +285,27 @@ g_water_rect={
 "type": "vec4",
 "value": Vector4(-220, -220, 440, 440)
 }
+g_wind_dir={
+"type": "vec2",
+"value": Vector2(0.94, 0.34)
+}
+g_wind_gust={
+"type": "vec4",
+"value": Vector4(1, 14, 3.8, 1)
+}
+g_push_a={
+"type": "mat4",
+"value": Projection(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+}
+g_push_b={
+"type": "mat4",
+"value": Projection(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+}
+g_cut_a={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+g_cut_b={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 1)
+}

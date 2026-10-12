@@ -2269,6 +2269,71 @@ func _feed_rig() -> void:
 	rig.set_locomotion(hs, RUN_SPEED)
 	rig.set_motion_state(motion_state)
 	rig.set_vertical_speed(velocity.y)
+	_feed_brush(hs)
+
+
+# --- FINAL: the free hand in the wheat (the client's "Gladiator" shot) ----------------------------------------------
+
+## Walking (or at his normal pace: not sprinting) through the wheat with no fight about, his free (left) hand lowers,
+## opens and skims the ears (RigHeracles.set_brush). The wheat field answers where the hand would be
+## (WheatField.in_field / ear_top, duck-typed on Game.world.wheat). While the hand is out, the stalks part closer
+## round his legs (meta push_radius, read by Wind) so the ears stand where the hand is, and the hand itself parts the
+## ears it passes (its pivot joins the group grass_pushers).
+const BRUSH_REACH := 0.62 # m from his centre to where the fingers meet the ears (left side)
+const BRUSH_CALM := 1.2 # s with no foe near, no guard, no blow before the hand goes out
+const BRUSH_FOE_RANGE := 9.0
+var _brush_calm := 0.0
+var _brush_scan := 0.0
+var _brush_hand_in := false
+
+
+func _feed_brush(hs: float) -> void:
+	var dt := get_physics_process_delta_time()
+	var goal := 0.0
+	var wrist_h := 1.06
+	var wheat: Object = null
+	if _world != null and is_instance_valid(_world):
+		wheat = _world.get("wheat") as Object
+	if wheat != null and wheat.has_method("in_field"):
+		var calm := state == St.MOVE and motion_state == &"ground" and is_on_floor() and not guarding and not sprinting \
+			and lock_target() == null and rig.action == ""
+		_brush_scan -= dt
+		if calm and _brush_scan <= 0.0:
+			_brush_scan = 0.25
+			for n in get_tree().get_nodes_in_group("enemy"):
+				var e := n as Node3D
+				if e != null and Combat.is_alive(e) and e.global_position.distance_squared_to(global_position) < BRUSH_FOE_RANGE * BRUSH_FOE_RANGE:
+					_brush_calm = -0.5
+					break
+		_brush_calm = minf(_brush_calm + dt, 5.0) if calm else 0.0
+		if _brush_calm >= BRUSH_CALM:
+			var left := -(Basis(Vector3.UP, _vis_yaw).x)
+			var hp := global_position + left * BRUSH_REACH
+			var w := smoothstep(0.3, 0.7, float(wheat.call("in_field", hp.x, hp.z)))
+			var speed_k := 1.0 if hs <= 3.0 else (lerpf(1.0, 0.85, (hs - 3.0) / (RUN_SPEED - 3.0)) if hs <= RUN_SPEED else clampf((7.2 - hs) / (7.2 - RUN_SPEED) * 0.85, 0.0, 0.85))
+			goal = w * speed_k
+			if goal > 0.0:
+				var top := 1.0
+				if wheat.has_method("ear_top"):
+					top = float(wheat.call("ear_top", hp.x, hp.z))
+				var gy: float = _world.call("height_at", hp.x, hp.z) if _world.has_method("height_at") else global_position.y
+				# the wrist a little over the ears' tops: the fingers (out, back and down) dip into them
+				wrist_h = clampf(gy - global_position.y, -0.2, 0.2) + top + 0.045
+	rig.set_brush(goal, wrist_h)
+	var b: float = rig.brush_amount()
+	if b > 0.001:
+		set_meta(&"push_radius", lerpf(0.95, 0.5, b))
+	elif has_meta(&"push_radius"):
+		remove_meta(&"push_radius")
+	var hand := rig.hand_l()
+	var want_in := b > 0.3
+	if want_in != _brush_hand_in and hand != null:
+		_brush_hand_in = want_in
+		if want_in:
+			hand.set_meta(&"push_radius", 0.15)
+			hand.add_to_group(&"grass_pushers")
+		else:
+			hand.remove_from_group(&"grass_pushers")
 
 
 func _process(delta: float) -> void:

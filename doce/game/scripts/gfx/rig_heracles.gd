@@ -1784,6 +1784,8 @@ func _apply_bones() -> void:
 	_set_skin_pivot("hand_r_s", HAND_R)
 	_set_skin_pivot("hand_l_s", HAND_L)
 	_set_skin_pivot("farm_l_s", FARM_L)
+	if _brush > 0.0005 and action == "":
+		_brush_shield()
 	_set_skin_pivot("chest_s", CHEST)
 	_set_skin_pivot("pelvis_s", PELVIS)
 	_set_skin_pivot("thigh_r_s", THIGH_R)
@@ -2053,6 +2055,28 @@ func set_vertical_speed(vy: float) -> void:
 
 func set_guard(on: bool) -> void:
 	guard = on
+
+
+# --- FINAL: the free hand brushing the wheat (the client's "Gladiator" shot) -----------------------------------
+
+## Weight the hero asks for (0..1, every tick through set_brush()): the left hand lets go of the shield's grip and
+## lowers out beside the hip, open and palm down, so the fingertips skim the ears as he walks; the shield stays on
+## the forearm (its face turned out), the sword hand is untouched. The rig eases in over ~0.45 s and out over ~0.3 s,
+## fades it under the guard and lets any action (a blow, a roll, interact) take the arm over.
+var brush_goal := 0.0
+## Rig-space height of the left wrist while brushing (the ears' tops + a little: Hero._feed_brush measures them).
+var brush_height := 1.06
+var _brush := 0.0
+
+
+func set_brush(amount: float, wrist_height: float = 1.06) -> void:
+	brush_goal = clampf(amount, 0.0, 1.0)
+	brush_height = clampf(wrist_height, 0.82, 1.2)
+
+
+## 0..1: how far the brush pose is in now (the hero hangs the hand's pusher on it).
+func brush_amount() -> float:
+	return smooth(_brush) if action == "" else 0.0
 
 
 ## Definition actually played for action `a` (the lion outfit draws the spear from its own place on the back).
@@ -2516,6 +2540,85 @@ func _ground_pose(c: PackedFloat32Array, dt: float) -> void:
 			c[C_CHS] += 0.12 * j
 			c[C_SPN] += 0.06 * j
 			c[C_PEL + 2] += 0.05 * j
+	# FINAL: the free hand in the wheat (set_brush)
+	_brush_pose(c, dt, move, run, ph)
+
+
+## FINAL: while the hand brushes the wheat the shield rides up the arm (the forearm slides out of the arm band, which
+## settles on the upper arm), so the forearm and the open hand come out free under its rim: from behind (the gameplay
+## camera) the shield shows edge on at the shoulder and the hand out over the ears.
+const BRUSH_SHIELD_SLIDE := 0.62 # how far up the arm, as a fraction of the elbow -> shoulder length
+var _brush_run := 0.0
+
+
+func _brush_shield() -> void:
+	var piv := _piv["farm_l_s"] as Node3D
+	piv.transform = piv.transform.interpolate_with(_brush_shield_skin(), _brush_shield_k())
+
+
+## The shield rides up once the arm is on its way out (clear of the shoulder piece), and comes down first.
+func _brush_shield_k() -> float:
+	return smoothstep(0.35, 1.0, _brush)
+
+
+## Where the shield's pivot goes when it has ridden up onto the upper arm (a skin transform: rest rig space -> rig).
+## Walking: it rides the upper arm as strapped there (its face out and forward, the inside showing from behind).
+## Running: the arm band sits at the elbow with the face turned out whatever the arm's twist (nearly edge on from
+## behind, clear of the helmet's cheek guard and of his back as the arm swings). Both checked clear of the body by
+## tools/wheat_walk.tscn (shield_clip).
+const BRUSH_SHIELD_FACE := Vector3(-1.0, 0.0, 0.0)
+static var _shield_rest := Transform3D()
+static var _shield_rest_ok := false
+
+
+func _brush_shield_skin() -> Transform3D:
+	var ua := _bx[UARM_L]
+	var ua_skin := Transform3D(ua.basis, ua.origin - ua.basis * _rest[UARM_L])
+	var walk_xf := ua_skin * Transform3D(Basis.IDENTITY, (_rest[UARM_L] - _rest[FARM_L]) * BRUSH_SHIELD_SLIDE)
+	if _brush_run <= 0.001:
+		return walk_xf
+	if not _shield_rest_ok:
+		_shield_rest = shield_xf(Transform3D(Basis.IDENTITY, _rest[FARM_L]), _rest[FARM_L])
+		_shield_rest_ok = true
+	var s_p := _bx[UARM_L].origin
+	var e_p := _bx[FARM_L].origin
+	var a := (e_p - s_p).normalized()
+	var n := perp(BRUSH_SHIELD_FACE, a).normalized()
+	var ax := perp(a, n).normalized()
+	var up := (BRUSH_SHIELD_SLIDE - 0.2) * LEN_UA - 0.13
+	var run_xf := Transform3D(Basis(ax, n, ax.cross(n)), e_p - a * up + n * 0.085) * _shield_rest.affine_inverse()
+	return walk_xf.interpolate_with(run_xf, _brush_run)
+
+
+## FINAL: the left arm out beside the hip, the hand open and palm down over the ears (rig space, so the hand glides
+## level while the body bobs), swaying a little with the stride and riding up and down over the ears twice a stride;
+## at a run it trails a little further back. The open hand is fanned out to the side and a little back, the fingers
+## dipping into the ears; the forearm turns with the hand (no twist at the wrist) now that the shield hangs from the
+## upper arm (_brush_shield).
+const BRUSH_BACK := Vector3(-0.302, 0.893, 0.333) # the back of the hand (palm down, fingers out, back and down)
+const BRUSH_THUMB := Vector3(-0.739, 0.0, -0.672) # hand_basis' blade axis: the thumb side (out and forward)
+
+
+func _brush_pose(c: PackedFloat32Array, dt: float, move: float, run: float, ph: float) -> void:
+	var goal := brush_goal * (1.0 - _guard_k)
+	_brush = move_toward(_brush, goal, dt * (2.2 if goal > _brush else 3.4))
+	if _brush <= 0.0005:
+		return
+	var w := smooth(_brush)
+	_brush_run = run
+	var sw := cos(TAU * ph) * move # the left arm's swing in the gait (as above)
+	var skim := sin(TAU * 2.0 * ph) * move
+	var tgt := Vector3(-0.52 - 0.07 * run, brush_height + 0.014 * skim + 0.025 * run, 0.04 - 0.03 * run - lerpf(0.05, 0.06, run) * sw)
+	_setv(c, C_HL, v3(c, C_HL).lerp(tgt, w))
+	c[C_HLS] = lerpf(c[C_HLS], 1.0, w)
+	_lerpv(c, C_HLP, Vector3(-1.0, 0.05, 0.4), w)
+	var dip := Vector3(-0.05 * skim, 0.0, 0.0)
+	_lerpv(c, C_HLF, BRUSH_BACK, w)
+	_lerpv(c, C_HLB, BRUSH_THUMB, w)
+	_lerpv(c, C_HLK, BRUSH_BACK + dip, w)
+	c[C_HLX] = lerpf(c[C_HLX], 1.0, w)
+	if _brush > 0.35:
+		c[C_OHL] = 1.0
 
 
 ## Hanging from a ring: where the left fist grips the chain (rig space; the body swings about it). Hero.HANG_HAND
@@ -2993,6 +3096,10 @@ func _cape_step(dt: float, gx: Transform3D) -> void:
 	var sp_on := spear_on_back and _spear_back.visible
 	# the shield's disc (a slab in the shield frame)
 	var sh_xf := gx * shield_xf(_bx[FARM_L], _rest[FARM_L])
+	if _brush > 0.0005 and action == "":
+		# FINAL: the shield rides up the arm while the hand brushes the wheat (_brush_shield)
+		var sk := Transform3D(_bx[FARM_L].basis, _bx[FARM_L].origin - _bx[FARM_L].basis * _rest[FARM_L])
+		sh_xf = gx * sk.interpolate_with(_brush_shield_skin(), _brush_shield_k()) * shield_xf(Transform3D(Basis.IDENTITY, _rest[FARM_L]), _rest[FARM_L])
 	var sh_inv := sh_xf.affine_inverse()
 	var sp_xf := gx * blend_skin(SPINE, CHEST, 0.6, Vector3(0.0, 1.3, 0.25)) * _spear_back.transform
 	var sp_inv := sp_xf.affine_inverse()

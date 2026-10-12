@@ -678,6 +678,8 @@ const CUT_LENS := 2.6
 const CUT_MAX := 0.8
 const CUT_RATE := 5.0
 const CUT_RANGE := 14.0
+const CUT_R_FOLIAGE := 1.3
+var _fol_cut := true # (true: the first frame clears whatever a previous scene left in the globals)
 var _cut_k := 0.0
 var _cut_on: Array[GeometryInstance3D] = []
 
@@ -687,6 +689,16 @@ func _cut_props(real_dt: float) -> void:
 		return
 	var want := 1.0 if (mode == "follow" and target != null and is_instance_valid(target)) else 0.0
 	_cut_k = move_toward(_cut_k, want, real_dt * CUT_RATE)
+	# FINAL: the island's foliage (lowpoly cut_foliage: tree crowns, shrubs) is cut the same way through two shader
+	# globals (no per-node work), with a wider tube (CUT_R_FOLIAGE): a crown the camera backs into or that stands
+	# between the lens and the hero no longer hides him
+	var fk := CUT_MAX * _cut_k
+	if fk > 0.0 or _fol_cut:
+		var fl := cam.global_position
+		var fs := _target_pos() + Vector3(0, 1.2, 0) if want > 0.0 else fl
+		RenderingServer.global_shader_parameter_set(&"g_cut_a", Vector4(fl.x, fl.y, fl.z, fk))
+		RenderingServer.global_shader_parameter_set(&"g_cut_b", Vector4(fs.x, fs.y, fs.z, CUT_R_FOLIAGE))
+		_fol_cut = fk > 0.0
 	var nodes := get_tree().get_nodes_in_group("camera_cut")
 	if nodes.is_empty() and _cut_on.is_empty():
 		return

@@ -40,6 +40,11 @@ var trees := PackedVector3Array()
 var flowers := PackedVector3Array()
 ## [x, z, radius, height] of everything solid an animal must walk round.
 var solids: Array = []
+## GRASSLAB: true when the anime meadow draws the wild flowers (AnimeMeadow, shaders/meadow_bloom.gdshader): the
+## low-poly poppy / daisy / anemone drifts are then not drawn (their spots are still recorded in `flowers` for the
+## butterflies, and the random sequence is unchanged so the rest of the scatter stays where it was). Lavender stays.
+var meadow_flowers := false
+const MEADOW_FLOWER_SHRUBS := ["flowers_poppy", "flowers_daisy", "flowers_anemone"]
 
 var _nature: Script
 var _batches := {} # trees: "fn#variant@region" -> {fn, variant, xforms}
@@ -242,7 +247,9 @@ func shrub(fn: String, x: float, z: float, sc: float, variant: int = -1, check: 
 		if not _occ_free(p, r, pack, 0.05):
 			return false
 	var v := variant if variant >= 0 else rng.randi() % variants
-	_add(fn, v, _xf(x, z, rng.randf() * TAU, Vector3.ONE * sc, 0.05))
+	var xf := _xf(x, z, rng.randf() * TAU, Vector3.ONE * sc, 0.05)
+	if not (meadow_flowers and fn in MEADOW_FLOWER_SHRUBS): # GRASSLAB
+		_add(fn, v, xf)
 	_occ_add(p, r)
 	if SOLID_SHRUBS.has(fn):
 		_trunk(Vector3(x, t.height_at(x, z), z), float(SOLID_SHRUBS[fn]) * sc)

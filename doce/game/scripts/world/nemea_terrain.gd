@@ -251,6 +251,7 @@ func generate() -> void:
 	_coast()
 	var t1 := Time.get_ticks_usec()
 	_elevation()
+	_wheat_ramp() # GRASSLAB: the wheat field's gentle ramp (L.WHEAT_FIELD)
 	var t2 := Time.get_ticks_usec()
 	_ravine()
 	_cave_carve()
@@ -540,6 +541,52 @@ func _elevation() -> void:
 static func _sea_floor(s: float, c2: float) -> float:
 	var far := maxf(0.0, -s - 14.0)
 	return maxf(DEEP, -0.3 + s * lerpf(0.095, 0.9, c2) - far * far * 0.02)
+
+
+## GRASSLAB: signed distance from p to a polygon (negative inside), metres.
+static func poly_sd(px: float, pz: float, poly: Array) -> float:
+	var d := INF
+	var inside := false
+	var n := poly.size()
+	var j := n - 1
+	for i in n:
+		var a: Vector2 = poly[i]
+		var b: Vector2 = poly[j]
+		var abx := b.x - a.x
+		var abz := b.y - a.y
+		var t := clampf(((px - a.x) * abx + (pz - a.y) * abz) / maxf(abx * abx + abz * abz, 1e-6), 0.0, 1.0)
+		var dx := px - a.x - abx * t
+		var dz := pz - a.y - abz * t
+		d = minf(d, dx * dx + dz * dz)
+		if ((a.y > pz) != (b.y > pz)) and (px < (b.x - a.x) * (pz - a.y) / (b.y - a.y) + a.x):
+			inside = not inside
+		j = i
+	return -sqrt(d) if inside else sqrt(d)
+
+
+## GRASSLAB: the wheat field (L.WHEAT_FIELD) smoothed into a gentle ramp rising west to the plateau (a slow S from
+## WHEAT_H_EAST to WHEAT_H_WEST with a soft swell), blended in over 7 m outside its edge; no forest inside.
+func _wheat_ramp() -> void:
+	var poly: Array = L.WHEAT_FIELD
+	var x0 := -112.0
+	var x1 := -26.0
+	var z0 := -4.0
+	var z1 := 56.0
+	for iz in range(int(z0 + EXT), int(z1 + EXT) + 1):
+		var z := gx(iz)
+		for ix in range(int(x0 + EXT), int(x1 + EXT) + 1):
+			var x := gx(ix)
+			var sdv := poly_sd(x, z, poly)
+			if sdv > 7.0:
+				continue
+			var i := iz * N + ix
+			var w := smoothstep(7.0, -2.0, sdv)
+			var u := clampf((x + 102.0) / 66.0, 0.0, 1.0) # 0 west .. 1 east
+			var k := lerpf(u, smoothstep(0.0, 1.0, u), 0.5)
+			var ramp := lerpf(L.WHEAT_H_WEST, L.WHEAT_H_EAST, k) + _n_roll.get_noise_2d(x * 0.7, z * 0.7) * 0.9
+			h[i] = lerpf(h[i], ramp, w)
+			forest_w[i] *= 1.0 - w
+			dry[i] = lerpf(dry[i], 0.7, w)
 
 
 ## The ravine at the inlet head: a gully from the pebble beach up to the forest floor, so whoever falls into the

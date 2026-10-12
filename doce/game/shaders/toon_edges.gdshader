@@ -8,6 +8,10 @@
 // Output is premultiplied: rgb = line colour * line + rim, a = line.
 shader_type spatial;
 render_mode unshaded, blend_premul_alpha, depth_test_disabled, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
+// GRASSLAB: no ink lines or rim on the anime grass, flowers and wheat: they write stencil 32 (meadow_grass.gdshader,
+// meadow_bloom.gdshader, wheat_canopy.gdshader, wheat_ears.gdshader, drawn in the alpha list before this quad);
+// everything else keeps its lines.
+stencil_mode read, compare_not_equal, 32;
 
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
 uniform sampler2D screen_tex : hint_screen_texture, filter_nearest;

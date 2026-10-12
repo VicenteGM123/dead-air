@@ -36,7 +36,8 @@ static func lowpoly() -> ShaderMaterial:
 
 ## Same as lowpoly but sways in the wind (trees, bushes, flowers, banners).
 static func foliage(amount: float = 0.045) -> ShaderMaterial:
-	return _shader_mat("foliage_%.3f" % amount, "res://shaders/lowpoly.gdshader", {"sway": amount, "wrap": 0.55})
+	# FINAL: cut_foliage: the follow camera cuts it away between the lens and the hero (lowpoly.gdshader, CameraRig)
+	return _shader_mat("foliage_%.3f" % amount, "res://shaders/lowpoly.gdshader", {"sway": amount, "wrap": 0.55, "cut_foliage": 1.0})
 
 
 ## Creatures of Nyx: lowpoly with a cold ethereal rim light.
