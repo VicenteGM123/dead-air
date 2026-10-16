@@ -52,7 +52,7 @@ void vertex() {
 	float H = wheat_canopy(f) * mix(near_sink, 1.0, far_k);
 	vec2 wind = mlib_wind(g.xz, wave_scale, wave_speed);
 	float wave = pow(wind.x, wave_sharp);
-	// the bend of the stalks under this point: the wave leans them along the wind, the noise sways them, the pushers
+	// the bend of the stalks under this point: the wave leans them along the wind, the ripple sways them, the pushers
 	// part them
 	float a = (0.06 + 0.4 * wave * g_wind_gust.x + 0.025 * wind.y) * g_wind;
 	vec2 bend = g_wind_dir * a;

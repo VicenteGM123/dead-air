@@ -47,7 +47,7 @@ func _ready() -> void:
 		mb.ico(Vector3(cos(a) * 0.14, 0.05, sin(a) * 0.14), 0.025, Pal.BRONZE, 0)
 	mb.pop()
 	mb.push(Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(0, ry - 0.24, face_z + 0.1)))
-	mb.ring(Vector3(0, -0.035, 0), 0.32, 0.24, 0.07, 14, Pal.BRONZE)
+	ModelsNature.ring6(mb, Vector3(0, -0.035, 0), 0.32, 0.24, 0.07, 14, Pal.BRONZE) # DOCE: the back of the hoop, closed
 	mb.pop()
 	_mi = MeshInstance3D.new()
 	_mi.mesh = mb.commit()

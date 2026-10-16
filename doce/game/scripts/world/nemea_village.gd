@@ -10,6 +10,7 @@ extends RefCounted
 
 const L := preload("res://scripts/world/nemea_layout.gd")
 const NemeaBoat := preload("res://scripts/world/nemea_boat.gd")
+const BoatFloat := preload("res://scripts/world/boat_float.gd")
 const SCALE := 1.25
 
 var world: Node3D
@@ -213,10 +214,12 @@ func _plaza() -> void:
 			var p1 := Vector3(cos(a1) * ri, y, sin(a1) * ri)
 			var p2 := Vector3(cos(a1) * ro, y, sin(a1) * ro)
 			var p3 := Vector3(cos(a0) * ro, y, sin(a0) * ro)
+			# DOCE (mesh audit): wound to face UP. It faced down, so the slabs were culled from above and only the dark
+			# bed under them showed (a flat brown disc).
 			if ri < 0.1:
-				mb.tri(Vector3(0, y, 0), p3, p2, col)
+				mb.tri(Vector3(0, y, 0), p2, p3, col)
 			else:
-				mb.quad(p0, p3, p2, p1, col)
+				mb.quad(p0, p1, p2, p3, col)
 		r0 = r1
 		ring += 1
 	# The paving's bed (its top just under the slabs, so the joints read dark).
@@ -402,9 +405,9 @@ func _north_fence() -> void:
 	var leaf := Vector3(-8.2, t.height_at(-8.2, 51.5) + 0.08, 51.5)
 	mb.push(Transform3D(Basis(Vector3.UP, 0.5) * Basis(Vector3.RIGHT, -PI * 0.5 + 0.06), leaf))
 	for i in 5:
-		ModelsNature.box5(mb, Vector3(-1.2 + i * 0.6, 0.7, 0), Vector3(0.12, 1.4, 0.06), Pal.WOOD, Pal.WOOD_LIGHT)
-	ModelsNature.box5(mb, Vector3(0, 1.1, 0.04), Vector3(2.8, 0.12, 0.05), Pal.WOOD_DARK)
-	ModelsNature.box5(mb, Vector3(0, 0.3, 0.04), Vector3(2.8, 0.12, 0.05), Pal.WOOD_DARK)
+		ModelsNature.box6(mb, Vector3(-1.2 + i * 0.6, 0.7, 0), Vector3(0.12, 1.4, 0.06), Pal.WOOD, Pal.WOOD_LIGHT)
+	ModelsNature.box6(mb, Vector3(0, 1.1, 0.04), Vector3(2.8, 0.12, 0.05), Pal.WOOD_DARK)
+	ModelsNature.box6(mb, Vector3(0, 0.3, 0.04), Vector3(2.8, 0.12, 0.05), Pal.WOOD_DARK)
 	mb.pop()
 	_merge_mb(mb)
 
@@ -425,7 +428,7 @@ func _goat_pen() -> void:
 	mb.vary = 0.03
 	var tp := _ground(c.x + 2.0, c.y + 1.5)
 	mb.push(Transform3D(Basis(Vector3.UP, 0.4) * Basis(Vector3.BACK, 1.2), tp + Vector3(0, 0.3, 0)))
-	ModelsNature.box5(mb, Vector3(0, 0, 0), Vector3(1.6, 0.4, 0.5), Pal.WOOD, Pal.WOOD_DARK)
+	ModelsNature.box6(mb, Vector3(0, 0, 0), Vector3(1.6, 0.4, 0.5), Pal.WOOD, Pal.WOOD_DARK)
 	mb.pop()
 	# Hay heap and wool tufts.
 	ModelsNature.blob(mb, rng, _ground(c.x - 2.5, c.y + 2.0), [Vector2(1.1, 0), Vector2(0.9, 0.35), Vector2(0.4, 0.6), Vector2(0, 0.65)], 7, 0.15, Color("D9C27A"), Color("B59A55"), -0.3)
@@ -481,26 +484,26 @@ func _pier_and_boats() -> void:
 		mb.push_at(Vector3(x + 1.1 + k * 0.5, deck, z0 + 4.0 + (k % 2) * 0.4), rng.randf() * TAU)
 		ModelsNature.add_amphora(mb, rng, 1.0, 1)
 		mb.pop()
-	mb.ring(Vector3(x - 1.0, deck, tz + 1.8), 0.32, 0.12, 0.12, 8, Color("D6BE88"))
+	ModelsNature.ring6(mb, Vector3(x - 1.0, deck, tz + 1.8), 0.32, 0.12, 0.12, 8, Color("D6BE88")) # DOCE: the coil stands 5 cm above the planks, so its underside is closed
 	_merge_mb(mb)
 	_box(Vector3(hw * 2.0, 0.3, length), Transform3D(Basis.IDENTITY, Vector3(x, deck - 0.15, (z0 + z1) * 0.5)))
 	_box(Vector3(7.0, 0.3, 4.0), Transform3D(Basis.IDENTITY, Vector3(x, deck - 0.15, tz + 2.0)))
 	t.splat_nograss(Vector2(x, z0), 2.5, Vector2(x, z0 + 6.0))
-	# Heracles' galley (east side) and the merchantman for Lerna (west side).
+	# Heracles' galley (east side) and the merchantman for Lerna (west side). FIX2: the ships FLOAT (BoatFloat keeps
+	# them on the swell, Sea.surface_y) with their decks over the highest wave, instead of being baked into the village
+	# mesh with their decks on the waterline (the sea plane flooded them). Their mooring lines run from the bollards
+	# (a hand's breadth under their tops) to cleats on the ships and are stretched every tick as the ships heave.
+	var post_y := deck + 0.36
 	var g: Dictionary = ModelsBuildings.ship(0, 21)
-	var gxf := Transform3D(Basis(Vector3.UP, 0.04), L.BOAT_HERACLES)
-	_merge(g["mesh"], gxf)
-	_box(Vector3(float(g["beam"]) * 0.8, 2.2, float(g["length"]) * 0.9), Transform3D(gxf.basis, L.BOAT_HERACLES + Vector3(0, 0.3, 0)))
+	_float_ship(g, L.BOAT_HERACLES, 0.04, "ShipHeracles", [
+		[Vector3(x + 3.2, post_y, tz + 0.4), Vector3(-0.55, 0.0, -3.8)],
+		[Vector3(x + 3.2, post_y, tz + 3.6), Vector3(-0.55, 0.0, 3.5)],
+	])
 	var m: Dictionary = ModelsBuildings.ship(1, 33)
-	var mxf := Transform3D(Basis(Vector3.UP, PI - 0.05), L.BOAT_LERNA)
-	_merge(m["mesh"], mxf)
-	_box(Vector3(float(m["beam"]) * 0.8, 2.4, float(m["length"]) * 0.9), Transform3D(mxf.basis, L.BOAT_LERNA + Vector3(0, 0.3, 0)))
-	# Mooring lines from the bollards to the ships.
-	var lm := MeshBuilder.new(95)
-	lm.limb(Vector3(x + 3.2, deck + 0.4, tz + 0.4), L.BOAT_HERACLES + Vector3(-0.6, 1.0, -3.8), 0.025, 0.025, 4, Color("D6BE88"), false)
-	lm.limb(Vector3(x + 3.2, deck + 0.4, tz + 3.6), L.BOAT_HERACLES + Vector3(-0.6, 1.1, 4.2), 0.025, 0.025, 4, Color("D6BE88"), false)
-	lm.limb(Vector3(x - 3.2, deck + 0.4, tz + 0.4), L.BOAT_LERNA + Vector3(0.7, 1.2, 3.6), 0.025, 0.025, 4, Color("D6BE88"), false)
-	_merge_mb(lm)
+	_float_ship(m, L.BOAT_LERNA, PI - 0.05, "ShipLerna", [
+		[Vector3(x - 3.2, post_y, tz + 0.4), Vector3(-0.65, 0.0, -3.4)],
+		[Vector3(x - 3.2, post_y, tz + 3.6), Vector3(-0.65, 0.0, -3.4)],
+	])
 	# The Lerna boat as an interactable (sail on after the lion).
 	lerna_boat = NemeaBoat.new()
 	lerna_boat.name = "BoatToLerna"
@@ -508,18 +511,66 @@ func _pier_and_boats() -> void:
 	lerna_boat.global_position = L.BOAT_DOCK
 
 
+## A ship on the water: a BoatFloat node (the hull riding the swell, its convex collision, the cleats, and the mooring
+## lines stretched between the pier and the ship every tick). `lines`: [pier end in world space (a point on a bollard),
+## the cleat on the ship in the ship's own frame (x, _, z): the cleat stands on its deck].
+func _float_ship(d: Dictionary, at: Vector3, yaw: float, node_name: String, lines: Array) -> void:
+	var length: float = d["length"]
+	var beam: float = d["beam"]
+	var deck: float = d["deck"]
+	var fit := MeshBuilder.new(95)
+	var cleats: Array = []
+	for ln in lines:
+		var cleat: Vector3 = ln[1]
+		cleat.y = deck + 0.04
+		fit.box(cleat, Vector3(0.22, 0.08, 0.08), Pal.WOOD_DARK)
+		cleats.append([ln[0], cleat + Vector3(0, 0.04, 0)])
+	var bf := BoatFloat.new()
+	bf.name = node_name
+	world.add_child(bf)
+	var tt := t
+	var depth_fn := func(px: float, pz: float) -> float:
+		return -float(tt.height_at(px, pz))
+	bf.setup(d["mesh"], fit.commit(), at, yaw, length, beam, depth_fn, _hull_points(d), cleats)
+
+
+## The convex collision of a decked ship in its own frame (origin on the waterline): the hull from the keel up to the
+## deck, so the hero swims into it and stands on the deck, not on air over the rails.
+func _hull_points(d: Dictionary) -> PackedVector3Array:
+	var length: float = d["length"]
+	var beam: float = d["beam"]
+	var depth: float = d["depth"]
+	var draft: float = d["draft"]
+	var deck: float = d["deck"]
+	var pts := PackedVector3Array()
+	var top := draft + deck # hull-local height of the deck: nothing of the shape is higher (the hero stands on it)
+	var ys := [0.0, top * 0.3, top * 0.65, top]
+	for i in 13:
+		var tn := -1.0 + 2.0 * float(i) / 12.0
+		var k := 0.22 * pow(absf(tn), 3.0)
+		for y: float in ys:
+			var yy := maxf(y, k)
+			var w: float = ModelsNature.hull_width_at(tn, beam, depth, yy)
+			pts.append(Vector3(w, yy - draft, tn * length * 0.5))
+			pts.append(Vector3(-w, yy - draft, tn * length * 0.5))
+	return pts
+
+
 # --- beach -------------------------------------------------------------------------------------------------
 
 func _beach() -> void:
 	var mb := MeshBuilder.new(400)
 	mb.vary = 0.03
-	# A fishing boat drawn up on the sand, nets drying on poles, crates.
-	var bp := _ground(-6.0, 106.0)
-	_merge(ModelsNature.boat_small(4), Transform3D(Basis(Vector3.UP, 1.2), bp + Vector3(0, 0.05, 0)))
-	_box(Vector3(1.4, 0.9, 3.6), Transform3D(Basis(Vector3.UP, 1.2), bp + Vector3(0, 0.45, 0)))
-	var bp2 := _ground(30.0, 107.0)
-	_merge(ModelsNature.boat_small(7), Transform3D(Basis(Vector3.UP, -1.9), bp2 + Vector3(0, 0.05, 0)))
-	_box(Vector3(1.4, 0.9, 3.6), Transform3D(Basis(Vector3.UP, -1.9), bp2 + Vector3(0, 0.45, 0)))
+	# Two fishing boats drawn up on the dry sand (1.1 m over the sea, 8 m from the wet line), nets drying on poles,
+	# crates. FIX2: each lies on its keel, pitched along the slope (beached_transform), not hung by its middle.
+	var m1 := ModelsNature.boat_small(4)
+	var tf1 := beached_transform(m1, Vector2(-6.0, 106.0), 1.2)
+	_merge(m1, tf1)
+	_box(Vector3(1.4, 0.9, 3.6), Transform3D(Basis(Vector3.UP, 1.2), tf1.origin + Vector3(0, 0.45, 0)))
+	var m2 := ModelsNature.boat_small(7)
+	var tf2 := beached_transform(m2, Vector2(30.0, 107.0), -1.9)
+	_merge(m2, tf2)
+	_box(Vector3(1.4, 0.9, 3.6), Transform3D(Basis(Vector3.UP, -1.9), tf2.origin + Vector3(0, 0.45, 0)))
 	for k in 3:
 		var px := -16.0 + k * 3.2
 		var p := _ground(px, 101.0)
@@ -529,13 +580,33 @@ func _beach() -> void:
 			for j in 6:
 				var u := float(j) / 5.0
 				var a := p.lerp(q, u) + Vector3(0, 1.75 - sin(u * PI) * 0.35, 0)
-				mb.limb(a, a + Vector3(0, -1.1 - sin(u * PI) * 0.2, 0.05), 0.12, 0.05, 4, Pal.AEGEAN_LIGHT if j % 2 == 0 else Pal.AEGEAN, false)
+				mb.limb(a, a + Vector3(0, -1.1 - sin(u * PI) * 0.2, 0.05), 0.12, 0.05, 4, Pal.AEGEAN_LIGHT if j % 2 == 0 else Pal.AEGEAN, true)
 		_cyl(0.12, 2.0, p)
 	for k in 4:
 		var cp := _ground(19.0 + k * 0.9, 102.0 + (k % 2) * 0.8)
 		ModelsBuildings._crate(mb, rng, cp, rng.randf_range(0.5, 0.65))
 	_box(Vector3(3.6, 0.7, 1.6), Transform3D(Basis.IDENTITY, _ground(20.4, 102.4) + Vector3(0, 0.3, 0)))
 	_merge_mb(mb)
+
+
+## The transform of a boat drawn up on the sand (FIX2): its keel on the ground and pitched along the slope, so that no
+## end floats over the sand and none sinks into it. `m`: the boat's mesh (bow = +Z of the model, its own list and
+## roll kept), `xz`: where its middle is, `yaw`. The lowest point of its hull bottom ends 3 cm in the sand.
+func beached_transform(m: Mesh, xz: Vector2, yaw: float) -> Transform3D:
+	var by := Basis(Vector3.UP, yaw)
+	var fwd := by * Vector3(0, 0, 1)
+	var half := 1.4
+	var gb := _ground(xz.x + fwd.x * half, xz.y + fwd.z * half)
+	var gs := _ground(xz.x - fwd.x * half, xz.y - fwd.z * half)
+	var bs := by * Basis(Vector3.RIGHT, -atan2(gb.y - gs.y, 2.0 * half))
+	var vs: PackedVector3Array = m.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var y := -INF
+	for v in vs:
+		if v.y > 0.45 or absf(v.x) > 0.8 or absf(v.z) > 1.7:
+			continue # the hull bottom only (not the oars, the stem and stern posts, the stone and the rope coil)
+		var w := bs * v
+		y = maxf(y, float(t.height_at(xz.x + w.x, xz.y + w.z)) - 0.03 - w.y)
+	return Transform3D(bs, Vector3(xz.x, y, xz.y))
 
 
 # --- commit ------------------------------------------------------------------------------------------------

@@ -17,6 +17,9 @@ class_name ModelsBuildings
 ## tools/preview.tscn.
 
 const VARY := 0.03
+## Underside of the roofs' eaves (rafter boards) and of ledges seen from below: plaster in shade / wood.
+const SOFFIT := Color("B07E54")
+const SOFFIT_PLASTER := Color("C9C0AE")
 ## Extra named tones (loaded by path so this file never depends on the class-name cache).
 const PX := preload("res://scripts/gfx/pal_extra.gd")
 const LEVELS := {"pharos": 3, "house": 2, "farm": 2, "dock": 2, "tower": 3, "wall": 2, "barracks": 2}
@@ -28,6 +31,7 @@ static func building(type: String, level: int, seed_value: int) -> Dictionary:
 	var rng := ModelsNature.make_rng(seed_value, 3)
 	var lv := clampi(level, 1, int(LEVELS.get(type, 1)))
 	var out := {}
+	_auto_close = type != "house"
 	match type:
 		"pharos":
 			out = _pharos(mb, rng, lv)
@@ -47,6 +51,7 @@ static func building(type: String, level: int, seed_value: int) -> Dictionary:
 			push_warning("ModelsBuildings: unknown building type '%s'" % type)
 			out = {"anchors": {}, "footprint": 1.0, "height": 1.0}
 			_box(mb, Vector3(0, 0.5, 0), Vector3.ONE, Pal.LIMESTONE)
+	_auto_close = false
 	out["mesh"] = mb.commit()
 	return out
 
@@ -322,7 +327,7 @@ static func _house(mb: MeshBuilder, rng: RandomNumberGenerator, lv: int) -> Dict
 	# Chimney.
 	var cx := 1.2 if door_x < 0.0 else -1.2
 	_box(mb, Vector3(cx, top + 1.05, -0.55), Vector3(0.44, 1.3, 0.44), Pal.MARBLE)
-	_box(mb, Vector3(cx, top + 1.76, -0.55), Vector3(0.56, 0.12, 0.56), Pal.MARBLE_SHADE)
+	_slab(mb, Vector3(cx, top + 1.76, -0.55), Vector3(0.56, 0.12, 0.56), Pal.MARBLE_SHADE, null, Vector3.ZERO, SOFFIT_PLASTER)
 	_box(mb, Vector3(cx, top + 1.86, -0.55), Vector3(0.3, 0.1, 0.3), Pal.TERRACOTTA_DARK)
 	# Flower pot by the door and a bench under the window.
 	_pot_plant(mb, rng, Vector3(door_x + (0.75 if door_x < 0.0 else -0.75), 0, hd + 0.35))
@@ -341,7 +346,7 @@ static func _house2(mb: MeshBuilder, rng: RandomNumberGenerator) -> Dictionary:
 	var hd := md * 0.5
 	_box(mb, Vector3(0.25, base * 0.5 - 0.15, -0.05), Vector3(6.6, base + 0.3, md + 0.46), Pal.LIMESTONE_DARK, Pal.LIMESTONE)
 	_box(mb, Vector3(mx, base + mh * 0.5, 0), Vector3(mw, mh, md), Pal.MARBLE)
-	_box(mb, Vector3(mx, base + 2.3, 0), Vector3(mw + 0.08, 0.12, md + 0.08), Pal.MARBLE_SHADE)
+	_slab(mb, Vector3(mx, base + 2.3, 0), Vector3(mw + 0.08, 0.12, md + 0.08), Pal.MARBLE_SHADE, null, Vector3.ZERO, SOFFIT_PLASTER)
 	_gable_roof(mb, Vector3(mx, base + mh, 0), mw, hd, 1.05, 0.34, 0.24, Pal.MARBLE)
 	# Annex.
 	var ax := 2.15
@@ -352,7 +357,7 @@ static func _house2(mb: MeshBuilder, rng: RandomNumberGenerator) -> Dictionary:
 	_box(mb, Vector3(ax, base + ah * 0.5, az), Vector3(aw, ah, ad), Pal.MARBLE)
 	# Terrace parapet.
 	var ty := base + ah
-	_box(mb, Vector3(ax, ty + 0.03, az), Vector3(aw + 0.1, 0.06, ad + 0.1), Pal.MARBLE_SHADE)
+	_slab(mb, Vector3(ax, ty + 0.03, az), Vector3(aw + 0.1, 0.06, ad + 0.1), Pal.MARBLE_SHADE, null, Vector3.ZERO, SOFFIT_PLASTER)
 	_box(mb, Vector3(ax + aw * 0.5 - 0.06, ty + 0.3, az), Vector3(0.14, 0.5, ad + 0.1), Pal.MARBLE)
 	_box(mb, Vector3(ax, ty + 0.3, az - ad * 0.5 + 0.06), Vector3(aw + 0.1, 0.5, 0.14), Pal.MARBLE)
 	_box(mb, Vector3(ax, ty + 0.3, az + ad * 0.5 - 0.06), Vector3(aw + 0.1, 0.5, 0.14), Pal.MARBLE)
@@ -367,10 +372,10 @@ static func _house2(mb: MeshBuilder, rng: RandomNumberGenerator) -> Dictionary:
 	_window(mb, Vector3(mx + 0.85, base + 1.3, hd), 0.6, 0.62)
 	_window(mb, Vector3(mx - 0.75, base + 3.45, hd), 0.6, 0.66)
 	_window(mb, Vector3(mx + 0.85, base + 3.45, hd), 0.6, 0.66)
-	_box(mb, Vector3(mx - 0.75, base + 2.98, hd + 0.3), Vector3(1.2, 0.1, 0.62), Pal.MARBLE_SHADE)
+	_slab(mb, Vector3(mx - 0.75, base + 2.98, hd + 0.3), Vector3(1.2, 0.1, 0.62), Pal.MARBLE_SHADE, null, Vector3.ZERO, SOFFIT_PLASTER)
 	for i in 6:
 		_box(mb, Vector3(mx - 1.3 + float(i) * 0.22, base + 3.22, hd + 0.58), Vector3(0.05, 0.42, 0.05), Pal.AEGEAN)
-	_box(mb, Vector3(mx - 0.75, base + 3.45, hd + 0.58), Vector3(1.2, 0.06, 0.07), Pal.AEGEAN)
+	_slab(mb, Vector3(mx - 0.75, base + 3.45, hd + 0.58), Vector3(1.2, 0.06, 0.07), Pal.AEGEAN)
 	# Back and sides.
 	_on_wall(mb, Vector3(mx, base + 1.3, -hd), PI)
 	_window(mb, Vector3(-0.8, 0, 0), 0.6, 0.62)
@@ -384,22 +389,22 @@ static func _house2(mb: MeshBuilder, rng: RandomNumberGenerator) -> Dictionary:
 	mb.pop()
 	# Chimney.
 	_box(mb, Vector3(mx + 1.1, base + mh + 1.05, -0.6), Vector3(0.44, 1.4, 0.44), Pal.MARBLE)
-	_box(mb, Vector3(mx + 1.1, base + mh + 1.8, -0.6), Vector3(0.56, 0.12, 0.56), Pal.MARBLE_SHADE)
+	_slab(mb, Vector3(mx + 1.1, base + mh + 1.8, -0.6), Vector3(0.56, 0.12, 0.56), Pal.MARBLE_SHADE, null, Vector3.ZERO, SOFFIT_PLASTER)
 	# Vine arbour in front of the annex.
 	var pz := az + ad * 0.5 + 1.25
 	var px0 := ax - aw * 0.5 + 0.2
 	for sx in [px0, ax + aw * 0.5 - 0.15]:
 		mb.cyl(Vector3(sx, 0, pz), 2.35, 0.08, 0.07, 6, Pal.WOOD)
 	for zz in [pz, az + ad * 0.5 + 0.1]:
-		_box(mb, Vector3(ax, 2.42, zz), Vector3(aw + 0.3, 0.12, 0.12), Pal.WOOD)
+		_slab(mb, Vector3(ax, 2.42, zz), Vector3(aw + 0.3, 0.12, 0.12), Pal.WOOD)
 	for i in 5:
-		_box(mb, Vector3(px0 - 0.1 + float(i) * 0.55, 2.52, (pz + az + ad * 0.5) * 0.5 + 0.1), Vector3(0.08, 0.08, 1.75), Pal.WOOD_LIGHT)
+		_slab(mb, Vector3(px0 - 0.1 + float(i) * 0.55, 2.52, (pz + az + ad * 0.5) * 0.5 + 0.1), Vector3(0.08, 0.08, 1.75), Pal.WOOD_LIGHT)
 	_vine_canopy(mb, rng, Vector3(px0, 2.66, pz + 0.05), Vector3(ax + aw * 0.5, 2.6, pz - 0.1), 4, 0.42)
 	_vine_canopy(mb, rng, Vector3(px0 + 0.3, 2.7, pz - 0.9), Vector3(ax + 0.6, 2.72, pz - 1.0), 2, 0.38)
 	_vine_canopy(mb, rng, Vector3(px0 + 0.05, 0.45, pz + 0.05), Vector3(px0, 2.3, pz + 0.05), 3, 0.22)
 	# Roof terrace: rug, little blue table and stools, a clothesline.
 	_box(mb, Vector3(ax - 0.1, ty + 0.07, az + 0.15), Vector3(1.3, 0.02, 0.9), Pal.CLOTH_RED)
-	_box(mb, Vector3(ax - 0.1, ty + 0.6, az + 0.15), Vector3(0.6, 0.06, 0.6), Pal.AEGEAN)
+	_slab(mb, Vector3(ax - 0.1, ty + 0.6, az + 0.15), Vector3(0.6, 0.06, 0.6), Pal.AEGEAN)
 	mb.cyl(Vector3(ax - 0.1, ty + 0.06, az + 0.15), 0.52, 0.05, 0.05, 4, Pal.AEGEAN, false)
 	for sx in [-0.55, 0.45]:
 		mb.cyl(Vector3(ax - 0.1 + sx, ty + 0.06, az + 0.2), 0.4, 0.15, 0.14, 5, Pal.AEGEAN_LIGHT, true)
@@ -424,6 +429,9 @@ static func _house2(mb: MeshBuilder, rng: RandomNumberGenerator) -> Dictionary:
 
 ## Chunky tiled gable roof with its ridge along X, sitting on walls of width `w` (X) whose top centre is
 ## `base`; `hd` = half the wall depth, `rise` = ridge height above the wall top. Also fills the gable ends.
+## DOCE (roofs seen from below): the slabs are CLOSED boxes with a wooden underside (the soffit of the eaves and the
+## gable overhangs: rafter boards, darker than the tiles) and so is the ridge cap; the single-sided gable triangles
+## close the attic with the soffits, so nothing is hollow from any side. (+6 triangles.)
 static func _gable_roof(mb: MeshBuilder, base: Vector3, w: float, hd: float, rise: float, ov: float, gable_ov: float, wall_col: Color, col: Color = Pal.TERRACOTTA) -> void:
 	var t := 0.17
 	var theta := atan2(rise, hd)
@@ -441,12 +449,12 @@ static func _gable_roof(mb: MeshBuilder, base: Vector3, w: float, hd: float, ris
 		var dir := Vector3(0, -sin(theta), side * cos(theta))
 		var c := base + Vector3(0, rise, 0) + dir * (l * 0.5)
 		mb.push(Transform3D(Basis(Vector3.RIGHT, theta * side), c))
-		_box(mb, Vector3(0, t * 0.5, 0), Vector3(rw, t, l), Pal.TERRACOTTA_DARK, col)
+		_slab(mb, Vector3(0, t * 0.5, 0), Vector3(rw, t, l), Pal.TERRACOTTA_DARK, col, Vector3.ZERO, SOFFIT)
 		for i in ribs:
-			_rib(mb, -rw * 0.5 + step * (float(i) + 0.5), t, -l * 0.5, l * 0.5 + 0.03, step * 0.3, 0.09, col.lightened(0.06))
+			_rib(mb, -rw * 0.5 + step * (float(i) + 0.5), t, -l * 0.5, l * 0.5, step * 0.3, 0.09, col.lightened(0.06))
 		mb.pop()
 	mb.push(Transform3D(Basis(Vector3.RIGHT, PI * 0.25), base + Vector3(0, rise + t * 1.05, 0)))
-	_box(mb, Vector3.ZERO, Vector3(rw + 0.06, 0.2, 0.2), Pal.TERRACOTTA_DARK)
+	_slab(mb, Vector3.ZERO, Vector3(rw + 0.06, 0.2, 0.2), Pal.TERRACOTTA_DARK)
 	mb.pop()
 
 
@@ -471,12 +479,12 @@ static func _on_wall(mb: MeshBuilder, p: Vector3, yaw: float) -> void:
 
 ## Window on a +Z-facing wall at `p` (pane centre): frame, glowing pane, sill and open blue shutters.
 static func _window(mb: MeshBuilder, p: Vector3, w: float, h: float, shutters: bool = true) -> void:
-	_plaque(mb, p + Vector3(0, 0, 0.03), Vector3(w + 0.14, h + 0.14, 0.06), Pal.MARBLE_SHADE)
-	_plaque(mb, p + Vector3(0, 0, 0.05), Vector3(w, h, 0.06), Pal.WINDOW)
-	_plaque(mb, p + Vector3(0, -h * 0.5 - 0.06, 0.08), Vector3(w + 0.24, 0.07, 0.16), Pal.LIMESTONE)
+	_plaque(mb, p + Vector3(0, 0, 0.03), Vector3(w + 0.14, h + 0.14, 0.06), Pal.MARBLE_SHADE, true)
+	_plaque(mb, p + Vector3(0, 0, 0.05), Vector3(w, h, 0.06), Pal.WINDOW, true)
+	_plaque(mb, p + Vector3(0, -h * 0.5 - 0.06, 0.08), Vector3(w + 0.24, 0.07, 0.16), Pal.LIMESTONE, true)
 	if shutters:
 		for sx in [-1.0, 1.0]:
-			_plaque(mb, p + Vector3(sx * (w * 0.5 + 0.2), 0, 0.05), Vector3(0.28, h + 0.06, 0.06), Pal.AEGEAN)
+			_plaque(mb, p + Vector3(sx * (w * 0.5 + 0.2), 0, 0.05), Vector3(0.28, h + 0.06, 0.06), Pal.AEGEAN, true)
 
 
 ## Door on a +Z-facing wall, `p` = bottom centre on the wall surface.
@@ -487,8 +495,9 @@ static func _door(mb: MeshBuilder, p: Vector3, w: float, h: float, col: Color = 
 	_plaque(mb, p + Vector3(w * 0.3, h * 0.48, 0.11), Vector3(0.06, 0.06, 0.04), Pal.BRONZE)
 
 
-## Wall-mounted slab centred on `c`: front (+Z), top and sides only (the back sits in the wall).
-static func _plaque(mb: MeshBuilder, c: Vector3, size: Vector3, col: Color) -> void:
+## Wall-mounted slab centred on `c`: front (+Z), top and sides only (the back sits in the wall). `closed` adds the
+## underside (sills and ledges are seen from below).
+static func _plaque(mb: MeshBuilder, c: Vector3, size: Vector3, col: Color, closed: bool = false) -> void:
 	var h := size * 0.5
 	var p0 := c + Vector3(-h.x, -h.y, -h.z)
 	var p1 := c + Vector3(h.x, -h.y, -h.z)
@@ -502,21 +511,23 @@ static func _plaque(mb: MeshBuilder, c: Vector3, size: Vector3, col: Color) -> v
 	mb.quad(p4, p7, p6, p5, col)
 	mb.quad(p2, p1, p5, p6, col)
 	mb.quad(p0, p3, p7, p4, col)
+	if closed:
+		mb.quad(p0, p1, p2, p3, SOFFIT_PLASTER)
 
 
 ## Terracotta pot with flowering herbs.
 static func _pot_plant(mb: MeshBuilder, rng: RandomNumberGenerator, p: Vector3, s: float = 1.0) -> void:
 	ModelsNature.lathe(mb, p, ModelsNature._scaled([Vector2(0, 0), Vector2(0.14, 0), Vector2(0.2, 0.3), Vector2(0.24, 0.33), Vector2(0.17, 0.36), Vector2(0, 0.36)], s), 5, [Pal.TERRACOTTA, Pal.TERRACOTTA, Pal.TERRACOTTA_DARK, Pal.TERRACOTTA_DARK, Pal.WOOD_DARK])
-	ModelsNature.blob(mb, rng, p + Vector3(0, 0.3 * s, 0), ModelsNature._scaled([Vector2(0.24, 0), Vector2(0.18, 0.24), Vector2(0, 0.34)], s), 5, 0.15, Pal.GRASS_DARK, Pal.CYPRESS)
+	ModelsNature.blob(mb, rng, p + Vector3(0, 0.3 * s, 0), ModelsNature._scaled([Vector2(0.17, 0), Vector2(0.18, 0.24), Vector2(0, 0.34)], s), 5, 0.15, Pal.GRASS_DARK, Pal.CYPRESS)
 	var col: Color = [Pal.POPPY, Pal.LAVENDER, Pal.CREST, Pal.DAISY][rng.randi() % 4]
 	for i in 3:
 		var a := TAU * float(i) / 3.0 + rng.randf()
-		mb.cyl(p + Vector3(cos(a) * 0.12, 0.5, sin(a) * 0.12) * s, 0.12 * s, 0.09 * s, 0.0, 4, col, false, rng.randf())
+		mb.cyl(p + Vector3(cos(a) * 0.12, 0.5, sin(a) * 0.12) * s, 0.12 * s, 0.09 * s, 0.0, 3, col, true, rng.randf())
 
 
 ## Wooden bench against a wall (seat along X).
 static func _bench(mb: MeshBuilder, p: Vector3) -> void:
-	_box(mb, p + Vector3(0, 0.42, 0), Vector3(1.2, 0.08, 0.36), Pal.WOOD_LIGHT)
+	_slab(mb, p + Vector3(0, 0.42, 0), Vector3(1.2, 0.08, 0.36), Pal.WOOD_LIGHT)
 	for sx in [-0.5, 0.5]:
 		_box(mb, p + Vector3(sx, 0.2, 0), Vector3(0.08, 0.4, 0.3), Pal.WOOD)
 
@@ -557,8 +568,8 @@ static func add_market_stall(mb: MeshBuilder, rng: RandomNumberGenerator, stripe
 			mb.limb(Vector3(sx, -0.15, sz), Vector3(sx, top, sz), 0.055, 0.045, 5, Pal.WOOD_DARK)
 	# Counter and the shelf behind it.
 	_box(mb, Vector3(0, 0.46, 0.38), Vector3(2.3, 0.92, 0.62), Pal.WOOD_LIGHT, Pal.WOOD)
-	_box(mb, Vector3(0, 0.88, 0.38), Vector3(2.42, 0.07, 0.74), Pal.WOOD)
-	_box(mb, Vector3(0, 0.62, -0.55), Vector3(2.2, 0.06, 0.4), Pal.WOOD)
+	_slab(mb, Vector3(0, 0.88, 0.38), Vector3(2.42, 0.07, 0.74), Pal.WOOD)
+	_slab(mb, Vector3(0, 0.62, -0.55), Vector3(2.2, 0.06, 0.4), Pal.WOOD)
 	# The awning: stripes across, both faces (it is seen from under it too).
 	# Two pitches (a gentle one at the back, a steeper one at the front) so it never reads edge-on.
 	var n := 7
@@ -769,27 +780,31 @@ static func _crate(mb: MeshBuilder, rng: RandomNumberGenerator, p: Vector3, s: f
 	var yaw := rng.randf_range(-0.3, 0.3)
 	mb.push_at(p, yaw)
 	_box(mb, Vector3(0, s * 0.5, 0), Vector3(s, s, s), Pal.WOOD_LIGHT, Pal.WOOD)
-	_box(mb, Vector3(0, s * 0.5, 0), Vector3(s + 0.03, s * 0.16, s + 0.03), Pal.WOOD)
-	_box(mb, Vector3(0, s - 0.03, 0), Vector3(s + 0.04, 0.07, s + 0.04), Pal.WOOD)
+	_slab(mb, Vector3(0, s * 0.5, 0), Vector3(s + 0.03, s * 0.16, s + 0.03), Pal.WOOD)
+	_slab(mb, Vector3(0, s - 0.03, 0), Vector3(s + 0.04, 0.07, s + 0.04), Pal.WOOD)
 	mb.pop()
 
 
 ## Small fishing boat for the dock (origin at the waterline, bow towards +Z): hull, mast with a furled lateen
-## sail and a pennant, nets and a basket.
+## sail and a pennant, nets and a basket. FIX2: it floats on its origin like the ships: the keel 0.3 m under the
+## waterline, the floor 0.22 m OVER it (the highest swell is 0.18 m, so the sea plane never floods the inside) and
+## the gunwale 0.65 m over the water; mast, nets and basket stand on that floor.
 static func boat(seed_value: int) -> ArrayMesh:
 	var mb := MeshBuilder.new(seed_value)
 	mb.vary = VARY
 	var rng := ModelsNature.make_rng(seed_value, 5)
 	var length := 3.8
-	mb.push_at(Vector3(0, -0.28, 0))
-	ModelsNature.add_boat_hull(mb, rng, length, 1.4, 0.66)
+	var draft := 0.3
+	var fl := 0.22 # the floor over the waterline
+	mb.push_at(Vector3(0, -draft, 0))
+	ModelsNature.add_boat_hull(mb, rng, length, 1.4, 0.95, -1, draft + fl)
 	mb.pop()
 	var mz := 0.55
-	mb.limb(Vector3(0, -0.1, mz), Vector3(0, 3.1, mz), 0.06, 0.045, 5, Pal.WOOD)
+	mb.limb(Vector3(0, fl - 0.05, mz), Vector3(0, 3.1, mz), 0.06, 0.045, 5, Pal.WOOD)
 	_box(mb, Vector3(0, 3.12, mz), Vector3(0.1, 0.08, 0.1), Pal.WOOD_DARK)
 	mb.plate([Vector3(0, 3.1, mz), Vector3(0, 2.86, mz), Vector3(0.0, 2.98, mz - 0.55)], Pal.CREST)
 	# Furled lateen yard: long spar with the sail bundled along it.
-	var y0 := Vector3(0.05, 0.55, -1.35)
+	var y0 := Vector3(0.05, 0.75, -1.35)
 	var y1 := Vector3(0.05, 2.95, mz + 1.1)
 	mb.limb(y0, y1, 0.04, 0.03, 4, Pal.WOOD_LIGHT)
 	var m0 := y0.lerp(y1, 0.12)
@@ -797,9 +812,10 @@ static func boat(seed_value: int) -> ArrayMesh:
 	var m2 := y0.lerp(y1, 0.88)
 	mb.limb(m0 + Vector3(0.04, 0, 0), m1 + Vector3(0.06, -0.02, 0), 0.06, 0.13, 5, Pal.CLOTH, false)
 	mb.limb(m1 + Vector3(0.06, -0.02, 0), m2 + Vector3(0.04, 0, 0), 0.13, 0.05, 5, Pal.CLOTH, false)
-	# Nets heaped in the stern and a fish basket.
-	ModelsNature.blob(mb, rng, Vector3(0, 0.1, -1.05), [Vector2(0.42, 0), Vector2(0.38, 0.12), Vector2(0.15, 0.22), Vector2(0, 0.23)], 6, 0.2, Pal.AEGEAN_LIGHT, Pal.AEGEAN, -0.3)
-	_basket(mb, rng, Vector3(0.15, 0.08, -0.25))
+	# Nets heaped in the stern and a fish basket, on the floor. (FIX2: hemp-coloured: the nets used to be sea blue, a patch
+	# of "water" inside the boat.)
+	ModelsNature.blob(mb, rng, Vector3(0, fl, -1.05), [Vector2(0.42, 0), Vector2(0.38, 0.12), Vector2(0.15, 0.22), Vector2(0, 0.23)], 6, 0.2, Pal.SAND_WET, Pal.PATH_DARK, -0.3)
+	_basket(mb, rng, Vector3(0.15, fl, -0.25))
 	return mb.commit()
 
 
@@ -1136,7 +1152,7 @@ static func _weapon_rack(mb: MeshBuilder, rng: RandomNumberGenerator, p: Vector3
 	for i in 2:
 		var sp := Vector3(-0.36 + float(i) * 0.75, 0.42, 0.42)
 		mb.push(Transform3D(Basis(Vector3.UP, rng.randf_range(-0.2, 0.2)) * Basis(Vector3.RIGHT, PI * 0.5 - 0.25), sp))
-		mb.cyl(Vector3.ZERO, 0.06, 0.4, 0.38, 8, Pal.BRONZE, false)
+		mb.cyl(Vector3.ZERO, 0.06, 0.4, 0.38, 8, Pal.BRONZE, true)
 		mb.cyl(Vector3(0, 0.06, 0), 0.04, 0.38, 0.2, 8, shield_cols[(i + rng.randi() % 3) % 3], false)
 		mb.disc(Vector3(0, 0.1, 0), 0.2, 8, Pal.BRONZE)
 		mb.pop()
@@ -1279,7 +1295,23 @@ static func _rubble_line(mb: MeshBuilder, rng: RandomNumberGenerator, span: floa
 # --- small helpers -------------------------------------------------------------------------------------------
 
 static func _box(mb: MeshBuilder, c: Vector3, size: Vector3, col: Color, top: Variant = null, rot: Vector3 = Vector3.ZERO) -> void:
+	# The PHAROS buildings Nemea does not place (tower, wall, barracks, dock, farm, pharos) close every box that
+	# floats: bottom above the ground. The houses and the stall choose their closed boxes by hand (_slab), to keep
+	# their triangle counts down.
+	if _auto_close and c.y - size.y * 0.5 > 0.06:
+		ModelsNature.box6(mb, c, size, col, top, rot)
+		return
 	ModelsNature.box5(mb, c, size, col, top, rot)
+
+
+static var _auto_close := false
+
+
+## DOCE (roofs seen from below): a CLOSED box for everything that hangs free above the ground (roof slabs, ledges,
+## sills, balcony and terrace slabs, beams, rafters, shelves, caps). `_box` is box5 (no bottom) and is only for what
+## rests on the ground or on another solid. `under` colours the underside (a soffit).
+static func _slab(mb: MeshBuilder, c: Vector3, size: Vector3, col: Color, top: Variant = null, rot: Vector3 = Vector3.ZERO, under: Variant = null) -> void:
+	ModelsNature.box6(mb, c, size, col, top, rot, under)
 
 
 # --- preview wrappers (tools/preview.tscn) -------------------------------------------------------------------
@@ -1404,36 +1436,76 @@ static func _with_boats(d: Dictionary, seed_value: int) -> Dictionary:
 
 # --- DOCE: ships ---------------------------------------------------------------------------------------------
 
+## SHIP (merge of the fix2 lanes): MeshBuilder.tube() caps only its far end. This closes the FOOT of a tube too (same ring as
+## tube(): its first point, its direction, radius r0): a fan of triangles facing back along the tube.
+static func _tube_foot(mb: MeshBuilder, points: Array, r0: float, sides: int, col: Color) -> void:
+	var p: Vector3 = points[0]
+	var dir: Vector3 = (points[1] - p).normalized()
+	var up_hint := Vector3.UP
+	if absf(dir.dot(up_hint)) > 0.95:
+		up_hint = Vector3.FORWARD
+	var x := dir.cross(up_hint).normalized()
+	var z := x.cross(dir).normalized()
+	for i in sides:
+		var a0 := TAU * float(i) / float(sides)
+		var a1 := TAU * float(i + 1) / float(sides)
+		mb.tri(p, p + (x * cos(a0) + z * sin(a0)) * r0, p + (x * cos(a1) + z * sin(a1)) * r0, col)
+
+
 ## A Greek ship moored at Nemea's pier. Origin on the waterline amidships, bow towards +Z. style 0: Heracles'
 ## galley (black hull with a red band, painted eyes at the bow, a curled stern post, oars shipped along the
 ## sides, bronze shields on the rail, the square sail furled on its yard); style 1: the merchantman for Lerna
-## (white and blue, the striped sail set). Returns {"mesh", "length", "beam"}.
+## (white and blue, the striped sail set). Returns {"mesh", "length", "beam", "depth", "top", "deck", "draft", "rail"}.
+## FIX2 (client: "hay algunos barcos que le entra agua por encima"): the ship is built to FLOAT on its origin. The keel is
+## `draft` under the waterline, the planked deck is `deck` ABOVE it (0.34 m: over the highest swell, 0.18 m, with a
+## hand's breadth to spare, so the sea plane, which is drawn over everything below its surface, can never cover
+## the inside) and the gunwale `rail` m over the water. Everything on board stands on that deck. NemeaVillage hangs
+## the mesh on a BoatFloat node that keeps the origin on the swell (Sea.surface_y) and tilts the hull with it.
 static func ship(style: int, seed_value: int) -> Dictionary:
 	var mb := MeshBuilder.new(seed_value)
 	mb.vary = VARY
 	var rng := ModelsNature.make_rng(seed_value, 11)
 	var length := 10.5 if style == 0 else 9.0
 	var beam := 2.8 if style == 0 else 3.0
-	var depth := 1.35 if style == 0 else 1.55
+	var depth := 1.45 if style == 0 else 1.7 # keel to gunwale amidships (was 1.35 / 1.55)
+	var draft := 0.6 # the keel under the waterline
+	var deck := 0.34 # the deck's top over the waterline
 	var band := Pal.CLOTH_RED if style == 0 else Pal.AEGEAN
 	var side := Color("3A3236") if style == 0 else Pal.MARBLE
 	var bottom := Color("2C2629") if style == 0 else Pal.AEGEAN.darkened(0.25)
 	var rim := Pal.WOOD_DARK if style == 0 else Pal.WOOD
-	mb.push_at(Vector3(0, -0.6, 0))
-	ModelsNature.hull(mb, length, beam, depth, band, side, bottom, rim, Pal.WOOD_LIGHT)
-	# Deck and thwarts.
-	ModelsNature.box5(mb, Vector3(0, 0.55, 0), Vector3(beam * 0.55, 0.06, length * 0.62), Pal.WOOD_LIGHT, Pal.WOOD_LIGHT)
-	for t in [-0.32, -0.12, 0.08, 0.28]:
-		var w := beam * 0.5 * pow(maxf(0.0, 1.0 - pow(absf(t * 2.0), 2.2)), 0.6) - 0.1
-		ModelsNature.box5(mb, Vector3(0, depth - 0.18, t * length), Vector3(w * 2.0, 0.07, 0.24), Pal.WOOD)
+	mb.push_at(Vector3(0, -draft, 0))
+	ModelsNature.hull(mb, length, beam, depth, band, side, bottom, rim, Pal.WOOD_LIGHT, draft + deck, Pal.WOOD_LIGHT)
+	if style == 0:
+		# The rowers' benches across the deck, each on two blocks, wall to wall.
+		for t in [-0.32, -0.12, 0.08, 0.28]:
+			var yb := draft + deck + 0.3
+			var w := ModelsNature.hull_width_at(t * 2.0, beam, depth, yb) - 0.12
+			ModelsNature.box5(mb, Vector3(0, yb - 0.035, t * length), Vector3(w * 2.0, 0.07, 0.24), Pal.WOOD)
+			for sx in [-1.0, 1.0]:
+				ModelsNature.box5(mb, Vector3(sx * (w - 0.2), draft + deck + 0.13, t * length), Vector3(0.1, 0.26, 0.2), Pal.WOOD_DARK)
+	else:
+		# The hatch amidships (a coaming with a grating) behind the mast.
+		ModelsNature.box5(mb, Vector3(0, draft + deck + 0.08, -0.35), Vector3(1.0, 0.16, 1.2), Pal.WOOD_DARK, Pal.WOOD)
+		ModelsNature.box5(mb, Vector3(0, draft + deck + 0.18, -0.35), Vector3(0.86, 0.04, 1.06), Pal.WOOD_LIGHT)
+		for k in 4:
+			ModelsNature.box5(mb, Vector3(0, draft + deck + 0.215, -0.35 - 0.39 + 0.26 * float(k)), Vector3(0.86, 0.03, 0.07), Pal.WOOD)
 	mb.pop()
-	var top := depth - 0.6 + 0.12
+	var top := depth - draft + 0.12
 	# Stern post curling up and forward; a tall stem post.
 	var stern: Array = []
 	for k in 7:
 		var u := float(k) / 6.0
-		stern.append(Vector3(0, top + 0.1 + u * 1.5, -length * 0.5 + 0.05 - sin(u * 2.4) * 0.65 + u * u * 0.3))
+		# SHIP (merge, mesh audit): the post is built in a frame turned a quarter turn about X (y' = z, z' = -y). tube() keeps
+		# its ring frame with an "up" hint of +Y and swaps it where the path runs along +Y: the curl of this post turns
+		# vertical, so the frame flipped by half a turn there and the quads between came out inside out (the audit saw the
+		# post's back through its front). In the turned frame the path is never along the hint: one frame all the way.
+		var q := Vector3(0, top + 0.1 + u * 1.5, -length * 0.5 + 0.05 - sin(u * 2.4) * 0.65 + u * u * 0.3)
+		stern.append(Vector3(q.x, q.z, -q.y))
+	mb.push(Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3.ZERO))
 	mb.tube(stern, 0.13, 0.05, 6, rim)
+	_tube_foot(mb, stern, 0.13, 6, rim) # tube() also leaves its foot open: a camera under the stern looked up the post
+	mb.pop()
 	mb.limb(Vector3(0, top - 0.1, length * 0.5 - 0.08), Vector3(0, top + 0.95, length * 0.5 + 0.18), 0.12, 0.07, 6, rim)
 	if style == 0:
 		# Painted eyes on the bow (the ship sees its way).
@@ -1441,8 +1513,10 @@ static func ship(style: int, seed_value: int) -> Dictionary:
 			var z := length * 0.5 - 0.95
 			var x: float = sx * ModelsNature._hull_half_width(0.82, beam) + sx * 0.02
 			mb.push(Transform3D(Basis(Vector3.UP, sx * PI * 0.5 + sx * 0.25), Vector3(x, top - 0.35, z)))
-			_plaque(mb, Vector3(0, 0, 0), Vector3(0.44, 0.3, 0.03), Pal.MARBLE)
-			_plaque(mb, Vector3(0.04, 0, 0.02), Vector3(0.17, 0.2, 0.03), Color("1E1A1E"))
+			# SHIP (merge, mesh audit): real boxes: the eye is turned 14 degrees off the hull, so its back (which _plaque leaves out, it
+			# sits against a wall) shows from the bow
+			ModelsNature.box6(mb, Vector3(0, 0, 0), Vector3(0.44, 0.3, 0.03), Pal.MARBLE)
+			ModelsNature.box6(mb, Vector3(0.04, 0, 0.02), Vector3(0.17, 0.2, 0.03), Color("1E1A1E"))
 			mb.pop()
 		# Bronze shields along the rail and the oars shipped (blades up).
 		for sx in [-1.0, 1.0]:
@@ -1459,18 +1533,18 @@ static func ship(style: int, seed_value: int) -> Dictionary:
 			var b := Vector3(sx * beam * 0.42, top + 0.12, length * 0.3)
 			for o in 3:
 				var off := Vector3(0, 0.07 * o, 0.12 * o)
-				mb.limb(a + off, b + off, 0.035, 0.035, 4, Pal.WOOD_LIGHT, false)
-	# Mast and yard.
+				mb.limb(a + off, b + off, 0.035, 0.035, 4, Pal.WOOD_LIGHT, true)
+	# Mast and yard (the mast steps into the deck).
 	var mz := 0.4 if style == 0 else 0.6
 	var mh := 7.2 if style == 0 else 7.8
-	mb.limb(Vector3(0, -0.2, mz), Vector3(0, mh, mz), 0.12, 0.085, 6, Pal.WOOD)
+	mb.limb(Vector3(0, deck - 0.05, mz), Vector3(0, mh, mz), 0.12, 0.085, 6, Pal.WOOD)
 	var yard_y := mh - 0.55
 	var yw := 2.9 if style == 0 else 3.2
 	mb.limb(Vector3(-yw, yard_y, mz + 0.1), Vector3(yw, yard_y, mz + 0.1), 0.07, 0.07, 5, Pal.WOOD_LIGHT)
 	if style == 0:
 		# Sail furled on the yard: a lumpy bundle.
-		mb.limb(Vector3(-yw + 0.3, yard_y - 0.12, mz + 0.12), Vector3(0, yard_y - 0.2, mz + 0.12), 0.1, 0.2, 6, Pal.CLOTH, false)
-		mb.limb(Vector3(0, yard_y - 0.2, mz + 0.12), Vector3(yw - 0.3, yard_y - 0.12, mz + 0.12), 0.2, 0.1, 6, Pal.CLOTH, false)
+		mb.limb(Vector3(-yw + 0.3, yard_y - 0.12, mz + 0.12), Vector3(0, yard_y - 0.2, mz + 0.12), 0.1, 0.2, 6, Pal.CLOTH, true)
+		mb.limb(Vector3(0, yard_y - 0.2, mz + 0.12), Vector3(yw - 0.3, yard_y - 0.12, mz + 0.12), 0.2, 0.1, 6, Pal.CLOTH, true)
 	else:
 		# The striped square sail, set and bellied a little towards the bow.
 		var rows := 6
@@ -1490,12 +1564,12 @@ static func ship(style: int, seed_value: int) -> Dictionary:
 				var q3: Vector3 = p.call(u0, v1)
 				mb.quad(q0, q1, q2, q3, col)
 				mb.quad(q0, q3, q2, q1, col.darkened(0.08))
-		# Amphoras lashed amidships.
+		# Amphoras lashed on the deck astern of the hatch.
 		for i in 4:
-			mb.push_at(Vector3(-0.5 + (i % 2) * 1.0, top - 0.5, -1.4 - (i / 2) * 0.7), rng.randf() * TAU, Vector3.ONE * 0.9)
+			mb.push_at(Vector3(-0.5 + (i % 2) * 1.0, deck, -1.4 - (i / 2) * 0.7), rng.randf() * TAU, Vector3.ONE * 0.9)
 			ModelsNature.add_amphora(mb, rng, 1.0, 1)
 			mb.pop()
 	# Rigging: forestay and backstay.
-	mb.limb(Vector3(0, mh - 0.1, mz), Vector3(0, top + 0.9, length * 0.5 + 0.1), 0.015, 0.015, 3, Pal.WOOD_LIGHT, false)
-	mb.limb(Vector3(0, mh - 0.1, mz), Vector3(0, top + 1.3, -length * 0.5 + 0.4), 0.015, 0.015, 3, Pal.WOOD_LIGHT, false)
-	return {"mesh": mb.commit(), "length": length, "beam": beam, "top": top}
+	mb.limb(Vector3(0, mh - 0.1, mz), Vector3(0, top + 0.9, length * 0.5 + 0.1), 0.015, 0.015, 3, Pal.WOOD_LIGHT, true)
+	mb.limb(Vector3(0, mh - 0.1, mz), Vector3(0, top + 1.3, -length * 0.5 + 0.4), 0.015, 0.015, 3, Pal.WOOD_LIGHT, true)
+	return {"mesh": mb.commit(), "length": length, "beam": beam, "top": top, "deck": deck, "draft": draft, "depth": depth, "rail": depth - draft}

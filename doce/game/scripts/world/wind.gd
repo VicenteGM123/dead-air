@@ -8,7 +8,7 @@ extends Node
 ##   g_wind       float  overall strength (TimeOfDay's mood sets it: day 1.0, golden 1.2, dusk 1.3...); multiplied
 ##                       here by `strength`
 ##   g_wind_dir   vec2   unit XZ direction the wind blows towards (default east-south-east, with the clouds)
-##   g_wind_gust  vec4   (gust strength, gust wavelength m, gust speed m/s, tip flutter)
+##   g_wind_gust  vec4   (gust strength, gust wavelength m, gust speed m/s, tip sway amount)
 ##   g_push_a     mat4   pusher heads: column i = (x, y, z, radius); radius 0 = slot unused
 ##   g_push_b     mat4   pusher tails: column i = (x, y, z, strength at the tail)
 ##
@@ -83,7 +83,7 @@ func _update_pushers(delta: float) -> void:
 			_heads[i] = Vector4.ZERO
 			_tails4[i] = Vector4.ZERO
 			continue
-		var p := n.global_position
+		var p := _visual_pos(n)
 		var r := 0.0
 		if i == 0:
 			# the hero: his own meta while his free hand brushes the wheat (Hero._feed_brush), else hero_radius
@@ -123,6 +123,19 @@ var _heads: Array[Vector4] = [Vector4.ZERO, Vector4.ZERO, Vector4.ZERO, Vector4.
 var _tails4: Array[Vector4] = [Vector4.ZERO, Vector4.ZERO, Vector4.ZERO, Vector4.ZERO]
 
 
+## Where a pusher is DRAWN this frame: the hero's and the beasts' bodies move in 60 Hz physics ticks and their rigs are
+## drawn interpolated between them; a pusher that followed the body would hop from tick to tick (and from 0 to 2 ticks
+## in a frame whenever the frame rate and the physics rate beat against each other) while the model glides, and the
+## stalks round it would jitter. Hero.visual_position() is the interpolated position; a beast's rig (top level) sits there.
+func _visual_pos(n: Node3D) -> Vector3:
+	if n.has_method("visual_position"):
+		return n.call("visual_position")
+	var rg: Variant = n.get("rig")
+	if rg is Node3D and (rg as Node3D).is_inside_tree() and (rg as Node3D).top_level:
+		return (rg as Node3D).global_position
+	return n.global_position
+
+
 ## Keeps the nodes of `list` nearest to the camera in slots 1-3 (insertion into a 3-long sorted list).
 func _consider(list: Array, hero: Node3D, cp: Vector3, beasts: bool) -> void:
 	for o in list:
@@ -131,7 +144,7 @@ func _consider(list: Array, hero: Node3D, cp: Vector3, beasts: bool) -> void:
 			continue
 		if beasts and not (n.has_method("is_alive") and bool(n.call("is_alive"))):
 			continue
-		var d := n.global_position.distance_squared_to(cp)
+		var d := _visual_pos(n).distance_squared_to(cp)
 		if beasts and d > BEAST_RANGE * BEAST_RANGE:
 			continue
 		if d >= _pick_d[3]:

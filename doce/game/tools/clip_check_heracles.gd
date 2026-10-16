@@ -49,9 +49,7 @@ func _ready() -> void:
 		if only == "" or only.split(",").has(l[0]):
 			states.append(l)
 	var acts: Array = []
-	for a in RigHeracles._action_defs().keys():
-		if String(a).ends_with("_lion"):
-			continue
+	for a in RigHeracles.act_names():
 		if only == "" or only.split(",").has(a):
 			acts.append(a)
 	rig = RigHeracles.new()
@@ -322,7 +320,7 @@ func _volumes() -> Array:
 		var an := RigHeracles.mx(RigHeracles.P_ANKLE, 1.0 if side == 0 else -1.0)
 		cap.call("foot" + sfx, fb * (an + Vector3(0, -0.05, 0.04)), fb * (an + Vector3(0, -0.06, -0.17)), 0.04)
 	# props
-	var shx := _skin(RigHeracles.FARM_L)
+	var shx := rig.shield_skin()
 	var el := RigHeracles.mx(RigHeracles.P_ELBOW, -1.0)
 	var wr := RigHeracles.mx(RigHeracles.P_WRIST, -1.0)
 	var dfa := (wr - el).normalized()
@@ -403,7 +401,7 @@ func _check(label: String, grounded: bool, lying: bool) -> void:
 	if rig._sword.visible:
 		sets["sword"] = _xform(_local["sword"], swx)
 	if not rig._weapons_hidden():
-		sets["shield"] = _xform(_local["shield"], _skin(RigHeracles.FARM_L))
+		sets["shield"] = _xform(_local["shield"], rig.shield_skin())
 	if rig._spear_back.visible:
 		sets["spear"] = _xform(_local["spear"], (rig._piv["spear_s"] as Node3D).transform * rig._spear_back.transform)
 	if rig._spear_hand.visible:
@@ -463,13 +461,21 @@ func _check(label: String, grounded: bool, lying: bool) -> void:
 				continue
 			var worst := 0.0
 			var cnt := 0
+			var worst_p := Vector3.ZERO
 			for p in pts:
 				var d := _depth(p, vol)
 				if d > tol:
 					cnt += 1
+					if d > worst:
+						worst_p = p
 					worst = maxf(worst, d)
 			if cnt > 0:
 				_issue(label, "%s->%s" % [sname, vn], cnt, worst)
+				if _arg("dump", "0") == "1" and worst > 0.02:
+					var extra := ""
+					if vol.has("a"):
+						extra = " vol a=%s b=%s r=%.3f" % [vol["a"], vol["b"], float(vol["r"])]
+					_report.append("      DUMP %s->%s worst_point=%s%s hand_r=%s" % [sname, vn, worst_p, extra, rig._hand_r.transform.origin])
 		# ground
 		var low := 0.0
 		var lcnt := 0
@@ -525,7 +531,7 @@ func _lowest(a: String, at: float) -> void:
 				var nm: String = vol["name"]
 				lows[nm] = minf(lows.get(nm, 9.0), lo)
 			var swx: Transform3D = rig._hand_r.transform * rig._sword.transform
-			var sets := {"sword": _xform(_local["sword"], swx), "shield": _xform(_local["shield"], _skin(RigHeracles.FARM_L))}
+			var sets := {"sword": _xform(_local["sword"], swx), "shield": _xform(_local["shield"], rig.shield_skin())}
 			if rig._crest_mi.visible:
 				sets["crest"] = _xform(_local["crest"], _skin(RigHeracles.CREST_B))
 			if rig._show_lion:
@@ -553,7 +559,7 @@ func _min_y() -> float:
 		if vol["kind"] == "cap":
 			lo = minf(lo, minf((vol["a"] as Vector3).y, (vol["b"] as Vector3).y) - float(vol["r"]))
 	var swx: Transform3D = rig._hand_r.transform * rig._sword.transform
-	for pset in [_xform(_local["sword"], swx), _xform(_local["shield"], _skin(RigHeracles.FARM_L)), _xform(_local["crest"], _skin(RigHeracles.CREST_B)),
+	for pset in [_xform(_local["sword"], swx), _xform(_local["shield"], rig.shield_skin()), _xform(_local["crest"], _skin(RigHeracles.CREST_B)),
 			_xform(_local["spear"], (rig._piv["spear_s"] as Node3D).transform * rig._spear_back.transform)]:
 		for p in pset:
 			lo = minf(lo, p.y)
@@ -699,7 +705,7 @@ func _point_sets() -> Dictionary:
 	var sets := {}
 	var swx: Transform3D = rig._hand_r.transform * rig._sword.transform
 	sets["sword"] = _xform(_local["sword"], swx)
-	sets["shield"] = _xform(_local["shield"], _skin(RigHeracles.FARM_L))
+	sets["shield"] = _xform(_local["shield"], rig.shield_skin())
 	if rig._spear_back.visible:
 		sets["spear"] = _xform(_local["spear"], (rig._piv["spear_s"] as Node3D).transform * rig._spear_back.transform)
 	sets["fist_r"] = _xform(_local["fist_r"], _skin(RigHeracles.HAND_R))

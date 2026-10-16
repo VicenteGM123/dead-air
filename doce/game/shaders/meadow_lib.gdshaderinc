@@ -39,7 +39,8 @@ uniform float root_k = 0.42;       // FIXER: brightness of the blades' roots (th
 uniform float crest_k = 0.3;       // FIXER: the wind wave's crest sheen on the upper blades (lighter bands roll over)
 uniform float tone_k = 1.0;        // strength of the two-tone (pattern) variation
 uniform float tip_glow = 0.6;      // backlit translucency of the tips
-uniform float wave_tint = 0.4;     // the wind wave's tint: how much darker the grass is where the gust bends it (Trung)
+uniform float wave_tint = 0.3;     // the wind wave's tint: how much darker the grass is where the gust bends it (Trung; 0.4 -> 0.3: the waves are
+                                   // on all the time now, the mean look stays what the client approved)
 uniform float big_scale = 4.6;     // the big soft colour patches: x the mound tile (~180 m: patches of 15-40 m)
 uniform float big_k = 1.0;         // ... and their strength
 
@@ -202,7 +203,7 @@ float mlib_wave_tint(float wave, float gust, float hf) {
 
 // FIXER: how much the gust tilts the mass's normal along the wind (the light on the field changes as a wave rolls
 // through it); used by the clumps and the ground alike.
-const float MLIB_GUST_TILT = 0.55;
+const float MLIB_GUST_TILT = 0.4;   // (0.55 when the waves were on a fifth of the time)
 
 // FIXER: at dusk and dawn (twilight: the moods' night factor between ~0.2 and ~0.8) the meadow's chosen shadow keeps part
 // of the mood's hue and a little more light, so it reads as coloured shade (like the paths and the props) instead of
@@ -219,18 +220,23 @@ vec3 mlib_mood_shadow(vec3 shadow, vec3 ambl) {
 	return mix(shadow, l * hue, 0.4 * twilight) * (1.0 + 0.45 * twilight);
 }
 
-// Trung's wind, from ONE noise at the root: the slow, smooth WIND WAVE (travelling bands, 0..1) and the fast WIND
-// NOISE (-0.5..0.5). Returns (wave, noise).
+// Trung's wind at the root: the slow, smooth WIND WAVE (travelling bands, 0..1, always rolling: wind.gdshaderinc) and the
+// small slow RIPPLE from clump to clump (-0.5..0.5). Returns (wave, ripple). (It used to return a FAST noise turning
+// each clump at ~2 Hz: the trembling the client saw between the gusts.)
 vec2 mlib_wind(vec2 root, float wave_scale, float wave_speed) {
 	float wave = wind_gust_k(root, wave_scale, wave_speed);
-	float n = ph_noise(root * 0.7 - g_wind_dir * g_time * 2.6 + vec2(3.1, 7.7)) - 0.5;
+	float n = wind_ripple(root);
 	return vec2(wave, n);
 }
 
+// How far the crest of a wave leans a clump (radians, before g_wind), and how far the ripple moves it.
+const float MLIB_WAVE_BEND = 0.36;
+const float MLIB_RIPPLE_BEND = 0.07;
+
 // The bend of a plant rooted at `root3` (world): xy = bend direction (xz) * angle (radians), z = flattening, from
-// the wind (wave + noise) and the pushers (hero, beasts).
+// the wind (wave + ripple) and the pushers (hero, beasts).
 vec3 mlib_bend(vec3 root3, vec2 wind, float flex) {
-	float a_wind = (0.1 + 0.42 * wind.x * g_wind_gust.x + 0.2 * wind.y) * g_wind * flex;
+	float a_wind = (0.1 + MLIB_WAVE_BEND * wind.x * g_wind_gust.x + MLIB_RIPPLE_BEND * wind.y) * g_wind * flex;
 	vec2 b = g_wind_dir * a_wind;
 	vec3 push = wind_push(root3);
 	b += push.xy * 1.25;

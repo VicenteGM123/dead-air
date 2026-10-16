@@ -85,9 +85,14 @@ var _t := 1.0
 var _dur := 0.0
 var _queue: Array = []
 var _time := 0.0
+# The shaders' clock (g_time) advances in even steps, whatever the frame times do (see _advance_clock).
+var _raw := 0.0      # the plain sum of the frame deltas: what g_time used to be
+var _avg := -1.0     # smoothed UNSCALED frame time (s); -1 until the first frame
+var _raw_clock := false   # debug arg rawclock=1 (read in _ready)
 
 
 func _ready() -> void:
+	_raw_clock = Game.arg_on("rawclock")
 	world_env = WorldEnvironment.new()
 	env = Environment.new()
 	env.background_mode = Environment.BG_SKY
@@ -160,7 +165,7 @@ func _next() -> void:
 
 
 func _process(delta: float) -> void:
-	_time += delta
+	_advance_clock(delta)
 	RenderingServer.global_shader_parameter_set("g_time", _time)
 	if _t < 1.0:
 		_t = minf(1.0, _t + delta / _dur)
@@ -171,6 +176,44 @@ func _process(delta: float) -> void:
 			state = _to["name"]
 			transition_finished.emit(state)
 			_next()
+
+
+## THE SHADERS' CLOCK. Everything that moves by itself (the wind in the grass and the trees, the sea, the clouds) reads
+## g_time. If it advanced by the raw frame delta, every uneven frame would show as judder in all of it at once: on a
+## real GPU the frame time beats against the 60 Hz vsync (16.7 / 33.3 ms alternation) and jitters by milliseconds, and
+## a hitch (a chunk swap, a shader compiling, a garbage collection) moves the whole field by its length in one frame.
+## So the clock advances by a SMOOTHED frame time (an exponential average over ~0.4 s of the unscaled delta, times the
+## frame's time scale, so a hit-stop still freezes it and slow motion still slows it) and is pulled back to the raw
+## clock (time constant 0.6 s) so that it never drifts from it by more than 0.3 s. At a steady frame rate (and in every
+## --fixed-fps / --write-movie run) it IS the raw clock. Sea.surface_y() reads shader_time(), the same value: the swell
+## the boats ride stays the swell the shader draws.
+const CLOCK_TAU := 0.4
+const CLOCK_PULL := 0.6
+const CLOCK_MAX_DRIFT := 0.3
+
+
+func _advance_clock(delta: float) -> void:
+	_raw += delta
+	var real := Game.real_delta(delta)
+	if real <= 0.0 or _raw_clock:
+		_time = _raw   # debug arg rawclock=1: the plain sum of the deltas, as it was (A/B on a real device)
+		return
+	var scale := delta / real
+	# stalls (a hidden tab, a long load) must not drag the average: they are cut at 50 ms
+	var r := clampf(real, 0.004, 0.05)
+	if _avg < 0.0:
+		_avg = r
+	else:
+		_avg += (r - _avg) * (1.0 - exp(-r / CLOCK_TAU))
+	_time += _avg * scale
+	_time += (_raw - _time) * (1.0 - exp(-r / CLOCK_PULL))
+	_time = clampf(_time, _raw - CLOCK_MAX_DRIFT, _raw + CLOCK_MAX_DRIFT)
+
+
+## Sets the shaders' clock (tools and tests: start the wind at a chosen moment).
+func set_shader_time(t: float) -> void:
+	_time = t
+	_raw = t
 
 
 func _blend(a: Dictionary, b: Dictionary, k: float) -> Dictionary:

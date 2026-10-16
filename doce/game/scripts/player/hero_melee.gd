@@ -159,6 +159,7 @@ func _begin(def: Dictionary, st: int) -> void:
 	_have = false
 	_stopped = false
 	_aim(def)
+	rig.set_strike_run(_carry != Vector3.ZERO) # (animation: a run carried into the blow keeps its legs on the gait, a lunge plants them)
 	trail.clear()
 	trail.active = false
 	trail.heavy = def["name"] == &"heavy"

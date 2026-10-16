@@ -200,7 +200,8 @@ static func lineup(_seed: int) -> Node3D:
 ## toon passes) and composited into one PNG, all in one run.
 ##   fns=sheet rows=<row>;<row>... cols=<n> tile=<w>x<h> view=tq out=<png> [label=1]
 ## A row is `attack1` (the action at n evenly spaced moments), `loco:5.5` (a run cycle at 5.5 m/s), `idle`,
-## `guard`, `air:<vy>`, `swim:<speed>`, `zip`, `hang`, optionally followed by @view and @outfit, e.g. `attack1@back`,
+## `guard`, `air:<vy>`, `swim:<speed>`, `zip`, `hang`, `strafe:<speed>` / `strafel:<speed>` / `back:<speed>` (the gait going
+## sideways right / left, backwards), `guardback:<speed>`, `guardstrafe:<speed>`, optionally followed by @view and @outfit, e.g. `attack1@back`,
 ## `idle@front@lion`. Tile views: back, tq, side, front, close, closeback, sidel, low.
 class SheetStage extends Node3D:
 	var sv: SubViewport
@@ -307,6 +308,17 @@ class SheetStage extends Node3D:
 				rig.preview_pose("", 0.0, val, &"ground", out_name, true, 0.0, ph)
 			"loco":
 				rig.preview_pose("", 0.0, val, &"ground", out_name, false, 0.0, ph)
+			"strafe":
+				# sideways to the right (a locked-on circle)
+				rig.preview_pose("", 0.0, val, &"ground", out_name, false, 0.0, ph, PI * 0.5)
+			"strafel":
+				rig.preview_pose("", 0.0, val, &"ground", out_name, false, 0.0, ph, -PI * 0.5)
+			"back":
+				rig.preview_pose("", 0.0, val, &"ground", out_name, false, 0.0, ph, PI)
+			"guardback":
+				rig.preview_pose("", 0.0, val, &"ground", out_name, true, 0.0, ph, PI)
+			"guardstrafe":
+				rig.preview_pose("", 0.0, val, &"ground", out_name, true, 0.0, ph, -PI * 0.5)
 			"air":
 				rig.preview_pose("", 0.0, 3.0, &"air", out_name, false, lerpf(4.0, -6.0, k), 0.0)
 			"swim":
@@ -318,7 +330,23 @@ class SheetStage extends Node3D:
 				rig.preview_pose("", 0.0, 0.0, &"hang", out_name, false, 0.0, ph)
 				rig.t_offset(ph * 6.0)
 			_:
-				rig.preview_pose(nm, k, 0.0, &"ground", out_name, false, 0.0, 0.0)
+				# (an action row may name the speed the hero runs at when it starts: `attack1:5.5`)
+				rig.preview_pose(nm, _action_k(nm, k), val, &"ground", out_name, false, 0.0, 0.0, 0.0, float(_arg("lunge", "0")))
+
+	## Action rows show the action's own seconds t0..t1 across the columns (t0=, t1= in the preview args; default the
+	## whole action), so a blow's 0.2 s of contact can be looked at frame by frame.
+	func _action_k(act: String, k: float) -> float:
+		var t0s := _arg("t0", "")
+		var t1s := _arg("t1", "")
+		if t0s == "" and t1s == "":
+			return k
+		var d := RigHeracles.act_def(act)
+		if d.is_empty():
+			return k
+		var alen := float(d["len"])
+		var t0 := float(t0s) if t0s != "" else 0.0
+		var t1 := float(t1s) if t1s != "" else alen
+		return clampf((t0 + k * (t1 - t0)) / alen, 0.0, 1.0)
 
 	## A sea surface at the rig's waterline (preview only: translucent so the stroke under it shows).
 	func _add_water(rig: RigHeracles) -> void:
@@ -364,10 +392,24 @@ class SheetStage extends Node3D:
 				dist = 2.1
 				height = 1.85
 				look = 1.45
+			"hand", "handf", "handb":
+				# the sword hand's close-up (step 2, the strikes: the wrist, the blade's angle to the forearm): the camera follows the
+				# hand from his right side (hand), from the front-right (handf) or from behind (handb)
+				var hw: Vector3 = rig.global_transform * rig._bx[RigHeracles.HAND_R].origin
+				var hr := deg_to_rad(90.0 if view == "hand" else (140.0 if view == "handf" else 15.0))
+				cam.fov = 34.0
+				cam.global_position = hw + Vector3(sin(hr), 0.18, cos(hr)) * 1.45
+				cam.look_at(hw + Vector3(0, -0.02, 0), Vector3.UP)
+				return
 			"low":
 				yaw = 45.0
 				height = 0.5
 				look = 0.8
+			"top":
+				yaw = 2.0
+				dist = 0.5
+				height = 4.6
+				look = 1.0
 			"game":
 				yaw = 0.0
 				dist = 5.0

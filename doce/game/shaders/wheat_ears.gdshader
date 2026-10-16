@@ -3,7 +3,7 @@
 // mode 0: 3D wheat clumps (MeadowKit.wheat_clump: stalks, slim nodding ears, awns, a leaf) scattered near the camera
 //         on a fixed world grid (one MultiMesh cell = one clump, like the meadow), only where the field map has wheat,
 //         their ears rising out of the ear canopy, density falling with the distance; each clump turns about its root
-//         with the field's big slow wave and fast noise and parts round the pushers (hero, beasts).
+//         with the field's big slow wave and slow ripple and parts round the pushers (hero, beasts).
 // mode 1: painted stands of wheat (MeadowPaint's wheat tiles) on cards along the field's border and the road's verges
 //         (static instances: each card's +Z faces out of the field), swaying with the same wind: the field's
 //         silhouette against the road, the sky and the meadow.
@@ -148,8 +148,7 @@ void vertex() {
 	} else {
 	vec2 wind = mlib_wind(root3.xz, wave_scale, wave_speed);
 	wind.x = pow(wind.x, wave_sharp);
-	// the wave bows the stalks along the wind, the fast noise only nods the ears a little (calm, never jittery;
-	// FIXER: 0.07 -> 0.03, the slow waves read over the per-stalk shimmer)
+	// the wave bows the stalks along the wind, the slow ripple only nods the ears a little (calm, never jittery)
 	float a = (0.06 + 0.4 * wind.x * g_wind_gust.x + 0.03 * wind.y) * g_wind;
 	vec2 bend = g_wind_dir * a;
 	vec3 push = wind_push(root3 + vec3(0.0, 0.5, 0.0));

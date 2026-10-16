@@ -1133,6 +1133,8 @@ static func _slab(mb: MeshBuilder, rng: RandomNumberGenerator, c: Vector3, rx: f
 		mb.quad(bot[i], mid[i], mid[j], bot[j], low if i % 3 == 0 else col)
 		mb.quad(mid[i], tp[i], tp[j], mid[j], col)
 		mb.tri(ctop, tp[j], tp[i], top)
+		# DOCE: the underside (a stratum wider than the one below overhangs it: seen from the sea it was hollow)
+		mb.tri(c, bot[i], bot[j], low)
 
 
 ## Layered limestone outcrop (Wind Waker cliffs): 3-5 stacked strata stepping back as they rise, flat bleached
@@ -1281,11 +1283,11 @@ static func add_wood_fence(mb: MeshBuilder, rng: RandomNumberGenerator, kind: in
 		mb.limb(Vector3(x, -0.3, 0), top, 0.075, 0.065, 5, FENCE_WOOD_DARK)
 	for ry in [0.5, 0.92]:
 		if kind == 0 or (kind == 1 and ry < 0.6):
-			box5(mb, Vector3(0, ry, 0.08), Vector3(2.95, 0.09, 0.05), FENCE_WOOD, FENCE_WOOD.lightened(0.08), Vector3(0, 0, rng.randf_range(-0.02, 0.02)))
+			box6(mb, Vector3(0, ry, 0.08), Vector3(2.95, 0.09, 0.05), FENCE_WOOD, FENCE_WOOD.lightened(0.08), Vector3(0, 0, rng.randf_range(-0.02, 0.02)))
 		elif kind == 1:
 			# snapped: one half still nailed, the other hanging to the ground
-			box5(mb, Vector3(-0.75, ry, 0.08), Vector3(1.45, 0.09, 0.05), FENCE_WOOD, FENCE_WOOD.lightened(0.08))
-			box5(mb, Vector3(0.62, ry * 0.5, 0.1), Vector3(1.5, 0.09, 0.05), FENCE_WOOD, FENCE_WOOD.lightened(0.08), Vector3(0, 0, -0.55))
+			box6(mb, Vector3(-0.75, ry, 0.08), Vector3(1.45, 0.09, 0.05), FENCE_WOOD, FENCE_WOOD.lightened(0.08))
+			box6(mb, Vector3(0.62, ry * 0.5, 0.1), Vector3(1.5, 0.09, 0.05), FENCE_WOOD, FENCE_WOOD.lightened(0.08), Vector3(0, 0, -0.55))
 		else:
 			box5(mb, Vector3(rng.randf_range(-0.4, 0.4), 0.05, rng.randf_range(0.2, 0.8)), Vector3(2.7, 0.09, 0.09), FENCE_WOOD, FENCE_WOOD.lightened(0.08), Vector3(0, rng.randf_range(-0.4, 0.4), 0))
 
@@ -1308,7 +1310,7 @@ static func add_retaining_wall(mb: MeshBuilder, rng: RandomNumberGenerator) -> v
 		var col: Color = cols[rng.randi() % cols.size()]
 		var tilt := Vector3(rng.randf_range(-0.04, 0.04), rng.randf_range(-0.05, 0.05), rng.randf_range(-0.04, 0.04))
 		box5(mb, Vector3((x0 + x1) * 0.5, 0.39, -0.3 + rng.randf_range(-0.03, 0.03)), Vector3(x1 - x0 - 0.04, 0.86 * rng.randf_range(0.92, 1.0), 0.62), col, col.lightened(0.06), tilt)
-	box5(mb, Vector3(0, 0.9, -0.32), Vector3(1.2, 0.14, 0.66), Pal.LIMESTONE_DARK, Pal.LIMESTONE, Vector3(rng.randf_range(-0.04, 0.04), rng.randf_range(-0.06, 0.06), rng.randf_range(-0.04, 0.04)))
+	box6(mb, Vector3(0, 0.9, -0.32), Vector3(1.2, 0.14, 0.66), Pal.LIMESTONE_DARK, Pal.LIMESTONE, Vector3(rng.randf_range(-0.04, 0.04), rng.randf_range(-0.06, 0.06), rng.randf_range(-0.04, 0.04)))
 
 
 ## Bleached bones in the grass: a horned goat skull and a few long bones (stylised, clean, not gory).
@@ -1329,7 +1331,7 @@ static func add_bones(mb: MeshBuilder, rng: RandomNumberGenerator, skull: bool =
 			var pts: Array = []
 			for k in 5:
 				var t := float(k) / 4.0
-				pts.append(Vector3(sx * (0.06 + 0.14 * t), 0.08 + 0.16 * sin(t * 2.2), -0.04 - 0.22 * t * t))
+				pts.append(Vector3(sx * (0.03 + 0.17 * t), 0.06 + 0.18 * sin(t * 2.2), -0.02 - 0.24 * t * t))
 			mb.tube(pts, 0.035, 0.008, 5, Color("B9A67E"))
 		mb.pop()
 	for i in 3:
@@ -1733,7 +1735,7 @@ static func add_ruin_column(mb: MeshBuilder, rng: RandomNumberGenerator, s: floa
 	var r := 0.36 * s
 	box5(mb, Vector3(0, 0.1 * s, 0), Vector3(1.05, 0.36, 1.05) * s, Pal.MARBLE_SHADE, Pal.MARBLE, Vector3(rng.randf_range(-0.03, 0.03), rng.randf_range(-0.2, 0.2), rng.randf_range(-0.03, 0.03)))
 	mb.cyl(Vector3(0, 0.28 * s, 0), 0.08 * s, 0.47 * s, 0.47 * s, 8, Pal.MARBLE_SHADE, false)
-	mb.cyl(Vector3(0, 0.36 * s, 0), 0.08 * s, 0.47 * s, 0.4 * s, 8, Pal.MARBLE, false)
+	mb.cyl(Vector3(0, 0.36 * s, 0), 0.08 * s, 0.47 * s, 0.4 * s, 8, Pal.MARBLE, true)
 	mb.push(Transform3D(Basis.from_euler(Vector3(rng.randf_range(-0.04, 0.04), rng.randf() * TAU, rng.randf_range(-0.04, 0.04))), Vector3(0, 0.44 * s, 0)))
 	fluted_shaft(mb, rng, Vector3.ZERO, h, r, r * 0.9, 8, Pal.MARBLE, Pal.LIMESTONE, 0.45 * s)
 	mb.pop()
@@ -1849,8 +1851,8 @@ static func add_amphora(mb: MeshBuilder, rng: RandomNumberGenerator, s: float = 
 		var p0 := Vector3(0.07 * side, 0.75, 0) * s
 		var p1 := Vector3(0.19 * side, 0.73, 0) * s
 		var p2 := Vector3(0.19 * side, 0.55, 0) * s
-		mb.limb(p0, p1, 0.026 * s, 0.026 * s, 4, body, false)
-		mb.limb(p1, p2, 0.026 * s, 0.026 * s, 4, body, false)
+		mb.limb(p0, p1, 0.026 * s, 0.026 * s, 4, body, true)
+		mb.limb(p1, p2, 0.026 * s, 0.026 * s, 4, body, true)
 
 
 static func stone_fence(seed_value: int) -> ArrayMesh:
@@ -1905,10 +1907,10 @@ static func add_driftwood(mb: MeshBuilder, rng: RandomNumberGenerator, s: float 
 		var d := Vector3(-0.45, cos(a) * 0.9, sin(a)).normalized()
 		if d.y < -0.3:
 			d.y = -0.3
-		mb.limb(p0 + d * 0.1 * s, p0 + d * rng.randf_range(0.42, 0.6) * s, 0.08 * s, 0.015 * s, 4, Pal.ROCK, false)
+		mb.limb(p0 + d * 0.1 * s, p0 + d * rng.randf_range(0.42, 0.6) * s, 0.08 * s, 0.015 * s, 4, Pal.ROCK, true)
 	var q := p1.lerp(p2, rng.randf_range(0.3, 0.55))
 	var side := 1.0 if rng.randf() < 0.5 else -1.0
-	mb.limb(q, q + Vector3(0.32, 0.25, 0.38 * side) * s, 0.06 * s, 0.015 * s, 4, Pal.LIMESTONE_DARK, false)
+	mb.limb(q, q + Vector3(0.32, 0.25, 0.38 * side) * s, 0.06 * s, 0.015 * s, 4, Pal.LIMESTONE_DARK, true)
 
 
 static func herm_shrine(seed_value: int) -> ArrayMesh:
@@ -1927,15 +1929,15 @@ static func add_herm_shrine(mb: MeshBuilder, rng: RandomNumberGenerator, s: floa
 	# Herm pillar.
 	mb.cyl(Vector3(0, 0.28, -0.2) * s, 0.98 * s, 0.27 * s, 0.23 * s, 4, Pal.MARBLE, false, PI * 0.25)
 	mb.cyl(Vector3(0, 0.62, -0.2) * s, 0.07 * s, 0.26 * s, 0.255 * s, 4, Pal.AEGEAN, false, PI * 0.25)
-	box5(mb, Vector3(0, 1.3, -0.2) * s, Vector3(0.5, 0.08, 0.5) * s, Pal.MARBLE_SHADE)
+	box6(mb, Vector3(0, 1.3, -0.2) * s, Vector3(0.5, 0.08, 0.5) * s, Pal.MARBLE_SHADE)
 	# Lamp box: a tiny temple with a glowing front.
-	box5(mb, Vector3(0, 1.53, -0.2) * s, Vector3(0.48, 0.4, 0.42) * s, Pal.MARBLE)
+	box6(mb, Vector3(0, 1.53, -0.2) * s, Vector3(0.48, 0.4, 0.42) * s, Pal.MARBLE)
 	box5(mb, Vector3(0, 1.53, 0.012) * s, Vector3(0.3, 0.27, 0.02) * s, Pal.WINDOW)
-	box5(mb, Vector3(0, 1.36, 0.02) * s, Vector3(0.38, 0.05, 0.05) * s, Pal.BRONZE)
+	box6(mb, Vector3(0, 1.36, 0.02) * s, Vector3(0.38, 0.05, 0.05) * s, Pal.BRONZE)
 	mb.push(Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0, 1.73, -0.2) * s))
 	mb.roof_gable(Vector3.ZERO, 0.56 * s, 0.6 * s, 0.2 * s, Pal.TERRACOTTA, Pal.MARBLE_SHADE, 1.0)
 	mb.pop()
-	box5(mb, Vector3(0, 1.85, 0.08) * s, Vector3(0.07, 0.07, 0.07) * s, Pal.BRONZE, null, Vector3(0, 0, PI * 0.25))
+	box6(mb, Vector3(0, 1.85, 0.08) * s, Vector3(0.07, 0.07, 0.07) * s, Pal.BRONZE, null, Vector3(0, 0, PI * 0.25))
 	# Altar with a bronze bowl.
 	box5(mb, Vector3(0, 0.36, 0.33) * s, Vector3(0.5, 0.4, 0.38) * s, Pal.LIMESTONE, Pal.MARBLE_SHADE)
 	lathe(mb, Vector3(0, 0.56, 0.33) * s, _scaled([Vector2(0, 0), Vector2(0.07, 0), Vector2(0.15, 0.08), Vector2(0.12, 0.08), Vector2(0, 0.03)], s), 7, Pal.BRONZE)
@@ -1951,6 +1953,9 @@ static func add_herm_shrine(mb: MeshBuilder, rng: RandomNumberGenerator, s: floa
 	blob(mb, rng, Vector3(-0.45, 0.14, -0.3) * s, _scaled([Vector2(0.2, 0), Vector2(0.17, 0.12), Vector2(0, 0.18)], s), 5, 0.15, Pal.OLIVE_LEAF, Pal.OLIVE_LEAF_DARK)
 
 
+## A fishing boat DRAWN UP ON THE SAND (origin on the ground, the keel 6 cm in it, a list of 6-9 degrees, oars across the
+## thwarts, an anchor stone and a rope coil beside it). Its bilge floor is 7 cm over the keel, far under any sea plane: it
+## must never be put on the water (FIX2: a boat that floats is a decked hull, add_boat_hull(..., deck_y), or ModelsBuildings.ship()).
 static func boat_small(seed_value: int) -> ArrayMesh:
 	var mb := _begin(seed_value)
 	var rng := make_rng(seed_value)
@@ -1960,9 +1965,9 @@ static func boat_small(seed_value: int) -> ArrayMesh:
 	for side in [-1.0, 1.0]:
 		var a := Vector3(0.18 * side, 0.6, -1.2)
 		var b := Vector3(0.32 * side, 0.68, 1.15)
-		mb.limb(a, b, 0.03, 0.03, 4, Pal.WOOD_LIGHT, false)
+		mb.limb(a, b, 0.03, 0.03, 4, Pal.WOOD_LIGHT, true) # SHIP (merge, mesh audit): closed ends and underside (the beached boats are seen from the beach, low)
 		mb.push(Transform3D(Basis.looking_at(b - a, Vector3.UP), b))
-		box5(mb, Vector3(0, 0, -0.02), Vector3(0.16, 0.025, 0.5), Pal.WOOD_LIGHT)
+		box6(mb, Vector3(0, 0, -0.02), Vector3(0.16, 0.025, 0.5), Pal.WOOD_LIGHT)
 		mb.pop()
 	mb.pop()
 	# Anchor stone and a coil of rope on the sand.
@@ -1975,7 +1980,9 @@ static func boat_small(seed_value: int) -> ArrayMesh:
 
 
 ## floorboards. `style` picks the paint (−1 = from the rng).
-static func add_boat_hull(mb: MeshBuilder, rng: RandomNumberGenerator, length: float, beam: float, depth: float, style: int = -1) -> void:
+## FIX2: `deck_y` > 0 decks the hull at that height above the keel (see hull()): a boat that floats gets one, so its
+## floor stays above the sea plane; a boat drawn up on the sand keeps its open bilge (the default).
+static func add_boat_hull(mb: MeshBuilder, rng: RandomNumberGenerator, length: float, beam: float, depth: float, style: int = -1, deck_y: float = -1.0) -> void:
 	if style < 0:
 		style = rng.randi() % 3
 	var schemes := [
@@ -1984,11 +1991,12 @@ static func add_boat_hull(mb: MeshBuilder, rng: RandomNumberGenerator, length: f
 		{"band": Pal.CREST, "side": Pal.MARBLE, "bottom": Pal.AEGEAN, "rim": Pal.AEGEAN},
 	]
 	var sc: Dictionary = schemes[style % schemes.size()]
-	hull(mb, length, beam, depth, sc["band"], sc["side"], sc["bottom"], sc["rim"], Pal.WOOD_LIGHT)
+	hull(mb, length, beam, depth, sc["band"], sc["side"], sc["bottom"], sc["rim"], Pal.WOOD_LIGHT, deck_y, Pal.WOOD_LIGHT)
 	for t in [-0.45, 0.22]:
 		var w := (_hull_half_width(t, beam) - 0.07) * 0.96
-		box5(mb, Vector3(0, depth - 0.1 + 0.24 * t * t, t * length * 0.5), Vector3(w * 2.0, 0.05, 0.22), Pal.WOOD)
-	box5(mb, Vector3(0, 0.12, 0), Vector3(0.36, 0.05, length * 0.55), Pal.WOOD)
+		box6(mb, Vector3(0, depth - 0.1 + 0.24 * t * t, t * length * 0.5), Vector3(w * 2.0, 0.05, 0.22), Pal.WOOD) # SHIP (merge, mesh audit): box6, a thwart's underside shows from inside the hull
+	if deck_y <= 0.0:
+		box6(mb, Vector3(0, 0.12, 0), Vector3(0.36, 0.05, length * 0.55), Pal.WOOD)
 
 
 # --- crops and farmland stonework --------------------------------------------------------------------------------
@@ -2160,7 +2168,7 @@ static func add_terrace_wall(mb: MeshBuilder, rng: RandomNumberGenerator, length
 				col = col.darkened(0.12)
 			var tilt := Vector3(rng.randf_range(-0.07, 0.07), rng.randf_range(-0.05, 0.05), rng.randf_range(-0.07, 0.07))
 			var fz := 0.12 + rng.randf_range(-0.03, 0.03)
-			var mask := ST_FRONT | ST_LEFT | (ST_TOP if ri == 1 else 0) | (ST_RIGHT if last else 0)
+			var mask := ST_FRONT | ST_BACK | ST_LEFT | ST_RIGHT | ST_TOP | (ST_BOTTOM if ri == 1 else 0) # DOCE: every side (seen from the downhill side and through the joints); row 0 rests on the ground
 			_stone(mb, Vector3(x + sl * 0.5, y0 + sh * 0.5, fz - depth * 0.5), Vector3(sl - 0.05, sh, depth), col, col.lightened(0.05), tilt, mask)
 			x += sl
 			first = false
@@ -2175,7 +2183,7 @@ static func add_terrace_wall(mb: MeshBuilder, rng: RandomNumberGenerator, length
 		var drop := 0.05 if first or last else rng.randf_range(-0.015, 0.015)
 		var tilt := Vector3(rng.randf_range(-0.06, 0.06), rng.randf_range(-0.1, 0.1), rng.randf_range(-0.07, 0.07))
 		var col: Color = [Pal.LIMESTONE_DARK, Pal.ROCK, Pal.LIMESTONE][rng.randi() % 3]
-		_stone(mb, Vector3(x + sl * 0.5, 0.54 - drop, 0.14 - 0.25 + rng.randf_range(-0.02, 0.02)), Vector3(sl - 0.05, 0.12, 0.5), col.darkened(0.06), col, tilt, ST_FRONT | ST_TOP | ST_LEFT | (ST_RIGHT if last else 0))
+		_stone(mb, Vector3(x + sl * 0.5, 0.54 - drop, 0.14 - 0.25 + rng.randf_range(-0.02, 0.02)), Vector3(sl - 0.05, 0.12, 0.5), col.darkened(0.06), col, tilt, ST_FRONT | ST_BACK | ST_TOP | ST_LEFT | ST_RIGHT | ST_BOTTOM)
 		x += sl
 		first = false
 	mb.pop()
@@ -2210,7 +2218,7 @@ static func add_threshing_floor(mb: MeshBuilder, rng: RandomNumberGenerator, s: 
 			var col: Color = Pal.LIMESTONE_DARK if u < 0.45 else (Pal.ROCK if u < 0.8 else Pal.LIMESTONE)
 			var gx := rng.randf_range(-0.035, 0.035)
 			var tj := [gx + rng.randf_range(-0.02, 0.02), gx + rng.randf_range(-0.02, 0.02), -gx + rng.randf_range(-0.02, 0.02), -gx + rng.randf_range(-0.02, 0.02)]
-			_sector(mb, Vector3.ZERO, ra, rb, a1, a2, 0.0, 0.065, col.darkened(0.12), col, SEC_TOP | SEC_OUT, tj)
+			_sector(mb, Vector3.ZERO, ra, rb, a1, a2, 0.0, 0.065, col.darkened(0.12), col, SEC_ALL, tj) # DOCE: sides too (the joints are seen along at ground level)
 	# Curb of upright edge stones.
 	var b0 := rng.randf() * TAU
 	for k in 18:
@@ -2220,7 +2228,7 @@ static func add_threshing_floor(mb: MeshBuilder, rng: RandomNumberGenerator, s: 
 		var u := rng.randf()
 		var col: Color = Pal.ROCK if u < 0.5 else (PX.ROCK_MID if u < 0.8 else Pal.LIMESTONE_DARK)
 		var tj := [rng.randf_range(-0.04, 0.03), rng.randf_range(-0.04, 0.03), rng.randf_range(-0.04, 0.03), rng.randf_range(-0.04, 0.03)]
-		_sector(mb, Vector3.ZERO, 2.95 * s, rng.randf_range(3.15, 3.22) * s, a1, a2, -0.05, hh, col, col.lightened(0.06), SEC_TOP | SEC_OUT | SEC_IN, tj)
+		_sector(mb, Vector3.ZERO, 2.95 * s, rng.randf_range(3.15, 3.22) * s, a1, a2, -0.05, hh, col, col.lightened(0.06), SEC_ALL, tj) # DOCE: the ends too (rays through the gaps between curb stones met the back of the outer face)
 	# Heap of straw and chaff, off centre.
 	var ha := rng.randf() * TAU
 	var hc := Vector3(cos(ha) * 1.2, 0.05, sin(ha) * 1.2) * s
@@ -2313,26 +2321,33 @@ static func well(seed_value: int) -> ArrayMesh:
 static func add_well(mb: MeshBuilder, rng: RandomNumberGenerator, s: float = 1.0) -> void:
 	var cols := [Pal.ROCK, Pal.LIMESTONE_DARK, PX.ROCK_MID, Pal.ROCK, Pal.LIMESTONE]
 	# Two courses of nine stones (running bond), only their outer faces: the rim covers their tops.
+	# DOCE: both courses stand on the same 18-gon (one radius): a stone of the upper course starts half a stone
+	# round but its joints are colour changes, not steps. Stones of their own radius (or a 9-gon rotated against the
+	# other course) left cracks between neighbours and ledges with an open top that let the eye through to the
+	# inside of the well-head.
+	var rc := rng.randf_range(0.66, 0.7) * s
 	for course in 2:
 		var y0 := 0.0 if course == 0 else 0.36 * s
 		var y1 := 0.38 * s if course == 0 else 0.76 * s
-		var off := TAU / 18.0 * float(course)
+		var stone_col: Array[Color] = []
 		for k in 9:
-			var a1 := off + TAU * float(k) / 9.0
-			var a2 := off + TAU * float(k + 1) / 9.0
-			var col: Color = cols[rng.randi() % cols.size()]
-			_sector(mb, Vector3.ZERO, 0.0, rng.randf_range(0.66, 0.7) * s, a1, a2, y0 - (0.05 if course == 0 else 0.0), y1 + rng.randf_range(-0.015, 0.015), col, col, SEC_OUT)
+			stone_col.append(cols[rng.randi() % cols.size()])
+		for seg in 18:
+			var a1 := TAU * float(seg) / 18.0
+			var a2 := TAU * float(seg + 1) / 18.0
+			var col: Color = stone_col[((seg + course) / 2) % 9]
+			_sector(mb, Vector3.ZERO, 0.0, rc, a1, a2, y0 - (0.05 if course == 0 else 0.0), y1, col, col, SEC_OUT)
 	# Inner wall (seen looking in) and the dark water.
 	for k in 9:
 		var a1 := TAU * float(k) / 9.0
 		var a2 := TAU * float(k + 1) / 9.0
 		_sector(mb, Vector3.ZERO, 0.5 * s, 0.6 * s, a1, a2, 0.45 * s, 0.77 * s, PX.ROCK_WET, PX.ROCK_WET, SEC_IN)
 	mb.disc(Vector3(0, 0.5 * s, 0), 0.52 * s, 9, WELL_WATER)
-	mb.ring(Vector3(0, 0.76 * s, 0), 0.72 * s, 0.5 * s, 0.1 * s, 9, Pal.LIMESTONE)
+	ring6(mb, Vector3(0, 0.745 * s, 0), 0.77 * s, 0.5 * s, 0.115 * s, 9, Pal.LIMESTONE) # wider than the wall (a 9-gon of 0.77 covers the 18-gon of <= 0.70)
 	# Frame, pulley, rope and the hanging jar.
 	for side in [-1.0, 1.0]:
 		box5(mb, Vector3(0.82 * side, 0.8, 0.0) * s, Vector3(0.1, 1.6, 0.1) * s, Pal.WOOD, Pal.WOOD_DARK, Vector3(0, 0, -0.025 * side))
-	box5(mb, Vector3(0, 1.56, 0) * s, Vector3(1.86, 0.1, 0.1) * s, Pal.WOOD, Pal.WOOD_LIGHT)
+	box6(mb, Vector3(0, 1.56, 0) * s, Vector3(1.86, 0.1, 0.1) * s, Pal.WOOD, Pal.WOOD_LIGHT)
 	mb.push(Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(0.03 * s, 1.38 * s, 0)))
 	mb.cyl(Vector3.ZERO, 0.06 * s, 0.12 * s, 0.12 * s, 6, Pal.WOOD_DARK, true)
 	mb.pop()
@@ -2458,6 +2473,48 @@ static func box5(mb: MeshBuilder, c: Vector3, size: Vector3, col: Color, top_col
 		mb.pop()
 
 
+## DOCE (roofs seen from below): the CLOSED box. Same arguments as box5 plus `bottom_col` (the underside, a soffit:
+## default = `col`). Everything that hangs free (roof slabs, eaves, ledges, sills, balcony and awning boards, beams,
+## shelves, rails, caps) needs its underside: the shader is cull_back, so a box5 floating above the ground is a
+## hollow shell seen from below. box5 itself is unchanged (props that rest on the ground depend on it).
+static func box6(mb: MeshBuilder, c: Vector3, size: Vector3, col: Color, top_col: Variant = null, rot: Vector3 = Vector3.ZERO, bottom_col: Variant = null) -> void:
+	var rotated := rot != Vector3.ZERO
+	if rotated:
+		mb.push(Transform3D(Basis.from_euler(rot), c))
+		c = Vector3.ZERO
+	var h := size * 0.5
+	var p0 := c + Vector3(-h.x, -h.y, -h.z)
+	var p1 := c + Vector3(h.x, -h.y, -h.z)
+	var p2 := c + Vector3(h.x, -h.y, h.z)
+	var p3 := c + Vector3(-h.x, -h.y, h.z)
+	var p4 := c + Vector3(-h.x, h.y, -h.z)
+	var p5 := c + Vector3(h.x, h.y, -h.z)
+	var p6 := c + Vector3(h.x, h.y, h.z)
+	var p7 := c + Vector3(-h.x, h.y, h.z)
+	var tc: Color = col if top_col == null else top_col
+	var bc: Color = col if bottom_col == null else bottom_col
+	mb.quad(p4, p7, p6, p5, tc)
+	mb.quad(p0, p1, p2, p3, bc)
+	mb.quad(p3, p2, p6, p7, col)
+	mb.quad(p1, p0, p4, p5, col)
+	mb.quad(p2, p1, p5, p6, col)
+	mb.quad(p0, p3, p7, p4, col)
+	if rotated:
+		mb.pop()
+
+
+## DOCE: MeshBuilder.ring with its underside (outer wall, inner wall, top and bottom annulus): a rim or lip that
+## overhangs what it sits on is seen from below.
+static func ring6(mb: MeshBuilder, c: Vector3, r_out: float, r_in: float, h: float, sides: int, col: Color) -> void:
+	mb.ring(c, r_out, r_in, h, sides, col)
+	for i in sides:
+		var a0 := TAU * float(i) / float(sides)
+		var a1 := TAU * float(i + 1) / float(sides)
+		var d0 := Vector3(cos(a0), 0, sin(a0))
+		var d1 := Vector3(cos(a1), 0, sin(a1))
+		mb.quad(c + d0 * r_out, c + d1 * r_out, c + d1 * r_in, c + d0 * r_in, col.darkened(0.12))
+
+
 ## Fluted column shaft along +Y (star cross-section). `broken` > 0 snaps the top along a slanted, jagged
 
 
@@ -2518,10 +2575,15 @@ static func _hull_half_width(t: float, beam: float) -> float:
 
 
 ## and a gunwale cap. Colours: band (just under the gunwale), side (topsides), bottom (below the bilge), rim, inside.
-static func hull(mb: MeshBuilder, length: float, beam: float, depth: float, band: Color, side: Color, bottom: Color, rim: Color, inside: Color) -> void:
+## FIX2: `deck_y` > 0 DECKS the hull at that height above the keel: instead of the open V of inner planking down to the
+## bilge, the inner walls stop at the deck and a flat planked deck (alternating tones: `inside` and `deck_col`)
+## spans wall to wall. A hull that floats must be decked (or have its floor) above the highest swell, else the sea
+## plane, which is drawn over everything below its surface, floods the inside of the boat.
+static func hull(mb: MeshBuilder, length: float, beam: float, depth: float, band: Color, side: Color, bottom: Color, rim: Color, inside: Color, deck_y: float = -1.0, deck_col: Variant = null) -> void:
 	var stations := 7
 	var outer: Array = []
 	var inner: Array = []
+	var deck_w: Array[float] = []
 	var th := 0.07
 	for si in stations:
 		var t := -1.0 + 2.0 * float(si) / float(stations - 1)
@@ -2533,7 +2595,12 @@ static func hull(mb: MeshBuilder, length: float, beam: float, depth: float, band
 		var bilge := k + (g - k) * 0.4
 		outer.append([Vector3(w, g, z), Vector3(w * 0.995, stripe, z), Vector3(w * 0.82, bilge, z), Vector3(0, k, z)])
 		var wi := maxf(0.0, w - th)
-		inner.append([Vector3(wi, g, z), Vector3(wi * 0.76, k + th + (g - k) * 0.3, z), Vector3(0, k + th, z)])
+		if deck_y > 0.0:
+			var wd := maxf(0.0, hull_outer_w(w, g, k, deck_y) - th)
+			deck_w.append(wd)
+			inner.append([Vector3(wi, g, z), Vector3(wd, deck_y, z), Vector3(0, deck_y, z)])
+		else:
+			inner.append([Vector3(wi, g, z), Vector3(wi * 0.76, k + th + (g - k) * 0.3, z), Vector3(0, k + th, z)])
 	var panel := [band, side, bottom]
 	for si in stations - 1:
 		var o0: Array = outer[si]
@@ -2547,7 +2614,8 @@ static func hull(mb: MeshBuilder, length: float, beam: float, depth: float, band
 			mb.quad(_mx(a), _mx(d), _mx(c), _mx(b), panel[p])
 		var i0: Array = inner[si]
 		var i1: Array = inner[si + 1]
-		for p in 2:
+		# (decked: only the wall above the deck; the planks are laid below)
+		for p in (1 if deck_y > 0.0 else 2):
 			var a: Vector3 = i0[p]
 			var b: Vector3 = i1[p]
 			var c: Vector3 = i1[p + 1]
@@ -2560,10 +2628,49 @@ static func hull(mb: MeshBuilder, length: float, beam: float, depth: float, band
 		var rd: Vector3 = i0[0]
 		mb.quad(ra, rd, rc, rb, rim)
 		mb.quad(_mx(ra), _mx(rb), _mx(rc), _mx(rd), rim)
+	if deck_y > 0.0:
+		# The deck: eight planks along the hull, alternating tones, wall to wall (the quads face up).
+		var dc: Color = inside if deck_col == null else deck_col
+		var planks := 8
+		for si in stations - 1:
+			var z0 := (-1.0 + 2.0 * float(si) / float(stations - 1)) * length * 0.5
+			var z1 := (-1.0 + 2.0 * float(si + 1) / float(stations - 1)) * length * 0.5
+			var w0 := deck_w[si]
+			var w1 := deck_w[si + 1]
+			for q in planks:
+				var u0 := float(q) / float(planks)
+				var u1 := float(q + 1) / float(planks)
+				var col := dc if q % 2 == 0 else dc.darkened(0.1)
+				mb.quad(Vector3(-w0 + 2.0 * w0 * u0, deck_y, z0), Vector3(-w1 + 2.0 * w1 * u0, deck_y, z1),
+					Vector3(-w1 + 2.0 * w1 * u1, deck_y, z1), Vector3(-w0 + 2.0 * w0 * u1, deck_y, z0), col)
 	# Stem and stern posts.
 	for e in [-1.0, 1.0]:
 		var g := depth + 0.24
 		box5(mb, Vector3(0, g - 0.05, e * (length * 0.5 - 0.06)), Vector3(0.09, 0.32, 0.16), rim)
+
+
+## Half width of the outer hull at height y above the keel, for the station whose gunwale half width is w, sheer
+## height g and keel line k: the same profile as the outer panels of hull() (gunwale, paint stripe, bilge, keel).
+static func hull_outer_w(w: float, g: float, k: float, y: float) -> float:
+	var stripe := g - 0.14
+	var bilge := k + (g - k) * 0.4
+	if y >= stripe:
+		return lerpf(w * 0.995, w, clampf((y - stripe) / maxf(g - stripe, 1e-4), 0.0, 1.0))
+	if y >= bilge:
+		return lerpf(w * 0.82, w * 0.995, (y - bilge) / maxf(stripe - bilge, 1e-4))
+	return lerpf(0.0, w * 0.82, clampf((y - k) / maxf(bilge - k, 1e-4), 0.0, 1.0))
+
+
+## The hull's gunwale (rail) height above the keel at hull station t (-1 stern .. 1 bow), and its outer half width at
+## height y: for whatever has to sit on or inside a hull() (benches, collision, a water mask).
+static func hull_rail_y(depth: float, t: float) -> float:
+	return depth + 0.24 * t * t
+
+
+static func hull_width_at(length_t: float, beam: float, depth: float, y: float) -> float:
+	var w := _hull_half_width(length_t, beam)
+	var k := 0.22 * pow(absf(length_t), 3.0)
+	return hull_outer_w(w, hull_rail_y(depth, length_t), k, y)
 
 
 static func _mx(v: Vector3) -> Vector3:
@@ -2777,12 +2884,13 @@ static func _sector(mb: MeshBuilder, c: Vector3, r0: float, r1: float, a0: float
 
 
 ## Box (centre `c`, euler `rot`) emitting only the faces in `mask`: 1 front (+Z), 2 top, 4 left (-X), 8 right
-## (+X), 16 back (-Z). Dry-stone walls only show their front and top.
+## (+X), 16 back (-Z), 32 bottom (-Y). Dry-stone walls used to show only their front and top (see terrace_wall).
 const ST_FRONT := 1
 const ST_TOP := 2
 const ST_LEFT := 4
 const ST_RIGHT := 8
 const ST_BACK := 16
+const ST_BOTTOM := 32 # DOCE: the underside (stones stacked with a random tilt leave slivers between the courses)
 
 
 static func _stone(mb: MeshBuilder, c: Vector3, size: Vector3, col: Color, top_col: Color, rot: Vector3, mask: int) -> void:
@@ -2806,6 +2914,8 @@ static func _stone(mb: MeshBuilder, c: Vector3, size: Vector3, col: Color, top_c
 		mb.quad(p2, p1, p5, p6, col)
 	if mask & ST_LEFT:
 		mb.quad(p0, p3, p7, p4, col)
+	if mask & ST_BOTTOM:
+		mb.quad(p0, p1, p2, p3, col.darkened(0.2))
 	mb.pop()
 
 

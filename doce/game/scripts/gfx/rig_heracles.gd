@@ -80,11 +80,14 @@ const FWD := Vector3(0.0, 0.0, -1.0)
 const SHIELD_R := 0.34
 ## The left fist holds the spear this far towards its head from the spear's own origin.
 const SPEAR_HOLD := 0.22
+## The direction (chest space) the spear's local x axis lies along on the back, the leaf's broad side being the way across it.
+const SPEAR_ROLL := Vector3(0.12, 0.11, 1.01)
+const SPEAR_ROLL_LION := Vector3(0.0, 0.0, 1.0)
 ## don_skin: when the pelt replaces the cape and when the paws are knotted on the chest (s).
 const DON_SWAP := 0.78
 const DON_KNOT := 1.62
 ## throw: the left hand closes on the shaft (the spear leaves the back) and lets it go (s).
-const THROW_GRAB := 0.17
+const THROW_GRAB := 0.20
 const THROW_RELEASE := 0.47
 ## CORE: "catch" (the spear flying home into the left fist): the fist swings it onto the back at this key.
 const CATCH_STOW := 0.24
@@ -103,18 +106,19 @@ static var _cache := {}
 enum { C_PEL = 0, C_PELR = 3, C_SPN = 6, C_CHS = 9, C_NEK = 12, C_HED = 15, C_HR = 18, C_HRB = 21, C_HRK = 24,
 	C_HRP = 27, C_HL = 30, C_HLF = 33, C_HLP = 36, C_HLW = 39, C_FR = 42, C_FRR = 45, C_FRP = 48, C_FL = 51,
 	C_FLR = 54, C_FLP = 57, C_ROT = 60, C_PIV = 63, C_GRIP = 66, C_OHL = 67, C_SPR = 68, C_HOOD = 69, C_HLB = 70,
-	C_HLK = 73, C_HLX = 76, C_HLS = 77, C_HRS = 78, C_N = 79 }
+	C_HLK = 73, C_HLX = 76, C_HLS = 77, C_HRS = 78, C_HLR = 79, C_HRR = 80, C_N = 81 }
 ## pel/pelr/spn/chs/nek/hed: pelvis offset + Euler (x pitch, + leans back; y yaw, + turns left; z roll) and the
 ## spine bones' Euler. hr: right grip (chest space), hrb blade direction, hrk back of the hand, hrp elbow pole.
 ## hl: left wrist (chest space), hlf where the shield faces, hlp elbow pole, hlw wrist Euler; hlb/hlk an explicit
-## left hand basis (spear held: hlb = spear direction) weighted by hlx. hrs/hls: 1 puts that hand's targets in rig
+## left hand basis (spear held: hlb = spear direction) weighted by hlx (hl is then the fist's place, with the roll hlk, and the hand's own roll about hlb is
+## hlr: 1 as authored (hlk), 0 the one that keeps the wrist straight: the fist closes on the shaft however the forearm lies). hrs/hls: 1 puts that hand's targets in rig
 ## space (before `rot`) instead of chest space. fr/fl ankles, frr/flr foot Euler, frp/flp knee poles (rig space).
 ## rot: whole-body rotation vector about piv. grip: sword roll in the fist. ohl: open left hand. hood: lion hood
 ## (0 down on the back .. 1 on the head).
 const CH := {"pel": C_PEL, "pelr": C_PELR, "spn": C_SPN, "chs": C_CHS, "nek": C_NEK, "hed": C_HED, "hr": C_HR,
 	"hrb": C_HRB, "hrk": C_HRK, "hrp": C_HRP, "hl": C_HL, "hlf": C_HLF, "hlp": C_HLP, "hlw": C_HLW, "fr": C_FR,
 	"frr": C_FRR, "frp": C_FRP, "fl": C_FL, "flr": C_FLR, "flp": C_FLP, "rot": C_ROT, "piv": C_PIV, "grip": C_GRIP,
-	"ohl": C_OHL, "spr": C_SPR, "hood": C_HOOD, "hlb": C_HLB, "hlk": C_HLK, "hlx": C_HLX, "hls": C_HLS, "hrs": C_HRS}
+	"ohl": C_OHL, "spr": C_SPR, "hood": C_HOOD, "hlb": C_HLB, "hlk": C_HLK, "hlx": C_HLX, "hls": C_HLS, "hrs": C_HRS, "hlr": C_HLR, "hrr": C_HRR}
 
 ## Neutral stance (hands in chest space, feet in rig space).
 const NEUTRAL := {
@@ -127,7 +131,7 @@ const NEUTRAL := {
 	"fr": Vector3(0.15, 0.093, 0.04), "frr": Vector3(0.0, -0.18, 0.0), "frp": Vector3(0.25, 0.0, -1.0),
 	"fl": Vector3(-0.15, 0.093, -0.06), "flr": Vector3(0.0, 0.18, 0.0), "flp": Vector3(-0.25, 0.0, -1.0),
 	"rot": Vector3.ZERO, "piv": Vector3(0.0, 0.9, 0.0), "grip": 0.0, "ohl": 0.0, "spr": 0.0, "hood": 1.0,
-	"hlb": Vector3(0.0, 0.0, -1.0), "hlk": Vector3(-1.0, 0.0, 0.0), "hlx": 0.0, "hls": 0.0, "hrs": 0.0,
+	"hlb": Vector3(0.0, 0.0, -1.0), "hlk": Vector3(-1.0, 0.0, 0.0), "hlx": 0.0, "hls": 0.0, "hrs": 0.0, "hlr": 1.0, "hrr": 1.0,
 }
 
 # --- state -------------------------------------------------------------------------------------------------
@@ -1534,7 +1538,10 @@ static func spear_back_xf(lion: bool = false) -> Transform3D:
 	var butt := Vector3(0.24, 0.85, 0.3) if not lion else Vector3(0.25, 0.89, 0.3)
 	var d := (tip - butt).normalized()
 	var z := -d
-	var x := perp(Vector3.BACK, z).normalized()
+	# (the spear's roll about its shaft is the one the left fist has when it closes on it, THROW_GRAB, so that the spear in the hand and
+	# the one on the back are the same spear at the swap: `anim_check mode=swap` measures it. The fist's roll there is the authored one
+	# (hlk = g_back), the hand takes the roll that keeps its wrist straight from the draw on)
+	var x := perp(SPEAR_ROLL if not lion else SPEAR_ROLL_LION, z).normalized()
 	var y := z.cross(x)
 	return Transform3D(Basis(x, y, z), tip - d * 0.58)
 
@@ -1621,7 +1628,7 @@ static func _spp(chest: Transform3D, p: Vector3, k: float) -> Vector3:
 func _solve(c: PackedFloat32Array) -> void:
 	var pb := eul(v3(c, C_PELR))
 	var po := P_PELVIS + v3(c, C_PEL)
-	var upright := v3(c, C_ROT).length_squared() < 0.01
+	var upright := _reduce_rot(v3(c, C_ROT)).length_squared() < 0.01
 	var ground_ik := upright and _gnd_k > 0.001
 	if ground_ik:
 		# CORE foot IK: the hips sink so the leg over the lower ground still reaches it
@@ -1658,16 +1665,16 @@ func _solve(c: PackedFloat32Array) -> void:
 			# the sole (heel and toe) never sinks into the ground: lift the ankle instead
 			var low := minf((fbasis * Vector3(0.0, -0.093, 0.075)).y, (fbasis * Vector3(0.0, -0.093, -0.22)).y)
 			A.y = maxf(A.y, gy - low)
-		var pole := v3(c, C_FRP if side == 0 else C_FLP)
+		var pole := _pole_eff(2 + side, A - H, v3(c, C_FRP if side == 0 else C_FLP))
 		var r := ik2(H, A, pole, LEN_TH, LEN_SH)
 		var K: Vector3 = r[0]
 		var A2: Vector3 = r[1]
 		var y1 := (K - H).normalized()
-		var z1 := perp(pole, y1)
-		if z1.length_squared() < 1e-8:
-			z1 = perp(FWD, y1)
-		z1 = z1.normalized()
-		var x1 := y1.cross(z1)
+		# (the frame of both bones is the plane the knee bends in: its normal is hip-to-ankle x the knee's bend direction, which
+		# is what ik2 used, so it is as continuous as the pole is. It used to be thigh axis x pole, which flips sign when the
+		# thigh swings through the pole's direction: a hip flexed to 90 degrees with the pole straight ahead.)
+		var x1 := _bend_normal(A2 - H, pole)
+		var z1 := x1.cross(y1)
 		_bx[THIGH_R + o] = Transform3D(Basis(x1, y1, z1) * _f0_th[side].transposed(), H)
 		var ys := (A2 - K).normalized()
 		_bx[SHIN_R + o] = Transform3D(Basis(x1, ys, x1.cross(ys)) * _f0_sh[side].transposed(), K)
@@ -1684,13 +1691,53 @@ func _solve(c: PackedFloat32Array) -> void:
 		var cbi := cb.inverse()
 		var ks := c[C_HRS] if side == 0 else c[C_HLS]
 		if side == 0:
-			hand_cs = cbi * hand_basis(_spc(cb, v3(c, C_HRB), ks), _spc(cb, v3(c, C_HRK), ks), 1.0)
+			var h_nom_r := hand_basis(_spc(cb, v3(c, C_HRB), ks), _spc(cb, v3(c, C_HRK), ks), 1.0)
 			var grip_rig := _keep_out(_spp(chest, v3(c, C_HR), ks), 0.075)
+			var rr := clampf(c[C_HRR], 0.0, 1.0)
+			if rr < 0.999:
+				# the sword hand of an action that is not a blow (the roll, the victory, the grapple): the edge turned to whatever lets the
+				# wrist stay straight, the blade where it was put (see hlr)
+				var fa0r := _prelim_fa_dir(0, grip_rig - h_nom_r * GRIP, _spc(cb, v3(c, C_HRP), ks), chest, cb, co, clav_r, sh_r)
+				h_nom_r = _free_hand(h_nom_r, fa0r, rr)
+			hand_cs = cbi * h_nom_r
 			wrist_cs = chest.affine_inverse() * grip_rig - hand_cs * GRIP
 			pole_cs = cbi * _spc(cb, v3(c, C_HRP), ks)
 		else:
-			wrist_cs = chest.affine_inverse() * _keep_out(_spp(chest, v3(c, C_HL), ks), 0.085)
+			var hl_rig := _spp(chest, v3(c, C_HL), ks)
+			_lh_held = Basis()
+			_lh_on = false
+			if c[C_HLX] > 0.001:
+				# a held hand (the spear, the chain): hl is the wrist for the roll hlk (the fist is GRIP from it); with the roll free
+				# (hlr < 1) the fist stays where it was put and the hand turns about the shaft to the roll that keeps the wrist straight,
+				# the forearm's direction of the last frame being the one it is straight to
+				var h_nom := hand_basis(_spc(cb, v3(c, C_HLB), ks), _spc(cb, v3(c, C_HLK), ks), -1.0)
+				var rw := clampf(c[C_HLR], 0.0, 1.0)
+				var h_tgt := h_nom
+				if rw < 0.999:
+					var fa0 := _prelim_fa_dir(1, hl_rig, _spc(cb, v3(c, C_HLP), ks), chest, cb, co, clav_r, sh_r)
+					h_tgt = _free_hand(h_nom, fa0, rw)
+					hl_rig = hl_rig + h_nom * GRIP - h_tgt * GRIP
+				_lh_held = h_tgt
+				_lh_on = true
+			wrist_cs = chest.affine_inverse() * _keep_out(hl_rig, 0.085)
 			pole_cs = cbi * _spc(cb, v3(c, C_HLP), ks)
+		# the hand goes round the shoulder, never through it: the direction from the shoulder to the hand turns at most ARM_DIR_RATE rad/s
+		# (a hand sent from one side of the shoulder to the other along a straight line passes close to it and its direction
+		# would swing half a turn in a few frames, the whole arm with it)
+		if side == 1 or not _wlim:
+			wrist_cs = (sh_r - P_CHEST) + _limit_arm_dir(side, wrist_cs - (sh_r - P_CHEST))
+		else:
+			# (the sword hand of a blow goes where it was authored to go, and the limiter keeps up with it)
+			var dw := wrist_cs - (sh_r - P_CHEST)
+			if dw.length() > 1e-4:
+				_arm_dir[0] = dw.normalized()
+		if side == 1 or not _wlim:
+			# (an arm is never locked straight: as the hand nears the length of the arm the elbow's angle changes ever faster, a
+			# square root of the distance, and the last centimetres are a snap of the elbow; the reach closes on 98.5 % of it
+			# softly. The sword arm of a blow is left as authored.)
+			wrist_cs = (sh_r - P_CHEST) + _soft_reach(wrist_cs - (sh_r - P_CHEST))
+		if side == 1:
+			_dbg_wt = wrist_cs - (sh_r - P_CHEST)
 		# clavicle: shrug when the hand goes high, protract when it reaches forward
 		var dd := (wrist_cs - (sh_r - P_CHEST)).normalized()
 		var elev := asin(clampf(dd.y, -1.0, 1.0))
@@ -1701,45 +1748,118 @@ func _solve(c: PackedFloat32Array) -> void:
 		_bx[CLAV_R + o] = Transform3D(clb, clo)
 		var S := clo + clb * (sh_r - clav_r)
 		var W := chest * wrist_cs
-		var pole := cb * pole_cs
+		var pole := _pole_eff(side, W - S, cb * pole_cs)
+		if side == 0 and _wlim:
+			# (the elbow of a blow goes where the blow was built to put it: the tracking only follows it)
+			pole = cb * pole_cs
 		var r := ik2(S, W, pole, LEN_UA, LEN_FA)
 		var E: Vector3 = r[0]
 		# an elbow inside the body swings the other way round
 		var e_safe := _keep_out(E, 0.06)
 		if e_safe.distance_squared_to(E) > 1e-6:
-			pole = (pole.normalized() + (e_safe - E).normalized() * 2.0).normalized()
+			# (the push on the pole grows with how deep the elbow is in the body: a fixed push switched on at the first millimetre
+			# flipped the elbow from one side of the arm to the other and back from one frame to the next)
+			# (the sword arm of a blow keeps the fixed push the blows were built and measured with)
+			var push := e_safe - E
+			pole = (pole.normalized() + push.normalized() * (2.0 if (side == 0 and _wlim) else minf(push.length() * 40.0, 2.0))).normalized()
 			r = ik2(S, W, pole, LEN_UA, LEN_FA)
 			E = r[0]
 		var W2: Vector3 = r[1]
 		var y1 := (E - S).normalized()
-		var z1 := -perp(pole, y1)
-		if z1.length_squared() < 1e-8:
-			z1 = perp(cb * FWD, y1)
-		z1 = z1.normalized()
-		var x1 := y1.cross(z1)
+		var x1 := -_bend_normal(W2 - S, pole)
+		var z1 := x1.cross(y1)
 		var bua := Basis(x1, y1, z1) * _f0_ua[side].transposed()
 		_bx[UARM_R + o] = Transform3D(bua, S)
 		var y1f := (W2 - E).normalized()
+		if side == 1:
+			_fa_dir_l = y1f
 		var f1f := Basis(x1, y1f, x1.cross(y1f))
 		var twist := 0.0
 		var hand_b: Basis
+		# (the forearm's twist follows the hand's side (the sword hand) or the shield's facing (the shield arm): where that
+		# vector is nearly along the forearm's own axis the twist is undefined and the old fallback of 0 flipped the shield
+		# 180 degrees in one frame, so it is tracked: it follows the vector in proportion to how well defined it is, else it
+		# keeps what it was, and always takes the short way round)
 		if side == 0:
 			hand_b = cb * hand_cs
+			if _wlim:
+				hand_b = _wrist_limit(hand_b, y1f)
 			var hx := perp(hand_b.x, y1f)
-			if hx.length() > 0.2:
-				twist = x1.signed_angle_to(hx.normalized(), y1f) * 0.5
+			var hxl := hx.length()
+			if hxl > 1e-4:
+				var cand := x1.signed_angle_to(hx / hxl, y1f) * 0.5
+				_tw_fa[0] += _twist_step(wrapf(cand - _tw_fa[0], -PI, PI) * smoothstep(0.06, 0.3, hxl))
+			twist = _tw_fa[0]
 		else:
+			# (the left forearm turns towards two things: the shield's facing, and, when the hand is held to an explicit frame (the
+			# spear, the chain), the grip: the forearm turns with the hand so that the wrist is not asked for the whole turn. Each is the
+			# angle nearest the twist it has now, so the mix of the two never goes the long way round; the grip's twist is kept within
+			# what a forearm turns, and the wrist keeps the rest.)
+			var tw := _tw_fa[1]
 			var n := perp(_spc(cb, v3(c, C_HLF), ks), y1f)
-			if n.length() > 0.05:
-				twist = (-x1).signed_angle_to(n.normalized(), y1f)
+			var nl := n.length()
+			# (the forearm is ahead of the hand: it follows the grip from the first third of the hand's blend on)
+			var hxw := clampf(clampf(c[C_HLX], 0.0, 1.0) * TW_LEAD, 0.0, 1.0)
+			var w_s := maxf(1.0 - hxw, TW_SHIELD) * smoothstep(0.03, 0.2, nl)
+			var d_s := 0.0
+			if nl > 1e-4:
+				d_s = clampf(tw + wrapf((-x1).signed_angle_to(n / nl, y1f) - tw, -PI, PI), -TW_MAX, TW_MAX) - tw
+			var w_h := 0.0
+			var d_h := 0.0
+			if hxw > 0.001:
+				var hb2f := _lh_held
+				# (the hand swung so that its long axis lies along the forearm's: what is left to turn is the forearm's own twist)
+				var f0 := _f0_fa[side]
+				var yh := (hb2f * f0.y).normalized()
+				var sw := Quaternion(yh, y1f) if yh.dot(y1f) > -0.999 else Quaternion.IDENTITY
+				_dbg_wb = rad_to_deg(yh.angle_to(y1f))
+				var hxv := perp(Basis(sw) * (hb2f * f0.x), y1f)
+				if hxv.length() > 1e-4:
+					# (the angle nearest the twist it has: at half a turn from the forearm's own the choice between the two ways round is the
+					# one it is already taking)
+					d_h = clampf(tw + wrapf(x1.signed_angle_to(hxv.normalized(), y1f) - tw, -PI, PI), -TW_HAND_MAX, TW_HAND_MAX) - tw
+					w_h = hxw * smoothstep(0.03, 0.2, hxv.length())
+			_dbg_tw = Vector4(rad_to_deg(d_s), w_s, rad_to_deg(d_h), w_h)
+			if w_s + w_h > 1e-4:
+				# (it comes back to the shield's twist faster than it leaves it for the hand's: the shield has to be clear of him again)
+				_tw_fa[1] += _twist_step((d_s * w_s + d_h * w_h) / (w_s + w_h) * minf(w_s + w_h, 1.0), lerpf(TWIST_RATE_FREE, TWIST_RATE, hxw))
+			twist = _tw_fa[1]
+			# (the shield hangs from a strap on the forearm and slips round it: what the forearm could not give of the shield's facing
+			# because it turned with the hand, the shield takes, up to SH_SLACK_MAX; the shield stays clear of his head and chest while the hand
+			# draws a spear from his back)
+			_sh_slack_t = 0.0
+			if nl > 1e-4 and hxw > 0.001 and _brush <= 0.0005:
+				_sh_slack_t = clampf(wrapf(tw + d_s - twist, -PI, PI), -SH_SLACK_MAX, SH_SLACK_MAX) * hxw * smoothstep(0.03, 0.2, nl)
+			if _solve_dt > 0.0:
+				_sh_slack = move_toward(_sh_slack, _sh_slack_t, SH_SLACK_RATE * _solve_dt)
+			else:
+				_sh_slack = _sh_slack_t
 		var bfa := Basis(y1f, twist) * f1f * _f0_fa[side].transposed()
 		_bx[FARM_R + o] = Transform3D(bfa, E)
 		if side == 1:
 			hand_b = bfa * eul(v3(c, C_HLW))
 			var hx := clampf(c[C_HLX], 0.0, 1.0)
 			if hx > 0.001:
-				var hb2 := hand_basis(_spc(cb, v3(c, C_HLB), ks), _spc(cb, v3(c, C_HLK), ks), -1.0)
-				hand_b = Basis(hand_b.get_rotation_quaternion().slerp(hb2.get_rotation_quaternion(), hx))
+				var hb2 := _lh_held
+				# (the turn from the hand as the forearm carries it to the held frame, blended as a swing and a twist about the forearm's
+				# own axis: a plain slerp between two frames half a turn apart changes the way round it goes in a frame, a snap of the wrist)
+				var dq := (hand_b.inverse() * hb2).get_rotation_quaternion()
+				if dq.w < 0.0:
+					dq = -dq
+				var ax := _f0_fa[side].y
+				var tw_d := 2.0 * atan2(Vector3(dq.x, dq.y, dq.z).dot(ax), dq.w)
+				var tw_q := Quaternion(ax, tw_d)
+				var sw_q := dq * tw_q.inverse()
+				# (the twist is followed as a continuous angle while the hand blends in or out; when the held frame is fully on, the same
+				# rotation is renamed to its principal angle, so that a turn gone round on the way in does not have to be unwound on the way out)
+				_wr_tw = _wr_tw + wrapf(tw_d - _wr_tw, -PI, PI) if _wr_on else tw_d
+				if hx > 0.999:
+					_wr_tw = tw_d
+				_wr_on = true
+				_dbg_wb2 = Vector3(rad_to_deg(tw_d), rad_to_deg(_wr_tw), rad_to_deg(sw_q.get_angle()))
+				hand_b = hand_b * Basis(Quaternion.IDENTITY.slerp(sw_q, hx) * Quaternion(ax, _wr_tw * hx))
+			else:
+				_wr_on = false
 		_bx[HAND_R + o] = Transform3D(hand_b, W2)
 		# pauldron follows the clavicle and part of the arm
 		var qp := clb.get_rotation_quaternion().slerp(bua.get_rotation_quaternion(), 0.45)
@@ -1755,6 +1875,120 @@ func _solve(c: PackedFloat32Array) -> void:
 		var root := Transform3D(rb, pv - rb * pv)
 		for i in NB:
 			_bx[i] = root * _bx[i]
+
+
+## The direction the forearm will have when the wrist is put at `wrist_rig` (rig space) with the elbow towards `pole_rig`: a first solve of the
+## arm, the clavicle's shrug in, the keep-out and the rate limiters left out. `chest`, `cb`, `co`: the chest's transform, basis, origin.
+func _prelim_fa_dir(side: int, wrist_rig: Vector3, pole_rig: Vector3, chest: Transform3D, cb: Basis, co: Vector3, clav_r: Vector3, sh_r: Vector3) -> Vector3:
+	var s := 1.0 if side == 0 else -1.0
+	var wcs0 := chest.affine_inverse() * _keep_out(wrist_rig, 0.085)
+	var d0 := (wcs0 - (sh_r - P_CHEST)).normalized()
+	var clb0 := cb * Basis(Vector3.BACK, clampf((asin(clampf(d0.y, -1.0, 1.0)) + 0.25) * 0.3, 0.0, 0.4) * s) * Basis(Vector3.UP, clampf(-d0.z * 0.16 - 0.02, -0.1, 0.16) * s)
+	var s0 := co + cb * (clav_r - P_CHEST) + clb0 * (sh_r - clav_r)
+	var r0 := ik2(s0, chest * wcs0, pole_rig, LEN_UA, LEN_FA)
+	return ((r0[1] as Vector3) - (r0[0] as Vector3)).normalized()
+
+
+## The hand `h_nom` (a basis, its z the shaft or the blade's own axis, the fingers' length axis y pointing to the elbow) turned about z to the
+## roll that keeps the wrist straight to a forearm running along `fa`, `rw` of the way back to the authored one (1 = as authored).
+static func _free_hand(h_nom: Basis, fa: Vector3, rw: float) -> Basis:
+	var zt := h_nom.z.normalized()
+	var fp := fa - zt * fa.dot(zt)
+	if fp.length() <= 0.2:
+		return h_nom
+	var y_h := -fp.normalized()
+	var h_free := Basis(y_h.cross(zt), y_h, zt)
+	return Basis(h_free.get_rotation_quaternion().slerp(h_nom.get_rotation_quaternion(), rw))
+
+
+## The direction a limb bends towards, as ik2 would take it from the pole, kept continuous: where the pole lies along the limb's
+## root-to-end line it defines no direction (ik2 then falls back on a fixed one and the knee or elbow flips to the other side in a
+## frame), so the bend direction of the last frame is kept there, and it never turns faster than POLE_RATE rad/s about the line.
+## `i`: 0 right arm, 1 left arm, 2 right leg, 3 left leg. Returns a pole (a unit vector across the line).
+var _pole_prev: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO]
+const POLE_RATE := 32.0
+
+
+func _pole_eff(i: int, d: Vector3, pole: Vector3) -> Vector3:
+	var u := d.normalized()
+	var v := perp(pole, u)
+	var vl := v.length()
+	var w := smoothstep(0.03, 0.3, vl / maxf(pole.length(), 1e-6))
+	var prev := perp(_pole_prev[i], u)
+	var out: Vector3
+	if prev.length_squared() < 1e-6:
+		out = v.normalized() if vl > 1e-6 else perp(Vector3.BACK, u).normalized()
+	else:
+		prev = prev.normalized()
+		if vl < 1e-6 or w <= 0.0:
+			out = prev
+		else:
+			var cand := v / vl
+			var ang := prev.signed_angle_to(cand, u) * w
+			if _solve_dt > 0.0:
+				ang = clampf(ang, -POLE_RATE * _solve_dt, POLE_RATE * _solve_dt)
+			out = prev.rotated(u, ang)
+	_pole_prev[i] = out
+	return out
+
+
+## The reach of an arm eased towards its end: up to 93 % of the arm's length as asked, then closing on 98.5 % of it.
+func _soft_reach(d: Vector3) -> Vector3:
+	var lmax := LEN_UA + LEN_FA
+	var knee := 0.93 * lmax
+	var top := 0.985 * lmax
+	var l := d.length()
+	if l <= 1e-5:
+		return d
+	if l > knee:
+		var l2 := knee + (top - knee) * (1.0 - exp(-(l - knee) / (top - knee)))
+		return d * (l2 / l)
+	# (the other end: an elbow folds to 150 degrees of flexion, and the closer the hand comes the slower it goes on)
+	if l < ELBOW_SOFT_D:
+		var l3 := ELBOW_SOFT_D - (ELBOW_SOFT_D - ELBOW_MIN_D) * (1.0 - exp(-(ELBOW_SOFT_D - l) / (ELBOW_SOFT_D - ELBOW_MIN_D)))
+		return d * (l3 / l)
+	return d
+
+
+## The shoulder-to-wrist distances at which an elbow is flexed 128 and 144 degrees (the range stops at 150).
+static var ELBOW_SOFT_D := sqrt(LEN_UA * LEN_UA + LEN_FA * LEN_FA - 2.0 * LEN_UA * LEN_FA * cos(PI - deg_to_rad(128.0)))
+static var ELBOW_MIN_D := sqrt(LEN_UA * LEN_UA + LEN_FA * LEN_FA - 2.0 * LEN_UA * LEN_FA * cos(PI - deg_to_rad(144.0)))
+## The direction from each shoulder to its hand (chest space) as last solved, and how fast it may turn (rad/s).
+var _arm_dir: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
+const ARM_DIR_RATE := 30.0
+
+
+func _limit_arm_dir(i: int, d: Vector3) -> Vector3:
+	var l := d.length()
+	if l < 1e-4:
+		return d
+	var u := d / l
+	var prev := _arm_dir[i]
+	if prev == Vector3.ZERO or _solve_dt <= 0.0:
+		_arm_dir[i] = u
+		return d
+	var maxa := ARM_DIR_RATE * _solve_dt
+	if prev.angle_to(u) > maxa:
+		var axis := prev.cross(u)
+		if axis.length_squared() < 1e-8:
+			axis = perp(Vector3.UP, prev)
+			if axis.length_squared() < 1e-8:
+				axis = Vector3.RIGHT
+		u = prev.rotated(axis.normalized(), maxa)
+	_arm_dir[i] = u
+	return u * l
+
+
+## Normal of the plane a two-bone limb bends in: the root-to-end line `d` crossed with the pole's component across it (the same
+## direction ik2 bends towards, with its fallback when the pole lies along the line).
+static func _bend_normal(d: Vector3, pole: Vector3) -> Vector3:
+	var u := d.normalized()
+	var v := perp(pole, u)
+	if v.length_squared() < 1e-8:
+		v = perp(Vector3.BACK, u)
+		if v.length_squared() < 1e-8:
+			v = perp(Vector3.RIGHT, u)
+	return u.cross(v.normalized()).normalized()
 
 
 ## Keeps a point (rig space) of radius r out of the torso, helmet, hips and thighs of the pose being solved
@@ -1784,6 +2018,8 @@ func _apply_bones() -> void:
 	_set_skin_pivot("hand_r_s", HAND_R)
 	_set_skin_pivot("hand_l_s", HAND_L)
 	_set_skin_pivot("farm_l_s", FARM_L)
+	if _sh_slack != 0.0:
+		(_piv["farm_l_s"] as Node3D).transform = _slack_xf() * (_piv["farm_l_s"] as Node3D).transform
 	if _brush > 0.0005 and action == "":
 		_brush_shield()
 	_set_skin_pivot("chest_s", CHEST)
@@ -1946,9 +2182,19 @@ var _blend_t := 1.0
 var _blend_len := 0.1
 var _hold := false
 var _spd := 0.0
-var _phase := 0.0
-var _prev_s := PackedFloat32Array([0.0, 0.5])
 var _guard_k := 0.0
+var _guard_v := 0.0
+## The shield's spring (rad/s, damping ratio): 0.62 overshoots the guard pose by about 8 % and settles in a quarter of a second.
+const GUARD_W := 24.0
+const GUARD_Z := 0.62
+## The landing's spring on the pelvis: `_land_x` (m, negative = down), its speed, the strength of the impact that excited it.
+const LAND_W := 21.0
+const LAND_Z := 0.48
+var _land_x := 0.0
+var _land_v := 0.0
+var _land_k := 0.0
+## The vertical speed the body had the last tick it was in the air (the speed the ground is met at).
+var _vy_air := 0.0
 var _vy := 0.0
 var _swim_phase := 0.0
 var _vel := Vector3.ZERO
@@ -1991,21 +2237,94 @@ var _gnd_on := false
 ## Hanging from the chain: the swing of the body under the hand.
 var _hang_sw := 0.0
 var _hang_swv := 0.0
+## The ground gait's state (the gait code is below, "animation: the ground gait"): the phase of the right foot (0 = it
+## touches down), whether the cycle drives the feet, the planted feet and their swings, the springs of the lean.
+var _gph := 0.0
+var _gait_on := false
+var _gait_w := 0.0
+var _a_fwd := 0.0
+var _speed_prev := 0.0
+var _fp_ok := false
+var _gp_n := -10
+var _gp_prev := -10
+var _pel_yp := 0.0
+var _pel_ok := false
+var _adv_n := 0
+## Tools: start the gait at this phase (previews); the rig's world XZ and yaw this frame; the instantaneous yaw rate.
+var _pv_phase := -1.0
+var _rp := Vector2.ZERO
+var _ry := 0.0
+var _yaw_inst := 0.0
+var _yaw_lead := 0.0
+var _vu := 0.0
+var _yaw_head := 0.0
+var _mv_arm := 0.0
+## Direction of travel in rig space as an angle (0 forward, + to the right).
+var _mang := 0.0
+var _lean_acc := 0.0
+var _lean_accv := 0.0
+var _roll_turn := 0.0
+var _roll_turnv := 0.0
+## Per foot (0 right, 1 left): state, the pinned contact point (world XZ; the heel, then the toe) and which, the foot's
+## world yaw, the pitch it touched down with, the swing's start (ankle world XZ, height, pitch, yaw), its progress and
+## length (home steps), the phase it lifted at, the phase offset and last phase, and what the frame produced: the ankle
+## (rig space and world XZ), pitch, yaw, how much the pelvis must respect it.
+var _ft_st := PackedInt32Array([0, 0])
+var _ft_kind := PackedInt32Array([0, 0])
+var _ft_pin := PackedVector2Array([Vector2.ZERO, Vector2.ZERO])
+var _ft_yaw := PackedFloat32Array([0.0, 0.0])
+var _ft_th0 := PackedFloat32Array([0.0, 0.0])
+var _ft_from := PackedVector2Array([Vector2.ZERO, Vector2.ZERO])
+var _ft_from_y := PackedFloat32Array([0.093, 0.093])
+var _ft_from_th := PackedFloat32Array([0.0, 0.0])
+var _ft_from_yaw := PackedFloat32Array([0.0, 0.0])
+var _ft_s := PackedFloat32Array([0.0, 0.0])
+var _ft_dur := PackedFloat32Array([0.2, 0.2])
+var _ft_philo := PackedFloat32Array([0.0, 0.0])
+var _ft_off := PackedFloat32Array([0.0, 0.5])
+var _ft_phi := PackedFloat32Array([0.0, 0.5])
+var _ft_ank := PackedVector3Array([Vector3.ZERO, Vector3.ZERO])
+var _ft_aw := PackedVector2Array([Vector2.ZERO, Vector2.ZERO])
+var _ft_ay := PackedFloat32Array([0.093, 0.093])
+var _ft_pit := PackedFloat32Array([0.0, 0.0])
+var _ft_wy := PackedFloat32Array([0.0, 0.0])
+var _ft_ry := PackedFloat32Array([0.0, 0.0])
+var _ft_w := PackedFloat32Array([1.0, 1.0])
+var _ft_pv := PackedFloat32Array([0.0, 0.0])
+var _ft_from_pv := PackedFloat32Array([0.0, 0.0])
+## The spot a swinging foot is set down on (world XZ, pitch, yaw).
+var _ft_goal := PackedVector2Array([Vector2.ZERO, Vector2.ZERO])
+var _ft_goal_th := PackedFloat32Array([0.0, 0.0])
+var _ft_goal_yaw := PackedFloat32Array([0.0, 0.0])
 ## Channels the legs and hips take from the locomotion under an upper-body action.
 const LOWER_CH := [C_FR, C_FRR, C_FRP, C_FL, C_FLR, C_FLP, C_PEL]
 
 
 ## Upper-body layering: legs and hips from the locomotion pose, the rest from the action.
-func _layer_lower(dst: PackedFloat32Array, loco: PackedFloat32Array) -> void:
+## Actions that keep the air pose's legs when they are played in the air (the others have legs of their own: a jump, a roll).
+const AIR_LAYERED := ["hit", "hit_heavy", "recoil", "death", "parry", "catch", "pull"]
+var _airl := 0.0
+
+
+## Mixes the locomotion's pose into an action's by `k` (0..1) for everything above the hips: the legs, the pelvis' translation and
+## the whole-body rotation stay the action's (their blend is the exit's, inertialized, from the action's last pose).
+func _handover(dst: PackedFloat32Array, loco: PackedFloat32Array, k: float) -> void:
+	for i in C_N:
+		if (i >= C_PEL and i < C_PEL + 3) or (i >= C_FR and i < C_PIV + 3):
+			continue
+		dst[i] = lerpf(dst[i], loco[i], k)
+
+
+func _layer_lower(dst: PackedFloat32Array, loco: PackedFloat32Array, w: float = 1.0) -> void:
 	for o in LOWER_CH:
-		dst[o] = loco[o]
-		dst[o + 1] = loco[o + 1]
-		dst[o + 2] = loco[o + 2]
+		dst[o] = lerpf(dst[o], loco[o], w)
+		dst[o + 1] = lerpf(dst[o + 1], loco[o + 1], w)
+		dst[o + 2] = lerpf(dst[o + 2], loco[o + 2], w)
 	# the hips turn half with the action, half with the gait; no whole-body rotation
 	for j in 3:
-		dst[C_PELR + j] = lerpf(loco[C_PELR + j], dst[C_PELR + j], 0.5)
-		dst[C_ROT + j] = loco[C_ROT + j]
-		dst[C_PIV + j] = loco[C_PIV + j]
+		dst[C_PELR + j] = lerpf(dst[C_PELR + j], lerpf(loco[C_PELR + j], dst[C_PELR + j], 0.5), w)
+		dst[C_ROT + j] = lerpf(dst[C_ROT + j], loco[C_ROT + j], w)
+		dst[C_PIV + j] = lerpf(dst[C_PIV + j], loco[C_PIV + j], w)
 
 
 ## CORE foot IK input: the ground height under the right and left foot relative to the rig origin (m) and the ground
@@ -2044,16 +2363,38 @@ func guard_impact(strength: float = 1.0) -> void:
 func set_motion_state(s: StringName) -> void:
 	if s == motion_state:
 		return
+	if motion_state == &"air" and s == &"ground":
+		_land_impact(-minf(_vy_air, 0.0))
 	motion_state = s
+	_io_src_new = true # (the locomotion's last frame came from another generator: no velocity to take from it)
 	if action == "" or not is_busy():
 		_start_blend(0.18 if s != &"zip" else 0.1)
 
 
 func set_vertical_speed(vy: float) -> void:
 	vspeed = vy
+	if motion_state == &"air":
+		_vy_air = vy
+
+
+## The ground is met at `v` m/s: the pelvis gives under it (about 1.2 cm per m/s, at most 20 cm; less when the landing action's own
+## crouch comes with it) and the spring brings it back.
+func _land_impact(v: float) -> void:
+	if v < 2.0:
+		return
+	var depth := clampf(v * 0.012, 0.0, 0.2) * (0.45 if action == "land" else 1.0)
+	_land_v = minf(_land_v, -depth * LAND_W * 2.4)
+	_land_k = clampf(v / 14.0, 0.0, 1.0)
+
+
+## The authored seconds from which a blow's recovery may be cancelled into the guard (HeroMelee `cancel`): the hero is already
+## guarding then (his state is MOVE) and the shield comes up at once, instead of waiting for the end of a recovery he has left.
+const GUARD_CUT := {"attack1": 0.30, "attack2": 0.29, "attack3": 0.50, "heavy": 0.80}
 
 
 func set_guard(on: bool) -> void:
+	if on and not guard and _upper == 0.0 and GUARD_CUT.has(action) and action_t >= float(GUARD_CUT[action]):
+		stop_action(0.14)
 	guard = on
 
 
@@ -2108,6 +2449,17 @@ func play(a: String) -> float:
 	action_speed = 1.0
 	action_hold = -1.0
 	_upper = 0.0
+	if a == "hit" or a == "hit_heavy":
+		# (on the move the reaction is the upper body's: the legs stumble on the gait the knock-back puts them in)
+		_upper = 1.0 if _spd > 1.5 else 0.0
+		# which way the blow pushes him is read from his own motion a few frames in (the hero code adds the knock-back to
+		# his velocity): the reaction is authored for a blow from the front and turned about the vertical to that direction
+		var lv := (global_transform.basis.inverse() if is_inside_tree() else Basis.IDENTITY) * _vel_inst
+		_hit_v0 = Vector2(lv.x, lv.z)
+		_hit_set = false
+		_hit_ang = 0.0
+	_sk_init = true
+	_sk_run = def.has("strike") and _spd > SK_RUN_V and not (def["strike"] as Dictionary).has("rot")
 	return action_len
 
 
@@ -2152,7 +2504,12 @@ func _start_blend(dur: float) -> void:
 	else:
 		_from = default_pose()
 	_blend_t = 0.0 if dur > 0.0 else 1.0
-	_blend_len = maxf(dur, 0.001)
+	_blend_len = maxf(dur, 0.03)
+	# (the whole-body rotation still mixes from the snapshot above; everything else is inertialized, see _blend_out)
+	_io_pending = dur > 0.0 and _out_p1.size() == C_N
+	_io_len = _blend_len
+	if dur <= 0.0:
+		_io_on = false
 
 
 func _process(delta: float) -> void:
@@ -2162,6 +2519,7 @@ func _process(delta: float) -> void:
 ## One animation step (the rig calls it from _process; tools call it directly with a fixed step).
 func advance(delta: float) -> void:
 	delta = clampf(delta, 0.0, 0.1)
+	_adv_n += 1
 	t += delta
 	_track_motion(delta)
 	if action != "":
@@ -2193,21 +2551,58 @@ func advance(delta: float) -> void:
 
 
 func _animate(delta: float) -> void:
-	var loco := _loco_pose(delta)
+	# a blow built from joint angles drives its own feet (the gait only follows its state afterwards)
+	var sk := false
+	var skl := false
+	var skc := false
 	if action != "":
 		if _akey == "" or not _akey.begins_with(action):
 			_akey = _variant(action)
+		sk = _upper == 0.0 and act_def(_akey).has("strike")
+		skl = sk and _sk_run
+		sk = sk and not _sk_run
+		# (the heavy's charge: the legs and hips on the locomotion, the coil held as authored)
+		skc = _upper > 0.0 and act_def(_akey).has("strike")
+	if sk != _sk_on:
+		_sk_on = sk
+		if sk:
+			_strike_begin()
+		else:
+			_strike_end()
+	if (skl or skc) != _skl_on:
+		_skl_on = skl or skc
+		if not _skl_on:
+			_wlim_tail = 0.4 # (a blow on the run or its held coil ends: the wrist limit holds while it blends out)
+	_wlim_tail = maxf(0.0, _wlim_tail - delta)
+	_wlim = sk or skl or skc or _wlim_tail > 0.0
+	var loco := _loco_pose(delta)
+	# an action that plays in the air (a hit, a recoil) leaves the legs to the air pose (eased in and out with the state)
+	_airl = move_toward(_airl, 1.0 if (action != "" and AIR_LAYERED.has(action) and motion_state == &"air") else 0.0, delta * 8.0)
+	if action != "":
 		_src = sample_action(_akey, action_t)
-		if _upper > 0.0:
+		if skc:
+			_strike_layer(_src, loco)
+		elif _upper > 0.0:
 			_layer_lower(_src, loco)
+		elif sk:
+			_strike_feet(_src, delta)
+		elif skl:
+			_strike_layer(_src, loco)
+		if _airl > 0.001 and _upper == 0.0 and not (sk or skl or skc):
+			_layer_lower(_src, loco, smooth(_airl))
+		_hit_dir_apply(_src)
+		# the action hands over to the locomotion before its end (the trunk, the head and the arms follow the gait that is running
+		# underneath: a roll ends in a run, a flinch in the idle, with no stand-to-attention in between)
+		var ho_t: float = act_def(_akey).get("ho", -1.0)
+		if ho_t >= 0.0 and action_t > ho_t and not (sk or skl or skc):
+			_handover(_src, loco, smooth(clampf((action_t - ho_t) / maxf(action_len - ho_t, 0.02), 0.0, 1.0)))
 		_emit_events(act_def(_akey))
 	else:
 		_src = loco
-	if _blend_t < 1.0:
-		_blend_t = minf(1.0, _blend_t + delta / _blend_len)
-		_pose = mix_pose(_from, _src, smooth(_blend_t))
-	else:
-		_pose = _src
+	_io_rt = sk or skl or skc
+	_pose = _blend_out(_src, delta)
+	_loco_prev = loco
+	_solve_dt = delta
 	_update_ground(delta)
 	if action == "climb" and climb_lip > -50.0:
 		_pin_climb_hands()
@@ -2226,6 +2621,41 @@ func _animate(delta: float) -> void:
 
 
 ## World velocity / acceleration / yaw rate of the rig (drives leans and secondary motion).
+## The reaction to a blow (hit, hit_heavy) turned to the direction it pushed him (see play()): the local velocity when it started,
+## the angle once known (0: pushed straight back, + towards his right), whether it has been read.
+var _hit_v0 := Vector2.ZERO
+var _hit_set := true
+var _hit_ang := 0.0
+var _vel_inst := Vector3.ZERO
+
+
+func _hit_dir_apply(c: PackedFloat32Array) -> void:
+	if action != "hit" and action != "hit_heavy":
+		return
+	if not _hit_set:
+		if action_t < 0.05:
+			return
+		_hit_set = true
+		var lv := (global_transform.basis.inverse() if is_inside_tree() else Basis.IDENTITY) * _vel_inst
+		var dv := Vector2(lv.x, lv.z) - _hit_v0
+		_hit_ang = atan2(dv.x, dv.y) if dv.length() > 1.2 else 0.0
+	if absf(_hit_ang) < 0.05:
+		return
+	var w := smoothstep(0.03, 0.12, action_t)
+	var cs := cos(_hit_ang)
+	var sn := sin(_hit_ang)
+	# the lean of the torso (pitch back = +x, roll to his left = +z) and the pelvis' push turned by the angle
+	for o in [C_PELR, C_SPN, C_CHS, C_NEK, C_HED]:
+		var p := c[o]
+		var r := c[o + 2]
+		c[o] = lerpf(p, p * cs + r * sn, w)
+		c[o + 2] = lerpf(r, r * cs - p * sn, w)
+	var px := c[C_PEL]
+	var pz := c[C_PEL + 2]
+	c[C_PEL] = lerpf(px, px * cs + pz * sn, w)
+	c[C_PEL + 2] = lerpf(pz, -px * sn + pz * cs, w)
+
+
 func _track_motion(dt: float) -> void:
 	if dt <= 0.0:
 		return
@@ -2238,13 +2668,183 @@ func _track_motion(dt: float) -> void:
 		_prev_yaw = yaw
 		_have_prev = true
 	var v := (p - _prev_pos) / dt + velocity_hint
+	_vel_inst = v
 	var k := 1.0 - exp(-dt * 12.0)
 	var nv := _vel.lerp(v, k)
 	_acc = _acc.lerp((nv - _vel) / dt, 1.0 - exp(-dt * 8.0))
 	_vel = nv
 	_yaw_rate = lerpf(_yaw_rate, wrapf(yaw - _prev_yaw, -PI, PI) / dt, 1.0 - exp(-dt * 6.0))
+	_yaw_inst = wrapf(yaw - _prev_yaw, -PI, PI) / dt
 	_prev_pos = p
 	_prev_yaw = yaw
+
+
+# --- animation: inertialized transitions (docs/ANIMATION.md 6.8) ------------------------------------------------------
+## A change of source (an action starts or ends, the motion state changes) used to mix a frozen snapshot of the old pose into the new
+## one: every joint that was moving stopped dead on the first frame of the blend (a snap in all of them) and the new pose arrived
+## with no memory of the old motion. Now the old motion goes on: on the first frame of the new source the difference between where
+## the old pose was heading and the new source's pose, and the difference of their velocities, are kept as an offset per channel that
+## dies away along a cubic Hermite curve (zero and zero slope at the end of the blend), "inertialization" (Bollinger, GDC 2018). The
+## pose and its velocity are continuous through every transition, however fast the joints were moving.
+var _io_x := PackedFloat32Array()
+var _io_v := PackedFloat32Array()
+var _io_on := false
+var _io_pending := false
+var _io_t := 0.0
+var _io_len := 0.1
+var _io_dlen := 0.1
+var _io_dang := 0.0
+## The blended output of the last two frames (the old motion's position and velocity) and the locomotion's last pose (the velocity
+## of the source a transition lands on).
+var _out_p1 := PackedFloat32Array()
+var _out_p2 := PackedFloat32Array()
+var _out_dt := 0.0166
+var _loco_prev := PackedFloat32Array()
+## The source just changed its generator (a new motion state): its previous frame says nothing about its velocity.
+var _io_src_new := false
+## The new source's legs and hips are driven at run time (a blow's footwork, the layers over the gait): the sampled action
+## has no velocity for them.
+var _io_rt := false
+## Channels that are weights (kept in 0..1 when an offset is added).
+const IO_FLAGS := [C_OHL, C_SPR, C_HOOD, C_HLX, C_HLS, C_HRS, C_HLR, C_HRR]
+## Channels that are directions (the blade, the back of the hand, the elbow poles, the shield's facing, the left hand's blade and
+## back): their offset is a rotation, taken the short way round. A vector difference between two nearly opposite directions
+## (the blade up, the blade down) passes through nothing, and the hand turns over in one frame.
+const IO_DIRS := [C_HRB, C_HRK, C_HRP, C_HLF, C_HLP, C_HLB, C_HLK]
+const DIR_SLOW := 1.8
+const DIR_RATE := 22.0
+var _io_q: Array[Quaternion] = [Quaternion.IDENTITY, Quaternion.IDENTITY, Quaternion.IDENTITY, Quaternion.IDENTITY, Quaternion.IDENTITY,
+	Quaternion.IDENTITY, Quaternion.IDENTITY]
+
+
+## The rotation that takes direction `a` to direction `b` the short way (any way across when they are opposite).
+static func _dir_rot(a: Vector3, b: Vector3) -> Quaternion:
+	if a.length_squared() < 1e-8 or b.length_squared() < 1e-8:
+		return Quaternion.IDENTITY
+	var an := a.normalized()
+	var bn := b.normalized()
+	var d := an.dot(bn)
+	if d > 0.99999:
+		return Quaternion.IDENTITY
+	if d < -0.99999:
+		var ax := an.cross(Vector3.UP)
+		if ax.length_squared() < 1e-6:
+			ax = an.cross(Vector3.RIGHT)
+		return Quaternion(ax.normalized(), PI)
+	return Quaternion(an, bn)
+
+
+## The source's pose a frame ago (for its velocity): the action sampled a step earlier, the locomotion's last frame.
+func _src_before(src: PackedFloat32Array, delta: float) -> PackedFloat32Array:
+	if _io_src_new and action == "":
+		return src
+	if action != "":
+		var tb := action_t - delta * action_speed
+		var d := act_def(_akey)
+		if tb < 0.0:
+			if bool(d["loop"]):
+				tb += action_len
+			else:
+				tb = 0.0
+		var sp := sample_action(_akey, tb)
+		if _io_rt or ((_upper > 0.0 or _airl > 0.001) and _loco_prev.size() == C_N):
+			# (what the layer takes from the locomotion has the locomotion's velocity; what a blow drives at run time none)
+			for o in LOWER_CH:
+				for j in 3:
+					sp[o + j] = src[o + j] if _io_rt else _loco_prev[o + j]
+			if _io_rt:
+				for j in 3:
+					sp[C_PELR + j] = src[C_PELR + j]
+		return sp
+	return _loco_prev if _loco_prev.size() == C_N else src
+
+
+## The pose to solve this frame: the source plus what is left of the offset of the last transition. Also keeps the output of the
+## last two frames (the velocity the next transition inherits).
+func _blend_out(src: PackedFloat32Array, delta: float) -> PackedFloat32Array:
+	var out := src.duplicate()
+	if _blend_t < 1.0:
+		_blend_t = minf(1.0, _blend_t + delta / _blend_len)
+	if delta > 1e-5 and _out_p1.size() == C_N:
+		if _io_pending:
+			_io_pending = false
+			var sp := _src_before(src, delta)
+			if _io_x.size() != C_N:
+				_io_x.resize(C_N)
+				_io_v.resize(C_N)
+			var inv := 1.0 / maxf(_out_dt, 1e-4)
+			for i in C_N:
+				var ov := (_out_p1[i] - _out_p2[i]) * inv if _out_p2.size() == C_N else 0.0
+				var sv := (src[i] - sp[i]) / delta
+				_io_x[i] = _out_p1[i] + ov * delta - src[i]
+				_io_v[i] = ov - sv
+			var dmax := 0.0
+			for k in IO_DIRS.size():
+				var o: int = IO_DIRS[k]
+				_io_q[k] = _dir_rot(Vector3(src[o], src[o + 1], src[o + 2]), Vector3(_out_p1[o], _out_p1[o + 1], _out_p1[o + 2]))
+				dmax = maxf(dmax, _io_q[k].get_angle())
+			_io_t = 0.0
+			_io_dang = dmax
+			_io_on = true
+			_io_src_new = false
+			# (a blow's entry keeps the blend it was built and measured with)
+			# (a turn comes round at about DIR_RATE rad/s at its fastest at most: half a turn takes 0.2 s)
+			# (an action that must have its hand somewhere on time, the throw's grab of the spear on the back, keeps the quick lane)
+			var fast := action != "" and bool(act_def(_akey).get("fast", false))
+			_io_dlen = _io_len if (_io_rt or fast) else clampf(maxf(_io_len * DIR_SLOW, 0.09) * 0.0 + _io_dang * 1.5 / DIR_RATE, maxf(_io_len * DIR_SLOW, 0.09), 0.32)
+			# (an action whose first moments turn the hand over, the roll's sword going behind him, says how long that is to take)
+			if action != "" and not _io_rt and not fast:
+				_io_dlen = maxf(_io_dlen, float(act_def(_akey).get("dlen", 0.0)))
+		elif _io_on:
+			_io_t += delta
+		if _io_on:
+			var u := _io_t / _io_len
+			if u >= 1.0 and _io_t >= _io_dlen:
+				_io_on = false
+			else:
+				u = minf(u, 1.0)
+				var u2 := u * u
+				var u3 := u2 * u
+				var h00 := 2.0 * u3 - 3.0 * u2 + 1.0
+				var h10 := (u3 - 2.0 * u2 + u) * _io_len
+				# the arms and hands come on the lane of their directions: a hand that arrives in 0.05 s while the blade it holds turns
+				# for 0.2 s makes the wrist the sum of both, and the arm lagging a body that folds quickly is follow-through
+				var ua := minf(_io_t / _io_dlen, 1.0)
+				var ua2 := ua * ua
+				var ua3 := ua2 * ua
+				var a00 := 2.0 * ua3 - 3.0 * ua2 + 1.0
+				var a10 := (ua3 - 2.0 * ua2 + ua) * _io_dlen
+				for i in C_N:
+					# (the sword hand and the shield's own hand: not the explicit hold of the spear or the chain, whose weights and
+					# frames belong to the body's own blend)
+					# (the weights that say which space a hand's numbers are in, hrs and hls, travel with the numbers: with the numbers still
+					# the old ones and the weight already the new one, the hand is somewhere else altogether)
+					if (i >= C_HR and i < C_HLW) or i == C_HLS or i == C_HRS:
+						out[i] = src[i] + _io_x[i] * a00 + _io_v[i] * a10
+					else:
+						out[i] = src[i] + _io_x[i] * h00 + _io_v[i] * h10
+				for o in IO_FLAGS:
+					out[o] = clampf(out[o], minf(src[o], 0.0), maxf(src[o], 1.0))
+				# (a direction can be half a turn off the new pose's: it takes longer to come round than a position to arrive)
+				var ud := clampf(_io_t / _io_dlen, 0.0, 1.0)
+				var wd := 2.0 * ud * ud * ud - 3.0 * ud * ud + 1.0
+				var wq := 2.0 * u3 - 3.0 * u2 + 1.0
+				for k in IO_DIRS.size():
+					var o: int = IO_DIRS[k]
+					var dv := Quaternion.IDENTITY.slerp(_io_q[k], wd if o < C_HLW else wq) * Vector3(src[o], src[o + 1], src[o + 2])
+					out[o] = dv.x
+					out[o + 1] = dv.y
+					out[o + 2] = dv.z
+	if _blend_t < 1.0 or _io_on:
+		# (the whole-body rotation and its pivot keep the mixed blend: rotation vectors do not add up)
+		var mixed := mix_pose(_from, src, smooth(_blend_t))
+		for o in [C_ROT, C_PIV]:
+			for j in 3:
+				out[o + j] = mixed[o + j]
+	_out_p2 = _out_p1
+	_out_p1 = out
+	_out_dt = maxf(delta, 1e-5)
+	return out
 
 
 static func mix_pose(a: PackedFloat32Array, b: PackedFloat32Array, k: float) -> PackedFloat32Array:
@@ -2304,50 +2904,90 @@ static func _compile_actions() -> void:
 	var defs := _action_defs()
 	for nm in defs:
 		_acts[nm] = compile_action(defs[nm])
+	# the blows built from joint angles replace the keyed ones (_strike_raw)
+	for nm in STRIKE_NAMES:
+		_acts[nm] = _bake_strike(_strike_raw(nm))
 
 
 ## Compiles one raw action definition (see _action_defs) into sampled poses and Hermite tangents.
 static func compile_action(d: Dictionary) -> Dictionary:
-	if true:
-		var keys: Array = d["keys"]
-		var times := PackedFloat32Array()
-		var poses: Array[PackedFloat32Array] = []
-		var ease := PackedByteArray()
-		var prev := default_pose()
+	var keys: Array = d["keys"]
+	var times := PackedFloat32Array()
+	var poses: Array[PackedFloat32Array] = []
+	var ease := PackedByteArray()
+	var prev := default_pose()
+	# the keys that set a whole pose (every channel not listed keeps what the key before it had)
+	for k in keys:
+		var ch: Dictionary = k[1]
+		if ch.get("partial", false):
+			continue
+		var pose := prev.duplicate()
+		for key in ch:
+			if key == "ease":
+				continue
+			set_ch(pose, key, ch[key])
+		times.append(float(k[0]))
+		poses.append(pose)
+		ease.append(1 if ch.get("ease", false) else 0)
+		prev = pose
+	var tans := _key_tangents(times, poses, ease)
+	# a partial key (`"partial": true`) only sets the channels it lists, at its time: the others stay on the curve the whole keys
+	# make through that time (one limb can lead or lag the rest without giving every channel a key); the tangents are then those of
+	# all the keys together
+	var has_partial := false
+	for k in keys:
+		if (k[1] as Dictionary).get("partial", false):
+			has_partial = true
+	if has_partial:
+		var t2 := times.duplicate()
+		var p2: Array[PackedFloat32Array] = poses.duplicate()
+		var e2 := ease.duplicate()
 		for k in keys:
-			var tk: float = k[0]
 			var ch: Dictionary = k[1]
-			var pose := prev.duplicate()
+			if not ch.get("partial", false):
+				continue
+			var tk: float = k[0]
+			var pose := _hermite_sample(times, poses, tans, tk)
 			for key in ch:
-				if key == "ease":
+				if key == "ease" or key == "partial":
 					continue
 				set_ch(pose, key, ch[key])
-			times.append(tk)
-			poses.append(pose)
-			ease.append(1 if ch.get("ease", false) else 0)
-			prev = pose
-		# Hermite tangents (non-uniform Catmull-Rom; zero at the ends and at eased keys)
-		var tans: Array[PackedFloat32Array] = []
-		var n := poses.size()
-		for i in n:
-			var m := PackedFloat32Array()
-			m.resize(C_N)
-			if i > 0 and i < n - 1 and ease[i] == 0:
-				var dt := times[i + 1] - times[i - 1]
-				for j in C_N:
-					m[j] = (poses[i + 1][j] - poses[i - 1][j]) / maxf(dt, 1e-4)
-			tans.append(m)
-		return {"len": float(d["len"]), "loop": bool(d.get("loop", false)), "hold": bool(d.get("hold", false)),
-			"in": float(d.get("in", 0.08)), "out": float(d.get("out", 0.2)), "ev": d.get("ev", {}),
-			"times": times, "poses": poses, "tans": tans}
-	return {}
+			var at := 0
+			while at < t2.size() and t2[at] <= tk:
+				at += 1
+			t2.insert(at, tk)
+			p2.insert(at, pose)
+			e2.insert(at, 1 if ch.get("ease", false) else 0)
+		times = t2
+		poses = p2
+		ease = e2
+		tans = _key_tangents(times, poses, ease)
+	return {"len": float(d["len"]), "loop": bool(d.get("loop", false)), "hold": bool(d.get("hold", false)),
+		"in": float(d.get("in", 0.08)), "out": float(d.get("out", 0.2)), "ev": d.get("ev", {}),
+		"ho": float(d.get("ho", -1.0)), "fast": bool(d.get("fast", false)), "dlen": float(d.get("dlen", 0.0)), "times": times, "poses": poses, "tans": tans}
+
+
+## Hermite tangents (non-uniform Catmull-Rom; zero at the ends and at eased keys).
+static func _key_tangents(times: PackedFloat32Array, poses: Array[PackedFloat32Array], ease: PackedByteArray) -> Array[PackedFloat32Array]:
+	var tans: Array[PackedFloat32Array] = []
+	var n := poses.size()
+	for i in n:
+		var m := PackedFloat32Array()
+		m.resize(C_N)
+		if i > 0 and i < n - 1 and ease[i] == 0:
+			var dt := times[i + 1] - times[i - 1]
+			for j in C_N:
+				m[j] = (poses[i + 1][j] - poses[i - 1][j]) / maxf(dt, 1e-4)
+		tans.append(m)
+	return tans
 
 
 static func sample_action(a: String, at: float) -> PackedFloat32Array:
 	var d := act_def(a)
-	var times: PackedFloat32Array = d["times"]
-	var poses: Array[PackedFloat32Array] = d["poses"]
-	var tans: Array[PackedFloat32Array] = d["tans"]
+	return _hermite_sample(d["times"], d["poses"], d["tans"], at)
+
+
+static func _hermite_sample(times: PackedFloat32Array, poses: Array[PackedFloat32Array], tans: Array[PackedFloat32Array], at: float) -> PackedFloat32Array:
 	var n := times.size()
 	if at <= times[0] or n == 1:
 		return poses[0].duplicate()
@@ -2372,6 +3012,18 @@ static func sample_action(a: String, at: float) -> PackedFloat32Array:
 	out.resize(C_N)
 	for j in C_N:
 		out[j] = h00 * p0[j] + h10 * m0[j] + h01 * p1[j] + h11 * m1[j]
+	# a direction (the blade, the back of the hand, a pole, the shield's facing) between two keys that are far apart turns the short
+	# way round on its great circle: the components of such a vector, interpolated one by one, pass through nothing and the
+	# direction flips in a frame (the blade from forward to back, a roll's first step)
+	for o in IO_DIRS:
+		var da := Vector3(p0[o], p0[o + 1], p0[o + 2])
+		var db := Vector3(p1[o], p1[o + 1], p1[o + 2])
+		if da.length_squared() > 1e-6 and db.length_squared() > 1e-6 and da.angle_to(db) > 1.2:
+			var sl := u2 * (3.0 - 2.0 * u)
+			var v := Quaternion.IDENTITY.slerp(_dir_rot(da, db), sl) * da.normalized() * lerpf(da.length(), db.length(), sl)
+			out[o] = v.x
+			out[o + 1] = v.y
+			out[o + 2] = v.z
 	return out
 
 
@@ -2398,8 +3050,20 @@ static func _lerpv(c: PackedFloat32Array, o: int, v: Vector3, k: float) -> void:
 func _loco_pose(dt: float) -> PackedFloat32Array:
 	var c := default_pose()
 	_spd = lerpf(_spd, speed, 1.0 - exp(-dt * 10.0))
-	_guard_k = move_toward(_guard_k, 1.0 if guard else 0.0, dt * 9.0)
+	# the shield comes up (and goes down) on a spring: it arrives a little past the guard pose and settles, the way a heavy thing
+	# carried on an arm does (the old ramp stopped dead at the pose)
+	var gn := maxi(ceili(dt / (1.0 / 90.0)), 1)
+	var gh := dt / float(gn)
+	for _i in gn:
+		_guard_v += (GUARD_W * GUARD_W * ((1.0 if guard else 0.0) - _guard_k) - 2.0 * GUARD_Z * GUARD_W * _guard_v) * gh
+		_guard_k += _guard_v * gh
 	_vy = lerpf(_vy, vspeed, 1.0 - exp(-dt * 10.0))
+	# the landing's give: a damped spring on the pelvis' height, kicked by the speed the ground was met at (_land_impact)
+	var ln := maxi(ceili(dt / (1.0 / 90.0)), 1)
+	var lh := dt / float(ln)
+	for _i in ln:
+		_land_v += (-LAND_W * LAND_W * _land_x - 2.0 * LAND_Z * LAND_W * _land_v) * lh
+		_land_x += _land_v * lh
 	# shield jolt: a stiff damped spring
 	_jolt_v += (-_jolt * 160.0 - _jolt_v * 16.0) * dt
 	_jolt += _jolt_v * dt
@@ -2417,107 +3081,700 @@ func _loco_pose(dt: float) -> PackedFloat32Array:
 	return c
 
 
-## One foot of the gait cycle at cycle position s: [z offset (back +), ankle height, pitch].
-static func foot_cycle(s: float, duty: float, half: float, lift: float, run: float) -> Vector3:
-	if s < duty:
-		var u := s / duty
-		var pitch := 0.0
-		if u < 0.2:
-			pitch = 0.24 * (1.0 - u / 0.2) * (1.0 - run * 0.8)
-		if u > 0.62:
-			pitch = -0.8 * pow((u - 0.62) / 0.38, 2.0)
-		var y := 0.093 + (0.14 * sin(-pitch) if pitch < 0.0 else 0.0)
-		return Vector3(lerpf(-half, half, u), y, pitch)
-	var w := (s - duty) / (1.0 - duty)
-	var z := lerpf(half, -half, smooth(w))
-	var y2 := 0.093 + 0.11 * pow(1.0 - w, 3.0) * 0.6 + lift * sin(PI * pow(w, lerpf(0.9, 0.65, run)))
-	var p2 := lerpf(-0.8, lerpf(0.24, 0.05, run), smooth(w))
-	return Vector3(z, y2, p2)
+# --- animation: the ground gait (docs/ANIMATION.md) -------------------------------------------------------------------
+## The ground locomotion: idle, walk, jog, sprint, strafe, back-pedal. A phase-driven cycle (cadence and stance share
+## from the speed tables below), feet PLANTED in the world (the heel, then the toe, stay pinned where they touch down:
+## nothing slides), a swing that is an arc in world space to where the next step will land, a pelvis lowered where the
+## leg would over-reach, a trunk lean that grows with speed (a spring adds the push of an acceleration and the roll of
+## a turn), pelvis and chest counter-rotating, the head held level and forward, and arms swung from forward kinematics
+## (shoulder swing + elbow flexion) in opposition to the legs. Standing, the feet stay put and step home when the body
+## has turned or been shifted too far.
+
+const FOOT_HEEL := Vector3(0.0, -0.093, 0.075)
+const FOOT_TOE := Vector3(0.0, -0.093, -0.22)
+const SOLE_LEN := 0.295
+const ST_STAND := 0
+const ST_SWING := 1
+const ST_HOME := 2
+## The share of the leg's length a foot may ask of the pelvis (the knee keeps about 16 degrees of bend).
+const LEG_REACH := 0.99
+const GAIT_ON_V := 0.62
+## A planted foot that the body has left this far behind lifts at once.
+const LIFT_REACH := 0.56
+## A swing's last share: the foot is already over the spot where it will land and only comes down.
+const SET_DOWN := 1.0
+const GAIT_OFF_V := 0.38
+## Hip -> neck line lean is this much of the chest bone's lean (the pelvis and spine lean less than the chest).
+const LEAN_LINE := 1.29
+const LEAN_SHARE_PELVIS := 0.38
+const LEAN_SHARE_SPINE := 0.34
+
+# Tables of [speed m/s, value, speed, value, ...] (smoothstepped between the anchors, flat beyond the ends).
+const T_F := [0.55, 0.62, 1.4, 1.0, 2.2, 1.28, 3.2, 1.55, 4.5, 1.9, 6.2, 2.1, 9.0, 2.45] # cycles per second
+const T_D := [0.55, 0.78, 1.4, 0.6, 2.2, 0.52, 3.2, 0.42, 4.5, 0.32, 6.2, 0.26, 9.0, 0.2] # stance share of the cycle
+const T_TH0 := [2.2, 0.26, 3.2, 0.18, 4.5, 0.1, 6.2, 0.05, 9.0, -0.2] # foot pitch at touchdown (+ toe up)
+const T_THTO := [2.2, 0.75, 6.2, 0.82, 9.0, 0.9] # foot pitch at toe-off (the heel up)
+const T_UH := [2.2, 0.55, 4.5, 0.48, 6.2, 0.42, 9.0, 0.36] # where in the stance the heel starts to rise
+const T_APEX := [0.55, 0.02, 2.2, 0.035, 4.5, 0.11, 6.2, 0.16, 9.0, 0.24] # swing foot height over the straight line
+const T_LEAN := [0.0, 0.0, 2.2, 4.0, 4.5, 8.0, 6.2, 11.0, 9.0, 21.5] # hip -> neck lean, degrees
+const T_PYAW := [0.0, 0.0, 2.2, 4.0, 4.5, 5.5, 6.2, 6.5, 9.0, 8.5] # pelvis yaw amplitude, degrees
+const T_CRATIO := [0.0, 1.2, 2.2, 1.2, 4.5, 1.4, 6.2, 1.5, 9.0, 1.6] # chest counter-rotation / pelvis yaw
+const T_PROLL := [0.0, 0.0, 2.2, 3.0, 4.5, 3.5, 6.2, 3.5, 9.0, 4.0] # pelvis list amplitude, degrees
+const T_SWAY := [0.0, 0.0, 2.2, 0.022, 4.5, 0.015, 6.2, 0.012, 9.0, 0.01] # pelvis side shift over the stance foot, m
+const T_BOB := [0.0, 0.0, 2.2, 0.016, 3.2, 0.0, 4.5, -0.02, 6.2, -0.03, 9.0, -0.032] # + high at mid-stance (walk), - low (run)
+const T_PELH := [0.0, -0.035, 2.2, -0.06, 4.5, -0.08, 6.2, -0.09, 9.0, -0.11] # pelvis height offset
+const T_PELZ := [0.0, 0.0, 2.2, -0.01, 4.5, -0.03, 6.2, -0.05, 9.0, -0.09] # pelvis shifted forward with the lean, m
+const T_ARM_C := [0.3, 0.0, 2.2, 0.0, 4.5, 0.0, 6.2, -2.0, 9.0, -4.0] # sword arm: swing centre (shoulder flexion, deg)
+const T_ARM_A := [0.3, 0.0, 2.2, 20.0, 4.5, 29.0, 6.2, 33.0, 9.0, 39.0] # and amplitude
+const T_EL_R := [0.3, 25.0, 2.2, 38.0, 4.5, 86.0, 6.2, 92.0, 9.0, 90.0] # elbow flexion, mean
+const T_EL_RV := [0.3, 0.0, 2.2, 12.0, 4.5, 10.0, 6.2, 10.0, 9.0, 8.0] # and swing
+const T_AB_R := [0.3, 10.0, 2.2, 18.0, 4.5, 16.0, 6.2, 15.0, 9.0, 15.0] # abduction (elbow out)
+const T_ARM_LC := [0.3, 8.0, 2.2, 9.0, 4.5, 20.0, 6.2, 27.0, 9.0, 26.0] # shield arm: centre
+const T_ARM_LA := [0.3, 0.0, 2.2, 7.0, 4.5, 9.0, 6.2, 10.0, 9.0, 13.0] # amplitude
+const T_EL_L := [0.3, 56.0, 2.2, 68.0, 4.5, 96.0, 6.2, 102.0, 9.0, 100.0] # elbow flexion
+const T_AB_L := [0.3, 16.0, 2.2, 20.0, 4.5, 20.0, 6.2, 20.0, 9.0, 20.0] # abduction
+const T_ARM_PH := [2.2, 0.41, 4.5, 0.3, 6.2, 0.23, 9.0, 0.2] # phase at which the sword arm is furthest forward (the opposite thigh peaks)
+const T_ULN := [0.3, 40.0, 2.2, 48.0, 4.5, 54.0, 6.2, 58.0, 9.0, 58.0] # sword hand: the blade turned towards the forearm's line (ulnar deviation), deg
+const T_TW := [0.3, 0.0, 2.2, 8.0, 6.2, 26.0, 9.0, 30.0] # sword hand: forearm twist (deg, + turns the blade tip out)
+const T_ULN_K := [2.2, 0.0, 4.5, 0.4, 9.0, 0.5] # the wrist keeps the blade up: ulnar deviation follows the arm's swing by this much
+const T_KNEE := [2.2, 0.25, 4.5, 0.14, 6.2, 0.08, 9.0, 0.03] # knee pole: how far out the knee points (x per unit forward)
+const T_HEADP := [0.0, 0.0, 2.2, 1.5, 6.2, 0.5, 9.0, -1.0] # where the helmet looks: pitch (deg, + down)
+
+
+## Value of a table at speed v.
+static func _pl(v: float, k: Array) -> float:
+	var n := k.size()
+	if v <= float(k[0]):
+		return float(k[1])
+	var i := 2
+	while i < n:
+		if v <= float(k[i]):
+			var a: float = k[i - 2]
+			var b: float = k[i]
+			var tt := (v - a) / (b - a)
+			tt = tt * tt * (3.0 - 2.0 * tt)
+			return lerpf(float(k[i - 1]), float(k[i + 1]), tt)
+		i += 2
+	return float(k[n - 1])
+
+
+## Ankle height (m) of a foot that stands on its heel (pitch >= 0) or on its toe (pitch < 0) at pitch th.
+static func _ankle_y(th: float) -> float:
+	return 0.093 * cos(th) + (0.075 * sin(th) if th >= 0.0 else -0.22 * sin(th))
+
+
+## Rig-space ankle of a foot with its heel (kind 0) or toe (kind 1) pinned at `pin` (rig-space XZ) on the ground.
+static func _ankle_of(pin: Vector2, kind: int, psi: float, th: float) -> Vector3:
+	var off := (Basis(Vector3.UP, psi) * Basis(Vector3.RIGHT, th)) * (FOOT_HEEL if kind == 0 else FOOT_TOE)
+	return Vector3(pin.x - off.x, -off.y, pin.y - off.z)
+
+
+## The contact point (rig-space XZ) of a foot whose ankle is at `ank`.
+static func _pin_of(ank: Vector2, kind: int, psi: float, th: float) -> Vector2:
+	var off := (Basis(Vector3.UP, psi) * Basis(Vector3.RIGHT, th)) * (FOOT_HEEL if kind == 0 else FOOT_TOE)
+	return Vector2(ank.x + off.x, ank.y + off.z)
+
+
+## Foot pitch through a stance (u 0..1): heel strike (or toe strike) settling flat, flat, then the heel rising.
+static func _stance_pitch(u: float, th0: float, th_to: float, uh: float) -> float:
+	var uf := 0.2
+	if u < uf:
+		var k := u / uf
+		return th0 * (1.0 - k * k * (3.0 - 2.0 * k))
+	if u < uh:
+		return 0.0
+	var w := clampf((u - uh) / maxf(1.0 - uh, 0.05), 0.0, 1.0)
+	return -th_to * pow(w, 1.7)
+
+
+## World XZ <-> rig-local XZ (x right, y = z backwards) for the rig as it stands this frame.
+func _rig_frame() -> void:
+	var gt := global_transform if is_inside_tree() else transform
+	_rp = Vector2(gt.origin.x, gt.origin.z)
+	_ry = atan2(gt.basis.z.x, gt.basis.z.z)
+
+
+func _w2l(p: Vector2) -> Vector2:
+	var d := p - _rp
+	var s := sin(_ry)
+	var co := cos(_ry)
+	return Vector2(d.x * co - d.y * s, d.x * s + d.y * co)
+
+
+func _l2w(p: Vector2) -> Vector2:
+	var s := sin(_ry)
+	var co := cos(_ry)
+	return _rp + Vector2(p.x * co + p.y * s, -p.x * s + p.y * co)
+
+
+## An arm from its joint angles, in chest space: shoulder flexion `psi` (+ forward), abduction `ab` (+ out), elbow
+## flexion `el`, and `rho`, how far the forearm is turned in towards the midline. Returns [wrist, elbow pole].
+static func _arm_fk(side: float, psi: float, ab: float, el: float, rho: float) -> Array:
+	var u := Vector3(side * sin(ab), -cos(ab) * cos(psi), -cos(ab) * sin(psi))
+	var fw := perp(Vector3(0.0, 0.0, -1.0), u).normalized().rotated(u, -side * rho)
+	var f := u * cos(el) + fw * sin(el)
+	var s0 := Vector3(side * SHOULDER_CS.x, SHOULDER_CS.y, SHOULDER_CS.z)
+	var e := s0 + u * LEN_UA
+	var w := e + f * LEN_FA
+	var pole := perp(e - s0, (w - s0).normalized())
+	if pole.length_squared() < 1e-6:
+		pole = Vector3(side * 0.5, -0.2, 1.0)
+	return [w, pole.normalized(), f]
+
+
+## The sword hand from the forearm (all in chest space). Zero is a hammer grip: the blade across the forearm, out of the
+## thumb side, the back of the hand facing out. `uln` turns the blade towards the forearm's own line (ulnar deviation),
+## `ext` extends the wrist, `tw` twists the forearm. Returns [blade direction, back of the hand].
+static func _sword_hand(f: Vector3, uln: float, ext: float, tw: float) -> Array:
+	var fn := f.normalized()
+	var y_n := -fn
+	var x_n := perp(Vector3(1.0, 0.0, 0.0), fn).normalized()
+	var z_n := x_n.cross(y_n)
+	var rot := Basis(fn, tw) * Basis(x_n, -uln) * Basis(z_n, ext)
+	var h := rot * Basis(x_n, y_n, z_n)
+	return [-h.z, h.x]
+
+
+## Rest position of a foot in rig space (from the idle pose being built, the guard's stance included).
+func _home(c: PackedFloat32Array, i: int, guard_g: float) -> Vector2:
+	var o := C_FR if i == 0 else C_FL
+	var h := Vector2(c[o], c[o + 2])
+	if i == 1:
+		h += Vector2(-0.02, -0.06) * guard_g
+	return h
+
+
+func _plant_home(c: PackedFloat32Array, guard_g: float) -> void:
+	for i in 2:
+		var ro := (C_FRR if i == 0 else C_FLR) + 1
+		var h := _home(c, i, guard_g)
+		var yaw_rel := c[ro]
+		_ft_st[i] = ST_STAND
+		_ft_kind[i] = 0
+		_ft_pin[i] = _l2w(_pin_of(h, 0, yaw_rel, 0.0))
+		_ft_yaw[i] = _ry + yaw_rel
+		_ft_th0[i] = 0.0
+		_ft_s[i] = 0.0
+		_ft_aw[i] = _l2w(h)
+		_ft_ay[i] = 0.093
+		_ft_pit[i] = 0.0
+		_ft_ank[i] = Vector3(h.x, 0.093, h.y)
+		_ft_ry[i] = yaw_rel
+		_ft_w[i] = 1.0
+		_ft_phi[i] = fposmod(_gph + _ft_off[i], 1.0)
+	_fp_ok = true
+
+
+## The gait starts (from standing, or from a given phase in tools): who lifts first, where the phases are. Returns the
+## foot that has just landed (the other lifts at once), -1 in tools.
+func _gait_start(duty: float, tn: Vector2, landing: bool = false) -> int:
+	_gait_on = true
+	var stance := -1
+	# a foot still coming down at home (a stop a moment ago) is the one that lifts: it carries on as the first swing
+	var airborne := -1
+	for i in 2:
+		if _ft_st[i] == ST_HOME:
+			airborne = i
+	if _pv_phase >= 0.0:
+		_gph = _pv_phase
+		_pv_phase = -1.0
+		_ft_off[0] = 0.0
+		_ft_off[1] = 0.5
+	else:
+		# the foot furthest back (along the travel) lifts first; the other has just landed
+		var a := 1
+		var p0 := _w2l(_ft_aw[0])
+		var p1 := _w2l(_ft_aw[1])
+		if p0.x * tn.x + p0.y * tn.y < p1.x * tn.x + p1.y * tn.y - 0.001:
+			a = 0
+		if airborne >= 0:
+			a = airborne
+		stance = 1 - a
+		if landing:
+			# touching down at speed: the feet are half a cycle apart already (one just landed, the other passing under)
+			_ft_off[0] = 0.0
+			_ft_off[1] = 0.5
+			_gph = 0.0 if stance == 0 else 0.5
+		elif a == 0:
+			_gph = duty
+			_ft_off[0] = 0.0
+			_ft_off[1] = 1.0 - duty
+		else:
+			_gph = 0.0
+			_ft_off[0] = 0.0
+			_ft_off[1] = duty
+	for i in 2:
+		_ft_phi[i] = fposmod(_gph + _ft_off[i], 1.0)
+		if _ft_st[i] == ST_SWING:
+			_ft_st[i] = ST_STAND
+	if airborne >= 0 and not landing:
+		_liftoff(airborne, _ft_phi[airborne])
+	return stance
+
+
+## The gait ends: a foot in the air comes down at home (a short step); the planted one stays.
+func _gait_stop() -> void:
+	_gait_on = false
+	for i in 2:
+		if _ft_st[i] == ST_SWING:
+			_ft_st[i] = ST_HOME
+			_ft_from[i] = _ft_aw[i]
+			_ft_from_y[i] = _ft_ay[i]
+			_ft_from_th[i] = _ft_pit[i]
+			_ft_from_yaw[i] = _ft_wy[i]
+			_ft_from_pv[i] = _ft_pv[i]
+			_ft_s[i] = 0.0
+			_ft_dur[i] = 0.16
+
+
+## Landing (or starting) at speed: the foot that has just touched down is already where the stride puts it, ahead of the
+## pelvis, instead of at the idle stance with the body racing off ahead of it.
+func _plant_landing(c: PackedFloat32Array, stance: int, v: float, reach_f: float, side_k: float, tn: Vector2) -> void:
+	var run := smoothstep(2.3, 4.6, v)
+	var lat := lerpf(lerpf(0.125, 0.09, run), 0.22, side_k)
+	var fwd_k := clampf(-tn.y, 0.0, 1.0)
+	var th0 := _pl(v, T_TH0) * fwd_k
+	var pel_z := c[C_PEL + 2] + _pl(v, T_PELZ)
+	for i in 2:
+		if i != stance:
+			continue
+		var sx := 1.0 if i == 0 else -1.0
+		var tgt := Vector2(sx * lat + tn.x * reach_f, pel_z + tn.y * reach_f)
+		tgt.x = maxf(tgt.x, 0.07) if i == 0 else minf(tgt.x, -0.07)
+		_land(i, tgt, th0, _ry - sx * 0.07, false)
+		_ft_aw[i] = _l2w(tgt)
+		_ft_ank[i] = Vector3(tgt.x, _ankle_y(th0), tgt.y)
+		_ft_pit[i] = th0
+		_ft_wy[i] = _ry - sx * 0.07
+
+
+func _liftoff(i: int, phi: float) -> void:
+	_ft_st[i] = ST_SWING
+	_ft_from[i] = _ft_aw[i]
+	_ft_from_y[i] = _ft_ay[i]
+	_ft_from_th[i] = _ft_pit[i]
+	_ft_from_yaw[i] = _ft_wy[i]
+	_ft_from_pv[i] = _ft_pv[i]
+	_ft_philo[i] = phi
+	_ft_s[i] = 0.0
+
+
+func _land(i: int, tgt: Vector2, th0: float, yaw_w: float, step: bool) -> void:
+	var psi := wrapf(yaw_w - _ry, -PI, PI)
+	var kind := 0 if th0 > 0.001 else 1
+	_ft_st[i] = ST_STAND
+	_ft_kind[i] = kind
+	_ft_pin[i] = _l2w(_pin_of(tgt, kind, psi, th0))
+	_ft_yaw[i] = yaw_w
+	_ft_th0[i] = th0
+	_ft_s[i] = 0.0
+	if step and (action == "" or _upper > 0.0) and _spd > 0.2:
+		event.emit("step")
+
+
+## One frame of both feet: the state machine (stance, swing, home step) and the ankles it gives. Writes _ft_ank,
+## _ft_pit, _ft_ry (relative to the rig) and the weights the pelvis uses to respect them (_ft_w).
+func _feet_update(c: PackedFloat32Array, dt: float, v: float, run: float, f_cyc: float, duty: float, reach_f: float,
+		pel_x: float, pel_z: float, side_k: float, guard_g: float, tn: Vector2) -> void:
+	if velocity_hint != Vector3.ZERO:
+		# tools pretending the rig moves: the ground slides back under it
+		var sh := Vector2(velocity_hint.x, velocity_hint.z) * dt
+		for i in 2:
+			_ft_pin[i] -= sh
+			_ft_from[i] -= sh
+			_ft_aw[i] -= sh
+	var vw := Vector2(_vel.x, _vel.z)
+	var lat := lerpf(lerpf(0.125, 0.09, run), 0.22, side_k)
+	# the foot rolls heel to toe going forward; going back or sideways it is put down flat
+	var fwd_k := clampf(-tn.y, 0.0, 1.0)
+	var th0 := _pl(v, T_TH0) * fwd_k
+	var th_to := lerpf(0.25, _pl(v, T_THTO), fwd_k)
+	var uh := _pl(v, T_UH)
+	var back_k := clampf(tn.y, 0.0, 1.0)
+	var apex := maxf(_pl(v, T_APEX), 0.08 * maxf(side_k, back_k))
+	var f_inv := 1.0 / maxf(f_cyc, 0.1)
+	# the phases of the two feet relax to half a cycle apart
+	if _gait_on:
+		var relax := minf(1.0, 0.6 * f_cyc) * dt
+		for i in 2:
+			var nominal := 0.0 if i == 0 else 0.5
+			var d := wrapf(nominal - _ft_off[i], -0.5, 0.5)
+			_ft_off[i] += clampf(d, -relax, relax)
+	var stepped := false
+	for i in 2:
+		var sx := 1.0 if i == 0 else -1.0
+		var ro := (C_FRR if i == 0 else C_FLR) + 1
+		var home := _home(c, i, guard_g)
+		var home_yaw_w := _ry + c[ro]
+		var phi := fposmod(_gph + _ft_off[i], 1.0)
+		var wrapped := _gait_on and phi < _ft_phi[i] - 0.5
+		_ft_phi[i] = phi
+		var tgt := Vector2(sx * lat + tn.x * reach_f, pel_z + tn.y * reach_f)
+		# going sideways the legs cross: the right foot lands behind the left, the left in front of the right
+		tgt.y += sx * -0.14 * side_k
+		var xmin := lerpf(0.07, -0.4, side_k)
+		if i == 0:
+			tgt.x = maxf(tgt.x, xmin)
+		else:
+			tgt.x = minf(tgt.x, -xmin)
+		var yaw_td := _ry - sx * 0.07
+		var st := _ft_st[i]
+		# --- transitions
+		if st == ST_SWING:
+			var s := (phi - _ft_philo[i]) / maxf(1.0 - _ft_philo[i], 0.02)
+			if _gait_on and (wrapped or s >= 1.0):
+				_land(i, _w2l(_ft_goal[i]), _ft_goal_th[i], _ft_goal_yaw[i], true)
+				st = ST_STAND
+			else:
+				_ft_s[i] = clampf(s, 0.0, 1.0)
+		elif st == ST_HOME:
+			_ft_s[i] += dt / maxf(_ft_dur[i], 0.05)
+			if _ft_s[i] >= 1.0:
+				var gl := _w2l(_ft_goal[i])
+				_land(i, gl, _ft_goal_th[i], _ft_goal_yaw[i], _w2l(_ft_from[i]).distance_to(gl) > 0.25)
+				st = ST_STAND
+		if st == ST_STAND:
+			if _gait_on:
+				var behind := Vector2(_ft_ank[i].x - (sx * 0.112 + pel_x), _ft_ank[i].z - pel_z).length()
+				# (a start: the body runs away from a planted foot, which has to leave the ground sooner)
+				var lift_reach := lerpf(LIFT_REACH, 0.36, clampf(_a_fwd / 25.0, 0.0, 1.0))
+				if behind > lift_reach and phi < duty and not wrapped:
+					# the body has run ahead of this foot (a start, a turn): it lifts now, and its phase follows
+					_ft_off[i] = fposmod(duty - _gph, 1.0)
+					phi = duty
+					_ft_phi[i] = phi
+				if phi >= duty and not wrapped:
+					_liftoff(i, phi)
+					st = ST_SWING
+					_ft_s[i] = 0.0
+			elif not stepped:
+				# standing: step home when the body has turned or shifted too far from this foot
+				var err := (_l2w(home) - _ft_aw[i]).length()
+				var yerr := absf(wrapf(home_yaw_w - _ft_yaw[i], -PI, PI))
+				var other := _ft_st[1 - i]
+				if other == ST_STAND and (err > 0.14 or yerr > 0.62):
+					_ft_st[i] = ST_HOME
+					_ft_from[i] = _ft_aw[i]
+					_ft_from_y[i] = _ft_ay[i]
+					_ft_from_th[i] = _ft_pit[i]
+					_ft_from_yaw[i] = _ft_wy[i]
+					_ft_from_pv[i] = _ft_pv[i]
+					_ft_s[i] = 0.0
+					_ft_dur[i] = clampf(0.16 + 0.3 * err, 0.18, 0.3)
+					st = ST_HOME
+					stepped = true
+				elif err > 1.2:
+					_ft_pin[i] = _l2w(_pin_of(home, 0, c[ro], 0.0))
+					_ft_yaw[i] = home_yaw_w
+					_ft_kind[i] = 0
+				elif err < 0.1:
+					# small differences (the guard's stance): the foot shuffles over, slowly
+					var dv := (_l2w(home) - _ft_aw[i]).limit_length(0.35 * dt)
+					_ft_pin[i] += dv
+					var dy := clampf(wrapf(home_yaw_w - _ft_yaw[i], -PI, PI), -1.5 * dt, 1.5 * dt)
+					_ft_yaw[i] += dy
+		_ft_st[i] = st
+		# --- the ankle
+		var ank := Vector3.ZERO
+		var pit := 0.0
+		var yaw_w := _ft_yaw[i]
+		var w := 1.0
+		if st == ST_STAND:
+			var th := 0.0
+			if _gait_on:
+				var u := clampf(phi / maxf(duty, 0.05), 0.0, 1.0)
+				th = _stance_pitch(u, _ft_th0[i], th_to, uh)
+			else:
+				th = move_toward(_ft_pit[i], 0.0, 3.0 * dt)
+			var psi := wrapf(_ft_yaw[i] - _ry, -PI, PI)
+			if absf(psi) > 0.8:
+				psi = clampf(psi, -0.8, 0.8)
+				_ft_yaw[i] = _ry + psi
+			var pl := _w2l(_ft_pin[i])
+			if _ft_kind[i] == 0 and th <= 0.0:
+				# the sole has come flat: the toe takes the weight, pinned where it lies
+				_ft_kind[i] = 1
+				pl += Vector2(-sin(psi), -cos(psi)) * SOLE_LEN
+				_ft_pin[i] = _l2w(pl)
+			ank = _ankle_of(pl, _ft_kind[i], psi, th)
+			# a foot dragged beyond what the leg can reach (a shove, a skid): the contact slides in
+			var hxz := Vector2(sx * 0.112 + pel_x, pel_z)
+			var dd := Vector2(ank.x, ank.z) - hxz
+			if dd.length() > 0.78:
+				var cl := hxz + dd.normalized() * 0.78
+				pl += cl - Vector2(ank.x, ank.z)
+				_ft_pin[i] = _l2w(pl)
+				ank = _ankle_of(pl, _ft_kind[i], psi, th)
+			pit = th
+			yaw_w = _ry + psi
+		else:
+			var s := _ft_s[i]
+			var sh := clampf(s / SET_DOWN, 0.0, 1.0) # the foot arrives over its spot, then it is set down on it
+			var e := sh * sh * (3.0 - 2.0 * sh)
+			var ev := s * s * (3.0 - 2.0 * s)
+			var goal: Vector2
+			var gth := 0.0
+			var gyaw := yaw_td
+			if s < SET_DOWN:
+				if st == ST_SWING or _gait_on:
+					var t_rem := (1.0 - s) * (1.0 - _ft_philo[i]) * f_inv if st == ST_SWING else 0.1
+					goal = _l2w(tgt) + vw * t_rem
+					gth = th0
+				else:
+					goal = _l2w(home)
+					gyaw = home_yaw_w
+				_ft_goal[i] = goal
+				_ft_goal_th[i] = gth
+				_ft_goal_yaw[i] = gyaw
+			else:
+				goal = _ft_goal[i]
+				gth = _ft_goal_th[i]
+				gyaw = _ft_goal_yaw[i]
+			var aw := _ft_from[i].lerp(goal, e)
+			var al := _w2l(aw)
+			var arc := sin(PI * pow(s, 0.8)) * smoothstep(0.0, 0.14, s)
+			# the ankle stays up where it left the ground and comes down late: the toe never drags
+			var y := lerpf(_ft_from_y[i], _ankle_y(gth), ev * ev) + (apex if st == ST_SWING else 0.04) * arc
+			ank = Vector3(al.x + sx * 0.03 * sin(PI * s), y, al.y)
+			# the pitch leaves the stance turning at the rate it had, and settles on the landing pitch
+			var sp := clampf(s / 0.85, 0.0, 1.0)
+			var h00 := 2.0 * sp * sp * sp - 3.0 * sp * sp + 1.0
+			var h10 := sp * sp * sp - 2.0 * sp * sp + sp
+			var h01 := -2.0 * sp * sp * sp + 3.0 * sp * sp
+			var m0 := clampf(_ft_from_pv[i] * (1.0 - _ft_philo[i]) * f_inv if st == ST_SWING else _ft_from_pv[i] * _ft_dur[i], -2.5, 2.5) * 0.85
+			pit = h00 * _ft_from_th[i] + h10 * m0 + h01 * gth
+			yaw_w = lerp_angle(_ft_from_yaw[i], gyaw, e)
+			# the pelvis respects a foot that is about to land and one that has just left
+			w = maxf(1.0 - smoothstep(0.0, 0.15, s), smoothstep(0.55, 0.85, s))
+		if st != ST_STAND and side_k < 0.3:
+			# a swinging foot never passes through the planted leg: it keeps its own side of it (going sideways the
+			# legs cross, one in front of the other: the landing spots are offset in depth instead)
+			var oth := _ft_ank[1 - i]
+			if i == 1:
+				ank.x = minf(ank.x, oth.x - 0.11)
+			elif _ft_st[1] == ST_STAND:
+				ank.x = maxf(ank.x, oth.x + 0.11)
+		_ft_pv[i] = lerpf(_ft_pv[i], (pit - _ft_pit[i]) / maxf(dt, 0.001), 0.6) if dt > 0.0 else _ft_pv[i]
+		_ft_ank[i] = ank
+		_ft_pit[i] = pit
+		_ft_wy[i] = yaw_w
+		_ft_ry[i] = wrapf(yaw_w - _ry, -PI, PI)
+		_ft_aw[i] = _l2w(Vector2(ank.x, ank.z))
+		_ft_ay[i] = ank.y
+		_ft_w[i] = w
+
+
+## The highest the pelvis may stand (its y offset) with every foot that matters still within the leg's reach.
+func _pelvis_limit(pel: Vector3, pelr: Vector3) -> float:
+	var pb := eul(pelr)
+	var lim := pel.y
+	var lmax := (LEN_TH + LEN_SH) * LEG_REACH
+	for i in 2:
+		if _ft_w[i] < 0.01:
+			continue
+		var sx := 1.0 if i == 0 else -1.0
+		var hv := pb * (mx(P_HIP, sx) - P_PELVIS)
+		var hx := P_PELVIS.x + pel.x + hv.x
+		var hz := P_PELVIS.z + pel.z + hv.z
+		var a := _ft_ank[i]
+		var dh2 := (a.x - hx) * (a.x - hx) + (a.z - hz) * (a.z - hz)
+		var room := sqrt(maxf(lmax * lmax - dh2, 0.0025))
+		var py := a.y + room - hv.y - P_PELVIS.y
+		lim = minf(lim, lerpf(pel.y, minf(py, pel.y), _ft_w[i]))
+	return maxf(lim, pel.y - 0.12)
+
+
+## The guard's weight: eased between 0 and 1, and past them (the spring's overshoot) linear.
+func _guard_shape() -> float:
+	var k := clampf(_guard_k, 0.0, 1.0)
+	return smooth(k) + (_guard_k - k) * 0.9
+
+
+static func _softmin(a: float, b: float, k: float) -> float:
+	var h := maxf(k - absf(a - b), 0.0) / k
+	return minf(a, b) - h * h * k * 0.25
 
 
 func _ground_pose(c: PackedFloat32Array, dt: float) -> void:
-	var v := _spd
-	var move := smoothstep(0.05, 0.6, v)
+	var v := _spd # the feet's speed (the stride matches the ground)
+	_vu = lerpf(_vu, v, 1.0 - exp(-dt * 7.0)) # the body's: the arms and the trunk follow it a little later
+	_yaw_lead = lerpf(_yaw_lead, _yaw_inst, 1.0 - exp(-dt * 18.0))
+	_yaw_head = lerpf(_yaw_head, _yaw_lead, 1.0 - exp(-dt * 9.0))
+	var vu := _vu
+	var move := smoothstep(0.05, 0.6, vu)
+	# the arms leave their idle poses a little more slowly than the legs start
+	_mv_arm = lerpf(_mv_arm, move, 1.0 - exp(-dt * 9.0))
+	var mva := _mv_arm
 	var run := smoothstep(2.3, 4.6, v)
 	var sprint := smoothstep(6.2, 8.4, v)
+	var idle := 1.0 - move
 	# direction of travel in rig space (CORE: strafing round a locked target, back-pedalling with the chain)
 	var lv := (global_transform.basis.inverse() * _vel) if is_inside_tree() else Vector3(0.0, 0.0, -v)
 	var lv2 := Vector2(lv.x, lv.z)
+	# (an angle, so that going from forward to backward turns through the side instead of sticking at forward)
 	if lv2.length() > 0.35:
-		_mdir = _mdir.lerp(lv2.normalized(), 1.0 - exp(-dt * 10.0)).normalized()
+		_mang = lerp_angle(_mang, atan2(lv2.x, -lv2.y), 1.0 - exp(-dt * 10.0))
 	elif move < 0.2:
-		_mdir = _mdir.lerp(Vector2(0.0, -1.0), 1.0 - exp(-dt * 4.0)).normalized()
+		_mang = lerp_angle(_mang, 0.0, 1.0 - exp(-dt * 4.0))
+	_mdir = Vector2(sin(_mang), -cos(_mang))
 	var side_k := absf(_mdir.x)
 	var back_k := clampf(_mdir.y, 0.0, 1.0)
-	var stride := lerpf(0.55 + 0.62 * v, 1.25 + 0.27 * v, run) * lerpf(1.0, 0.62, maxf(side_k, back_k * 0.6))
-	_phase = fposmod(_phase + v / maxf(stride, 0.45) * dt, 1.0)
-	var duty := lerpf(0.6, 0.38, run)
-	var half := duty * stride * 0.5
-	var lift := lerpf(0.08, 0.2, run) + 0.08 * sprint
-	var ph := _phase
 	var br := sin(t * lerpf(1.7, 3.4, tired))
-	var idle := 1.0 - move
-	# --- legs ---
-	for side in 2:
-		var s := fposmod(ph + (0.0 if side == 0 else 0.5), 1.0)
-		var f := foot_cycle(s, duty, half, lift, run)
-		var sx := 1.0 if side == 0 else -1.0
-		var x := sx * lerpf(0.125, 0.09, run) * lerpf(1.0, 1.25, side_k)
-		# the stride runs along the travel direction (f.x: behind +); a strafing foot never crosses the other
-		var lat := -_mdir.x * f.x
-		var cx := x + lat
-		cx = maxf(cx, 0.07) if side == 0 else minf(cx, -0.07)
-		var cyc := Vector3(cx, f.y, -_mdir.y * f.x)
-		var o := C_FR if side == 0 else C_FL
-		var idle_foot := v3(c, o)
-		_setv(c, o, idle_foot.lerp(cyc, move))
-		var ro := C_FRR if side == 0 else C_FLR
-		var yaw0 := c[ro + 1]
-		_setv(c, ro, Vector3(f.z * move * lerpf(1.0, 0.35, maxf(side_k, back_k)), lerpf(yaw0, -sx * 0.07, move), 0.0))
-		# footfalls
-		if move > 0.3 and s < _prev_s[side] and _spd > 0.2:
-			event.emit("step")
-		_prev_s[side] = s
-	# --- pelvis ---
-	var mid := ph - duty * 0.5
-	var bob := cos(TAU * 2.0 * mid)
-	var pel := v3(c, C_PEL)
-	pel.y = lerpf(pel.y, lerpf(-0.05, -0.085, run) - 0.035 * sprint, move) + lerpf(0.018, -0.036, run) * bob * move
-	pel.x += 0.02 * cos(TAU * mid) * move * (1.0 - run) + 0.012 * sin(t * 0.45) * idle
-	pel.z += -0.02 * run - 0.04 * sprint
+	c[C_CHS] -= 0.066 * (1.0 - move) # (the idle chest is not thrown back: about 1.4 degrees behind the vertical)
+	var tn := Vector2(_mdir.x, _mdir.y)
+	var guard_g := _guard_shape()
+	# --- the gait: cadence, stance share, how far a stance carries the body
+	_rig_frame()
+	var replant := not _fp_ok or _adv_n - _gp_n > 1
+	if replant:
+		# (the first frame, or back from the air, a swim, a roll: the feet are put down afresh)
+		_gait_on = false
+		_plant_home(c, guard_g)
+	_gp_prev = _gp_n
+	_gp_n = _adv_n
+	var kdir := lerpf(1.0, 0.62, side_k) * lerpf(1.0, 0.75, back_k)
+	# a start: the first steps are quick ones (the cadence follows the speed the body is about to have)
+	var a_f := _acc.dot(-global_transform.basis.z) if is_inside_tree() else 0.0
+	# how hard the speed being fed is rising (the rig's own estimate of the acceleration lags): the stride and the
+	# stance of the first steps follow where the speed is going
+	var a_raw := (speed - _speed_prev) / maxf(dt, 0.001) if _adv_n - _gp_prev <= 1 else 0.0
+	_speed_prev = speed
+	_a_fwd = lerpf(_a_fwd, clampf(a_raw, -60.0, 60.0), 1.0 - exp(-dt * 25.0))
+	var v_g := v + clampf(_a_fwd, 0.0, 45.0) * 0.1
+	var f_cyc := maxf(_pl(v_g, T_F) / kdir, 0.3)
+	var duty := _pl(v_g, T_D)
+	var reach_f := 0.38 * v_g * duty / f_cyc
+	var want := speed > (GAIT_OFF_V if _gait_on else GAIT_ON_V) and not _sk_on
+	if want and not _gait_on:
+		var at_speed := replant and v > 2.5
+		var stance := _gait_start(duty, tn, at_speed)
+		if at_speed:
+			_plant_landing(c, stance, v, reach_f, side_k, tn)
+	elif not want and _gait_on and not _sk_on:
+		_gait_stop()
+	if _gait_on:
+		_gph = fposmod(_gph + f_cyc * dt, 1.0)
+	# what the cycle drives (the pelvis's sway, turn and list, the bob, the arms' swing) fades in with the gait: a gait
+	# that starts again while the body is still moving does not make them jump to the new phase
+	_gait_w = move_toward(_gait_w, 1.0 if _gait_on else 0.0, dt / 0.12)
+	var gw := smoothstep(0.0, 1.0, _gait_w)
+	var p := _gph
+	var th := TAU * p
+	# --- the trunk's lean: speed, the push of an acceleration, the roll of a turn
+	var vf := vu * clampf(-_mdir.y, -1.0, 1.0)
+	var lean := deg_to_rad(_pl(maxf(vf, 0.0), T_LEAN)) - 0.008 * minf(maxf(-vf, 0.0), 3.0)
+	var sdt := minf(dt, 1.0 / 30.0)
+	var w2 := 16.0 * 16.0
+	_lean_accv += (w2 * (clampf(a_f * 0.0042, -0.14, 0.12) - _lean_acc) - 32.0 * _lean_accv) * sdt
+	_lean_acc += _lean_accv * sdt
+	var roll_goal := clampf(_yaw_lead * minf(vu, 7.0) * 0.0046, -0.2, 0.2) - _mdir.x * minf(vu, 5.0) * 0.012 * side_k
+	var w3 := 14.0 * 14.0
+	_roll_turnv += (w3 * (roll_goal - _roll_turn) - 28.0 * _roll_turnv) * sdt
+	_roll_turn += _roll_turnv * sdt
+	var lean_c := (lean + _lean_acc) * LEAN_LINE
+	# --- pelvis: forward with the lean, over the stance foot, up and down twice a stride
+	var pel := Vector3(c[C_PEL], c[C_PEL + 1], c[C_PEL + 2])
+	var sway := _pl(vu, T_SWAY) * gw
+	var mid := p - duty * 0.5
+	pel.x += sway * cos(TAU * mid) + 0.012 * sin(t * 0.45) * idle
+	pel.z += _pl(vu, T_PELZ) + _lean_acc * 0.25
+	# --- the feet
+	if not _sk_on:
+		_feet_update(c, dt, v, run, f_cyc, duty, reach_f, pel.x, pel.z, side_k, guard_g, tn)
+	for i in 2:
+		var o := C_FR if i == 0 else C_FL
+		var ro := C_FRR if i == 0 else C_FLR
+		var sx := 1.0 if i == 0 else -1.0
+		_setv(c, o, _ft_ank[i])
+		_setv(c, ro, Vector3(_ft_pit[i], _ft_ry[i], 0.0))
+		_setv(c, o + 6, Basis(Vector3.UP, _ft_ry[i]) * Vector3(sx * _pl(v, T_KNEE), 0.0, -1.0))
+	# --- pelvis height: the bob (twice a stride), lowered where the leg would over-reach
+	var bob := _pl(vu, T_BOB) * gw * cos(TAU * 2.0 * mid)
+	# (walking through the wheat with the hand out, the legs are straighter: the hand's height is the ears' and the shoulder
+	# has to be where the arm reaches it without the shield folding into the chest)
+	pel.y = _pl(vu, T_PELH) + bob + 0.05 * smooth(_brush) + _land_x
+	var yaw_a := deg_to_rad(_pl(vu, T_PYAW)) * gw
+	var list_a := deg_to_rad(_pl(vu, T_PROLL)) * gw
+	var pelr := Vector3(c[C_PELR] * idle - LEAN_SHARE_PELVIS * lean_c, yaw_a * cos(th),
+		c[C_PELR + 2] + list_a * cos(TAU * (p - duty * 0.5)) + 0.012 * sin(t * 0.45) * idle)
+	pelr.z += _roll_turn * 0.2
+	pel.y = _softmin(pel.y, _pelvis_limit(pel, pelr), 0.03)
+	# the pelvis drops at once where the leg would over-reach, but rises again no faster than a body can
+	if _adv_n - _gp_prev > 1 or not _pel_ok:
+		_pel_yp = pel.y
+		_pel_ok = true
+	pel.y = minf(lerpf(_pel_yp, pel.y, 1.0 - exp(-dt * 30.0)), _pel_yp + 1.5 * dt)
+	_pel_yp = pel.y
 	_setv(c, C_PEL, pel)
-	var yaw := lerpf(0.09, 0.15, run) * cos(TAU * ph) * move
-	var turn := clampf(_yaw_rate * v * 0.035, -0.28, 0.28)
-	_setv(c, C_PELR, Vector3(c[C_PELR] + 0.04 * run, yaw, 0.03 * sin(TAU * ph) * move * (1.0 - run * 0.5) + 0.012 * sin(t * 0.45) * idle + turn * 0.4))
-	# --- spine: lean with speed and acceleration, counter-rotate the shoulders ---
-	var accel := clampf(-(_acc.dot(-global_transform.basis.z if is_inside_tree() else FWD)) * 0.012, -0.12, 0.12) if move > 0.1 else 0.0
-	_setv(c, C_SPN, Vector3(-0.03 * move - 0.07 * run - 0.1 * sprint + accel, -yaw * 0.5, turn * 0.5))
+	_setv(c, C_PELR, pelr)
+	# --- spine and chest: lean, counter-rotation (the chest turns against the pelvis), the roll of a turn
+	var cr := _pl(vu, T_CRATIO)
+	var chest_yaw := -cr * yaw_a * cos(th - 0.25) + clampf(_yaw_lead * 0.03, -0.2, 0.2)
+	var chest_roll := -0.5 * list_a * cos(TAU * (p - duty * 0.5)) + _roll_turn * 0.8
+	var bob_p := 0.02 * run * gw * cos(TAU * 2.0 * (mid + 0.12))
+	# (the landing folds the trunk over the dipping pelvis: about 2.5 rad per metre of dip)
+	_setv(c, C_SPN, Vector3(-LEAN_SHARE_SPINE * lean_c + 2.0 * _land_x, 0.4 * (chest_yaw - pelr.y), 0.4 * (chest_roll - pelr.z)))
 	var chs := v3(c, C_CHS)
-	chs.x += -0.02 * move - 0.05 * run - 0.1 * sprint + lerpf(0.018, 0.05, tired) * br * idle - 0.12 * tired * idle
-	chs.y += -yaw * 1.1
+	chs.x = chs.x * idle - (1.0 - LEAN_SHARE_PELVIS - LEAN_SHARE_SPINE) * lean_c + bob_p
+	chs.y += 0.6 * (chest_yaw - pelr.y)
+	chs.z += 0.6 * (chest_roll - pelr.z)
+	chs.x += lerpf(0.018, 0.05, tired) * br * idle - 0.12 * tired * idle
 	_setv(c, C_CHS, chs)
 	if tired > 0.0:
 		# winded: the head drops, the shoulders heave
 		c[C_NEK] -= 0.1 * tired * idle
 		c[C_SPN] -= 0.05 * tired * idle
-	_setv(c, C_NEK, Vector3(c[C_NEK] + 0.05 * run + 0.12 * sprint, yaw * 0.6, -turn * 0.4))
-	_setv(c, C_HED, Vector3(0.008 * br * idle, 0.08 * sin(t * 0.31) * idle, 0.0))
-	# --- arms ---
-	var fw_r := cos(TAU * (ph - 0.5))
-	var fw_l := cos(TAU * ph)
-	var amp_r := (lerpf(0.09, 0.17, run) + 0.06 * sprint) * move
-	var amp_l := (lerpf(0.07, 0.14, run) + 0.08 * sprint) * move
-	var hr := v3(c, C_HR).lerp(Vector3(0.33, -0.31, -0.12), run)
-	hr += Vector3(0.0, 0.06 * maxf(fw_r, 0.0) * run - 0.012 * br * idle, -amp_r * fw_r)
-	_setv(c, C_HR, hr)
-	_lerpv(c, C_HRB, Vector3(0.1, -0.25 - 0.35 * sprint, -1.0), run)
-	_addv(c, C_HRB, Vector3(0.0, -0.25 * fw_r * move, 0.0))
-	var hl := v3(c, C_HL).lerp(Vector3(-0.33, -0.27, -0.1), run)
-	hl += Vector3(0.0, 0.05 * maxf(fw_l, 0.0) * run - 0.01 * br * idle, -amp_l * fw_l)
-	_setv(c, C_HL, hl)
-	# --- guard: shield up in front, sword ready at the hip ---
-	if _guard_k > 0.0:
-		var g := smooth(_guard_k)
+	# --- neck and head: the gaze stays level and forward whatever the trunk does
+	var chest_pitch := -(c[C_PELR] + c[C_SPN] + c[C_CHS])
+	var gaze := deg_to_rad(_pl(vu, T_HEADP))
+	var comp := chest_pitch - gaze
+	var nek_x := lerpf(c[C_NEK], 0.55 * comp, move)
+	var hed_x := lerpf(c[C_HED], 0.45 * comp, move)
+	var chest_yaw_w := c[C_PELR + 1] + c[C_SPN + 1] + c[C_CHS + 1]
+	var head_yaw := -chest_yaw_w * 0.85 + clampf(_yaw_head * 0.05, -0.35, 0.35)
+	var chest_roll_w := c[C_PELR + 2] + c[C_SPN + 2] + c[C_CHS + 2]
+	_setv(c, C_NEK, Vector3(nek_x, lerpf(c[C_NEK + 1], 0.5 * head_yaw, move), lerpf(c[C_NEK + 2], -0.5 * chest_roll_w, move)))
+	_setv(c, C_HED, Vector3(hed_x + 0.008 * br * idle, lerpf(0.08 * sin(t * 0.31) * idle, 0.5 * head_yaw, move), lerpf(0.0, -0.4 * chest_roll_w, move)))
+	# --- arms: forward kinematics, the sword arm swings against the legs, the shield arm is carried and bobs
+	var armk := lerpf(1.0, 0.6, maxf(side_k, back_k * 0.6))
+	var ph_a := TAU * _pl(vu, T_ARM_PH)
+	var psi_r := deg_to_rad(_pl(vu, T_ARM_C) + _pl(vu, T_ARM_A) * armk * gw * cos(th - ph_a))
+	var el_r := deg_to_rad(_pl(vu, T_EL_R) + _pl(vu, T_EL_RV) * gw * cos(th - ph_a + 0.35))
+	# (and the arms fly out to the sides for balance as the ground is met, then come back with the spring)
+	var land_arm := clampf(-_land_x / 0.1, -0.5, 2.0) * _land_k
+	var ab_r := deg_to_rad(_pl(vu, T_AB_R) + 22.0 * land_arm)
+	var fk := _arm_fk(1.0, psi_r, ab_r, el_r, 0.18 * run)
+	# the wrist keeps the blade up and out of the legs: the back swing opens the hand, the forward swing closes it
+	var uln_d := clampf(_pl(vu, T_ULN) + _pl(vu, T_ULN_K) * rad_to_deg(psi_r - deg_to_rad(_pl(vu, T_ARM_C))), 30.0, 60.0)
+	var sh_hand := _sword_hand(fk[2], deg_to_rad(uln_d), deg_to_rad(8.0), deg_to_rad(_pl(vu, T_TW)))
+	var hrb: Vector3 = sh_hand[0]
+	var hrk: Vector3 = sh_hand[1]
+	var grip: Vector3 = (fk[0] as Vector3) + hand_basis(hrb, hrk, 1.0) * GRIP
+	var hr := v3(c, C_HR)
+	hr += Vector3(0.0, -0.012 * br * idle, 0.0)
+	_setv(c, C_HR, hr.lerp(grip, mva))
+	_lerpv(c, C_HRB, hrb, mva)
+	_lerpv(c, C_HRK, hrk, mva)
+	_lerpv(c, C_HRP, fk[1], mva)
+	var psi_l := deg_to_rad(_pl(vu, T_ARM_LC) - _pl(vu, T_ARM_LA) * armk * gw * cos(th - ph_a))
+	var el_l := deg_to_rad(_pl(vu, T_EL_L) - 6.0 * gw * cos(th - ph_a + 0.35))
+	var ab_l := deg_to_rad(_pl(vu, T_AB_L) + 22.0 * land_arm)
+	# the free hand out over the wheat (set_brush): the arm opens by its joints to where the brush pose holds it (out
+	# to the side, the forearm hanging), so the shield does not sweep through the chest on its way there
+	var bw := smooth(_brush)
+	if bw > 0.0:
+		psi_l = lerpf(psi_l, deg_to_rad(-26.0), bw)
+		ab_l = lerpf(ab_l, deg_to_rad(58.0), smoothstep(0.0, 0.3, bw))
+		el_l = lerpf(el_l, deg_to_rad(64.0), bw)
+	var fkl := _arm_fk(-1.0, psi_l, ab_l, el_l, 0.1 * run * (1.0 - bw))
+	var hl := v3(c, C_HL)
+	hl += Vector3(0.0, -0.01 * br * idle, 0.0)
+	_setv(c, C_HL, hl.lerp(fkl[0], mva))
+	_lerpv(c, C_HLF, Vector3(-1.0, 0.05, -0.5), mva)
+	_lerpv(c, C_HLP, fkl[1], mva)
+	# --- guard: shield up in front, sword ready at the hip
+	if absf(_guard_k) > 0.001:
+		var g := _guard_shape()
 		# the shield forward-left of the chest (a hoplite's stance): its rim shows past his left side even from
 		# behind him, so a raised guard reads from the gameplay camera
 		_lerpv(c, C_HL, Vector3(-0.14, 0.02, -0.46), g)
@@ -2531,8 +3788,6 @@ func _ground_pose(c: PackedFloat32Array, dt: float) -> void:
 		c[C_SPN] -= 0.05 * g
 		c[C_PEL + 1] -= 0.04 * g * idle
 		c[C_NEK + 1] -= 0.1 * g
-		var fl := v3(c, C_FL)
-		_setv(c, C_FL, fl + Vector3(-0.02, 0.0, -0.06) * g * idle)
 		# a blow on the shield: the shield arm is driven back towards the chest, the chest leans back with it
 		if absf(_jolt) > 0.001:
 			var j := clampf(_jolt, -0.4, 1.0) * g
@@ -2541,7 +3796,7 @@ func _ground_pose(c: PackedFloat32Array, dt: float) -> void:
 			c[C_SPN] += 0.06 * j
 			c[C_PEL + 2] += 0.05 * j
 	# FINAL: the free hand in the wheat (set_brush)
-	_brush_pose(c, dt, move, run, ph)
+	_brush_pose(c, dt, move, run, _gph)
 
 
 ## FINAL: while the hand brushes the wheat the shield rides up the arm (the forearm slides out of the arm band, which
@@ -2600,7 +3855,7 @@ const BRUSH_THUMB := Vector3(-0.739, 0.0, -0.672) # hand_basis' blade axis: the 
 
 
 func _brush_pose(c: PackedFloat32Array, dt: float, move: float, run: float, ph: float) -> void:
-	var goal := brush_goal * (1.0 - _guard_k)
+	var goal := brush_goal * (1.0 - clampf(_guard_k, 0.0, 1.0))
 	_brush = move_toward(_brush, goal, dt * (2.2 if goal > _brush else 3.4))
 	if _brush <= 0.0005:
 		return
@@ -2667,20 +3922,25 @@ func _hang_pose(c: PackedFloat32Array, dt: float) -> void:
 
 func _air_pose(c: PackedFloat32Array) -> void:
 	var k := smoothstep(1.5, -4.0, _vy) # 0 rising .. 1 falling
+	var run := smoothstep(1.5, 6.0, _spd) # 0 a jump from standing .. 1 a leap from a run
 	var fl := sin(t * 7.0) * 0.02
 	_setv(c, C_PEL, Vector3(0.0, lerpf(0.02, -0.02, k), 0.0))
 	_setv(c, C_PELR, Vector3(lerpf(0.12, -0.05, k), 0.0, 0.0))
 	_setv(c, C_SPN, Vector3(lerpf(-0.12, 0.04, k), 0.0, 0.0))
 	_setv(c, C_CHS, Vector3(lerpf(0.0, 0.08, k), 0.05, 0.0))
 	_setv(c, C_NEK, Vector3(lerpf(0.05, -0.12, k), 0.0, 0.0))
-	_setv(c, C_FR, Vector3(0.13, lerpf(0.42, 0.14, k) + fl, lerpf(-0.16, -0.06, k)))
-	_setv(c, C_FRR, Vector3(lerpf(-0.35, 0.15, k), -0.1, 0.0))
-	_setv(c, C_FL, Vector3(-0.14, lerpf(0.3, 0.2, k) - fl, lerpf(0.14, 0.12, k)))
-	_setv(c, C_FLR, Vector3(lerpf(-0.7, -0.2, k), 0.1, 0.0))
-	_setv(c, C_HR, Vector3(lerpf(0.36, 0.52, k), lerpf(-0.05, 0.02, k), lerpf(-0.2, -0.02, k)))
+	# the legs are not a seated tuck: the right leg leads (the knee comes up and forward on the rise, the foot reaches down and ahead on
+	# the way down) and the left trails behind (extended back on the rise, coming under him for the landing); the faster he came, the
+	# longer the stride between them
+	_setv(c, C_FR, Vector3(0.13, lerpf(lerpf(0.42, 0.5, run), lerpf(0.17, 0.15, run), k) + fl, lerpf(lerpf(-0.26, -0.42, run), lerpf(-0.14, -0.3, run), k)))
+	_setv(c, C_FRR, Vector3(lerpf(-0.2, 0.2, k), -0.1, 0.0))
+	_setv(c, C_FL, Vector3(-0.14, lerpf(lerpf(0.26, 0.34, run), lerpf(0.17, 0.16, run), k) - fl, lerpf(lerpf(0.22, 0.4, run), lerpf(0.08, 0.2, run), k)))
+	_setv(c, C_FLR, Vector3(lerpf(-0.8, -0.2, k), 0.1, 0.0))
+	# the arms: up and forward for the lift, out for the way down
+	_setv(c, C_HR, Vector3(lerpf(0.44, 0.52, k), lerpf(0.0, 0.02, k), lerpf(-0.18, -0.02, k)))
 	_setv(c, C_HRB, Vector3(lerpf(0.1, 0.5, k), lerpf(0.25, 0.4, k), -1.0))
 	_setv(c, C_HRP, Vector3(0.6, -0.5, 0.8))
-	_setv(c, C_HL, Vector3(lerpf(-0.36, -0.5, k), lerpf(-0.12, 0.0, k), lerpf(-0.18, 0.0, k)))
+	_setv(c, C_HL, Vector3(lerpf(-0.44, -0.5, k), lerpf(-0.04, 0.0, k), lerpf(-0.14, 0.0, k)))
 	_setv(c, C_HLF, Vector3(-1.0, -0.2, -0.3))
 	_setv(c, C_HLP, Vector3(-0.6, -0.6, 0.8))
 
@@ -2853,6 +4113,8 @@ func reset_cloth() -> void:
 	_vel = Vector3.ZERO
 	_acc = Vector3.ZERO
 	_have_prev = false
+	_fp_ok = false
+	_gait_on = false
 
 
 ## Rest-space point carried by a bone's current pose (rig space).
@@ -3095,7 +4357,7 @@ func _cape_step(dt: float, gx: Transform3D) -> void:
 	var spine_inv := spine.affine_inverse()
 	var sp_on := spear_on_back and _spear_back.visible
 	# the shield's disc (a slab in the shield frame)
-	var sh_xf := gx * shield_xf(_bx[FARM_L], _rest[FARM_L])
+	var sh_xf := gx * _slack_xf() * shield_xf(_bx[FARM_L], _rest[FARM_L])
 	if _brush > 0.0005 and action == "":
 		# FINAL: the shield rides up the arm while the hand brushes the wheat (_brush_shield)
 		var sk := Transform3D(_bx[FARM_L].basis, _bx[FARM_L].origin - _bx[FARM_L].basis * _rest[FARM_L])
@@ -3458,7 +4720,7 @@ func _cape_pose(gx: Transform3D) -> void:
 
 ## Tools: pose the rig deterministically (pre-simulated with a fixed step from a settled idle) and freeze it.
 ## act = "" shows locomotion at `spd` (cycle position `phase`); otherwise the action at t_norm of its length.
-func preview_pose(act: String, t_norm: float, spd: float, state: StringName, outfit_name: StringName, guard_on: bool, vy: float, phase: float) -> void:
+func preview_pose(act: String, t_norm: float, spd: float, state: StringName, outfit_name: StringName, guard_on: bool, vy: float, phase: float, heading: float = 0.0, lunge: float = 0.0) -> void:
 	process_mode = Node.PROCESS_MODE_DISABLED
 	set_outfit(outfit_name)
 	set_guard(guard_on)
@@ -3466,26 +4728,43 @@ func preview_pose(act: String, t_norm: float, spd: float, state: StringName, out
 	set_vertical_speed(vy)
 	var dt := 1.0 / 60.0
 	var fwd := -(global_transform.basis.z if is_inside_tree() else Vector3.BACK)
-	velocity_hint = fwd * spd if state != &"swim" else fwd * spd
+	var rgt := global_transform.basis.x if is_inside_tree() else Vector3.RIGHT
+	velocity_hint = (fwd * cos(heading) + rgt * sin(heading)) * spd
 	set_locomotion(spd, 9.0)
 	_spd = spd
 	var pre := 1.6
 	if act == "":
-		var v := spd
-		var run := smoothstep(2.3, 4.6, v)
-		var stride := lerpf(0.55 + 0.62 * v, 1.25 + 0.27 * v, run)
-		_phase = fposmod(phase - v / maxf(stride, 0.45) * pre, 1.0)
-		_swim_phase = _phase
+		# the gait starts at the phase that puts it at `phase` after the pre-roll (a steady speed, straight ahead)
+		var kd := lerpf(1.0, 0.62, absf(sin(heading))) * lerpf(1.0, 0.75, clampf(-cos(heading), 0.0, 1.0))
+		_pv_phase = fposmod(phase - _pl(spd, T_F) / kd * pre, 1.0)
+		_swim_phase = phase
 	var steps := int(pre / dt)
 	for i in steps:
 		advance(dt)
 	if act != "":
 		play(act)
+		if lunge > 0.0:
+			set_strike_run(false) # (a foe in reach: the hero stops and lunges, the blow plants its own feet, see HeroMelee)
 		_blend_t = 1.0
+		_io_pending = false
+		_io_on = false
 		var target := t_norm * action_len * 0.999
+		# a blow's lunge (HeroMelee: LUNGE_T0 .. the first active frame, a sine ease-out) moves the node while the blow plays,
+		# so that the feet of the blow are the ones the game shows; the node is put back for the picture
+		var base := global_position
+		var l_end := float(act_def(act)["ev"].get("swing", 0.12)) + 0.04
+		var elapsed := 0.0
 		while action_t + dt < target:
+			elapsed += dt
+			if lunge > 0.0:
+				global_position = base + fwd * lunge * sin(clampf((elapsed - 0.02) / maxf(l_end - 0.02, 0.05), 0.0, 1.0) * PI * 0.5)
 			advance(dt)
-		advance(maxf(target - action_t, 0.0))
+		var rest := maxf(target - action_t, 0.0)
+		if lunge > 0.0:
+			elapsed += rest
+			global_position = base + fwd * lunge * sin(clampf((elapsed - 0.02) / maxf(l_end - 0.02, 0.05), 0.0, 1.0) * PI * 0.5)
+		advance(rest)
+		global_position = base
 
 
 ## &"helmet" or &"lion". Shown from the next frame; play("don_skin") makes the change itself, part-way through.
@@ -3579,204 +4858,149 @@ func grapple_point() -> Vector3:
 ## key inherits the previous one and "ease" stops the motion at that key (anticipation holds, settles).
 static func _action_defs() -> Dictionary:
 	var d := {}
-	# swing planes (chess space, through the right shoulder)
-	var n1 := Vector3(-0.909, 0.263, 0.324)
-	var u1 := Vector3(0.351, 0.902, 0.251)
-	var n2 := Vector3(0.465, -0.852, 0.239)
-	var u2 := Vector3(-0.73, -0.52, -0.43)
-	var n3 := Vector3(-0.93, 0.35, 0.1)
-	var u3 := Vector3(-0.15, 0.95, 0.27)
 	var ready := {"hr": Vector3(0.3, -0.36, -0.2), "hrb": Vector3(0.0, -0.3, -1.0), "hrk": Vector3(1.0, 0.2, 0.0), "hrp": Vector3(0.5, 0.0, 1.0)}
 	var neutral := NEUTRAL.duplicate()
 	neutral.erase("rot")
 	neutral.erase("piv")
-	# 1: forehand slash, high right to low left in front, lunge on the left foot
-	var a1 := Vector3(0.42, 0.4, 0.1)
-	var a1b := Vector3(0.05, 0.65, 0.76).normalized()
-	var b1 := Vector3(0.14, 0.05, -0.62)
-	var b1b := Vector3(-0.55, -0.15, -0.82).normalized()
-	var n1p := a1b.cross(b1b).normalized()
-	var c1 := Vector3(0.06, -0.14, -0.52)
-	var c1b := Basis(n1p, 0.85) * b1b
-	var k1 := -n1p
-	d["attack1"] = {"len": 0.56, "in": 0.07, "out": 0.22, "ev": {"swing": 0.13, "impact": 0.205, "step": [0.2, 0.53]}, "keys": [
+	# attack1, attack2, attack3 and heavy are not keyed here: they are built from joint angles (STRIKE_NAMES, _strike_raw,
+	# docs/ANIMATION.md section 4.8) and replace anything of those names in _compile_actions
+	# parry: the shield punches forward (a bash). Played on the upper body (the legs and hips stay on the guard's gait): the shield
+	# comes back to the chest and the chest winds away (anticipation, 4 frames), the punch turns the spine and the chest into it with
+	# the shoulders leading, the arm carries a few centimetres past the contact (follow-through, in slow motion under the hit's slow
+	# motion), the head holds on the target, then the arm comes back to the guard along a lower path (handover to the guard pose).
+	d["parry"] = {"len": 0.5, "in": 0.05, "out": 0.12, "ho": 0.3, "ev": {"impact": 0.15, "step": [0.14, 0.45]}, "keys": [
 		[0.0, {}],
-		[0.12, {"ease": true, "pel": Vector3(0.03, -0.07, 0.03), "pelr": Vector3(0.02, -0.16, 0.0), "spn": Vector3(0.03, -0.2, 0.03),
-			"chs": Vector3(0.1, -0.34, 0.0), "nek": Vector3(-0.08, 0.3, 0.0), "hed": Vector3(0.0, 0.12, 0.0),
-			"fr": Vector3(0.16, 0.093, 0.06), "frr": Vector3(0.0, -0.32, 0.0), "fl": Vector3(-0.15, 0.115, -0.08), "flr": Vector3(-0.25, 0.2, 0.0),
-			"hl": Vector3(-0.38, -0.2, -0.2), "hlf": Vector3(-0.75, 0.15, -0.65), "hlp": Vector3(-0.6, -0.4, 0.8),
-			"hr": a1, "hrb": a1b, "hrk": k1, "hrp": Vector3(0.8, -0.6, 0.2)}],
-		[0.165, {"fl": Vector3(-0.16, 0.17, -0.22), "flr": Vector3(0.1, 0.15, 0.0), "pel": Vector3(0.0, -0.06, -0.06), "pelr": Vector3(0.0, -0.05, 0.0),
-			"spn": Vector3(-0.02, -0.05, 0.0), "chs": Vector3(0.02, -0.08, 0.0), "nek": Vector3(-0.04, 0.1, 0.0),
-			"hr": arcp(a1, b1, 0.5), "hrb": a1b.slerp(b1b, 0.5), "hrp": Vector3(0.8, -0.6, 0.1)}],
-		[0.205, {"fl": Vector3(-0.17, 0.093, -0.36), "flr": Vector3(0.0, 0.12, 0.0), "fr": Vector3(0.15, 0.1, 0.1), "frr": Vector3(-0.18, -0.2, 0.0),
-			"pel": Vector3(-0.02, -0.11, -0.14), "pelr": Vector3(0.0, 0.12, 0.0), "spn": Vector3(-0.08, 0.16, 0.0), "chs": Vector3(-0.04, 0.3, -0.02),
-			"nek": Vector3(0.02, -0.28, 0.0), "hed": Vector3(0.0, -0.05, 0.0), "hl": Vector3(-0.42, -0.14, -0.12), "hlf": Vector3(-0.75, 0.12, -0.6),
-			"hlp": Vector3(-0.6, -0.7, 0.5), "hr": b1, "hrb": b1b, "hrp": Vector3(0.8, -0.9, 0.1)}],
-		[0.29, {"pel": Vector3(-0.03, -0.125, -0.15), "spn": Vector3(-0.12, 0.2, 0.02), "chs": Vector3(-0.1, 0.42, -0.02),
-			"nek": Vector3(0.05, -0.34, 0.0), "hl": Vector3(-0.42, -0.06, -0.08), "hlf": Vector3(-0.8, 0.1, -0.5),
-			"hr": c1, "hrb": c1b, "hrp": Vector3(0.5, -1.0, 0.2)}],
-		[0.38, {"ease": true, "chs": Vector3(-0.08, 0.38, 0.0), "hr": c1 + Vector3(0.03, 0.03, 0.0), "hrb": Basis(n1p, -0.15) * c1b}],
-		[0.47, _merge({"fl": Vector3(-0.16, 0.15, -0.2), "flr": Vector3(-0.2, 0.15, 0.0), "pel": Vector3(0.0, -0.07, -0.06), "pelr": Vector3(0.0, 0.03, 0.0),
-			"spn": Vector3(-0.03, 0.08, 0.0), "chs": Vector3(0.02, 0.15, 0.0), "nek": Vector3(-0.03, -0.1, 0.0), "hed": Vector3.ZERO,
-			"hl": Vector3(-0.35, -0.33, -0.08), "hlf": Vector3(-1.0, 0.0, -0.2)}, ready)],
-		[0.56, neutral],
+		[0.06, {"ease": true, "hl": Vector3(-0.22, -0.05, -0.27), "hlf": Vector3(-0.35, 0.05, -1.0), "hlp": Vector3(-1.0, -0.5, 0.4),
+			"chs": Vector3(0.05, -0.17, 0.0), "spn": Vector3(0.03, -0.09, 0.0), "nek": Vector3(-0.05, 0.16, 0.0), "hed": Vector3(0.0, 0.04, 0.0),
+			"pel": Vector3(0.0, -0.07, 0.04), "hr": Vector3(0.40, -0.30, 0.04), "hrb": Vector3(0.2, 0.25, -1.0), "hrk": Vector3(1.0, 0.0, 0.2),
+			"fl": Vector3(-0.15, 0.093, -0.06)}],
+		[0.15, {"hl": Vector3(0.05, -0.03, -0.55), "hlf": Vector3(0.05, 0.05, -1.0), "hlp": Vector3(-1.0, -0.45, 0.35),
+			"chs": Vector3(-0.05, 0.21, 0.0), "spn": Vector3(-0.13, 0.11, 0.0), "nek": Vector3(0.03, -0.20, 0.0), "hed": Vector3(0.0, -0.04, 0.0),
+			"pel": Vector3(0.0, -0.10, -0.13), "hr": Vector3(0.40, -0.30, 0.12), "hrb": Vector3(0.2, 0.35, -1.0),
+			"fl": Vector3(-0.16, 0.093, -0.3), "flr": Vector3(0.0, 0.12, 0.0)}],
+		[0.22, {"hl": Vector3(0.07, -0.02, -0.58), "chs": Vector3(-0.06, 0.24, 0.0), "spn": Vector3(-0.14, 0.12, 0.0), "nek": Vector3(0.03, -0.22, 0.0)}],
+		[0.34, {"ease": true, "hl": Vector3(-0.14, 0.02, -0.46), "hlf": Vector3(-0.06, 0.06, -1.0), "hlp": Vector3(-1.0, -0.7, 0.3),
+			"chs": Vector3(-0.03, 0.14, 0.0), "spn": Vector3(-0.05, 0.0, 0.0), "nek": Vector3(-0.05, -0.10, 0.0), "hed": Vector3(0.0, 0.06, 0.0),
+			"pel": Vector3(0.0, -0.08, 0.0), "hr": Vector3(0.30, -0.20, -0.24), "hrb": Vector3(0.05, 0.22, -1.0), "hrk": Vector3(1.0, 0.3, 0.2),
+			"fl": Vector3(-0.17, 0.093, -0.12), "flr": Vector3(0.0, 0.18, 0.0)}],
+		[0.5, {}],
 	]}
-	# 2: backhand, left to right at chest height, step on the right foot
-	var a2 := Vector3(-0.02, 0.04, -0.58)
-	var a2b := Vector3(-0.45, 0.72, 0.52).normalized()
-	var b2 := Vector3(0.3, 0.02, -0.6)
-	var b2b := Vector3(0.45, 0.1, -0.89).normalized()
-	var n2p := a2b.cross(b2b).normalized()
-	var c2 := Vector3(0.6, 0.05, -0.2)
-	var c2b := Basis(n2p, 0.85) * b2b
-	var k2 := -n2p
-	d["attack2"] = {"len": 0.56, "in": 0.06, "out": 0.22, "ev": {"swing": 0.12, "impact": 0.2, "step": [0.2, 0.52]}, "keys": [
-		[0.0, {"chs": Vector3(-0.04, 0.32, 0.0), "spn": Vector3(-0.06, 0.15, 0.0), "pel": Vector3(-0.02, -0.1, -0.08), "pelr": Vector3(0.0, 0.12, 0.0),
-			"fl": Vector3(-0.17, 0.093, -0.3), "flr": Vector3(0.0, 0.12, 0.0), "fr": Vector3(0.15, 0.093, 0.08), "frr": Vector3(0.0, -0.2, 0.0),
-			"nek": Vector3(0.02, -0.28, 0.0), "hl": Vector3(-0.45, -0.1, -0.15), "hlf": Vector3(-0.7, 0.0, -0.7), "hlp": Vector3(-0.8, -0.5, 0.4),
-			"hr": arcp(c1, a2, 0.5), "hrb": c1b.slerp(a2b, 0.5), "hrk": k2, "hrp": Vector3(0.7, -0.5, -0.75)}],
-		[0.11, {"ease": true, "chs": Vector3(0.0, 0.42, 0.02), "spn": Vector3(-0.04, 0.2, 0.0), "pelr": Vector3(0.0, 0.18, 0.0),
-			"nek": Vector3(0.0, -0.36, 0.0), "fr": Vector3(0.15, 0.11, 0.08), "frr": Vector3(-0.25, -0.2, 0.0),
-			"hl": Vector3(-0.46, -0.08, -0.14), "hlf": Vector3(-0.7, 0.0, -0.7), "hr": a2, "hrb": a2b, "hrp": Vector3(0.75, -0.4, -0.8)}],
-		[0.155, {"chs": Vector3(-0.04, 0.08, 0.0), "spn": Vector3(-0.06, 0.04, 0.0), "pelr": Vector3.ZERO, "fr": Vector3(0.18, 0.16, -0.1),
-			"frr": Vector3(0.1, -0.25, 0.0), "hr": arcp(a2, b2, 0.5), "hrb": a2b.slerp(b2b, 0.5), "hrp": Vector3(0.9, -0.7, -0.2)}],
-		[0.2, {"chs": Vector3(-0.06, -0.3, 0.02), "spn": Vector3(-0.08, -0.15, 0.0), "pelr": Vector3(0.0, -0.14, 0.0), "pel": Vector3(0.03, -0.1, -0.16),
-			"fr": Vector3(0.2, 0.093, -0.22), "frr": Vector3(0.0, -0.3, 0.0), "fl": Vector3(-0.17, 0.093, -0.2), "nek": Vector3(0.0, 0.25, 0.0),
-			"hl": Vector3(-0.41, -0.25, -0.1), "hlf": Vector3(-0.85, 0.0, -0.35), "hr": b2, "hrb": b2b, "hrp": Vector3(0.7, -0.7, 0.2)}],
-		[0.28, {"chs": Vector3(-0.06, -0.46, 0.02), "spn": Vector3(-0.08, -0.22, 0.0), "nek": Vector3(0.02, 0.36, 0.0),
-			"hr": c2, "hrb": c2b, "hrp": Vector3(0.7, -0.6, 0.4)}],
-		[0.37, {"ease": true, "hr": c2 + Vector3(-0.03, 0.0, -0.03), "hrb": Basis(n2p, -0.15) * c2b}],
-		[0.47, _merge({"fr": Vector3(0.16, 0.14, -0.04), "frr": Vector3(-0.2, -0.2, 0.0), "pel": Vector3(0.0, -0.07, -0.06), "pelr": Vector3(0.0, -0.03, 0.0),
-			"spn": Vector3(-0.03, -0.05, 0.0), "chs": Vector3(0.02, -0.12, 0.0), "nek": Vector3(-0.03, 0.1, 0.0),
-			"fl": Vector3(-0.15, 0.093, -0.1), "hl": Vector3(-0.35, -0.33, -0.08), "hlf": Vector3(-1.0, 0.0, -0.2)}, ready)],
-		[0.56, neutral],
+	# dodge: a forward roll. The dive drops the hips and folds the spine over the thighs (anticipation, the blade swung down along
+	# the leg so that it never leads the tumble), the tumble is one even turn of the whole body about a point under the chest (the
+	# path is Hero.ROLL_PATH: its speed goes with these keys), the landing is a deep crouch with the arms out for balance, and the
+	# rise leans into the next stride (the trunk and arms hand over to the locomotion from 0.5 s).
+	# (the pivot is high enough that the crest and the spear on his back clear the ground at the bottom of the tumble)
+	var rp := Vector3(0.0, 0.75, -0.18)
+	# (the hands stay in the chest's own frame all through: in front of the chest they are at the knees as the trunk folds over them
+	# and no flag changes the meaning of the numbers half way. The blade points out to the right, along the axis the body turns
+	# about: it neither leads the tumble nor sweeps the ground)
+	d["dodge"] = {"len": 0.62, "in": 0.05, "out": 0.12, "ho": 0.55, "dlen": 0.26, "ev": {"step": [0.06, 0.46]}, "keys": [
+		[0.0, {"hrb": Vector3(0.15, 0.2, 0.95), "hrk": Vector3(1.0, 0.0, 0.1)}],
+		[0.08, {"pel": Vector3(0.0, -0.22, -0.1), "spn": Vector3(-0.42, 0.0, 0.0), "chs": Vector3(-0.30, 0.0, 0.0), "nek": Vector3(-0.25, 0.0, 0.0),
+			"hed": Vector3(0.08, 0.0, 0.0), "hr": Vector3(0.32, -0.30, -0.22), "hrp": Vector3(0.6, -0.2, 0.8),
+			"hl": Vector3(-0.36, -0.22, -0.26), "hlf": Vector3(-1.0, 0.0, -0.1), "hlp": Vector3(-0.3, -0.3, 1.0),
+			"fr": Vector3(0.14, 0.12, 0.10), "frr": Vector3(-0.4, -0.1, 0.0), "fl": Vector3(-0.14, 0.093, -0.1), "piv": rp}],
+		[0.15, {"rot": Vector3(-1.0, 0.0, 0.0), "pel": Vector3(0.0, -0.4, -0.05), "pelr": Vector3(0.0, 0.5, 0.0), "spn": Vector3(-0.75, 0.0, 0.0),
+			"chs": Vector3(-0.55, 0.0, 0.0), "nek": Vector3(-0.55, 0.0, 0.0), "fr": Vector3(0.13, 0.4, 0.05), "fl": Vector3(-0.13, 0.38, 0.08),
+			"frr": Vector3(-0.7, 0.0, 0.0), "flr": Vector3(-0.7, 0.0, 0.0), "hl": Vector3(-0.34, -0.20, -0.40), "hlf": Vector3(-1.0, 0.0, 0.0),
+			"hlp": Vector3(-1.0, 0.0, 0.0), "hr": Vector3(0.32, -0.24, -0.40), "hrp": Vector3(0.2, 0.7, 0.7)}],
+		[0.25, {"rot": Vector3(-2.6, 0.0, 0.0), "hrb": Vector3(0.7, 0.1, 0.7)}],
+		[0.35, {"rot": Vector3(-4.3, 0.0, 0.0), "hrb": Vector3(0.95, -0.2, 0.1)}],
+		# the landing: a deep crouch, the arms out to the sides for balance, the blade forward again
+		[0.45, {"rot": Vector3(-TAU, 0.0, 0.0), "pel": Vector3(0.0, -0.3, -0.02), "pelr": Vector3(0.0, 0.0, 0.0), "spn": Vector3(-0.38, 0.0, 0.0),
+			"chs": Vector3(-0.2, 0.0, 0.0), "nek": Vector3(-0.1, 0.0, 0.0), "fr": Vector3(0.15, 0.093, 0.06), "fl": Vector3(-0.15, 0.093, -0.1),
+			"frr": Vector3(0.0, -0.18, 0.0), "flr": Vector3(0.0, 0.18, 0.0), "hl": Vector3(-0.42, -0.26, -0.20), "hlf": Vector3(-1.0, 0.0, -0.3),
+			"hlp": Vector3(-0.5, -0.2, 1.0), "hr": Vector3(0.42, -0.26, -0.20), "hrb": Vector3(0.5, -0.35, -0.8), "hrk": Vector3(1.0, 0.1, 0.1),
+			"hrp": Vector3(0.5, 0.2, 0.9)}],
+		# the rise: the trunk comes up leaning into the next stride, the hands settle at the sides
+		[0.56, {"rot": Vector3(-TAU, 0.0, 0.0), "pel": Vector3(0.0, -0.16, -0.04), "spn": Vector3(-0.22, 0.0, 0.0), "chs": Vector3(-0.10, 0.0, 0.0),
+			"nek": Vector3(-0.05, 0.0, 0.0), "hl": Vector3(-0.44, -0.30, -0.14), "hlf": Vector3(-1.0, 0.0, -0.35),
+			"hlp": Vector3(-0.5, -0.2, 1.0), "hr": Vector3(0.44, -0.30, -0.14), "hrb": Vector3(0.25, -0.30, -1.0), "hrk": Vector3(1.0, 0.1, 0.15),
+			"hrp": Vector3(0.5, 0.0, 1.0)}],
+		[0.62, _merge(neutral, {"rot": Vector3(-TAU, 0.0, 0.0), "piv": rp, "pel": Vector3(0.0, -0.08, -0.02), "spn": Vector3(-0.08, 0.0, 0.0)})],
 	]}
-	# 3: overhead chop, the heaviest of the combo: rise, slam, stomp, hold, recover
-	d["attack3"] = {"len": 0.8, "in": 0.07, "out": 0.25, "ev": {"swing": 0.27, "impact": 0.345, "step": [0.345, 0.72]}, "keys": [
-		[0.0, _merge({"hrp": Vector3(0.8, -0.3, 0.5)}, swing(n3, u3, -0.2, -1.0, 0.4))],
-		[0.24, _merge({"ease": true, "pel": Vector3(0.0, 0.0, 0.05), "pelr": Vector3(0.1, 0.0, 0.0), "spn": Vector3(0.12, 0.0, 0.0),
-			"chs": Vector3(0.1, -0.05, 0.0), "nek": Vector3(-0.12, 0.0, 0.0), "fr": Vector3(0.15, 0.093, 0.06), "fl": Vector3(-0.15, 0.13, -0.05),
-			"flr": Vector3(-0.35, 0.18, 0.0), "hl": Vector3(-0.25, 0.0, -0.3), "hlf": Vector3(-0.5, 0.2, -0.85), "hlp": Vector3(-0.8, -0.5, 0.5),
-			"hrp": Vector3(0.9, 0.2, 0.4)}, swing(n3, u3, -0.35, -1.65, 0.42))],
-		[0.3, _merge({"spn": Vector3(-0.05, 0.0, 0.0), "chs": Vector3(-0.05, 0.0, 0.0), "pel": Vector3(0.0, -0.08, -0.08), "fl": Vector3(-0.16, 0.16, -0.25),
-			"flr": Vector3(0.1, 0.15, 0.0), "hrp": Vector3(0.9, -0.3, 0.3)}, swing(n3, u3, 1.0, 0.6, 0.58))],
-		[0.345, _merge({"pel": Vector3(0.0, -0.26, -0.2), "pelr": Vector3(-0.05, 0.0, 0.0), "spn": Vector3(-0.3, 0.0, 0.0), "chs": Vector3(-0.22, 0.02, 0.0),
-			"nek": Vector3(0.25, 0.0, 0.0), "fl": Vector3(-0.17, 0.093, -0.4), "flr": Vector3(0.0, 0.1, 0.0), "fr": Vector3(0.16, 0.12, 0.16),
-			"frr": Vector3(-0.3, -0.2, 0.0), "hl": Vector3(-0.42, -0.38, -0.12), "hlf": Vector3(-0.8, -0.2, -0.5), "hrp": Vector3(0.7, -0.7, 0.3)},
-			swing(n3, u3, 2.2, 2.45, 0.62))],
-		[0.45, _merge({"ease": true, "pel": Vector3(0.0, -0.24, -0.19)}, swing(n3, u3, 2.3, 2.55, 0.6))],
-		[0.6, _merge({"pel": Vector3(0.0, -0.1, -0.08), "spn": Vector3(-0.08, 0.0, 0.0), "chs": Vector3(0.0, 0.0, 0.0), "nek": Vector3(0.0, 0.0, 0.0),
-			"fl": Vector3(-0.16, 0.14, -0.2), "flr": Vector3(-0.2, 0.15, 0.0), "fr": Vector3(0.15, 0.093, 0.06), "frr": Vector3(0.0, -0.18, 0.0),
-			"hl": Vector3(-0.35, -0.33, -0.08), "hlf": Vector3(-1.0, 0.0, -0.2)}, ready)],
-		[0.8, neutral],
-	]}
-	# heavy: a charged spin slash (wind up low, one full turn with the blade out flat, settle)
-	var spin_sword := {"hr": Vector3(0.6, -0.04, -0.05), "hrb": Vector3(0.95, 0.05, 0.3), "hrk": Vector3(0.0, 1.0, 0.0), "hrp": Vector3(0.3, -1.0, 0.3)}
-	d["heavy"] = {"len": 1.0, "in": 0.1, "out": 0.25, "ev": {"swing": 0.36, "impact": 0.47, "step": [0.4, 0.72]}, "keys": [
+	# light hit: the blow lands on the chest (the pelvis and the trunk take it first, the head is thrown back a beat later: the 0.09 s
+	# peak of the neck comes after the chest's), the arms fly out for balance, and the whole body comes back past upright and
+	# settles. Turned to the direction the blow pushed (see _hit_dir_apply); on the move it is the upper body's only.
+	d["hit"] = {"len": 0.38, "in": 0.05, "out": 0.12, "ho": 0.2, "ev": {}, "keys": [
 		[0.0, {}],
-		[0.32, {"ease": true, "pel": Vector3(0.0, -0.16, 0.06), "pelr": Vector3(0.0, -0.32, 0.0), "spn": Vector3(0.05, -0.32, 0.0), "chs": Vector3(0.06, -0.42, 0.0),
-			"nek": Vector3(-0.06, 0.55, 0.0), "fr": Vector3(0.24, 0.093, 0.16), "frr": Vector3(0.0, -0.5, 0.0), "fl": Vector3(-0.22, 0.093, -0.16),
-			"flr": Vector3(0.0, 0.25, 0.0), "hr": Vector3(0.42, -0.25, 0.32), "hrb": Vector3(0.35, -0.15, 1.0), "hrk": Vector3(0.0, 1.0, 0.0),
-			"hrp": Vector3(0.7, -0.4, 0.5), "hl": Vector3(-0.08, -0.05, -0.46), "hlf": Vector3(0.2, 0.0, -1.0), "hlp": Vector3(-1.0, -0.6, 0.3)}],
-		[0.4, _merge({"rot": Vector3(0.0, 0.9, 0.0), "pelr": Vector3(0.0, -0.1, 0.0), "spn": Vector3(0.0, -0.1, 0.0), "chs": Vector3(0.02, -0.1, 0.0),
-			"nek": Vector3(0.0, 0.1, 0.0), "hl": Vector3(-0.3, -0.18, 0.05), "hlf": Vector3(-1.0, 0.0, 0.3), "hlp": Vector3(-0.4, -0.5, 1.0)}, spin_sword)],
-		[0.48, {"rot": Vector3(0.0, 2.7, 0.0), "pel": Vector3(0.0, -0.12, 0.0)}],
-		[0.56, {"rot": Vector3(0.0, 4.5, 0.0)}],
-		[0.64, {"rot": Vector3(0.0, 5.9, 0.0)}],
-		[0.7, {"ease": true, "rot": Vector3(0.0, TAU, 0.0), "hr": Vector3(0.2, -0.12, -0.56), "hrb": Vector3(-0.6, -0.1, -0.8),
-			"chs": Vector3(0.0, 0.3, 0.0), "spn": Vector3(-0.08, 0.15, 0.0)}],
-		[0.82, {"chs": Vector3(0.02, 0.2, 0.0), "pel": Vector3(0.0, -0.1, 0.0)}],
-		[1.0, _merge(neutral, {"rot": Vector3(0.0, TAU, 0.0)})],
-	]}
-	# parry: the shield punches forward (a bash) with a step
-	d["parry"] = {"len": 0.5, "in": 0.05, "out": 0.2, "ev": {"impact": 0.15, "step": [0.14, 0.45]}, "keys": [
-		[0.0, {}],
-		[0.08, {"ease": true, "hl": Vector3(-0.26, -0.06, -0.26), "hlf": Vector3(-0.3, 0.05, -1.0), "hlp": Vector3(-1.0, -0.5, 0.4),
-			"chs": Vector3(0.06, -0.18, 0.0), "spn": Vector3(0.0, -0.08, 0.0), "pel": Vector3(0.0, -0.07, 0.04),
-			"hr": Vector3(0.36, -0.28, 0.05), "hrb": Vector3(0.2, 0.3, -1.0), "hrk": Vector3(1.0, 0.0, 0.2)}],
-		[0.15, {"hl": Vector3(0.06, -0.02, -0.52), "hlf": Vector3(0.05, 0.05, -1.0), "hlp": Vector3(-1.0, -0.45, 0.35), "chs": Vector3(-0.04, 0.18, 0.0),
-			"spn": Vector3(-0.12, 0.08, 0.0), "pel": Vector3(0.0, -0.1, -0.13), "fl": Vector3(-0.16, 0.093, -0.3), "flr": Vector3(0.0, 0.12, 0.0),
-			"fr": Vector3(0.15, 0.1, 0.08), "frr": Vector3(-0.15, -0.2, 0.0), "hr": Vector3(0.38, -0.3, 0.12), "hrb": Vector3(0.2, 0.35, -1.0)}],
-		[0.27, {"ease": true}],
-		[0.5, neutral],
-	]}
-	# dodge: a forward roll, tucked tight (sword pointing back along the arm, shield over the knees)
-	var rp := Vector3(0.0, 0.68, -0.18)
-	d["dodge"] = {"len": 0.62, "in": 0.04, "out": 0.18, "ev": {"step": [0.06, 0.46]}, "keys": [
-		[0.0, {}],
-		[0.08, {"pel": Vector3(0.0, -0.28, -0.12), "spn": Vector3(-0.5, 0.0, 0.0), "chs": Vector3(-0.35, 0.0, 0.0), "nek": Vector3(-0.35, 0.0, 0.0),
-			"hr": Vector3(0.25, -0.35, -0.08), "hrb": Vector3(0.1, -0.15, 1.0), "hrk": Vector3(1.0, 0.0, 0.0), "hrp": Vector3(0.6, -0.2, 0.8),
-			"hl": Vector3(-0.44, -0.2, -0.05), "hlf": Vector3(-1.0, 0.0, -0.1), "hlp": Vector3(-0.3, -0.3, 1.0),
-			"fr": Vector3(0.14, 0.12, 0.12), "frr": Vector3(-0.4, -0.1, 0.0), "fl": Vector3(-0.14, 0.093, -0.1), "piv": rp}],
-		[0.15, {"rot": Vector3(-1.0, 0.0, 0.0), "pel": Vector3(0.0, -0.4, -0.05), "pelr": Vector3(0.0, 0.85, 0.0), "spn": Vector3(-0.75, 0.0, 0.0), "chs": Vector3(-0.55, 0.0, 0.0),
-			"nek": Vector3(-0.55, 0.0, 0.0), "fr": Vector3(0.13, 0.4, 0.05), "fl": Vector3(-0.13, 0.38, 0.08), "frr": Vector3(-0.7, 0.0, 0.0),
-			"flr": Vector3(-0.7, 0.0, 0.0), "hls": 1.0, "hl": Vector3(-0.48, 0.85, 0.05), "hlf": Vector3(-1.0, 0.0, 0.0), "hlp": Vector3(-1.0, 0.0, 0.0),
-			"hrs": 1.0, "hr": Vector3(0.48, 0.55, -0.25), "hrb": Vector3(0.3, -0.3, 0.9), "hrk": Vector3(1.0, 0.0, 0.0), "hrp": Vector3(0.2, 0.7, 0.7)}],
-		[0.25, {"rot": Vector3(-2.6, 0.0, 0.0)}],
-		[0.35, {"rot": Vector3(-4.3, 0.0, 0.0)}],
-		[0.45, {"ease": true, "rot": Vector3(-TAU, 0.0, 0.0), "pel": Vector3(0.0, -0.3, -0.02), "pelr": Vector3(0.0, 0.0, 0.0), "spn": Vector3(-0.35, 0.0, 0.0), "chs": Vector3(-0.2, 0.0, 0.0),
-			"nek": Vector3(-0.15, 0.0, 0.0), "fr": Vector3(0.15, 0.093, 0.06), "fl": Vector3(-0.15, 0.093, -0.1), "frr": Vector3(0.0, -0.18, 0.0),
-			"flr": Vector3(0.0, 0.18, 0.0)}],
-		[0.62, _merge(neutral, {"rot": Vector3(-TAU, 0.0, 0.0), "piv": rp})],
-	]}
-	# light hit: a flinch
-	d["hit"] = {"len": 0.38, "in": 0.03, "out": 0.15, "ev": {}, "keys": [
-		[0.0, {}],
-		[0.06, {"spn": Vector3(0.14, 0.05, 0.03), "chs": Vector3(0.12, 0.08, 0.0), "nek": Vector3(0.22, 0.0, 0.0), "pel": Vector3(0.0, -0.06, 0.06),
-			"hl": Vector3(-0.3, -0.2, -0.2), "hlf": Vector3(-0.6, 0.2, -0.8), "hr": Vector3(0.4, -0.3, 0.05)}],
-		[0.16, {"spn": Vector3(-0.04, 0.0, 0.0), "chs": Vector3(0.0, 0.0, 0.0), "nek": Vector3(-0.08, 0.0, 0.0)}],
+		[0.04, {"spn": Vector3(0.07, 0.03, 0.0), "chs": Vector3(0.05, 0.04, 0.0), "nek": Vector3(0.08, 0.0, 0.0), "pel": Vector3(0.0, -0.05, 0.03),
+			"pelr": Vector3(0.04, 0.0, 0.0), "hr": Vector3(0.38, -0.33, -0.03), "hl": Vector3(-0.32, -0.30, -0.14), "hlf": Vector3(-0.8, 0.1, -0.6)}],
+		[0.09, {"spn": Vector3(0.15, 0.05, 0.03), "chs": Vector3(0.12, 0.08, 0.0), "nek": Vector3(0.24, 0.0, 0.0), "hed": Vector3(0.05, 0.0, 0.0),
+			"pel": Vector3(0.0, -0.075, 0.065), "pelr": Vector3(0.07, 0.0, 0.0), "hr": Vector3(0.42, -0.27, 0.05), "hrb": Vector3(0.25, -0.2, -1.0),
+			"hl": Vector3(-0.30, -0.18, -0.2), "hlf": Vector3(-0.6, 0.2, -0.8)}],
+		[0.17, {"spn": Vector3(-0.05, 0.0, 0.0), "chs": Vector3(-0.04, 0.0, 0.0), "nek": Vector3(-0.10, 0.0, 0.0), "hed": Vector3(-0.02, 0.0, 0.0),
+			"pel": Vector3(0.0, -0.05, 0.01), "pelr": Vector3(0.02, 0.0, 0.0), "hr": Vector3(0.36, -0.38, -0.08), "hl": Vector3(-0.34, -0.34, -0.1),
+			"hlf": Vector3(-0.9, 0.05, -0.45)}],
+		[0.28, {"spn": Vector3(0.01, 0.0, 0.0), "chs": Vector3(0.02, 0.0, 0.0), "nek": Vector3(-0.04, 0.0, 0.0), "hed": Vector3.ZERO, "pel": Vector3(0.0, -0.04, 0.0)}],
 		[0.38, neutral],
 	]}
-	# heavy hit: knocked back, a stumbling step, catch, recover
-	d["hit_heavy"] = {"len": 0.85, "in": 0.03, "out": 0.2, "ev": {"step": [0.22, 0.7]}, "keys": [
+	# heavy hit: the blow takes the whole body: the chest and the head are thrown back (the head a beat after), the arms fly wide, the
+	# left foot is lifted off and comes down behind him (the stumble, 0.22 s) as the pelvis is driven back and down; the trunk folds
+	# forward over it catching the balance (0.34 s), the right foot slides back (0.7 s), then he straightens, shield coming up.
+	d["hit_heavy"] = {"len": 0.85, "in": 0.05, "out": 0.15, "ho": 0.58, "ev": {"step": [0.22, 0.7]}, "keys": [
 		[0.0, {}],
-		[0.07, {"spn": Vector3(0.32, 0.1, 0.05), "chs": Vector3(0.2, 0.1, 0.0), "nek": Vector3(0.3, 0.0, 0.0), "pel": Vector3(0.0, -0.04, 0.14),
-			"pelr": Vector3(0.12, 0.0, 0.0), "hr": Vector3(0.55, -0.05, 0.2), "hrb": Vector3(0.6, 0.4, -0.6), "hl": Vector3(-0.55, -0.05, 0.1),
-			"hlf": Vector3(-0.9, 0.3, 0.2), "fl": Vector3(-0.15, 0.15, 0.05)}],
-		[0.22, {"fl": Vector3(-0.16, 0.093, 0.3), "pel": Vector3(0.0, -0.12, 0.22), "spn": Vector3(0.1, 0.0, 0.0), "chs": Vector3(0.05, 0.0, 0.0)}],
-		[0.4, _merge({"pel": Vector3(0.0, -0.2, 0.18), "pelr": Vector3(0.0, 0.0, 0.0), "spn": Vector3(-0.2, 0.0, 0.0), "chs": Vector3(-0.1, 0.0, 0.0),
-			"nek": Vector3(0.1, 0.0, 0.0), "hl": Vector3(-0.38, -0.33, -0.1), "hlf": Vector3(-1.0, 0.0, -0.3)}, ready)],
-		[0.6, {"pel": Vector3(0.0, -0.08, 0.1), "fl": Vector3(-0.15, 0.13, 0.05)}],
+		[0.05, {"spn": Vector3(0.14, 0.05, 0.03), "chs": Vector3(0.10, 0.05, 0.0), "nek": Vector3(0.14, 0.0, 0.0), "pel": Vector3(0.0, -0.05, 0.07),
+			"pelr": Vector3(0.07, 0.0, 0.0), "hr": Vector3(0.46, -0.24, 0.08), "hrb": Vector3(0.4, 0.2, -0.8), "hl": Vector3(-0.46, -0.16, 0.05),
+			"hlf": Vector3(-0.9, 0.2, -0.2)}],
+		[0.11, {"spn": Vector3(0.32, 0.10, 0.05), "chs": Vector3(0.22, 0.10, 0.0), "nek": Vector3(0.34, 0.0, 0.0), "hed": Vector3(0.10, 0.0, 0.0),
+			"pel": Vector3(0.0, -0.05, 0.15), "pelr": Vector3(0.12, 0.0, 0.0), "hr": Vector3(0.56, -0.05, 0.2), "hrb": Vector3(0.6, 0.4, -0.6),
+			"hl": Vector3(-0.56, -0.05, 0.12), "hlf": Vector3(-0.9, 0.3, 0.2), "fl": Vector3(-0.15, 0.16, 0.05)}],
+		[0.22, {"ease": true, "fl": Vector3(-0.16, 0.093, 0.3), "flr": Vector3(0.0, 0.18, 0.0), "pel": Vector3(0.0, -0.12, 0.22),
+			"pelr": Vector3(0.08, 0.0, 0.0), "spn": Vector3(0.16, 0.0, 0.0), "chs": Vector3(0.08, 0.0, 0.0), "nek": Vector3(0.12, 0.0, 0.0),
+			"hed": Vector3.ZERO, "hr": Vector3(0.50, -0.12, 0.12), "hl": Vector3(-0.50, -0.10, 0.06)}],
+		[0.36, {"pel": Vector3(0.0, -0.20, 0.19), "pelr": Vector3(0.0, 0.0, 0.0), "spn": Vector3(-0.20, 0.0, 0.0), "chs": Vector3(-0.12, 0.0, 0.0),
+			"nek": Vector3(0.12, 0.0, 0.0), "hed": Vector3(0.04, 0.0, 0.0), "hl": Vector3(-0.38, -0.33, -0.1), "hlf": Vector3(-1.0, 0.0, -0.3),
+			"hr": Vector3(0.3, -0.36, -0.2), "hrb": Vector3(0.0, -0.3, -1.0), "hrk": Vector3(1.0, 0.2, 0.0), "hrp": Vector3(0.5, 0.0, 1.0)}],
+		[0.54, {"pel": Vector3(0.0, -0.10, 0.10), "spn": Vector3(-0.05, 0.0, 0.0), "chs": Vector3(-0.02, 0.0, 0.0), "nek": Vector3(0.0, 0.0, 0.0),
+			"fl": Vector3(-0.15, 0.13, 0.05), "fr": Vector3(0.15, 0.093, 0.1)}],
+		[0.7, {"ease": true, "pel": Vector3(0.0, -0.05, 0.02), "fl": Vector3(-0.15, 0.093, 0.04), "fr": Vector3(0.15, 0.093, 0.04)}],
 		[0.85, neutral],
 	]}
-	# death: recoil, drop to the knees, slump, topple onto the right side; the last pose holds
+	# death: the blow (the head and the chest recoil), the legs give, the sword hand opens and goes slack, down on the knees, the
+	# trunk slumps over them, the head drops last, then he topples onto his right side (thud at 1.28 s, a small bounce), the arms
+	# flop out. The last pose holds.
 	var dp := Vector3(0.14, 0.07, 0.04)
-	d["death"] = {"len": 1.8, "in": 0.04, "out": 0.3, "hold": true, "ev": {"step": [0.48], "thud": 1.28}, "keys": [
+	d["death"] = {"len": 1.8, "in": 0.06, "out": 0.3, "hold": true, "ev": {"step": [0.48], "thud": 1.28}, "keys": [
 		[0.0, {"piv": dp}],
-		[0.1, {"spn": Vector3(0.25, 0.0, 0.0), "chs": Vector3(0.15, 0.0, 0.0), "nek": Vector3(0.3, 0.0, 0.0), "pel": Vector3(0.0, -0.05, 0.08),
+		[0.08, {"spn": Vector3(0.22, 0.0, 0.0), "chs": Vector3(0.14, 0.0, 0.0), "nek": Vector3(0.22, 0.0, 0.0), "pel": Vector3(0.0, -0.06, 0.08),
 			"hr": Vector3(0.45, -0.25, 0.1), "hl": Vector3(-0.45, -0.25, 0.05)}],
+		[0.24, {"spn": Vector3(0.10, 0.0, 0.0), "chs": Vector3(0.06, 0.0, 0.0), "nek": Vector3(0.30, 0.0, 0.0), "pel": Vector3(0.0, -0.20, 0.06),
+			"fl": Vector3(-0.14, 0.12, 0.10), "hr": Vector3(0.36, -0.40, 0.0), "hrb": Vector3(0.2, -0.5, -0.85)}],
 		[0.5, {"pel": Vector3(0.0, -0.405, 0.04), "pelr": Vector3(0.1, 0.0, 0.0), "spn": Vector3(-0.05, 0.0, 0.0), "chs": Vector3(-0.08, 0.0, 0.0),
 			"nek": Vector3(0.15, 0.0, 0.0), "fr": Vector3(0.14, 0.2, 0.42), "frr": Vector3(-1.25, -0.05, 0.0), "fl": Vector3(-0.14, 0.2, 0.42),
-			"flr": Vector3(-1.25, 0.05, 0.0), "hr": Vector3(0.33, -0.4, -0.16), "hrb": Vector3(0.25, -0.42, -0.87), "hl": Vector3(-0.33, -0.4, -0.1),
+			"flr": Vector3(-1.25, 0.05, 0.0), "hr": Vector3(0.33, -0.4, -0.16), "hrb": Vector3(0.25, -0.5, -0.82), "hl": Vector3(-0.33, -0.4, -0.1),
 			"hlf": Vector3(-1.0, -0.2, -0.2)}],
-		[0.85, {"spn": Vector3(-0.3, 0.0, 0.05), "chs": Vector3(-0.25, 0.0, 0.0), "nek": Vector3(0.35, 0.0, 0.1), "hr": Vector3(0.3, -0.4, -0.26),
-			"hrb": Vector3(0.25, -0.3, -0.92)}],
+		[0.85, {"spn": Vector3(-0.3, 0.0, 0.05), "chs": Vector3(-0.25, 0.0, 0.0), "nek": Vector3(0.38, 0.0, 0.1), "hr": Vector3(0.3, -0.42, -0.26),
+			"hrb": Vector3(0.25, -0.35, -0.9)}],
 		[1.3, {"rot": Vector3(0.0, 0.0, -1.3), "piv": Vector3(0.14, 0.26, 0.04), "spn": Vector3(-0.15, 0.0, -0.1), "chs": Vector3(0.0, 0.0, 0.1),
 			"nek": Vector3(0.15, 0.0, 0.1), "hr": Vector3(0.3, 0.1, -0.45), "hrb": Vector3(0.2, 0.2, -1.0), "hrk": Vector3(1.0, 0.3, 0.0),
 			"hrp": Vector3(0.3, -0.2, 1.0), "hl": Vector3(-0.4, -0.22, -0.12), "hlf": Vector3(-1.0, 0.2, 0.0), "hlp": Vector3(-0.6, -0.5, 0.6)}],
-		[1.5, {"rot": Vector3(0.0, 0.0, -1.4)}],
-		[1.8, {"rot": Vector3(0.0, 0.0, -1.37)}],
+		[1.45, {"rot": Vector3(0.0, 0.0, -1.43), "hl": Vector3(-0.46, -0.18, -0.2), "hr": Vector3(0.34, 0.06, -0.5)}],
+		[1.8, {"rot": Vector3(0.0, 0.0, -1.37), "hl": Vector3(-0.42, -0.24, -0.14), "hr": Vector3(0.3, 0.08, -0.46)}],
 	]}
-	# jump: push off into the rising air pose
-	var air_up := {"fr": Vector3(0.13, 0.42, -0.16), "frr": Vector3(-0.35, -0.1, 0.0), "fl": Vector3(-0.14, 0.3, 0.14), "flr": Vector3(-0.7, 0.1, 0.0),
-		"pel": Vector3(0.0, 0.02, 0.0), "pelr": Vector3(0.12, 0.0, 0.0), "spn": Vector3(-0.12, 0.0, 0.0), "chs": Vector3(0.0, 0.05, 0.0),
-		"nek": Vector3(0.05, 0.0, 0.0), "hr": Vector3(0.36, -0.05, -0.2), "hrb": Vector3(0.1, 0.25, -1.0), "hrp": Vector3(0.6, -0.5, 0.8),
-		"hl": Vector3(-0.36, -0.12, -0.18), "hlf": Vector3(-1.0, -0.2, -0.3), "hlp": Vector3(-0.6, -0.6, 0.8)}
+	# jump: leaves the ground with the push of the toes (pointed, trailing), the arms swing up and forward for the lift, the lead knee
+	# comes up and the other leg trails: the rising air pose (_air_pose, k = 0), which this ends in
+	var air_up := {"pel": Vector3(0.0, 0.03, 0.0), "pelr": Vector3(0.10, 0.0, 0.0), "spn": Vector3(-0.10, 0.0, 0.0), "chs": Vector3(0.02, 0.0, 0.0),
+		"nek": Vector3(0.05, 0.0, 0.0), "hr": Vector3(0.44, 0.0, -0.18), "hrb": Vector3(0.1, 0.25, -1.0), "hrp": Vector3(0.6, -0.5, 0.8),
+		"hl": Vector3(-0.44, -0.04, -0.14), "hlf": Vector3(-1.0, -0.2, -0.3), "hlp": Vector3(-0.6, -0.6, 0.8),
+		"fr": Vector3(0.13, 0.42, -0.26), "frr": Vector3(-0.2, -0.1, 0.0), "fl": Vector3(-0.14, 0.26, 0.22), "flr": Vector3(-0.8, 0.1, 0.0)}
 	d["jump"] = {"len": 0.28, "in": 0.05, "out": 0.12, "ev": {"step": 0.0}, "keys": [
-		[0.0, {"pel": Vector3(0.0, -0.12, 0.0), "spn": Vector3(-0.12, 0.0, 0.0), "hr": Vector3(0.36, -0.42, 0.05), "hl": Vector3(-0.36, -0.36, 0.05)}],
-		[0.08, {"pel": Vector3(0.0, 0.04, 0.0), "spn": Vector3(0.0, 0.0, 0.0), "chs": Vector3(0.08, 0.0, 0.0), "fr": Vector3(0.14, 0.15, -0.05),
-			"frr": Vector3(-0.7, -0.1, 0.0), "fl": Vector3(-0.15, 0.12, 0.08), "flr": Vector3(-0.8, 0.1, 0.0), "hr": Vector3(0.36, -0.05, -0.2),
-			"hrb": Vector3(0.1, 0.25, -1.0), "hl": Vector3(-0.36, -0.12, -0.18)}],
+		[0.0, {"pel": Vector3(0.0, -0.10, 0.0), "spn": Vector3(-0.10, 0.0, 0.0), "hr": Vector3(0.36, -0.40, 0.0), "hl": Vector3(-0.36, -0.36, 0.02)}],
+		[0.09, {"pel": Vector3(0.0, 0.04, 0.02), "spn": Vector3(0.02, 0.0, 0.0), "chs": Vector3(0.06, 0.0, 0.0), "nek": Vector3(0.0, 0.0, 0.0),
+			"fr": Vector3(0.14, 0.14, 0.06), "frr": Vector3(-0.9, -0.1, 0.0), "fl": Vector3(-0.15, 0.12, 0.10), "flr": Vector3(-0.95, 0.1, 0.0),
+			"hr": Vector3(0.40, 0.06, -0.30), "hrb": Vector3(0.1, 0.2, -1.0), "hl": Vector3(-0.40, 0.04, -0.26), "hlf": Vector3(-1.0, -0.1, -0.2)}],
 		[0.28, air_up],
 	]}
-	# land: squash and recover
-	d["land"] = {"len": 0.36, "in": 0.03, "out": 0.15, "ev": {"step": 0.0}, "keys": [
-		[0.0, {"fr": Vector3(0.15, 0.12, -0.06), "fl": Vector3(-0.15, 0.16, 0.08), "pel": Vector3(0.0, -0.02, 0.0)}],
-		[0.06, {"ease": true, "pel": Vector3(0.0, -0.26, 0.02), "pelr": Vector3(0.05, 0.0, 0.0), "spn": Vector3(-0.28, 0.0, 0.0), "chs": Vector3(-0.1, 0.0, 0.0),
-			"nek": Vector3(0.2, 0.0, 0.0), "fr": Vector3(0.18, 0.093, 0.03), "frr": Vector3(0.0, -0.25, 0.0), "fl": Vector3(-0.17, 0.093, -0.08),
-			"flr": Vector3(0.0, 0.25, 0.0), "hr": Vector3(0.42, -0.4, -0.15), "hrb": Vector3(0.3, -0.5, -1.0), "hl": Vector3(-0.42, -0.36, -0.1)}],
-		[0.2, {"pel": Vector3(0.0, -0.1, 0.0), "spn": Vector3(-0.08, 0.0, 0.0), "chs": Vector3(0.02, 0.0, 0.0), "nek": Vector3.ZERO}],
+	# land: the ground met hard (the spring of _land_impact has the first give: this is the crouch he stays in a moment and the rise):
+	# arms out for balance, the head bows then lifts, the rise overshoots upright a little
+	d["land"] = {"len": 0.36, "in": 0.05, "out": 0.1, "ho": 0.22, "ev": {"step": 0.0}, "keys": [
+		[0.0, {"fr": Vector3(0.15, 0.12, -0.06), "fl": Vector3(-0.15, 0.16, 0.08), "pel": Vector3(0.0, -0.10, 0.0)}],
+		[0.07, {"ease": true, "pel": Vector3(0.0, -0.26, 0.02), "pelr": Vector3(0.05, 0.0, 0.0), "spn": Vector3(-0.28, 0.0, 0.0), "chs": Vector3(-0.10, 0.0, 0.0),
+			"nek": Vector3(0.18, 0.0, 0.0), "fr": Vector3(0.18, 0.093, 0.03), "frr": Vector3(0.0, -0.25, 0.0), "fl": Vector3(-0.17, 0.093, -0.08),
+			"flr": Vector3(0.0, 0.25, 0.0), "hr": Vector3(0.50, -0.30, -0.10), "hrb": Vector3(0.3, -0.5, -1.0), "hl": Vector3(-0.50, -0.26, -0.06)}],
+		[0.2, {"pel": Vector3(0.0, -0.10, 0.0), "spn": Vector3(-0.08, 0.0, 0.0), "chs": Vector3(0.02, 0.0, 0.0), "nek": Vector3.ZERO,
+			"hr": Vector3(0.38, -0.38, -0.1), "hl": Vector3(-0.38, -0.34, -0.08)}],
 		[0.36, neutral],
 	]}
 	_more_actions(d)
@@ -3794,30 +5018,37 @@ static func _throw_def(lion: bool, neutral: Dictionary) -> Dictionary:
 	var cock_k := Vector3(0.0, -1.0, 0.0)
 	var rel_b := Vector3(0.0, 0.06, -1.0)
 	var rel_k := Vector3(0.0, -1.0, 0.0)
-	return {"len": 0.95, "in": 0.08, "out": 0.2, "ev": {"grab": THROW_GRAB, "release": THROW_RELEASE, "swing": 0.38, "step": [0.33, 0.8]}, "keys": [
+	# (half way to the grip: the hand's frame and the forearm's twist come round over the whole reach, not in its last frames)
+	var mid_b := Vector3(0.0, 0.0, -1.0).slerp(sdir, 0.5)
+	var mid_k := Vector3(-1.0, 0.0, 0.0).slerp(g_back.normalized(), 0.5)
+	return {"len": 0.95, "in": 0.08, "out": 0.2, "fast": true, "ev": {"grab": THROW_GRAB, "release": THROW_RELEASE, "swing": 0.38, "step": [0.33, 0.8]}, "keys": [
 		[0.0, {}],
-		[0.08, {"hl": Vector3(-0.42, 0.06, -0.12), "hlf": Vector3(-1.0, 0.0, 0.0), "hlp": Vector3(-0.8, 0.0, -0.6), "nek": Vector3(-0.04, 0.1, 0.0)}],
-		[THROW_GRAB, {"ease": true, "pel": Vector3(0.0, -0.05, 0.01), "pelr": Vector3(0.02, -0.06, 0.0), "spn": Vector3(0.0, 0.0, 0.0),
+		[0.10, {"hl": Vector3(-0.45, -0.22, -0.11), "hlf": Vector3(-1.0, 0.0, 0.0), "hlp": Vector3(-0.8, 0.0, -0.6), "nek": Vector3(-0.04, 0.1, 0.0),
+			"hlb": mid_b, "hlk": mid_k, "hlx": 0.5}],
+		[THROW_GRAB, {"pel": Vector3(0.0, -0.05, 0.01), "pelr": Vector3(0.02, -0.06, 0.0), "spn": Vector3(0.0, 0.0, 0.0),
 			"chs": Vector3(0.05, 0.0, 0.0), "nek": Vector3(-0.04, 0.16, 0.0), "hed": Vector3(0.0, 0.06, 0.0),
-			"hl": _lw(grab_cs, sdir, g_back), "hlb": sdir, "hlk": g_back, "hlx": 1.0, "hlp": Vector3(-0.35, 0.7, -1.0),
+			"hl": _lw(grab_cs, sdir, g_back), "hlb": sdir, "hlk": g_back, "hlx": 1.0, "hlp": Vector3(-0.75, 0.25, -0.35),
 			"hlf": Vector3(-1.0, 0.25, -0.1), "hr": Vector3(0.38, -0.3, -0.16), "hrb": Vector3(0.3, -0.2, -1.0),
 			"fl": Vector3(-0.15, 0.093, 0.04), "fr": Vector3(0.16, 0.093, -0.04)}],
+		# (the sword arm, held still until the grab, comes up to point at the target a little behind the rest: no start from nothing)
+		[0.265, {"partial": true, "hrs": 0.40, "hr": Vector3(0.30, 0.38, -0.30), "hrb": Vector3(0.20, 0.0, -1.0)}],
 		# cocked: torso wound to the left, the spear raised over the left shoulder pointing at the target, the
-		# forearm upright (the shield stays edge-on beside the head)
-		[0.31, {"ease": true, "pel": Vector3(0.02, -0.08, 0.05), "pelr": Vector3(0.05, 0.2, 0.0), "spn": Vector3(0.08, 0.1, 0.04),
+		# forearm upright (the shield stays edge-on beside the head, facing out and a little back: away from the spear that points forward
+		# past it; the strap lets it turn that far from where the forearm is)
+		[0.335, {"ease": true, "pel": Vector3(0.02, -0.08, 0.05), "pelr": Vector3(0.05, 0.2, 0.0), "spn": Vector3(0.08, 0.1, 0.04),
 			"chs": Vector3(0.08, 0.14, 0.04), "nek": Vector3(-0.06, -0.28, 0.0), "hed": Vector3(0.0, -0.06, 0.0), "hls": 1.0,
-			"hl": _lw(Vector3(-0.44, 1.86, 0.17), cock_b, cock_k), "hlb": cock_b, "hlk": cock_k, "hlp": Vector3(-0.6, -0.8, 0.0),
-			"hlf": Vector3(-1.0, 0.0, 0.0), "hrs": 1.0, "hr": Vector3(0.2, 1.36, -0.52), "hrb": Vector3(0.0, 0.35, -1.0), "hrk": Vector3(1.0, 0.0, 0.2),
+			"hl": _lw(Vector3(-0.44, 1.86, 0.17), cock_b, cock_k), "hlb": cock_b, "hlk": cock_k, "hlr": 0.0, "hlp": Vector3(-0.6, -0.8, 0.0),
+			"hlf": Vector3(-1.0, 0.0, 0.8), "hrs": 1.0, "hr": Vector3(0.2, 1.36, -0.52), "hrb": Vector3(0.0, 0.35, -1.0), "hrk": Vector3(1.0, 0.0, 0.2),
 			"hrp": Vector3(0.8, -0.6, 0.2), "fr": Vector3(0.17, 0.093, -0.26), "frr": Vector3(0.0, -0.1, 0.0), "fl": Vector3(-0.16, 0.11, 0.14),
 			"flr": Vector3(-0.2, 0.25, 0.0)}],
 		# the whip: hips and chest unwind, the elbow leads forward past the head
-		[0.41, {"pel": Vector3(0.0, -0.09, -0.03), "pelr": Vector3(0.0, -0.08, 0.0), "spn": Vector3(-0.04, -0.1, 0.0), "chs": Vector3(-0.04, -0.18, 0.0),
-			"nek": Vector3(0.0, 0.22, 0.0), "hl": _lw(Vector3(-0.38, 1.84, -0.14), Vector3(0.02, 0.2, -1.0), rel_k),
-			"hlb": Vector3(0.02, 0.2, -1.0), "hlk": rel_k, "hlp": Vector3(-0.6, 0.0, -1.0), "hlf": Vector3(-1.0, -0.1, 0.0),
+		[0.395, {"pel": Vector3(0.0, -0.09, -0.03), "pelr": Vector3(0.0, -0.08, 0.0), "spn": Vector3(-0.04, -0.1, 0.0), "chs": Vector3(-0.04, -0.18, 0.0),
+			"nek": Vector3(0.0, 0.08, 0.0), "hl": _lw(Vector3(-0.38, 1.84, -0.14), Vector3(0.02, 0.2, -1.0), rel_k),
+			"hlb": Vector3(0.02, 0.2, -1.0), "hlk": rel_k, "hlp": Vector3(-0.6, 0.0, -1.0), "hlf": Vector3(-1.0, -0.1, 0.4),
 			"hr": Vector3(0.3, 1.2, -0.3), "hrb": Vector3(0.2, 0.0, -1.0)}],
 		[THROW_RELEASE, {"pel": Vector3(0.0, -0.1, -0.12), "pelr": Vector3(0.0, -0.18, 0.0), "spn": Vector3(-0.14, -0.2, 0.0),
 			"chs": Vector3(-0.12, -0.32, 0.0), "nek": Vector3(0.08, 0.34, 0.0), "hl": _lw(Vector3(-0.16, 1.62, -0.58), rel_b, rel_k),
-			"hlb": rel_b, "hlp": Vector3(-1.0, -0.4, 0.2), "hlf": Vector3(-1.0, -0.6, 0.2), "fl": Vector3(-0.15, 0.13, 0.08), "flr": Vector3(-0.55, 0.2, 0.0),
+			"hlb": rel_b, "hlp": Vector3(-1.0, -0.4, 0.2), "hlf": Vector3(-1.0, -0.6, 0.4), "fl": Vector3(-0.15, 0.13, 0.08), "flr": Vector3(-0.55, 0.2, 0.0),
 			"hr": Vector3(0.42, 1.06, 0.06), "hrb": Vector3(0.4, -0.3, -0.9), "hrp": Vector3(0.6, -0.5, 0.8)}],
 		[0.6, {"pel": Vector3(0.0, -0.11, -0.14), "spn": Vector3(-0.2, -0.28, 0.0), "chs": Vector3(-0.12, -0.36, 0.0), "nek": Vector3(0.1, 0.4, 0.0),
 			"hl": Vector3(0.04, 1.05, -0.56), "hlx": 0.0, "hlf": Vector3(-0.3, 0.2, -1.0), "hlp": Vector3(-0.6, -0.8, 0.2),
@@ -3832,6 +5063,8 @@ static func _throw_def(lion: bool, neutral: Dictionary) -> Dictionary:
 ## on the back (the throw's grab pose, where the spear in the fist and the one on the back coincide: CATCH_STOW).
 ## Played on the upper body (Hero / ChainSpear), so the legs keep running.
 static func _catch_def(lion: bool, neutral: Dictionary) -> Dictionary:
+	# (the fist meets the spear in the roll the guard hand already has: the reach does not turn the wrist over)
+	var catch_k := Vector3(-1.0, -0.25, 0.0)
 	var sp := spear_back_xf(lion)
 	var sdir := -sp.basis.z
 	var grab_cs := sp.origin + sdir * SPEAR_HOLD - P_CHEST
@@ -3842,14 +5075,14 @@ static func _catch_def(lion: bool, neutral: Dictionary) -> Dictionary:
 	var rel_k := Vector3(0.0, -1.0, 0.0)
 	return {"len": 0.46, "in": 0.04, "out": 0.16, "ev": {}, "keys": [
 		[0.0, {}],
-		[0.05, {"chs": Vector3(-0.05, -0.12, 0.0), "nek": Vector3(0.04, 0.14, 0.0), "hls": 1.0,
-			"hl": _lw(Vector3(-0.22, 1.5, -0.5), rel_b, rel_k), "hlb": rel_b, "hlk": rel_k, "hlx": 1.0,
+		[0.08, {"chs": Vector3(-0.05, -0.12, 0.0), "nek": Vector3(0.04, 0.14, 0.0), "hls": 1.0,
+			"hl": _lw(Vector3(-0.22, 1.5, -0.5), rel_b, catch_k), "hlb": rel_b, "hlk": catch_k, "hlx": 1.0, "hlr": 0.0,
 			"hlp": Vector3(-1.0, -0.4, 0.2), "hlf": Vector3(-1.0, -0.6, 0.2)}],
-		[0.14, {"ease": true, "chs": Vector3(0.06, 0.12, 0.04), "nek": Vector3(-0.04, -0.2, 0.0), "hls": 1.0,
+		[0.16, {"ease": true, "chs": Vector3(0.06, 0.12, 0.04), "nek": Vector3(-0.04, -0.2, 0.0), "hls": 1.0,
 			"hl": _lw(Vector3(-0.44, 1.86, 0.17), cock_b, cock_k), "hlb": cock_b, "hlk": cock_k, "hlx": 1.0,
 			"hlp": Vector3(-0.6, -0.8, 0.0), "hlf": Vector3(-1.0, 0.0, 0.0)}],
 		[CATCH_STOW, {"ease": true, "chs": Vector3(0.05, 0.0, 0.0), "nek": Vector3(-0.04, 0.16, 0.0), "hls": 0.0,
-			"hl": _lw(grab_cs, sdir, g_back), "hlb": sdir, "hlk": g_back, "hlx": 1.0, "hlp": Vector3(-0.35, 0.7, -1.0),
+			"hl": _lw(grab_cs, sdir, g_back), "hlb": sdir, "hlk": g_back, "hlx": 1.0, "hlr": 1.0, "hlp": Vector3(-0.75, 0.25, -0.35),
 			"hlf": Vector3(-1.0, 0.25, -0.1)}],
 		# (the empty hand comes out to the side before it drops: never back down through the shoulder and the chest)
 		[0.32, {"hl": Vector3(-0.58, 0.1, 0.04), "hlx": 0.0, "hlf": Vector3(-1.0, 0.1, 0.0), "hlp": Vector3(-0.8, -0.5, 0.3)}],
@@ -3870,7 +5103,7 @@ static func _more_actions(d: Dictionary) -> void:
 	var ch_b := Vector3(0.0, 0.08, -1.0)
 	var ch_k := Vector3(-1.0, 0.35, 0.0)
 	d["pull"] = {"len": 0.8, "in": 0.06, "out": 0.22, "ev": {"pull": 0.24, "step": [0.26]}, "keys": [
-		[0.0, {}],
+		[0.0, {"hlr": 0.0}],
 		[0.12, {"ease": true, "pel": Vector3(0.0, -0.08, -0.06), "pelr": Vector3(-0.04, 0.0, 0.0), "spn": Vector3(-0.15, 0.06, 0.0),
 			"chs": Vector3(-0.06, 0.1, 0.0), "nek": Vector3(0.1, -0.1, 0.0), "hl": _lw(Vector3(-0.05, -0.04, -0.54), ch_b, ch_k),
 			"hlb": ch_b, "hlk": ch_k, "hlx": 1.0, "hlp": Vector3(-1.0, -0.6, 0.2), "hlf": Vector3(-1.0, 0.1, 0.0),
@@ -3886,10 +5119,10 @@ static func _more_actions(d: Dictionary) -> void:
 	var hold := {"pel": Vector3(0.0, -0.14, 0.07), "pelr": Vector3(-0.06, 0.0, 0.0), "spn": Vector3(-0.2, 0.0, 0.0),
 		"chs": Vector3(-0.1, 0.0, 0.0), "nek": Vector3(0.14, 0.0, 0.0), "hed": Vector3(0.1, -0.35, 0.0),
 		"fr": Vector3(0.22, 0.093, 0.18), "frr": Vector3(0.0, -0.3, 0.0), "fl": Vector3(-0.21, 0.093, -0.1), "flr": Vector3(0.0, 0.25, 0.0),
-		"hrs": 1.0, "hr": Vector3(0.0, 1.46, -0.64), "hrb": Vector3(0.55, -0.6, -0.55), "hrk": Vector3(0.0, 1.0, -0.3), "hrp": Vector3(1.0, 0.4, 0.0),
+		"hrs": 1.0, "hrr": 0.0, "hr": Vector3(0.0, 1.46, -0.64), "hrb": Vector3(0.55, -0.6, -0.55), "hrk": Vector3(0.0, 1.0, -0.3), "hrp": Vector3(1.0, 0.4, 0.0),
 		"hls": 1.0, "hl": Vector3(0.05, 0.9, -0.72), "hlf": Vector3(0.0, -0.6, -0.8), "hlp": Vector3(-1.0, -0.4, 0.0), "hlx": 0.0}
 	d["grapple_start"] = {"len": 0.5, "in": 0.06, "out": 0.15, "ev": {"impact": 0.36, "step": [0.2]}, "keys": [
-		[0.0, {}],
+		[0.0, {"hrr": 0.0}],
 		[0.16, {"pel": Vector3(0.0, -0.12, -0.05), "spn": Vector3(-0.22, 0.0, 0.0), "chs": Vector3(-0.08, 0.0, 0.0),
 			"hr": Vector3(0.55, 0.02, -0.25), "hrb": Vector3(0.6, 0.3, 0.75), "hrk": Vector3(0.0, 1.0, 0.0), "hrp": Vector3(1.0, 0.2, 0.4),
 			"hl": Vector3(-0.55, -0.02, -0.22), "hlf": Vector3(-0.5, -0.4, -0.7), "hlp": Vector3(-1.0, 0.2, 0.4),
@@ -3932,7 +5165,7 @@ static func _more_actions(d: Dictionary) -> void:
 		"nek": Vector3(0.18, 0.0, 0.0), "hed": Vector3(0.14, 0.05, 0.0), "fl": Vector3(-0.15, 0.2, 0.42), "flr": Vector3(-1.25, 0.05, 0.0),
 		"fr": Vector3(0.16, 0.093, -0.22), "frr": Vector3(0.0, -0.15, 0.0), "hls": 1.0, "hl": Vector3(-0.22, 0.4, -0.5), "ohl": 1.0,
 		"hlf": Vector3(-1.0, 0.0, 0.0), "hlp": Vector3(-1.0, 0.5, 0.2), "hlw": Vector3(0.5, 0.0, 0.0),
-		"hrs": 1.0, "hr": Vector3(0.24, 0.65, -0.28), "hrb": Vector3(0.3, -0.4, -0.85), "hrk": Vector3(1.0, 0.2, 0.0), "hrp": Vector3(0.8, 0.0, 1.0)}
+		"hrs": 1.0, "hrr": 0.0, "hr": Vector3(0.24, 0.65, -0.28), "hrb": Vector3(0.3, -0.4, -0.85), "hrk": Vector3(1.0, 0.2, 0.0), "hrp": Vector3(0.8, 0.0, 1.0)}
 	d["pet"] = {"len": 1.6, "in": 0.1, "out": 0.25, "ev": {"use": 0.52, "step": [0.34, 1.45]}, "keys": [
 		[0.0, {}],
 		[0.36, kneel],
@@ -3972,7 +5205,7 @@ static func _more_actions(d: Dictionary) -> void:
 	]}
 	# --- victory: anticipation, the sword thrust to the sky, chest out, hold, settle ---
 	d["victory"] = {"len": 2.2, "in": 0.1, "out": 0.3, "ev": {"raise": 0.62, "step": [0.6]}, "keys": [
-		[0.0, {}],
+		[0.0, {"hrr": 0.0}],
 		[0.3, {"ease": true, "pel": Vector3(0.0, -0.12, 0.0), "spn": Vector3(-0.12, 0.05, 0.0), "chs": Vector3(-0.02, 0.2, 0.0),
 			"nek": Vector3(0.1, -0.15, 0.0), "hr": Vector3(0.3, -0.4, -0.22), "hrb": Vector3(0.25, -0.6, -0.75), "hrk": Vector3(0.3, 0.9, 0.0),
 			"hrp": Vector3(1.0, -0.2, 0.3), "hl": Vector3(-0.38, -0.22, -0.14), "hlf": Vector3(-0.9, 0.0, -0.4)}],
@@ -3996,11 +5229,11 @@ static func _combat_actions(d: Dictionary, neutral: Dictionary) -> void:
 	var ready := {"hr": Vector3(0.3, -0.36, -0.2), "hrb": Vector3(0.0, -0.3, -1.0), "hrk": Vector3(1.0, 0.2, 0.0), "hrp": Vector3(0.5, 0.0, 1.0)}
 	d["recoil"] = {"len": 0.52, "in": 0.03, "out": 0.18, "ev": {"step": [0.08]}, "keys": [
 		[0.0, {}],
-		[0.07, {"hr": Vector3(0.52, 0.08, 0.02), "hrb": Vector3(0.7, 0.7, -0.15), "hrk": Vector3(0.6, -0.2, 0.75), "hrp": Vector3(0.8, -0.4, 0.4),
+		[0.1, {"hr": Vector3(0.52, 0.08, 0.02), "hrb": Vector3(0.7, 0.7, -0.15), "hrk": Vector3(0.6, -0.2, 0.75), "hrp": Vector3(0.8, -0.4, 0.4),
 			"chs": Vector3(0.14, -0.22, 0.05), "spn": Vector3(0.1, -0.1, 0.0), "nek": Vector3(-0.12, 0.16, 0.0), "pel": Vector3(0.0, -0.06, 0.09),
 			"pelr": Vector3(0.06, -0.08, 0.0), "fr": Vector3(0.17, 0.093, 0.2), "frr": Vector3(0.0, -0.22, 0.0), "fl": Vector3(-0.15, 0.12, -0.06),
 			"flr": Vector3(-0.2, 0.18, 0.0), "hl": Vector3(-0.46, -0.12, 0.02), "hlf": Vector3(-1.0, 0.2, 0.2), "hlp": Vector3(-0.6, -0.5, 0.8)}],
-		[0.2, {"ease": true, "hr": Vector3(0.5, 0.02, 0.0), "hrb": Vector3(0.75, 0.62, -0.2), "chs": Vector3(0.1, -0.18, 0.04),
+		[0.22, {"ease": true, "hr": Vector3(0.5, 0.02, 0.0), "hrb": Vector3(0.75, 0.62, -0.2), "chs": Vector3(0.1, -0.18, 0.04),
 			"fl": Vector3(-0.15, 0.093, -0.06), "flr": Vector3(0.0, 0.18, 0.0)}],
 		[0.36, _merge({"chs": Vector3(0.04, -0.04, 0.0), "spn": Vector3(0.02, 0.0, 0.0), "nek": Vector3(-0.06, 0.04, 0.0), "pel": Vector3(0.0, -0.06, 0.05),
 			"pelr": Vector3(0.02, 0.0, 0.0), "fr": Vector3(0.16, 0.093, 0.12), "frr": Vector3(0.0, -0.2, 0.0), "hl": Vector3(-0.36, -0.3, -0.1),
@@ -4026,7 +5259,7 @@ static func _combat_actions(d: Dictionary, neutral: Dictionary) -> void:
 	# rig space so they stay on the lip while the body rises: reach (0), both hands on the lip (0.12), the press with
 	# the chest over the edge and the right knee up (0.3), the right foot on the top (0.4), standing (0.5). The sword
 	# stands up out of the right fist (never along the lip towards his chest), the shield faces out to the left.
-	var up_blade := {"hrb": Vector3(0.3, 0.5, -0.8), "hrk": Vector3(1.0, 0.6, 0.0), "hrs": 1.0, "hls": 1.0}
+	var up_blade := {"hrb": Vector3(0.3, 0.5, -0.8), "hrk": Vector3(1.0, 0.6, 0.0), "hrs": 1.0, "hls": 1.0, "hrr": 0.0}
 	d["climb"] = {"len": 0.58, "in": 0.08, "out": 0.16, "ev": {"step": [0.38, 0.5]}, "keys": [
 		[0.0, _merge({"hr": Vector3(0.3, 1.85, -0.4), "hl": Vector3(-0.3, 1.85, -0.4), "hrp": Vector3(1.0, -0.2, 0.4),
 			"hlf": Vector3(-1.0, 0.1, 0.1), "hlp": Vector3(-1.0, -0.2, 0.4), "spn": Vector3(0.06, 0.0, 0.0), "chs": Vector3(0.04, 0.0, 0.0),
@@ -4050,6 +5283,645 @@ static func _combat_actions(d: Dictionary, neutral: Dictionary) -> void:
 			"hl": Vector3(-0.36, -0.3, -0.1), "hlf": Vector3(-1.0, 0.0, -0.3), "hlp": Vector3(-0.5, -0.2, 1.0), "hls": 0.0, "hrs": 0.0}, ready)],
 		[0.58, neutral],
 	]}
+
+
+# >>> STRIKES BEGIN (spliced by splice_strike.py from strike_block.gd.txt: edit that file, not this block)
+# --- animation: the sword blows (docs/ANIMATION.md section 4) -----------------------------------------------------------
+## attack1, attack2, attack3 and heavy are built from JOINT ANGLES (in degrees, as curves over the action's own seconds),
+## not from hand positions: pelvis and chest turn in the world, the sword arm is a shoulder (plane of elevation, elevation,
+## axial rotation), an elbow and a wrist (ulnar deviation, extension, forearm twist), so the hips lead and the shoulder, the
+## elbow and the wrist follow one after the other (the kinetic chain), the hand travels on an arc, the blade stays where a
+## wrist can hold it (never closer than 30 degrees to the forearm), and nothing pops. The shield arm is keyed where its wrist
+## is, which way its elbow bends and where the shield faces, all in chest space (it travels with the chest: a disc whose rim
+## reaches 0.2 m behind the elbow swings into the belly as soon as it is aimed in the world). `_bake_strike` samples the
+## curves at 120 Hz into the ordinary pose arrays (sample_action plays them like any other action); the footwork
+## (`_strike_feet`) is added while the action plays, because it depends on how far the hero lunges. The keys come from
+## design/defs.py (see docs/ANIMATION.md 4.8): edit that, never the generated `_strike_raw` below.
+
+## A smooth curve through keys [t0, v0, t1, v1, ...]: monotone cubic Hermite (never overshoots between two keys, a slope of
+## zero at the ends and at every turning point, a flowing slope where the value keeps going the same way).
+static func _kc(k: Array, t: float) -> float:
+	var n := k.size() / 2
+	if t <= float(k[0]):
+		return float(k[1])
+	if t >= float(k[2 * n - 2]):
+		return float(k[2 * n - 1])
+	var i := 0
+	while i < n - 2 and t >= float(k[2 * i + 2]):
+		i += 1
+	var t0 := float(k[2 * i])
+	var t1 := float(k[2 * i + 2])
+	var v0 := float(k[2 * i + 1])
+	var v1 := float(k[2 * i + 3])
+	var h := t1 - t0
+	var m0 := _kc_slope(k, i, n)
+	var m1 := _kc_slope(k, i + 1, n)
+	var u := (t - t0) / h
+	var u2 := u * u
+	var u3 := u2 * u
+	return (2.0 * u3 - 3.0 * u2 + 1.0) * v0 + (u3 - 2.0 * u2 + u) * h * m0 + (-2.0 * u3 + 3.0 * u2) * v1 + (u3 - u2) * h * m1
+
+
+static func _kc_slope(k: Array, j: int, n: int) -> float:
+	if j <= 0 or j >= n - 1:
+		return 0.0
+	var h0 := float(k[2 * j]) - float(k[2 * j - 2])
+	var h1 := float(k[2 * j + 2]) - float(k[2 * j])
+	var d0 := (float(k[2 * j + 1]) - float(k[2 * j - 1])) / h0
+	var d1 := (float(k[2 * j + 3]) - float(k[2 * j + 1])) / h1
+	if d0 * d1 <= 0.0:
+		return 0.0
+	var w1 := 2.0 * h1 + h0
+	var w2 := h1 + 2.0 * h0
+	return (w1 + w2) / (w1 / d0 + w2 / d1)
+
+
+static func _sv(S: Dictionary, key: String, t: float, d: float = 0.0) -> float:
+	return _kc(S[key], t) if S.has(key) else d
+
+
+## An arm from its joint angles (radians), in chest space. `az` the plane the upper arm is raised in (+ across the body,
+## 0 forward), `e` its elevation from hanging (90 = horizontal), `r` its axial rotation (+ inward: with the arm forward the
+## forearm bends towards the midline), `el` the elbow's flexion. side +1 right, -1 left. Returns [wrist, elbow pole,
+## forearm direction, elbow, the elbow's hinge axis].
+static func _arm_q(side: float, az: float, e: float, r: float, el: float) -> Array:
+	var rb := Basis(Vector3.UP, az) * Basis(Vector3.RIGHT, e) * Basis(Vector3.UP, r)
+	var u := rb * Vector3(0.0, -1.0, 0.0)
+	var f := rb * Vector3(0.0, -cos(el), -sin(el))
+	var s0 := Vector3(SHOULDER_CS.x, SHOULDER_CS.y, SHOULDER_CS.z)
+	var el_p := s0 + u * LEN_UA
+	var w := el_p + f * LEN_FA
+	var pole := perp(el_p - s0, (w - s0).normalized())
+	if pole.length_squared() < 4e-4:
+		pole = rb * Vector3(0.0, 0.0, 1.0)
+	pole = pole.normalized()
+	var xl := rb * Vector3(1.0, 0.0, 0.0)
+	if side < 0.0:
+		return [mx(w, -1.0), mx(pole, -1.0), mx(f, -1.0), mx(el_p, -1.0), mx(xl, -1.0)]
+	return [w, pole, f, el_p, xl]
+
+
+## The sword hand from the forearm direction f (chest space), like _sword_hand but measured from the elbow's own hinge axis
+## `xl` (the back of the hand lies along it at zero, so the wrist angles never jump when the arm turns): `uln` turns the
+## blade towards the forearm's line (so the blade is 90 - uln degrees off it), `ext` extends the wrist (rolls the fist
+## about the blade), `tw` twists the forearm (carries the blade round the forearm's axis). Returns [blade direction,
+## back of the hand].
+static func _sword_hand2(f: Vector3, xl: Vector3, uln: float, ext: float, tw: float) -> Array:
+	var fn := f.normalized()
+	var x_n := perp(xl, fn).normalized()
+	var y_n := -fn
+	var z_n := x_n.cross(y_n)
+	var rot := Basis(fn, tw) * Basis(x_n, -uln) * Basis(z_n, ext)
+	var h := rot * Basis(x_n, y_n, z_n)
+	return [-h.z, h.x]
+
+
+## Pose channels of strike `S` (raw definition) at action time t (s).
+static func _strike_pose(S: Dictionary, t: float) -> PackedFloat32Array:
+	var c := default_pose()
+	var D := PI / 180.0
+	# pelvis: yaw (+ left), pitch (+ back), roll (+ right side up) in the world, and where it sits
+	var pb_v := Vector3(_sv(S, "pp", t, 1.1) * D, _sv(S, "py", t) * D, _sv(S, "pr", t) * D)
+	var pb := eul(pb_v)
+	set_ch(c, "pelr", pb_v)
+	set_ch(c, "pel", Vector3(_sv(S, "px", t), NEUTRAL["pel"].y + _sv(S, "pdy", t), _sv(S, "pz", t)))
+	# chest (absolute), shared between the spine (40 %) and the chest bone (60 %)
+	var tb_v := Vector3(_sv(S, "cp", t, 4.0) * D, _sv(S, "cy", t) * D, _sv(S, "cr", t) * D)
+	var tb := eul(tb_v)
+	var q_rel := (pb.inverse() * tb).get_rotation_quaternion()
+	var q_s := Quaternion.IDENTITY.slerp(q_rel, 0.4)
+	var q_c := q_s.inverse() * q_rel
+	set_ch(c, "spn", Basis(q_s).get_euler(EULER_ORDER_YXZ))
+	set_ch(c, "chs", Basis(q_c).get_euler(EULER_ORDER_YXZ))
+	# head (absolute): neck 55 %, head 45 % of the turn from the chest
+	var hb := eul(Vector3(_sv(S, "hp", t) * D, _sv(S, "hy", t) * D, _sv(S, "hrl", t) * D))
+	var q_h := (tb.inverse() * hb).get_rotation_quaternion()
+	var q_n := Quaternion.IDENTITY.slerp(q_h, 0.55)
+	set_ch(c, "nek", Basis(q_n).get_euler(EULER_ORDER_YXZ))
+	set_ch(c, "hed", Basis(q_n.inverse() * q_h).get_euler(EULER_ORDER_YXZ))
+	# sword arm
+	var ra := _arm_q(1.0, _sv(S, "az", t) * D, _sv(S, "e", t, 10.0) * D, _sv(S, "r", t) * D, _sv(S, "el", t, 40.0) * D)
+	var hand := _sword_hand2(ra[2], ra[4], _sv(S, "uln", t, 48.0) * D, _sv(S, "ext", t, 8.0) * D, _sv(S, "tw", t) * D)
+	var hrb: Vector3 = hand[0]
+	var hrk: Vector3 = hand[1]
+	set_ch(c, "hrb", hrb)
+	set_ch(c, "hrk", hrk)
+	set_ch(c, "hr", (ra[0] as Vector3) + hand_basis(hrb, hrk, 1.0) * GRIP)
+	set_ch(c, "hrp", ra[1])
+	# shield arm (a counterweight and a guard): where its wrist is, which way its elbow bends and where the shield faces, all in
+	# chest space (hl*, hp*, hf* curves), so it travels with the chest and never swings into it
+	var hl := Vector3(_sv(S, "hlx", t, -0.335), _sv(S, "hly", t, -0.366), _sv(S, "hlz", t, -0.08))
+	set_ch(c, "hl", hl)
+	set_ch(c, "hlp", Vector3(_sv(S, "hpx", t, -0.5), _sv(S, "hpy", t, -0.2), _sv(S, "hpz", t, 1.0)))
+	set_ch(c, "hlf", Vector3(_sv(S, "hfx", t, -1.0), _sv(S, "hfy", t, 0.0), _sv(S, "hfz", t, -0.35)))
+	# the whole body turning about a vertical axis (the heavy's spin about the ball of the standing foot)
+	var rot := _sv(S, "rot", t)
+	if rot != 0.0:
+		set_ch(c, "rot", Vector3(0.0, rot * D, 0.0))
+		set_ch(c, "piv", Vector3(float(S.get("pivx", 0.0)), 0.9, float(S.get("pivz", 0.0))))
+	# feet that are part of the pose (a blow whose feet are baked: ankle x, y, z, pitch, yaw relative to the rig; deg)
+	for i in 2:
+		var k := "f%d" % i
+		if S.has(k + "x"):
+			var ank := Vector3(_sv(S, k + "x", t), _sv(S, k + "y", t), _sv(S, k + "z", t))
+			var o := C_FR if i == 0 else C_FL
+			var yaw := _sv(S, k + "w", t) * D
+			set_ch(c, "fr" if i == 0 else "fl", ank)
+			set_ch(c, "frr" if i == 0 else "flr", Vector3(_sv(S, k + "p", t) * D, yaw, 0.0))
+			set_ch(c, "frp" if i == 0 else "flp", Basis(Vector3.UP, yaw) * Vector3((1.0 if i == 0 else -1.0) * 0.12, 0.0, -1.0))
+	return c
+
+
+## Samples a strike's raw definition into the compiled action form (times, poses, Hermite tangents).
+static func _bake_strike(S: Dictionary) -> Dictionary:
+	var len: float = S["len"]
+	var step := 1.0 / 120.0
+	var n := int(ceil(len / step - 1e-6)) + 1
+	var times := PackedFloat32Array()
+	var poses: Array[PackedFloat32Array] = []
+	for i in n:
+		var t := minf(float(i) * step, len)
+		times.append(t)
+		poses.append(_strike_pose(S, t))
+	var tans: Array[PackedFloat32Array] = []
+	for i in n:
+		var m := PackedFloat32Array()
+		m.resize(C_N)
+		if i > 0 and i < n - 1:
+			var dt := times[i + 1] - times[i - 1]
+			for j in C_N:
+				m[j] = (poses[i + 1][j] - poses[i - 1][j]) / maxf(dt, 1e-4)
+		tans.append(m)
+	return {"len": len, "loop": false, "hold": false, "in": float(S["in"]), "out": float(S["out"]), "ev": S["ev"],
+		"times": times, "poses": poses, "tans": tans, "strike": S}
+
+
+## The raw definitions: curves [t, value, ...] per joint, in degrees and metres (see _strike_pose for the names).
+## GENERATED by design/*.py (docs/ANIMATION.md section 4.8): the key poses were solved for the blade's path, the timings
+## set so the joints peak in the order of the kinetic chain.
+static func _strike_raw(nm: String) -> Dictionary:
+	match nm:
+		"attack1":
+			return {"len": 0.56, "in": 0.07, "out": 0.22, "ev": {"swing": 0.13, "impact": 0.205, "step": [0.2, 0.53]},
+				"py": [0.0, -15.0, 0.04, -15.0, 0.155, 24.0, 0.25, 31.0, 0.34, 25.0, 0.45, 8.0, 0.56, 0.0],
+				"pp": [0.0, 4.0, 0.05, 6.0, 0.13, 0.0, 0.205, -7.0, 0.3, -5.0, 0.45, -1.0, 0.56, 1.1],
+				"pr": [0.0, 3.0, 0.05, 4.0, 0.13, 0.0, 0.205, -5.0, 0.3, -4.0, 0.45, -1.0, 0.56, 0.0],
+				"px": [0.0, 0.03, 0.05, 0.04, 0.13, 0.0, 0.205, -0.05, 0.3, -0.04, 0.45, -0.01, 0.56, 0.0],
+				"pz": [0.0, 0.04, 0.05, 0.06, 0.1, 0.0, 0.205, -0.17, 0.3, -0.16, 0.45, -0.06, 0.56, 0.0],
+				"pdy": [0.0, -0.04, 0.05, -0.05, 0.13, -0.08, 0.205, -0.14, 0.3, -0.13, 0.45, -0.05, 0.56, 0.0],
+				"cy": [0.0, -36.0, 0.06, -36.0, 0.19, 41.0, 0.26, 52.0, 0.34, 44.0, 0.45, 14.0, 0.56, 0.0],
+				"cp": [0.0, 8.0, 0.05, 9.0, 0.13, 0.0, 0.205, -16.0, 0.3, -12.0, 0.45, -2.0, 0.56, 4.0],
+				"cr": [0.0, -3.0, 0.05, -4.0, 0.13, 0.0, 0.205, 6.0, 0.3, 5.0, 0.45, 1.0, 0.56, 0.0],
+				"hy": [0.0, -10.0, 0.05, -13.0, 0.1, -10.0, 0.15, 0.0, 0.19, 10.0, 0.23, 17.0, 0.3, 15.0, 0.4, 8.0, 0.5, 2.0, 0.56, 0.0],
+				"hp": [0.0, 2.0, 0.1, 2.0, 0.205, -5.0, 0.3, -4.0, 0.45, -1.0, 0.56, 0.0],
+				"hlx": [0.0, -0.335, 0.05, -0.34, 0.12, -0.38, 0.205, -0.42, 0.29, -0.42, 0.47, -0.35, 0.56, -0.335],
+				"hly": [0.0, -0.366, 0.05, -0.22, 0.12, -0.2, 0.205, -0.14, 0.29, -0.06, 0.47, -0.33, 0.56, -0.366],
+				"hlz": [0.0, -0.08, 0.05, -0.18, 0.12, -0.2, 0.205, -0.12, 0.29, -0.08, 0.47, -0.08, 0.56, -0.08],
+				"hpx": [0.0, -0.5, 0.05, -0.55, 0.12, -0.6, 0.205, -0.6, 0.29, -0.6, 0.47, -0.5, 0.56, -0.5],
+				"hpy": [0.0, -0.2, 0.05, -0.3, 0.12, -0.4, 0.205, -0.7, 0.29, -0.7, 0.47, -0.2, 0.56, -0.2],
+				"hpz": [0.0, 1.0, 0.05, 0.9, 0.12, 0.8, 0.205, 0.5, 0.29, 0.5, 0.47, 1.0, 0.56, 1.0],
+				"hfx": [0.0, -1.0, 0.05, -0.8, 0.12, -0.75, 0.205, -0.75, 0.29, -0.8, 0.47, -1.0, 0.56, -1.0],
+				"hfy": [0.0, 0.0, 0.05, 0.1, 0.12, 0.15, 0.205, 0.12, 0.29, 0.1, 0.47, 0.0, 0.56, 0.0],
+				"hfz": [0.0, -0.35, 0.05, -0.6, 0.12, -0.65, 0.205, -0.6, 0.29, -0.5, 0.47, -0.2, 0.56, -0.35],
+				"az": [0.0, -64.6, 0.1, -64.6, 0.2, -54.7, 0.3, -17.7, 0.42, -15.7, 0.56, -30.0],
+				"e": [0.0, 70.2, 0.1, 70.2, 0.2, 83.3, 0.3, 71.5, 0.42, 37.6, 0.56, 45.0],
+				"r": [0.0, 38.7, 0.1, 38.7, 0.2, 79.6, 0.3, 94.2, 0.42, 67.8, 0.56, 40.0],
+				"el": [0.0, 107.2, 0.115, 107.2, 0.215, 52.2, 0.3, 43.3, 0.42, 39.5, 0.56, 70.0],
+				"uln": [0.0, 27.9, 0.145, 27.9, 0.23, 59.9, 0.3, 59.9, 0.42, 54.3, 0.56, 45.0],
+				"ext": [0.0, 29.6, 0.145, 29.6, 0.23, -45.1, 0.3, -45.1, 0.42, -22.4, 0.56, 10.0],
+				"tw": [0.0, 120.1, 0.145, 120.1, 0.23, 120.5, 0.3, 120.1, 0.42, 121.2, 0.56, 120.0],
+				"feet": {"moves": [{"f": 1, "t0": 0.03, "t1": 0.2, "x": -0.18, "z": -0.42, "yaw": 8.0, "apex": 0.1, "th": 12.0}, {"f": 1, "t0": 0.38, "t1": 0.53, "x": -0.15, "z": -0.08, "yaw": 4.0, "apex": 0.07, "th": 6.0}], "pitch0": [0.0, 0.0, 0.12, 0.0, 0.26, -32.0, 0.36, -32.0, 0.5, -4.0], "follow0": [0.0, 0.0, 0.1, 0.0, 0.25, 0.7, 0.4, 0.7]}}
+		"attack2":
+			return {"len": 0.56, "in": 0.06, "out": 0.22, "ev": {"swing": 0.12, "impact": 0.2, "step": [0.2, 0.52]},
+				"py": [0.0, 22.0, 0.03, 22.0, 0.14, -21.0, 0.25, -27.0, 0.34, -21.0, 0.45, -6.0, 0.56, 0.0],
+				"pp": [0.0, 1.0, 0.05, 3.0, 0.13, 0.0, 0.2, -6.0, 0.3, -4.0, 0.45, -1.0, 0.56, 1.1],
+				"pr": [0.0, -4.0, 0.05, -4.0, 0.14, 1.0, 0.2, 4.0, 0.3, 3.0, 0.45, 1.0, 0.56, 0.0],
+				"px": [0.0, -0.05, 0.05, -0.05, 0.14, 0.02, 0.2, 0.05, 0.3, 0.04, 0.45, 0.01, 0.56, 0.0],
+				"pz": [0.0, -0.12, 0.05, -0.1, 0.1, -0.12, 0.2, -0.17, 0.3, -0.14, 0.45, -0.05, 0.56, 0.0],
+				"pdy": [0.0, -0.09, 0.05, -0.1, 0.14, -0.1, 0.2, -0.11, 0.3, -0.1, 0.45, -0.04, 0.56, 0.0],
+				"cy": [0.0, 40.0, 0.05, 40.0, 0.175, -36.0, 0.26, -54.0, 0.34, -44.0, 0.45, -12.0, 0.56, 0.0],
+				"cp": [0.0, 3.0, 0.05, 5.0, 0.13, 0.0, 0.2, -12.0, 0.3, -9.0, 0.45, -1.0, 0.56, 4.0],
+				"cr": [0.0, 4.0, 0.05, 5.0, 0.14, 0.0, 0.2, -6.0, 0.3, -5.0, 0.45, -1.0, 0.56, 0.0],
+				"hy": [0.0, 12.0, 0.05, 14.0, 0.1, 10.0, 0.14, 0.0, 0.18, -9.0, 0.22, -14.0, 0.3, -12.0, 0.4, -6.0, 0.5, -1.0, 0.56, 0.0],
+				"hp": [0.0, -3.0, 0.1, -3.0, 0.2, -5.0, 0.3, -4.0, 0.45, -1.0, 0.56, 0.0],
+				"hlx": [0.0, -0.45, 0.11, -0.46, 0.2, -0.41, 0.31, -0.4, 0.47, -0.35, 0.56, -0.335],
+				"hly": [0.0, -0.1, 0.11, -0.08, 0.2, -0.25, 0.31, -0.3, 0.47, -0.33, 0.56, -0.366],
+				"hlz": [0.0, -0.15, 0.11, -0.14, 0.2, -0.1, 0.31, -0.08, 0.47, -0.08, 0.56, -0.08],
+				"hpx": [0.0, -0.8, 0.11, -0.8, 0.2, -0.8, 0.31, -0.6, 0.47, -0.5, 0.56, -0.5],
+				"hpy": [0.0, -0.5, 0.11, -0.5, 0.2, -0.5, 0.31, -0.4, 0.47, -0.2, 0.56, -0.2],
+				"hpz": [0.0, 0.4, 0.11, 0.4, 0.2, 0.4, 0.31, 0.7, 0.47, 1.0, 0.56, 1.0],
+				"hfx": [0.0, -0.7, 0.11, -0.7, 0.2, -0.85, 0.31, -0.95, 0.47, -1.0, 0.56, -1.0],
+				"hfy": [0.0, 0.0, 0.11, 0.0, 0.2, 0.0, 0.31, 0.0, 0.47, 0.0, 0.56, 0.0],
+				"hfz": [0.0, -0.7, 0.11, -0.7, 0.2, -0.35, 0.31, -0.3, 0.47, -0.2, 0.56, -0.35],
+				"az": [0.0, -7.5, 0.085, -7.5, 0.2, 1.6, 0.3, -25.8, 0.42, -21.1, 0.56, -30.0],
+				"e": [0.0, 83.6, 0.085, 83.6, 0.2, 73.1, 0.3, 67.8, 0.42, 42.8, 0.56, 45.0],
+				"r": [0.0, 100.3, 0.085, 100.3, 0.2, 56.2, 0.3, 53.0, 0.42, 47.4, 0.56, 40.0],
+				"el": [0.0, 59.8, 0.1, 59.8, 0.21, 31.0, 0.3, 16.8, 0.42, 58.4, 0.56, 70.0],
+				"uln": [0.0, 60.0, 0.13, 60.0, 0.22, 44.0, 0.3, 47.4, 0.42, 41.4, 0.56, 45.0],
+				"ext": [0.0, -35.0, 0.13, -35.0, 0.22, 0.1, 0.3, 1.2, 0.42, 7.4, 0.56, 10.0],
+				"tw": [0.0, 98.3, 0.13, 98.3, 0.22, 120.7, 0.3, 120.0, 0.42, 118.6, 0.56, 120.0],
+				"feet": {"moves": [{"f": 1, "t0": 0.0, "t1": 0.13, "x": -0.15, "z": 0.0, "yaw": 6.0, "apex": 0.06, "th": 4.0, "near": 0.14}, {"f": 0, "t0": 0.04, "t1": 0.2, "x": 0.18, "z": -0.3, "yaw": -8.0, "apex": 0.09, "th": 12.0}, {"f": 0, "t0": 0.38, "t1": 0.53, "x": 0.15, "z": 0.0, "yaw": -4.0, "apex": 0.07, "th": 6.0}], "pitch1": [0.0, 0.0, 0.14, 0.0, 0.28, -30.0, 0.36, -30.0, 0.5, -4.0], "follow1": [0.0, 0.0, 0.1, 0.0, 0.25, 0.7, 0.4, 0.7]}}
+		"attack3":
+			return {"len": 0.8, "in": 0.07, "out": 0.25, "ev": {"swing": 0.27, "impact": 0.345, "step": [0.345, 0.72]},
+				"py": [0.0, -18.0, 0.085, -24.0, 0.265, 26.0, 0.45, 28.0, 0.55, 14.0, 0.68, 4.0, 0.8, 0.0],
+				"pp": [0.0, 2.0, 0.12, 6.0, 0.2, 7.0, 0.345, -10.0, 0.45, -9.0, 0.6, -3.0, 0.8, 1.1],
+				"pr": [0.0, 3.0, 0.2, 4.0, 0.345, -6.0, 0.5, -5.0, 0.8, 0.0],
+				"px": [0.0, 0.05, 0.2, 0.05, 0.345, -0.05, 0.5, -0.05, 0.62, -0.02, 0.8, 0.0],
+				"pz": [0.0, 0.0, 0.2, 0.1, 0.28, 0.03, 0.345, -0.24, 0.5, -0.22, 0.65, -0.1, 0.8, 0.0],
+				"pdy": [0.0, -0.06, 0.12, 0.0, 0.2, 0.01, 0.345, -0.24, 0.5, -0.22, 0.65, -0.12, 0.8, 0.0],
+				"cy": [0.0, -42.0, 0.105, -46.0, 0.29, 18.0, 0.45, 24.0, 0.55, 14.0, 0.68, 4.0, 0.8, 0.0],
+				"cp": [0.0, 6.0, 0.12, 14.0, 0.2, 18.0, 0.345, -30.0, 0.45, -28.0, 0.6, -8.0, 0.8, 4.0],
+				"cr": [0.0, -4.0, 0.2, -6.0, 0.345, 6.0, 0.5, 5.0, 0.8, 0.0],
+				"hy": [0.0, -8.0, 0.2, -14.0, 0.3, -4.0, 0.345, 4.0, 0.5, 4.0, 0.8, 0.0],
+				"hp": [0.0, 0.0, 0.2, 8.0, 0.3, 4.0, 0.345, -14.0, 0.5, -14.0, 0.65, -4.0, 0.8, 0.0],
+				"hlx": [0.0, -0.41, 0.12, -0.3, 0.24, -0.25, 0.345, -0.42, 0.5, -0.4, 0.62, -0.35, 0.8, -0.335],
+				"hly": [0.0, -0.25, 0.12, -0.06, 0.24, 0.0, 0.345, -0.38, 0.5, -0.36, 0.62, -0.33, 0.8, -0.366],
+				"hlz": [0.0, -0.1, 0.12, -0.24, 0.24, -0.3, 0.345, -0.12, 0.5, -0.1, 0.62, -0.08, 0.8, -0.08],
+				"hpx": [0.0, -0.8, 0.12, -0.8, 0.24, -0.8, 0.345, -0.8, 0.5, -0.6, 0.62, -0.5, 0.8, -0.5],
+				"hpy": [0.0, -0.5, 0.12, -0.5, 0.24, -0.5, 0.345, -0.5, 0.5, -0.4, 0.62, -0.2, 0.8, -0.2],
+				"hpz": [0.0, 0.4, 0.12, 0.5, 0.24, 0.5, 0.345, 0.5, 0.5, 0.7, 0.62, 1.0, 0.8, 1.0],
+				"hfx": [0.0, -0.85, 0.12, -0.55, 0.24, -0.5, 0.345, -0.8, 0.5, -0.9, 0.62, -1.0, 0.8, -1.0],
+				"hfy": [0.0, 0.0, 0.12, 0.15, 0.24, 0.2, 0.345, -0.2, 0.5, 0.0, 0.62, 0.0, 0.8, 0.0],
+				"hfz": [0.0, -0.35, 0.12, -0.8, 0.24, -0.85, 0.345, -0.5, 0.5, -0.4, 0.62, -0.25, 0.8, -0.35],
+				"az": [0.0, -15.0, 0.11, -18.0, 0.125, -18.0, 0.355, 10.9, 0.45, 8.3, 0.6, -13.4, 0.8, -30.0],
+				"e": [0.0, 68.0, 0.11, 97.1, 0.125, 97.1, 0.355, 82.7, 0.45, 75.7, 0.6, 51.1, 0.8, 45.0],
+				"r": [0.0, 54.0, 0.11, 5.1, 0.125, 5.1, 0.355, -44.3, 0.45, -24.6, 0.6, 47.0, 0.8, 40.0],
+				"el": [0.0, 14.0, 0.13, 73.7, 0.19, 73.7, 0.37, 11.0, 0.45, 11.6, 0.6, 46.2, 0.8, 70.0],
+				"uln": [0.0, 46.0, 0.14, 59.8, 0.265, 59.8, 0.378, 59.7, 0.45, 59.8, 0.6, 49.8, 0.8, 45.0],
+				"ext": [0.0, 0.0, 0.14, -21.9, 0.265, -21.9, 0.378, 45.4, 0.45, 45.4, 0.6, -28.2, 0.8, 10.0],
+				"tw": [0.0, 120.0, 0.14, 100.9, 0.265, 100.9, 0.378, 120.4, 0.45, 120.6, 0.6, 120.3, 0.8, 120.0],
+				"feet": {"moves": [{"f": 0, "t0": 0.0, "t1": 0.16, "x": 0.15, "z": 0.06, "yaw": -6.0, "apex": 0.06, "th": 4.0, "near": 0.14}, {"f": 1, "t0": 0.1, "t1": 0.345, "x": -0.19, "z": -0.58, "yaw": 8.0, "apex": 0.16, "th": 4.0}, {"f": 1, "t0": 0.58, "t1": 0.77, "x": -0.14, "z": -0.14, "yaw": 3.0, "apex": 0.08, "th": 5.0}], "pitch0": [0.0, 0.0, 0.25, 0.0, 0.4, -28.0, 0.6, -28.0, 0.77, -6.0], "follow0": [0.0, 0.0, 0.2, 0.0, 0.32, 0.6, 0.5, 0.6]}}
+		"heavy":
+			return {"len": 1.0, "in": 0.06, "out": 0.25, "ev": {"swing": 0.36, "impact": 0.47, "step": [0.4, 0.72]},
+				"pivx": -0.075,
+				"pivz": 0.026,
+				"rot": [0.0, 0.0, 0.3, 0.0, 0.31, 0.97, 0.32, 3.87, 0.33, 8.71, 0.34, 15.48, 0.35, 24.19, 0.36, 34.84, 0.37, 46.45, 0.38, 58.06, 0.39, 69.68, 0.4, 81.29, 0.41, 92.9, 0.42, 104.52, 0.43, 116.13, 0.44, 127.74, 0.45, 139.35, 0.46, 150.97, 0.47, 162.58, 0.48, 174.19, 0.49, 185.81, 0.5, 197.42, 0.51, 209.03, 0.52, 220.65, 0.53, 232.26, 0.54, 243.87, 0.55, 255.48, 0.56, 267.1, 0.57, 278.35, 0.58, 288.87, 0.59, 298.67, 0.6, 307.74, 0.61, 316.09, 0.62, 323.71, 0.63, 330.6, 0.64, 336.77, 0.65, 342.22, 0.66, 346.94, 0.67, 350.93, 0.68, 354.19, 0.69, 356.73, 0.7, 358.55, 0.71, 359.64, 0.72, 360.0, 1.0, 360.0],
+				"py": [0.0, 0.0, 0.15, -20.0, 0.3, -35.0, 0.42, -18.0, 0.54, 0.0, 0.66, 8.0, 0.72, 17.0, 0.8, 14.0, 0.9, 6.0, 1.0, 0.0],
+				"cy": [0.0, 0.0, 0.15, -34.0, 0.3, -62.0, 0.42, -32.0, 0.56, -2.0, 0.66, 14.0, 0.72, 28.0, 0.8, 24.0, 0.9, 10.0, 1.0, 0.0],
+				"pp": [0.0, 1.1, 0.3, 6.0, 0.4, -4.0, 0.5, -8.0, 0.66, -8.0, 0.72, -14.0, 0.9, -4.0, 1.0, 1.1],
+				"cp": [0.0, 4.0, 0.3, 8.0, 0.4, -4.0, 0.5, -10.0, 0.66, -10.0, 0.72, -26.0, 0.82, -22.0, 1.0, 4.0],
+				"pr": [0.0, 0.0, 0.3, 4.0, 0.5, -4.0, 0.72, -6.0, 1.0, 0.0],
+				"cr": [0.0, 0.0, 0.3, -4.0, 0.5, 4.0, 0.72, 6.0, 1.0, 0.0],
+				"pdy": [0.0, 0.0, 0.3, -0.1, 0.4, -0.12, 0.66, -0.1, 0.72, -0.26, 0.82, -0.24, 0.9, -0.16, 0.97, -0.03, 1.0, 0.0],
+				"px": [0.0, 0.0, 0.3, 0.05, 0.38, 0.04, 0.66, 0.04, 0.72, 0.02, 0.8, 0.0, 1.0, 0.0],
+				"pz": [0.0, 0.0, 0.3, 0.05, 0.38, 0.06, 0.66, 0.04, 0.72, -0.24, 0.82, -0.22, 0.97, -0.02, 1.0, 0.0],
+				"hlx": [0.0, -0.335, 0.3, -0.08, 0.4, -0.3, 0.56, -0.36, 0.72, -0.42, 0.85, -0.4, 1.0, -0.335],
+				"hly": [0.0, -0.366, 0.3, -0.05, 0.4, -0.18, 0.56, -0.1, 0.72, -0.2, 0.85, -0.26, 1.0, -0.366],
+				"hlz": [0.0, -0.08, 0.3, -0.46, 0.4, 0.05, 0.56, 0.1, 0.72, -0.1, 0.85, -0.1, 1.0, -0.08],
+				"hpx": [0.0, -0.5, 0.3, -1.0, 0.4, -0.4, 0.56, -0.4, 0.72, -0.8, 0.85, -0.7, 1.0, -0.5],
+				"hpy": [0.0, -0.2, 0.3, -0.6, 0.4, -0.5, 0.56, -0.5, 0.72, -0.5, 0.85, -0.4, 1.0, -0.2],
+				"hpz": [0.0, 1.0, 0.3, 0.3, 0.4, 1.0, 0.56, 1.0, 0.72, 0.4, 0.85, 0.6, 1.0, 1.0],
+				"hfx": [0.0, -1.0, 0.3, 0.2, 0.4, -1.0, 0.56, -1.0, 0.72, -0.85, 0.85, -0.9, 1.0, -1.0],
+				"hfy": [0.0, 0.0, 0.3, 0.0, 0.4, 0.0, 0.56, 0.1, 0.72, 0.0, 0.85, 0.0, 1.0, 0.0],
+				"hfz": [0.0, -0.35, 0.3, -1.0, 0.4, 0.3, 0.56, 0.3, 0.72, -0.4, 0.85, -0.35, 1.0, -0.35],
+				"hy": [0.0, 0.0, 0.3, -30.0, 0.4, -10.0, 0.5, 0.0, 0.72, 10.0, 1.0, 0.0],
+				"hp": [0.0, 0.0, 0.5, -4.0, 0.72, -14.0, 0.85, -12.0, 1.0, 0.0],
+				"f0x": [0.0, 0.15, 0.34, 0.15, 0.4, 0.2, 0.62, 0.2, 0.72, 0.2, 0.81, 0.2, 0.833, 0.194, 0.855, 0.188, 0.9, 0.17, 0.955, 0.149, 0.995, 0.15],
+				"f0y": [0.0, 0.093, 0.34, 0.093, 0.4, 0.28, 0.62, 0.28, 0.72, 0.105, 0.78, 0.093, 0.81, 0.093, 0.833, 0.138, 0.855, 0.177, 0.9, 0.2, 0.955, 0.103, 0.995, 0.093],
+				"f0z": [0.0, 0.04, 0.34, 0.04, 0.4, 0.22, 0.62, 0.22, 0.72, -0.48, 0.81, -0.48, 0.833, -0.505, 0.855, -0.539, 0.9, -0.243, 0.955, 0.054, 0.995, 0.04],
+				"f0p": [0.0, 0.0, 0.34, 0.0, 0.4, -50.0, 0.62, -50.0, 0.7, 10.0, 0.78, 0.0, 0.81, 0.0, 0.833, -12.5, 0.855, -25.0, 0.9, -10.0, 0.955, 8.0, 0.995, 0.0],
+				"f0w": [0.0, -10.0, 0.3, -10.0, 0.4, -20.0, 0.62, -20.0, 0.72, 8.0, 0.81, 8.0, 0.833, 7.4, 0.855, 6.8, 0.9, 2.0, 0.955, -4.0, 0.995, -4.0],
+				"f1x": [0.0, -0.15, 0.3, -0.15, 0.36, -0.075, 0.72, -0.075, 0.9, -0.1, 1.0, -0.1],
+				"f1y": [0.0, 0.093, 0.3, 0.093, 0.36, 0.191, 0.72, 0.191, 0.78, 0.137, 0.9, 0.093, 1.0, 0.093],
+				"f1z": [0.0, -0.06, 0.3, -0.06, 0.36, 0.17, 0.72, 0.17, 0.78, 0.14, 0.9, 0.12, 1.0, 0.12],
+				"f1p": [0.0, 0.0, 0.3, 0.0, 0.36, -30.0, 0.72, -30.0, 0.78, -12.0, 0.9, 0.0, 1.0, 0.0],
+				"f1w": [0.0, 10.0, 0.3, 10.0, 0.36, 0.0, 0.72, 0.0, 1.0, 0.0],
+				"az": [0.0, -30.0, 0.2, -83.5, 0.3, -83.5, 0.38, -83.5, 0.47, -124.0, 0.56, -124.0, 0.72, -40.0, 0.85, 11.8, 1.0, -30.0],
+				"e": [0.0, 45.0, 0.2, 16.8, 0.3, 16.8, 0.38, 16.8, 0.47, 61.0, 0.56, 61.0, 0.72, 27.2, 0.85, 72.0, 1.0, 45.0],
+				"r": [0.0, 40.0, 0.2, 54.9, 0.3, 54.9, 0.38, 54.9, 0.47, 100.0, 0.56, 100.0, 0.72, 69.2, 0.85, -8.5, 1.0, 40.0],
+				"el": [0.0, 70.0, 0.2, 91.2, 0.3, 91.2, 0.4, 91.2, 0.49, 89.0, 0.6, 89.0, 0.74, 98.9, 0.85, 12.0, 1.0, 70.0],
+				"uln": [0.0, 45.0, 0.2, 27.4, 0.3, 27.4, 0.43, 27.4, 0.51, 53.0, 0.64, 53.0, 0.78, 38.1, 0.85, 59.7, 1.0, 45.0],
+				"ext": [0.0, 10.0, 0.2, 40.9, 0.3, 40.9, 0.43, 40.9, 0.51, -34.0, 0.64, -34.0, 0.78, -45.4, 0.85, 45.3, 1.0, 10.0],
+				"tw": [0.0, 120.0, 0.2, 107.2, 0.3, 107.2, 0.43, 107.2, 0.51, 120.0, 0.64, 120.0, 0.78, 121.5, 0.85, 120.9, 1.0, 120.0],
+				"feet": {"mode": "baked"}}
+	return {}
+
+
+## The strikes that are built from joint angles (the others still play their keys).
+const STRIKE_NAMES := ["attack1", "attack2", "attack3", "heavy"]
+
+
+
+# --- a blow that starts on the run ---------------------------------------------------------------------------------------------
+## A blow that starts while the hero runs and carries the run on (HeroMelee: no foe in reach, so the run slows at 13 m/s^2
+## instead of stopping; it says so with set_strike_run, and play() guesses it from the speed, faster than SK_RUN_V m/s, when
+## nobody does) keeps its legs on the gait: the stride goes on under the swing and stops the way a run stops, instead of the
+## feet being planted in the world and dragged along. The blow owns the chest, the head and the arms (as authored, in the
+## world), the turn of the pelvis (mostly) and nothing of the legs. A blow with a foe in reach (the hero stops dead and
+## lunges, 15 m/s for a moment: no gait follows that) plants its feet itself, as from a standstill. The heavy's charge (the
+## hero plays its coil with the legs on the locomotion and holds it at 0.3 s) is layered the same way, so the chest keeps
+## the wind-up it was authored with.
+const SK_RUN_V := 2.5
+var _sk_run := false
+var _skl_on := false
+
+
+## HeroMelee, right after it has aimed the blow it started: whether the run is carried on (the legs stay on the gait) or not.
+func set_strike_run(on: bool) -> void:
+	if action != "" and act_def(_akey).has("strike") and not (act_def(_akey)["strike"] as Dictionary).has("rot"):
+		_sk_run = on
+
+
+func _strike_layer(c: PackedFloat32Array, loco: PackedFloat32Array) -> void:
+	var pb_s := eul(v3(c, C_PELR))
+	var tb := pb_s * eul(v3(c, C_SPN)) * eul(v3(c, C_CHS))
+	for o in LOWER_CH:
+		c[o] = loco[o]
+		c[o + 1] = loco[o + 1]
+		c[o + 2] = loco[o + 2]
+	var ps := v3(c, C_PELR)
+	var pl := v3(loco, C_PELR)
+	var pe := Vector3(lerpf(ps.x, pl.x, 0.5), lerpf(ps.y, pl.y, 0.1), lerpf(ps.z, pl.z, 0.5))
+	_setv(c, C_PELR, pe)
+	# the chest keeps the orientation the blow gave it in the world: the spine and the chest bone take up what the pelvis gave away
+	var q_rel := (eul(pe).inverse() * tb).get_rotation_quaternion()
+	var q_s := Quaternion.IDENTITY.slerp(q_rel, 0.4)
+	var q_c := q_s.inverse() * q_rel
+	_setv(c, C_SPN, Basis(q_s).get_euler(EULER_ORDER_YXZ))
+	_setv(c, C_CHS, Basis(q_c).get_euler(EULER_ORDER_YXZ))
+	for j in 3:
+		c[C_ROT + j] = loco[C_ROT + j]
+		c[C_PIV + j] = loco[C_PIV + j]
+
+
+# --- the wrist's limit -------------------------------------------------------------------------------------------------------
+## A hand cannot point the blade closer than about 30 degrees to its forearm's line (docs/ANIMATION.md 6.3). The blows are
+## authored inside that, but a blend into one (from a run, from the guard, from the blow before) is a straight mix of two
+## poses and can dip below it for a frame or two: while a blow plays and while it blends out, `_solve` turns such a hand away
+## from the forearm about the axis across both (a degree or two, only in those frames).
+const WRIST_MIN := 0.515
+var _wlim := false
+var _wlim_tail := 0.0
+## The forearms' twist about their own axes as last solved (right, left): tracked so that it never jumps (_solve): it follows its
+## target at no more than TWIST_RATE rad/s (the shield's facing sweeping across the forearm's axis, as in the air pose, asks for half a
+## turn in a few frames: the shield turns over in a few frames instead).
+var _tw_fa := PackedFloat32Array([0.0, 0.0])
+const TWIST_RATE := 20.0
+const TWIST_RATE_FREE := 36.0
+## The twist (about the forearm's axis) between the held hand's frame and the one the forearm gives it, as last solved, kept continuous.
+var _wr_tw := 0.0
+var _wr_on := false
+var _dbg_tw := Vector4()
+## The left hand's held frame (the spear, the chain) as this frame's solve has it, and the left forearm's direction of the last solve.
+var _lh_held := Basis()
+var _lh_on := false
+var _fa_dir_l := Vector3.ZERO
+var _dbg_wb := 0.0
+var _dbg_wt := Vector3()
+var _dbg_wb2 := Vector3()
+## How far (rad) the left forearm turns to follow a held hand's frame; the wrist keeps what is beyond.
+const TW_HAND_MAX := 1.2
+## ... and the shield's: the forearm never turns further than this either way from where the arm bends (it cannot go round: the twist
+## was once found at 280 degrees).
+const TW_MAX := 2.0
+const TW_LEAD := 3.0
+## ... and how much of the forearm's twist stays the shield's even with the hand held (the shield is on that arm: it must stay clear of him).
+const TW_SHIELD := 0.5
+var _solve_dt := 0.0
+## The shield's slip about the left forearm (rad), the most it may be, how fast it goes (rad/s), and what the last solve wanted.
+var _sh_slack := 0.0
+var _sh_slack_t := 0.0
+const SH_SLACK_MAX := 1.2
+const SH_SLACK_RATE := 20.0
+
+
+## The turn of the shield about the forearm's axis through the elbow, as a transform in rig space (identity when the strap is not slipping).
+func _slack_xf() -> Transform3D:
+	if absf(_sh_slack) < 1e-4:
+		return Transform3D.IDENTITY
+	var e := _bx[FARM_L].origin
+	var ax := _bx[HAND_L].origin - e
+	if ax.length_squared() < 1e-8:
+		return Transform3D.IDENTITY
+	var rb := Basis(ax.normalized(), _sh_slack)
+	return Transform3D(rb, e - rb * e)
+
+
+## The shield's skinning matrix (rest rig space -> rig): the forearm's, turned by the strap's slip.
+func shield_skin() -> Transform3D:
+	var b := _bx[FARM_L]
+	return _slack_xf() * Transform3D(b.basis, b.origin - b.basis * _rest[FARM_L])
+
+
+func _twist_step(d: float, rate: float = TWIST_RATE) -> float:
+	if _solve_dt <= 0.0:
+		return d
+	return clampf(d, -rate * _solve_dt, rate * _solve_dt)
+
+
+static func _wrist_limit(hb: Basis, fore: Vector3) -> Basis:
+	var bd := -hb.z
+	var ang := bd.angle_to(fore)
+	if ang >= WRIST_MIN:
+		return hb
+	var ax := fore.cross(bd)
+	if ax.length_squared() < 1e-8:
+		ax = hb.x
+	return Basis(ax.normalized(), WRIST_MIN - ang) * hb
+
+
+# --- the footwork of the blows -----------------------------------------------------------------------------------------------
+## While a joint-angle blow plays, its feet are driven here, in the world (the gait's own foot state: `_ft_*`), so the
+## blow ends with the feet exactly where the gait takes over. A blow's "feet" plan: `moves` (one foot swings from where it
+## stands to a spot in the rig's frame: foot f, from t0 to t1, ankle at x, z, yaw (deg from the rig), apex (m) over the
+## ground, landing pitch th (deg, + toes up)), `pitchN` (the planted foot N's pitch over the blow: - lifts the heel, the
+## toe stays down) and `followN` (how much of the pelvis' yaw change the planted foot N turns with: it pivots).
+var _sk_on := false
+var _sk_init := false
+var _sk_yaw0 := PackedFloat32Array([0.0, 0.0])
+var _sk_p0 := PackedFloat32Array([0.0, 0.0])
+var _sk_land_t := PackedFloat32Array([-9.0, -9.0])
+var _sk_land_th := PackedFloat32Array([0.0, 0.0])
+var _sk_mv := PackedByteArray()
+
+
+## A blow (from joint angles) starts: the feet that were swinging or stepping home are put down where they are, the gait
+## stops driving them.
+func _strike_begin() -> void:
+	_gait_on = false
+	for i in 2:
+		if _ft_st[i] != ST_STAND:
+			var psi := wrapf(_ft_wy[i] - _ry, -PI, PI)
+			_ft_st[i] = ST_STAND
+			_ft_kind[i] = 0
+			_ft_pin[i] = _l2w(_pin_of(_w2l(_ft_aw[i]), 0, psi, 0.0))
+			_ft_yaw[i] = _ft_wy[i]
+			_ft_th0[i] = 0.0
+		_sk_land_t[i] = -9.0
+	_sk_init = true
+
+
+## The blow ends (or is cut short): a foot in the air comes down at home, the others stay where they are.
+func _strike_end() -> void:
+	_gait_on = true
+	_gait_stop()
+	_wlim_tail = 0.4
+
+
+## The move of foot `i` that is under way at action time t (one that goes where the foot already is - a "near" distance - is
+## skipped: a blow started from its own stance does not hop on the spot, one chained out of another gathers its feet).
+func _strike_move(plan: Dictionary, i: int, t: float) -> Dictionary:
+	var mvs: Array = plan.get("moves", [])
+	if _sk_mv.size() != mvs.size():
+		_sk_mv.resize(mvs.size())
+		_sk_mv.fill(0)
+	for k in mvs.size():
+		var mv: Dictionary = mvs[k]
+		if int(mv["f"]) != i or t < float(mv["t0"]) or t >= float(mv["t1"]) or _sk_mv[k] == 1:
+			continue
+		if _sk_mv[k] == 0:
+			if mv.has("near") and _ft_st[i] != ST_SWING and _ft_aw[i].distance_to(_l2w(Vector2(float(mv["x"]), float(mv["z"])))) < float(mv["near"]):
+				_sk_mv[k] = 1
+				continue
+			_sk_mv[k] = 2
+		return mv
+	return {}
+
+
+## The feet of the blow at action time `action_t`: writes the ankle, pitch, yaw and knee channels of `c` and the gait's
+## own foot state, then lowers the pelvis where a leg would not reach.
+func _strike_feet(c: PackedFloat32Array, dt: float) -> void:
+	var def := act_def(_akey)
+	var plan: Dictionary = (def["strike"] as Dictionary).get("feet", {})
+	var t := action_t
+	_rig_frame()
+	if plan.get("mode", "") == "baked":
+		# the feet are in the pose (the spin turns the whole body about a planted foot): the gait's foot state follows
+		# them, planted where the pose puts them, so that the gait can take over from here
+		for i in 2:
+			var o := C_FR if i == 0 else C_FL
+			var ank := v3(c, o)
+			var fr := v3(c, o + 3)
+			_ft_st[i] = ST_STAND
+			_ft_kind[i] = 1
+			var psi := fr.y
+			_ft_ank[i] = ank
+			_ft_pit[i] = fr.x
+			_ft_ry[i] = psi
+			_ft_wy[i] = _ry + psi
+			_ft_yaw[i] = _ry + psi
+			_ft_aw[i] = _l2w(Vector2(ank.x, ank.z))
+			_ft_ay[i] = ank.y
+			_ft_pin[i] = _l2w(_pin_of(Vector2(ank.x, ank.z), 1, psi, minf(fr.x, 0.0)))
+			_ft_w[i] = 0.0
+		return
+	var pyaw := c[C_PELR + 1]
+	if _sk_init:
+		_sk_init = false
+		_sk_mv.clear()
+		for i in 2:
+			_sk_yaw0[i] = _ft_yaw[i]
+			_sk_p0[i] = pyaw
+	var pel := v3(c, C_PEL)
+	var pelr := v3(c, C_PELR)
+	for i in 2:
+		var sx := 1.0 if i == 0 else -1.0
+		var mv := _strike_move(plan, i, t)
+		var ank := Vector3.ZERO
+		var pit := 0.0
+		var yaw_w := _ft_yaw[i]
+		var w := 1.0
+		if not mv.is_empty():
+			var t0 := float(mv["t0"])
+			var t1 := float(mv["t1"])
+			if _ft_st[i] != ST_SWING:
+				_ft_st[i] = ST_SWING
+				_ft_from[i] = _ft_aw[i]
+				_ft_from_y[i] = _ft_ay[i]
+				_ft_from_th[i] = _ft_pit[i]
+				_ft_from_yaw[i] = _ft_wy[i]
+				_ft_from_pv[i] = 0.0
+			var s := clampf((t - t0) / maxf(t1 - t0, 0.02), 0.0, 1.0)
+			var tgt := Vector2(float(mv["x"]), float(mv["z"]))
+			var gth := deg_to_rad(float(mv.get("th", 0.0)))
+			var gyaw := _ry + deg_to_rad(float(mv.get("yaw", 0.0)))
+			var goal := _l2w(tgt)
+			_ft_goal[i] = goal
+			_ft_goal_th[i] = gth
+			_ft_goal_yaw[i] = gyaw
+			var e := s * s * (3.0 - 2.0 * s)
+			var ev := s * s * (3.0 - 2.0 * s)
+			var aw := _ft_from[i].lerp(goal, e)
+			var al := _w2l(aw)
+			var arc := sin(PI * pow(s, 0.8)) * smoothstep(0.0, 0.14, s)
+			var y := lerpf(_ft_from_y[i], _ankle_y(gth), ev * ev) + float(mv.get("apex", 0.08)) * arc
+			ank = Vector3(al.x, y, al.y)
+			var sp := clampf(s / 0.85, 0.0, 1.0)
+			var k2 := sp * sp * (3.0 - 2.0 * sp)
+			pit = lerpf(_ft_from_th[i], gth, k2)
+			yaw_w = lerp_angle(_ft_from_yaw[i], gyaw, e)
+			w = maxf(1.0 - smoothstep(0.0, 0.15, s), smoothstep(0.55, 0.85, s))
+		else:
+			if _ft_st[i] == ST_SWING:
+				# the move is over: the foot lands on the spot it was heading for
+				_land(i, _w2l(_ft_goal[i]), _ft_goal_th[i], _ft_goal_yaw[i], false)
+				_sk_yaw0[i] = _ft_yaw[i]
+				_sk_p0[i] = pyaw
+				_sk_land_t[i] = t
+				_sk_land_th[i] = _ft_goal_th[i]
+			# planted: the pitch (a heel lifted while the toe stays down), the pivot with the hips
+			var pk: Variant = plan.get("pitch%d" % i)
+			var th := deg_to_rad(_kc(pk, t)) if pk != null else 0.0
+			if _sk_land_t[i] > -8.0 and _sk_land_th[i] > 0.0:
+				th += _sk_land_th[i] * (1.0 - smoothstep(0.0, 0.07, t - _sk_land_t[i]))
+			var fk: Variant = plan.get("follow%d" % i)
+			if fk != null:
+				_ft_yaw[i] = _sk_yaw0[i] + _kc(fk, t) * (pyaw - _sk_p0[i])
+			var psi := wrapf(_ft_yaw[i] - _ry, -PI, PI)
+			if absf(psi) > 0.8:
+				psi = clampf(psi, -0.8, 0.8)
+				_ft_yaw[i] = _ry + psi
+			var pl := _w2l(_ft_pin[i])
+			if _ft_kind[i] == 0 and th <= 0.0:
+				# the sole has come flat: the toe takes the weight, pinned where it lies
+				_ft_kind[i] = 1
+				pl += Vector2(-sin(psi), -cos(psi)) * SOLE_LEN
+				_ft_pin[i] = _l2w(pl)
+			elif _ft_kind[i] == 1 and th > 0.02:
+				# a toe-pinned foot cannot point its toes up: it lies flat
+				th = 0.0
+			ank = _ankle_of(pl, _ft_kind[i], psi, th)
+			pit = th
+			yaw_w = _ry + psi
+		if _ft_st[i] == ST_SWING:
+			# a swinging foot keeps its own side of the planted leg
+			var oth := _ft_ank[1 - i]
+			if i == 1:
+				ank.x = minf(ank.x, oth.x - 0.11)
+			elif _ft_st[1] == ST_STAND:
+				ank.x = maxf(ank.x, oth.x + 0.11)
+		_ft_ank[i] = ank
+		_ft_pit[i] = pit
+		_ft_wy[i] = yaw_w
+		_ft_ry[i] = wrapf(yaw_w - _ry, -PI, PI)
+		_ft_aw[i] = _l2w(Vector2(ank.x, ank.z))
+		_ft_ay[i] = ank.y
+		_ft_w[i] = w
+		var o := C_FR if i == 0 else C_FL
+		_setv(c, o, ank)
+		_setv(c, o + 3, Vector3(pit, _ft_ry[i], 0.0))
+		_setv(c, o + 6, Basis(Vector3.UP, _ft_ry[i]) * Vector3(sx * 0.12, 0.0, -1.0))
+	pel.y = _softmin(pel.y, _pelvis_limit(pel, pelr), 0.03)
+	_setv(c, C_PEL, pel)
+	# the leg's reach, with the pelvis where it ended up: a foot the pelvis has run away from (a lunge, a blow carried out of a
+	# run) is dragged along by its contact (a planted foot slides in) or pulled in (a foot in the air)
+	var lmax := (LEN_TH + LEN_SH) * LEG_REACH * 0.99
+	for i in 2:
+		var sx2 := 1.0 if i == 0 else -1.0
+		var hip := P_PELVIS + pel + eul(pelr) * (mx(P_HIP, sx2) - P_PELVIS)
+		var a := _ft_ank[i]
+		var dh := Vector2(a.x - hip.x, a.z - hip.z)
+		var hmax := sqrt(maxf(lmax * lmax - (hip.y - a.y) * (hip.y - a.y), 0.0016))
+		if dh.length() > hmax:
+			var sh := dh.normalized() * (dh.length() - hmax)
+			a.x -= sh.x
+			a.z -= sh.y
+			_ft_ank[i] = a
+			_ft_aw[i] = _l2w(Vector2(a.x, a.z))
+			if _ft_st[i] == ST_STAND:
+				_ft_pin[i] = _l2w(_pin_of(Vector2(a.x, a.z), _ft_kind[i], _ft_ry[i], _ft_pit[i]))
+			_setv(c, C_FR if i == 0 else C_FL, a)
+# <<< STRIKES END
 
 
 ## Emits an action's events (a name may carry several times).

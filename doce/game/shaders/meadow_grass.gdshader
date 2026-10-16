@@ -9,8 +9,9 @@
 // Shading (meadow_lib.gdshaderinc): EVERY vertex of a clump takes the mound normal at the clump's ROOT, the ground
 // under it takes the same normal (terrain.gdshader), so they light as one surface with hand-painted shadow shapes;
 // two greens mixed by the same blob pattern; a cel ramp with a chosen deep cool shadow colour; tips glow when the
-// sun is behind them. Wind: one noise at the root (slow wave + fast noise) turns the whole clump about its root,
-// the wave darkens it a little where it bends; the tips flutter. The pushers (hero, beasts) bend it away.
+// sun is behind them. Wind: the always-rolling wave and a slow ripple at the root turn the whole clump about its root
+// (nothing faster than ~1 Hz: wind.gdshaderinc), the wave darkens it a little where it bends; the tips sway slowly
+// across the wind. The pushers (hero, beasts) bend it away.
 //
 // Drawn in the ALPHA list (ALPHA = 1: still opaque, depth written) with a negative render priority, writing the
 // stencil bit 32 that keeps toon_edges.gdshader's ink lines off the grass (an opaque material writing stencil would
@@ -99,7 +100,7 @@ void vertex() {
 #else
 		float hf = clamp(UV.y * UV2.y, 0.0, 1.0);
 #endif
-		// Wind (Trung): one noise at the root -> a slow wave and a fast noise turn the clump about its root.
+		// Wind (Trung): at the root a slow wave and a slow ripple turn the clump about its root.
 		vec2 wind = mlib_wind(root, 1.0, 1.0);
 		vec3 bend = mlib_bend(root3, wind, flex);
 		// the verges: clumps by a path lean out over it (the path's edge disappears under the grass)
@@ -115,7 +116,7 @@ void vertex() {
 		p = mlib_rotate(p, bend.xy);
 		// under the feet: lie down
 		p.y *= 1.0 - bend.z * bend.z * 0.55;
-		// tip flutter (a few centimetres, per blade)
+		// tip sway across the wind (a centimetre or two, slow, in step along the field)
 #ifndef MEADOW_CARDS
 		p.xz += wind_flutter(root, UV.x, wind.x) * hf * hf * H * 0.12;
 #endif

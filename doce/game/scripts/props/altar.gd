@@ -39,7 +39,7 @@ func _build() -> void:
 	# Bronze fire bowl on a short foot, with glowing embers (vertex alpha 0.5 = self-lit).
 	mb.cyl(Vector3(0, 1.26, 0), 0.1, 0.2, 0.16, 10, Pal.BRONZE_DARK)
 	mb.cyl(Vector3(0, 1.36, 0), 0.2, 0.18, 0.46, 12, Pal.BRONZE, true, 0.0, Color(1.0, 0.5, 0.22, 0.5))
-	mb.ring(Vector3(0, 1.54, 0), 0.5, 0.42, 0.05, 14, Pal.BRONZE_DARK)
+	ModelsNature.ring6(mb, Vector3(0, 1.54, 0), 0.5, 0.42, 0.05, 14, Pal.BRONZE_DARK) # DOCE: closed underneath (the lip overhangs the bowl)
 	var mi := MeshInstance3D.new()
 	mi.mesh = mb.commit()
 	mi.material_override = Materials.lowpoly()
