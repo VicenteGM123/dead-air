@@ -77,7 +77,7 @@ const GRIP := Vector3(0.0, -0.104, 0.0)
 ## Hands are drawn this much bigger than life (heroic proportions).
 const HAND_K := 1.18
 const FWD := Vector3(0.0, 0.0, -1.0)
-const SHIELD_R := 0.34
+const SHIELD_R := 0.39
 ## The left fist holds the spear this far towards its head from the spear's own origin.
 const SPEAR_HOLD := 0.22
 ## The direction (chest space) the spear's local x axis lies along on the back, the leaf's broad side being the way across it.
