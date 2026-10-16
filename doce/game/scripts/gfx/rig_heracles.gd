@@ -1215,31 +1215,42 @@ static func open_hand_mesh(s: float) -> ArrayMesh:
 
 # --- weapons -----------------------------------------------------------------------------------------------
 
-## The xiphos in grip space: origin where the fist holds it, blade along -Z, edges along ±Y, flats facing ±X.
-## [soft (grip), metal (hilt, blade)]
+## The sword's measures in grip space (m): the blade runs along -Z from SWORD_ROOT (just past the guard) to
+## SWORD_TIP, a leaf widest (SWORD_W each side) about 62 % of the way out; SWORD_GUARD is the crossguard's half-width
+## and SWORD_POMMEL the far end of the hilt. The hit sweep (blade_segment), the trail and the scabbard use them.
+const SWORD_ROOT := -0.095
+const SWORD_TIP := -1.075
+const SWORD_W := 0.045
+const SWORD_GUARD := 0.11
+const SWORD_POMMEL := 0.14
+## The hero's sword in grip space (a heroic leaf blade, xiphos-shaped, about 1.2 m long): origin where the fist
+## holds it, blade along -Z, edges along ±Y, flats facing ±X. [soft (grip), metal (hilt, blade)]
 static func sword_meshes() -> Array:
 	if not _cache.has("sword"):
 		var soft := MeshBuilder.new(61)
 		var metal := MeshBuilder.new(62)
-		# grip (dark leather wrap)
-		loft(soft, [[Vector3(0, 0, 0.068), 0.018, 0.016], [Vector3(0, 0, 0.0), 0.02, 0.018], [Vector3(0, 0, -0.058), 0.018, 0.016]], 8, LEATHER_DARK, Vector3.UP, false, false)
+		# grip (dark leather wrap), long enough for the whole fist
+		loft(soft, [[Vector3(0, 0, 0.088), 0.019, 0.017], [Vector3(0, 0, 0.0), 0.021, 0.019], [Vector3(0, 0, -0.074), 0.019, 0.017]], 8, LEATHER_DARK, Vector3.UP, false, false)
 		# pommel and guard (bronze)
-		metal.push(Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(0, 0, 0.07)))
-		metal.cyl(Vector3(0, -0.012, 0), 0.026, 0.03, 0.026, 12, BRONZE)
+		metal.push(Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(0, 0, 0.09)))
+		metal.cyl(Vector3(0, -0.012, 0), 0.03, 0.034, 0.03, 12, BRONZE)
 		metal.pop()
-		metal.ico(Vector3(0, 0, 0.098), 0.022, BRONZE_LIGHT, 0, 0.0, Vector3(1.0, 1.0, 0.7))
-		metal.box(Vector3(0, 0, -0.068), Vector3(0.034, 0.15, 0.022), BRONZE)
-		metal.box(Vector3(0, 0, -0.074), Vector3(0.026, 0.11, 0.02), BRONZE_LIGHT)
-		# leaf blade: diamond section, widest two thirds of the way out
-		var zs := [-0.08, -0.13, -0.22, -0.33, -0.43, -0.5, -0.56, -0.6, -0.635]
-		var ws := [0.024, 0.021, 0.022, 0.03, 0.035, 0.032, 0.024, 0.013, 0.0]
+		metal.ico(Vector3(0, 0, 0.118), 0.028, BRONZE_LIGHT, 0, 0.0, Vector3(1.0, 1.0, 0.75))
+		metal.box(Vector3(0, 0, -0.082), Vector3(0.042, SWORD_GUARD * 2.0, 0.028), BRONZE)
+		metal.box(Vector3(0, 0, -0.088), Vector3(0.032, SWORD_GUARD * 1.45, 0.026), BRONZE_LIGHT)
+		for sy in [-1.0, 1.0]:
+			metal.ico(Vector3(0, sy * SWORD_GUARD, -0.082), 0.019, BRONZE_LIGHT, 0, 0.0, Vector3(1.0, 0.8, 1.0))
+		# leaf blade: diamond section, waisted near the hilt, widest about 62 % of the way out
+		var zs := [SWORD_ROOT, -0.16, -0.3, -0.48, -0.66, -0.8, -0.92, -1.0, -1.045, SWORD_TIP]
+		var ws := [0.034, 0.03, 0.029, 0.034, 0.044, SWORD_W, 0.038, 0.026, 0.013, 0.0]
+		var ts := [0.0105, 0.0095, 0.009, 0.009, 0.0095, 0.009, 0.008, 0.007, 0.0055, 0.0]
 		for k in zs.size() - 1:
 			var z0: float = zs[k]
 			var z1: float = zs[k + 1]
 			var w0: float = ws[k]
 			var w1: float = ws[k + 1]
-			var t0 := 0.0075 if k < zs.size() - 2 else 0.006
-			var t1 := 0.0075 if k + 1 < zs.size() - 1 else 0.0
+			var t0: float = ts[k]
+			var t1: float = ts[k + 1]
 			for sy in [-1.0, 1.0]:
 				for sx in [-1.0, 1.0]:
 					var e0 := Vector3(0, sy * w0, z0)
@@ -1258,7 +1269,7 @@ static func sword_meshes() -> Array:
 						metal.quad(a[0], a[1], a[2], a[3], STEEL)
 						metal.quad(b[0], b[1], b[2], b[3], STEEL_LIGHT)
 		# blade root
-		metal.box(Vector3(0, 0, -0.084), Vector3(0.018, 0.05, 0.012), STEEL_DARK)
+		metal.box(Vector3(0, 0, -0.1), Vector3(0.023, 0.062, 0.016), STEEL_DARK)
 		_cache["sword"] = [soft.commit(), metal.commit()]
 	return _cache["sword"]
 
@@ -2160,7 +2171,7 @@ var _blade := PackedVector3Array([Vector3.ZERO, Vector3.ZERO])
 func blade_segment() -> PackedVector3Array:
 	var gx := _sword.global_transform if _sword.is_inside_tree() else transform * _hand_r.transform * _sword.transform
 	_blade[0] = gx * Vector3(0.0, 0.0, -0.1)
-	_blade[1] = gx * Vector3(0.0, 0.0, -0.64)
+	_blade[1] = gx * Vector3(0.0, 0.0, SWORD_TIP + 0.005)
 	return _blade
 
 
