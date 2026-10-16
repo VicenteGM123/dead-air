@@ -86,6 +86,19 @@ initial shove in m/s (decays at 18 m/s^2: 3.8 m/s moves a foe 0.40 m, 8.5 about 
 `knockback_resist`; the arena's straw soldier, resist 0.6: 0.08 m for one light blow, 0.50 m for the combo, 0.66 m
 for the heavy; the sack, resist 0.35: 0.19 / 1.27 / 1.88 m).
 
+The four blows' poses were rebuilt on 2026-10-16 (the client: "the arms and wrists look strange when striking, only the
+arm moves": docs/ANIMATION.md section 4: joint-angle curves, the chain hips -> chest -> shoulder -> elbow -> wrist, the
+blade at least 30 degrees off the forearm, the shield arm and the feet authored with them). **Every number in this table
+is unchanged** (the rig's keys: active windows, `cancel from`, `move from`, `rearm`, lengths, the swing / impact / step
+event times, the lunge, the damage); the only change in timing is the heavy's entry blend, 0.10 -> 0.06 s. The heavy is
+still the 360-degree spin (its hit window strikes every direction round the hero) and now ends in a deep step and a
+diagonal slam. The blade sweep runs along the new poses: against the old active-window arcs the new ones cover 100 % of
+the directions for attack1, attack3 and the heavy and 92 % (12 of 13 direction bins) for attack2, whose backhand
+now ends at 85 degrees: the hero's own right side is the bin it no longer reaches. A blow started on the run is layered
+over the gait (`HeroMelee._begin` -> `rig.set_strike_run(_carry != Vector3.ZERO)`); the wind-up of attack1 / attack2 is
+about 4 frames long (the entry is a 0.06-0.07 s mix of what the hero was doing and the first pose): a more readable
+wind-up needs a re-tune of `act0` / impact here and of the rig's event times together, which was not done.
+
 Measured at 60 fps (probe runs in the arena, section 8.1): press to contact 0.167 s for any press up to 0.35 s long
 (the button's hold never delays the blow); a fast combo lands at 0.167 / 0.418 / 0.869 s; with a stick push the hero
 is running again 0.20 s after a light blow's contact, 0.29 s after the finisher's, 0.47 s after the heavy's (without
@@ -397,11 +410,12 @@ normal, on)` with the ground under each foot (the hero casts two rays a tick, `H
 the lower foot, each foot is raised to its ground and its sole tilted to the slope (up to 35 degrees, smoothed 14/s),
 weighted by `_gnd_k` (only on the ground, eased out while airborne, swimming, hanging or rolling). Clip check:
 `tools/clip_check_heracles.tscn` (adds strafe, back-pedal, guard-strafe and hang states; hidden weapons are skipped):
-2602 samples (`catch` and `climb` included), 847-900 contacts deeper than 8 mm (the count varies from run to run
-with the cape cloth; it was 1059-1124 before step 3): the sword arm against the cuirass in attack1 / attack2 is down
-to 3.4 cm (was 5.8 cm); the deepest left are all the cape: against the left arm and the shield in the heavy's spin
-and in the strafe (4.5-5.7 cm for a frame or two, the cloth between two particles straddling a thin part; 31 log
-lines of 4 cm or more). The catch: 2.8 cm (the shaft against the shield on its first frame).
+2602 samples (`catch` and `climb` included), 345 contacts deeper than 8 mm (the count varies by a few from run to run
+with the cape cloth; it was 847-900 before the 2026-10-16 animation round and 1059-1124 before step 3 of the first
+one): what is left is the cape against the shield and the left arm in the heavy's spin (3-7 cm for a frame or two,
+the cloth between two particles straddling a thin part), the pelvis in the heavy hit (3 cm), the lion hood against
+the right forearm in the wrestle loop (4.5 cm) and a few 2.5-4 cm grazes of the spear and the shield in the throw and
+the catch (docs/ANIMATION.md 8.8).
 The base `Rig` (CORE) adds `set_fade(v)` / `get_fade()` (lowpoly `fade`: an ordered-dither screen door, the camera's
 fade of foes in the way) and the flash constants `FLASH_LIGHT` 0.4, `FLASH_HEAVY` 0.6, `FLASH_DECAY` 13 (per second of
 real time; a fresh flash shows at full strength for one frame).
@@ -413,6 +427,15 @@ bounding-sphere early-out; it was 3.3-4.0 ms before). The cape also stays in fro
 (two rays back from his chest and hips, one down behind his heels: a plane it is pushed out of, and the rising
 ground the hem rests on; `cape_world = false` for tools without a world). Preview:
 `tools/preview.tscn -- script=res://tools/preview_heracles.gd fns=sheet rows=views:hang` (rows also take `hang`).
+
+**The animation round (2026-10-16)**: the gait, the four blows and every other action were rebuilt to the rules of
+docs/ANIMATION.md (the study, the spec, the acceptance metrics of `tools/anim_check.tscn`, how each action was built):
+feet planted in the world and a leaning, counter-rotating torso on the ground; the blows as joint-angle curves with the
+kinetic chain; inertialized blends between any two states; a pop detector over 67 scripted sequences. The rig API is
+unchanged apart from `set_strike_run(on: bool)` (called by `HeroMelee._begin`) and `preview_pose(..., heading, lunge)`;
+`play()` names, lengths and events are those of this document. `advance()` costs 0.9-1.3 ms a frame on desktop, as
+before (`anim_check mode=perf`); the first rig of a run compiles the actions in about 48 ms (the blows are baked at
+120 Hz: 3 ms before). Not measured: WebAssembly cost.
 
 ---
 

@@ -75,6 +75,9 @@ godot --headless --path . res://tools/arena.tscn --fixed-fps 60 --quit-after 120
 godot --headless --path . res://tools/encounters.tscn --fixed-fps 60 --quit-after 500000 -- encbot=all quit=1 # lobos y jabalíes
 godot --headless --path . --fixed-fps 60 --quit-after 80000 -- play=1 lionbot=units quit=1                    # el León
 godot --headless --path . res://tools/wheat_walk.tscn --fixed-fps 60 --quit-after 4000 -- enemies=0          # la mano en el trigo
+godot --headless --path . res://tools/anim_check.tscn -- mode=pops                                            # la animación (también loco, trans, strike, combo, swap, ranges)
+godot --headless --path . res://tools/mesh_audit.tscn --quit-after 100000 -- selftest=1 world=1              # techos, barcos y props cerrados (solo queda una grieta decorativa de la cueva)
+godot --headless --path . res://tools/sea_probe.tscn --quit-after 12000 -- noui=1 play=1 enemies=0 lion=0 landing=1   # los barcos flotan: nunca hay agua encima
 ```
 
 ## Documentación
@@ -83,6 +86,7 @@ godot --headless --path . res://tools/wheat_walk.tscn --fixed-fps 60 --quit-afte
 - `docs/ARCHITECTURE.md`: cómo está hecho (escena, contratos, mundo, hierba y trigo, depuración, pruebas).
 - `docs/COMBAT.md`: el combate, la lanza con cadena y la cámara. `docs/ENCOUNTERS.md`: lobos, jabalíes y el León.
 - `docs/AUDIO.md`: los sonidos.
+- `docs/ANIMATION.md`: cómo se mueve Heracles (el estudio de animación, la especificación de la carrera y los golpes, las métricas).
 
 ## Tecnología
 

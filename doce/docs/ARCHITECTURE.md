@@ -9,7 +9,9 @@ This file describes the game as it is implemented after the merge of the streams
 combat / chain spear / camera / hero rig, WORLD's Nemea, BESTIARY's beasts, UI+AUDIO) and the ENCOUNTERS merge (later
 on 2026-10-11: the wolf packs and boars, the Nemean Lion; the slice is playable from the title to the boat) and the
 final integration (the night of 2026-10-11: the anime meadow over the whole island, the wheat field, the shared wind,
-the hero's free hand brushing the wheat; the published web build, section 10.3):
+the hero's free hand brushing the wheat; the published web build, section 10.3) and the corrections round of
+2026-10-16 (a grass wind that never trembles, ships that float, closed roofs and props, a rebuilt gait and sword blows,
+a calmer sea: section 10.4):
 layout, autoloads, every contract between the work streams (with real signatures), physics, input, debug arguments,
 how to run, render and test, and who owns what. The encounters themselves (behaviours, numbers, tests):
 `docs/ENCOUNTERS.md`.
@@ -65,7 +67,9 @@ doce/
   docs/            GDD.md (design, Spanish) · ARCHITECTURE.md (this) · AUDIO.md (sound names, levels, usage) ·
                    COMBAT.md (CORE: controls, the hero's states, every combat / chain / camera number, the
                    contracts for ENCOUNTERS) · ENCOUNTERS.md (the wolves, the boars and the Nemean Lion: behaviours,
-                   numbers, tests, the playthrough)
+                   numbers, tests, the playthrough) · ANIMATION.md (how Heracles moves: the study, the gait and blow
+                   specs, the acceptance metrics, how every action was built; anim_design/: the generator of the
+                   four blows)
   tools/           export_web.sh, web_test.mjs, package.json (+ node_modules after npm install), audio/ (generators)
   web/             the published build (written only by export_web.sh with STRICT=1 after a passing web test)
   game/            the Godot project
@@ -127,9 +131,13 @@ doce/
       world/nemea_passage.gd  the broken bridge, the sea stacks, the three bronze rings, the three altars
       world/nemea_story.gd    the lion's paw prints, remains, smashed fences (the island tells what happened)
       world/nemea_boat.gd     the ship to Lerna (Interactable: "Zarpar" after Game.boss_ended(true))
+      world/boat_float.gd     BoatFloat (AnimatableBody3D): a ship that rides Sea.surface_y (heave, pitch and roll with the
+                              swell), its hull collision up to the deck (the hero can stand aboard), its mooring lines
+                              stretched every tick (section 5.13)
       world/ambient*.gd       Ambient: cats (pettable: Interactables + the hero rig's "pet"), goats, gulls,
                               dolphins, butterflies / fireflies, hearts and splashes (no PHAROS dependency)
-      world/time_of_day.gd    TimeOfDay: environment, sun, moods (golden by default), every lighting global
+      world/time_of_day.gd    TimeOfDay: environment, sun, moods (golden by default), every lighting global; the shaders'
+                              clock g_time advances in even steps (a smoothed frame time, section 5.11)
       world/sea.gd            Sea: the toon sea planes that follow the camera; surface_y() = the animated swell
       world/anime_meadow.gd   AnimeMeadow: the grass of the whole island (Trung Duy Nguyen's anime-grass method):
                               low-poly clumps on the GPU in three camera-following MultiMesh rings (near 3D clumps, mid
@@ -142,17 +150,23 @@ doce/
                               ramp, ear canopy, 3D ear clumps near the camera, painted ear cards, edge cards, the farm
                               (threshing floor, sheaves, dry-stone wall, olive, cypresses); in_field(), ear_top()
       world/wind.gd           Wind: the one wind (global shader uniforms every frame) and the pushers that part the
-                              grass and the wheat (the hero, his brushing hand, the nearest live beasts)
+                              grass and the wheat (the hero, his brushing hand, the nearest live beasts: they follow the
+                              DRAWN positions, `Hero.visual_position()` and the beast's top-level rig)
       world/grass.gd          Grass: the island's previous GPU grass, built only with grassold=1 (debug fallback)
       gfx/toon_screen.gd      ToonScreen: always-on outline/rim quad + final grade (Wind Waker look)
       gfx/mesh_builder.gd     MeshBuilder: low-poly mesh kit (flat/auto-smoothed normals, vertex colours, xf stack)
       gfx/materials.gd        Materials (static): shared materials + set_param() (per-node, web-safe)
       gfx/rig.gd              Rig: base of every code-animated character (parts, play(), event signal, flash, fade)
       gfx/rig_heracles.gd     RigHeracles: the hero (Corinthian helmet, no face; cuirass, red cape cloth, xiphos, round
-                              shield, the chain spear on his back; the lion pelt outfit), section 5.7
+                              shield, the chain spear on his back; the lion pelt outfit), section 5.7; since 2026-10-16 the
+                              gait (feet planted in the world, a leaning torso that counter-rotates), the four sword blows
+                              (joint-angle curves, a chain of hips, chest, shoulder, elbow and wrist) and every other action
+                              are authored to docs/ANIMATION.md
       gfx/models_nature.gd    ModelsNature: Greek flora, rocks, ruins, wells, boats, terrace walls, limestone cliffs,
-                              sea stacks, spires, cave pillars, stalagmites, fences, bones, the broken bridge...
-      gfx/models_buildings.gd ModelsBuildings: houses, docks, market stalls, ships... (some PHAROS pieces are unused)
+                              sea stacks, spires, cave pillars, stalagmites, fences, bones, the broken bridge...; `box6` /
+                              `ring6`: closed solids (the kit's `box5` and `MeshBuilder.ring` have no underside, section 5.11)
+      gfx/models_buildings.gd ModelsBuildings: houses, docks, market stalls, ships... (some PHAROS pieces are unused); roofs
+                              and balconies are closed solids with a soffit, ships are built to float (section 5.13)
       gfx/models_animals.gd   ModelsAnimals: skinned cats, goats, gulls, dolphins (rigs + meshes)
       gfx/rig_wolf.gd         RigWolf (three coats) + the shared quadruped kit (RigWolf.SkinMesh: one skinned mesh
                               per beast; RigWolf.Quadruped: spine, two-bone leg IK, planted feet, body ground clamp)
@@ -186,7 +200,13 @@ doce/
                    encounters.tscn/.gd + encounter_bot.gd (the wolves and boars bot, lane P), lion_bot.gd (the
                    lion's bot, loaded by the encounter with lionbot=), playthrough.tscn/.gd + playthrough_bot.gd (the
                    whole slice from the title to the boat, section 9), wheat_walk.tscn/.gd (the free hand in the
-                   wheat: test, stills, GIF frames)
+                   wheat: test, stills, GIF frames), anim_check.tscn/.gd (the animation's acceptance metrics and pop
+                   detector: modes loco, trans, strike, combo, ranges, swap, perf, pops) + anim_strips.sh /
+                   strike_strips.sh (frame strips to look at), mesh_audit.tscn/.gd (open surfaces and what can be
+                   seen through them) + roof_shots.tscn/.gd (low cameras looking up at roofs and thin plates),
+                   sea_lab.tscn/.gd + sea_probe.tscn/.gd (fixed cameras and numbers for the sea and every boat),
+                   wind_view / wind_probe / wind_clock_test / wind_stand_probe (the wind's tools), all dev-only:
+                   the web export leaves them out
     web/           shell.html (custom loading screen) and site/ (shell fonts, og.jpg)
 ```
 
@@ -483,7 +503,8 @@ to the World and then given its transform; keep these constructors (or tell WORL
 Collision: StaticBody3D on layer 1. The terrain is a trimesh per 128 m chunk built from exactly the rendered 1 m
 triangles (quad (ix, iz) split a-c when ix + iz is even, b-d when odd), so `height_at()` = the physics ground (0.000 m
 in `tools/world_check` and phystest); convex hulls for rocks and cliffs, cylinders for trunks, pillars and ring stones,
-boxes for houses, walls, fences, the pier and the ships; trimesh for the cave lid, the tunnel roofs and the mouth
+boxes for houses, walls, fences and the pier, a convex hull up to the deck for each ship (BoatFloat, 5.13); trimesh for
+the cave lid, the tunnel roofs and the mouth
 arches. The boulder is on layer 4. Water is not solid: `is_water()` is the ground below the sea; the hero swims
 where it is deeper than 1.3 m.
 
@@ -637,10 +658,31 @@ run: its band at the elbow, face out) so the forearm and the hand come out free 
 collider follows it. `tools/wheat_walk.tscn` measures it (the shield's rim and lip against the body's keep-out volumes
 and the pauldron: clear at a walk and at a run). `tools/preview.tscn -- script=res://tools/preview_heracles.gd
 fns=hero speed=1.6 brush=1` poses it without the wheat.
-`tools/clip_check_heracles.tscn` checks it (2602 samples: 847-900 contacts deeper than 8 mm, varying run to run with
-the cape cloth; the deepest are the cape against the left arm and the shield in the heavy spin and the strafe,
-docs/COMBAT.md 7). `tools/preview.tscn -- script=res://tools/preview_heracles.gd fns=sheet` draws turntables. The
+`tools/clip_check_heracles.tscn` checks it (2602 samples: 345 contacts deeper than 8 mm after the animation round of
+2026-10-16, 847-900 before it, varying by a few from run to run with the cape cloth; the deepest are the cape against the
+shield and the left arm in the heavy spin, docs/COMBAT.md 7). `tools/preview.tscn -- script=res://tools/preview_heracles.gd fns=sheet` draws turntables. The
 skeleton's stand-in (`rig_hero_standin.gd`) and the PHAROS hoplite (`rig_hoplite.gd`) are gone.
+
+**The animation** (2026-10-16; the client's "the animations are bad when striking and running, they are not natural, the
+wrists and arms look strange, only the arm moves, the torso is too straight when running"; the study, the spec, every
+number and how it was built: `docs/ANIMATION.md`, the blows' generator in `docs/anim_design/`). The ground gait plants each
+foot in the world from heel to toe while it stands (the swing is an arc, the pelvis is governed by what the legs can
+reach, the `step` events come from real touchdowns); the torso leans (about 9 degrees at a jog, 19.5 at a sprint, with
+springs for acceleration and turns), the pelvis yaws and rolls and the chest counter-rotates (ratio 1.2-1.9), the head
+is stabilised, the arms swing at about 95 degrees of elbow opposite the legs with the sword hand built from the forearm
+(the blade stays up and out of the legs) and the shield arm carried and bobbing; starts, stops, turns, strafing,
+back-pedalling and landings have their own transitions. The four blows (attack1, attack2, attack3, heavy) are
+joint-angle curves (pelvis and chest turn in the world, the sword arm shoulder / elbow / wrist, the shield arm, the head;
+the feet are driven at runtime) baked at 120 Hz: the chain hips -> chest -> shoulder -> elbow -> wrist peaks in that
+order and the blade stays at least 30 degrees off the forearm line (the wrist's limit). Their lengths, the swing /
+impact / step event times and every combat number are those of docs/COMBAT.md (only the heavy's entry blend changed,
+0.10 -> 0.06 s; the heavy is still the 360-degree spin, and it now ends in a deep step and a diagonal slam). Every
+other action (parry, dodge, hit, death, jump, land, throw, catch, pull, the wrestle, the ceremonies) is authored to the
+same rules, with inertialized blends between any two states. Rig API additions: `set_strike_run(on: bool)`
+(`HeroMelee._begin` calls it: a blow started with the run carried on is layered over the gait, a lunge plants the
+feet; a caller that does not say gets a guess from the speed, above 2.5 m/s) and `preview_pose(..., heading, lunge)`.
+`hero.gd` is unchanged: the rig derives acceleration, turn rate and heading from its own motion. Checks: `tools/
+anim_check.tscn` (section 9).
 
 Optional hooks for `tools/clip_check.gd`: `clip_pairs() -> Array` of `[part_a, part_b]` and
 `clip_volume(part) -> [centre: Vector3, radii: Vector3]` (part-local ellipsoid). Without them it checks every
@@ -766,7 +808,8 @@ poise 99, blades deflected, `grapplable`: hurt only by the wrestle's squeezes) i
 - **TimeOfDay** (scripts/world/time_of_day.gd): WorldEnvironment (sky shader, linear tonemap, no Godot fog), one
   DirectionalLight3D (2 PSSM splits, 95 m), moods `day`, `golden` (default), `dusk`, `night`, `dawn`; every shader
   global is driven from the mood table. API: `set_state(name)`, `transition_to(name, seconds)` (queues),
-  `is_transitioning()`, `current() -> Dictionary`, `shader_time() -> float` (= global `g_time`), `night_amount()`,
+  `is_transitioning()`, `current() -> Dictionary`, `shader_time() -> float` (= global `g_time`, the smoothed clock below), `set_shader_time(t)` (tools: pins it),
+  `night_amount()`,
   `set_shadows(on)`, static `dir_from(elev_deg, azim_deg)`; signal `transition_finished(state)`.
 - **ToonScreen** (scripts/gfx/toon_screen.gd): `ToonScreen.new()`, `add_child`, `setup(tod)`. A 2x2 quad parented to
   whichever Camera3D is current (shaders/toon_edges.gdshader: ink outlines from depth + rim light, render priority
@@ -776,6 +819,14 @@ poise 99, blades deflected, `grapplable`: hurt only by the wrestle's squeezes) i
   `Materials.water()`. Shore foam and colour bands read the world's baked depth texture (globals `g_water_tex`,
   `g_water_rect`: R = 0 at the shoreline .. 1 at 6 m and deeper; the World bakes it in build()).
   `surface_y(x, z, depth := 6.0) -> float` returns the animated surface (same swell as the shader).
+  Since 2026-10-16 the sea draws no sparkles and no sun or moon glint (the client: "flashes, star-shaped crosses that
+  appear suddenly": the old four-point stars all re-rolled at the same instant every 1.43 s and flashed in step, by day
+  and by night; the hard-edged glints popped as the swell turned; `light()` stays as an empty function on purpose, a
+  shader without one gets Godot's default diffuse lighting). The white crest arcs are half as many (3 cells of 8 hold a
+  mark instead of 3 of 4: `keep_cut` 0.625 in the two `crest_marks()` calls), fade out completely before their clock wraps
+  (they used to leave a hairline that jumped 3 m) and are never thinner than a pixel; the horizon's reflection streaks
+  are calmer; the shore foam and the foam rings are as they were. The sky's own stars are still mirrored near the
+  horizon at night (not touched: they measure as no specks).
 - **Shaders**: every opaque shader includes `pharos.gdshaderinc` and uses it like `lowpoly.gdshader` does
   (`ph_out` / `ph_godot_in` / `ph_light_out`, `ph_toon_ramp`, `ph_toon_shadow`, `ph_toon_ambient`, `ph_fog`,
   `ph_cloud_shade`), or lighting and shadows will not match. Shader globals (project.godot): `g_amb_sky`,
@@ -802,6 +853,34 @@ poise 99, blades deflected, `grapplable`: hurt only by the wrestle's squeezes) i
   `g_wind_gust` (vec4: strength, wavelength m, speed m/s, flutter), `g_push_a` / `g_push_b` (mat4: pusher heads /
   tails); the mood's `g_wind` still scales everything. `lowpoly.gdshader`'s `sway` uses the same travelling gusts
   (`wind_foliage()`), so trees and shrubs move with the meadow.
+  Since 2026-10-16 the wind never trembles (the client: "the grass is perfect for a second, then it trembles from side to
+  side for five seconds, and so on for ever"). The old travelling gust fronts (`wind_gust_k`) were off 56 % of the time
+  (lulls of 10-50 s: an amplitude gate and a folding noise warp), while a fast hash noise turning each clump at ~2 Hz and
+  a per-blade tip flutter at 1.0 and 1.45 Hz never stopped: in a lull only the trembling was left. Now the waves are two
+  overlapping sine trains on a FIXED direction with a meandering phase warp and a drifting envelope that never falls
+  below 45 %, so something always rolls through (off 8 % of the time, longest calm 1 s); the clump ripple
+  (`wind_ripple`) and the tip sway are sines of at most 0.17 and 0.33 Hz; every phase is range-reduced (`wind_cyc`: no hash
+  degenerates as a session grows); `g_wind_gust.w` is the tip sway. Nothing visible moves above ~1 Hz (tip speed 22 -> 6.6
+  cm/s RMS, the share of its variance above 1 Hz 54 % -> 0.1 %). `wind.gd`: the pushers follow the DRAWN positions and the
+  push has no seam behind a hero standing still. The look was kept (`wave_tint` 0.4 -> 0.3 and `MLIB_GUST_TILT` 0.55 ->
+  0.4 in `meadow_lib.gdshaderinc`: the grass's luminance within 3 % of before); trees and shrubs sway about half as far
+  in the gusts, continuously. **The shaders' clock** `g_time` (`TimeOfDay.shader_time()`; `Sea.surface_y()` reads the
+  same value, so the boats keep riding the swell the shader draws) advances by a SMOOTHED frame time (an average over
+  ~0.4 s of the unscaled delta times the frame's time scale, pulled back to the raw sum of the deltas with a 0.6 s time
+  constant, never more than 0.3 s from it): at a steady frame rate and in every `--fixed-fps` / `--write-movie` run it IS the
+  raw clock, a hit-stop still freezes it and slow motion slows it, and a 16.7 / 33.3 ms alternation or a hitch no longer
+  moves the whole field at once (simulated judder 4-5 times lower). `rawclock=1` restores the plain clock (section 8:
+  A/B on a real device). Tools: `wind_clock_test`, `wind_probe` (the shader's maths against a float32 Python port, 2e-5),
+  `wind_stand_probe`, `wind_view` (a static camera for video analysis).
+- **Closed solids** (`lowpoly.gdshader` is `cull_back`: a face seen from behind is not drawn, you look through it): anything
+  the camera can get under (a roof, an eave, a balcony, a pergola, a shelf, a sill, a rim) needs its underside, and
+  anything free-standing needs all its faces. `ModelsNature.box5` and `MeshBuilder.ring` have no underside: use
+  `ModelsNature.box6(mb, c, size, col, top_col, rot, bottom_col)` / `ring6(...)` (closed) or `ModelsBuildings._slab(...)` (a
+  closed floating box with a soffit colour: `SOFFIT` wood under roofs, `SOFFIT_PLASTER` under balconies, terraces and
+  ledges). `ModelsBuildings._plaque` leaves its back out on purpose (it sits against a wall; `closed` adds its underside).
+  `MeshBuilder.tube()` caps only its far end and keeps a ring frame with an up hint of +Y: a path that turns vertical
+  flips it and inverts the faces in between, so build such a path in a turned frame and close its foot
+  (`ModelsBuildings._tube_foot`, the ships' stern post). `tools/mesh_audit.tscn` (section 9) finds what is left.
 - **Quality** (Settings "quality", read at build like the old Grass): density 0.6 / 0.85 / 1.0 (meadow) and
   0.75 / 0.9 / 1.0 (wheat cards and clumps); the near wheat clumps have 4 stalks at quality 0, 6 above.
 - **Fx** (scripts/fx/fx.gd, `Game.fx`, packed-array pools: no allocation per particle): `dust(at, n, spread)`,
@@ -836,6 +915,29 @@ only), `Game.boss_started` / `boss_ended` for the lion's bar (its notches at 66 
 when the lion wakes (shown once per run) and `labor_card(2, "La Hidra de Lerna")` from the boat, the victory card
 from `main.victory()`. ENCOUNTERS lane L's one change in ui.gd: `screen_flash()` sets the flash colour at once (a flash
 asked for after the UI's `_process` in a frame showed the ColorRect's opaque white for that frame).
+
+### 5.13 Ships and boats (2026-10-16)
+
+The client: "some boats have water coming in over them: it makes no sense". The sea plane (`water.gdshader`) is opaque and
+drawn over everything that lies under its surface, and the swell lifts it about 0.16 m above the waterline, so a hull whose
+deck sat at the waterline (the old ships: deck at y = -0.02, bilge at -0.53) had its lowest deck point under the swell 60-65 %
+of the time (the two ships), and the sea drawn over 42.5 % (galley) and 44.7 % (merchantman) of its deck points in a minute of
+swell (the end-to-end deck check below). **The rule: anything that floats has its floor above +0.2 m over the waterline, and stays
+on the water.**
+`ModelsBuildings.ship(style, seed)` (style 0 Heracles' galley, 1 the Lerna merchantman) builds a floating hull: the keel 0.6 m
+under the waterline, a planked deck 0.34 m over it wall to wall (never under 0.24 m over the water in a minute of swell), the gunwale 0.85 m (galley,
+1.09 m at the ends) and 1.10 m (merchantman) over the water, everything aboard standing on that deck; it returns `{mesh,
+length, beam, depth, top, deck, draft, rail}`. `NemeaVillage._pier_and_boats` hangs each ship on a `BoatFloat` (`world/
+boat_float.gd`: an `AnimatableBody3D` on layer 1 that puts its origin on `Sea.surface_y`, tilts the hull with a plane
+fitted to five samples of the swell under it, keeps a convex collision hull up to the deck so the hero can swim into it or
+stand aboard, and stretches its mooring lines between the pier's bollards and the ship's cleats every tick: heave
++-0.12 m, tilt up to 3.3 degrees). The beached boats sit on their keels, pitched along the slope
+(`NemeaVillage.beached_transform`). The dock pack's `ModelsBuildings.boat()` (not placed in DOCE's world) floats too (floor
+0.22 m over the waterline, nets recoloured hemp: they were sea-blue and read as water). Checks: `tools/sea_probe.tscn`
+(`BOAT result=PASS`: at every instant of a minute the decks are over 5 cm and the rails over 30 cm above the water) and
+`tools/sea_lab.tscn` with `deckcheck=` (the sea drawn magenta and every deck point projected to the screen for a minute: 0
+of 158,400 (galley) and 138,000 (merchantman) deck samples under the sea, from each of three cameras). Not done: the rails are not collidable and there is no ladder back
+up to the pier (a jump or a swim to the beach).
 
 ---
 
@@ -904,6 +1006,7 @@ contains `dev=1`** (`index.html?dev=1&play=1&scene=arena`); the published page i
 | `nohints=1` | no World hints (the passage's ring, the boulder) |
 | `phystest=1` | physics self-test; prints `DOCE phystest ... result=PASS/FAIL` |
 | `speed=k` | Engine.time_scale (0.1..8) |
+| `rawclock=1` | the shaders' clock (`g_time`) is the plain sum of the frame deltas, as before the wind fix (A/B on a real device: `?dev=1&play=1&rawclock=1`) |
 | `shadows=0/1`, `scale3d=k` | sun shadows; 3D resolution scale (cheap software-rendered tests) |
 | `grass=0` | no meadow at all: no clumps, billboards or flowers, and the ground keeps the plain terrain shading |
 | `grassold=1` | the island's previous Grass instead of the anime meadow (and the low-poly flower drifts back): debug only |
@@ -997,6 +1100,28 @@ timeout 600 godot --headless --path doce/game --quit-after 900 -- play=1 phystes
 timeout 600 godot --headless --path doce/game res://tools/clip_check.tscn --quit-after 3000 -- rig=res://scripts/gfx/rig_heracles.gd
 timeout 900 godot --headless --path doce/game res://tools/clip_check_heracles.tscn --quit-after 200000
 ```
+**The corrections round's checks** (2026-10-16; none needs a window; each prints its verdict):
+```sh
+# the animation (docs/ANIMATION.md 6): "ANIM summary checks=N fail=M result=PASS|FAIL": loco 143, trans 27, strike 68, combo 8,
+# swap 12, pops 268 (a pop detector over 67 scripted sequences), ranges 72 (5 known failures, section 11), perf prints advance() ms
+for m in loco trans strike combo swap pops ranges perf; do
+  timeout 1500 godot --headless --path doce/game res://tools/anim_check.tscn -- mode=$m | grep "ANIM summary"; done
+# open surfaces and what can be seen through them (the world's models must give 0, section 11 has the one exception);
+# the AUDIT FAIL lines name the model, `verbose=1 only=<names>` lists the parts that are seen from behind
+timeout 2400 godot --headless --path doce/game res://tools/mesh_audit.tscn --quit-after 100000 -- selftest=1 world=1 | grep "AUDIT FAIL\|AUDIT RESULT"
+# the boats: decks over 5 cm and rails over 30 cm above the water at every instant of a minute
+timeout 1200 godot --headless --path doce/game res://tools/sea_probe.tscn --quit-after 12000 -- noui=1 play=1 enemies=0 lion=0 landing=1 | grep "BOAT result"
+# the wind: the shaders' clock (12 tests) and a standing hero's pusher
+timeout 300 godot --headless --path doce/game res://tools/wind_clock_test.tscn --quit-after 3 | grep "CLOCK result"
+timeout 900 godot --headless --path doce/game res://tools/wind_stand_probe.tscn --fixed-fps 60 --quit-after 2600 -- play=1 enemies=0 | grep STAND
+```
+Renders to look at (xvfb + opengl3, 1280x720 or 1600x900): frame strips of the gaits and blows (`tools/anim_strips.sh <dir> 10
+loco:6.2`, `COLS=8 tools/strike_strips.sh <dir> attack1 attack2 attack3 heavy`), the sea and every boat from fixed cameras at a
+pinned shader time (`tools/sea_lab.tscn -- shots=sea_game,boat_game_gal,pier_gal outdir=<abs> tt=9`; `list=1` prints the
+cameras; `deckcheck=dc_top wpatch=magenta noedges=1 nopost=1` draws the sea magenta and projects every deck point for a
+minute), roofs and thin props from below (`tools/roof_shots.tscn -- set=houses|props|models outdir=<abs>`), the wind from a
+static camera (`tools/wind_view.tscn`) and the shader's maths against its Python port (`tools/wind_probe.tscn`; the headers
+of the tools have the exact commands).
 **Renders** (keep the last frame, delete the rest; ~4-7 min for 75 frames at 1600x900 on the shared machine):
 ```sh
 timeout 900 xvfb-run -a -s "-screen 0 1600x900x24" godot --path doce/game --rendering-driver opengl3 \
@@ -1147,6 +1272,88 @@ to 26-35 s while shaders compiled, and the single-threaded build mixes sound onl
 commit's build (608d790) failed that check the same way on this machine (median 5.2 s, max 31 s). No frame time on a
 real GPU in a browser has been measured yet.
 
+### 10.4 The corrections round (2026-10-16)
+
+The client played the web build of 1bd425e ("está bien el juego, le veo potencial") and asked for five corrections: (1) the grass
+was fluid for about a second, then "trembled from side to side" for about five, for ever; (2) some boats had water coming in over
+them; (3) the roofs of the houses looked transparent from below; (4) the character animations were unnatural when striking and
+running (the arms and wrists strange, only the arm moving, the torso too straight when running); (5) the sea had star-shaped
+crosses that flash up suddenly, and too many white arcs. Four lanes worked in private copies of 1bd425e, with their own
+objective measurements and no reviewer rounds (the client: "terminalo no más, yo seré el judge"); the ship step merged them.
+
+| Lane | Changed in `game/` | What (section) |
+|---|---|---|
+| A, the grass wind | `shaders/wind.gdshaderinc` (rewritten), `meadow_lib.gdshaderinc`, `scripts/world/wind.gd`, `time_of_day.gd`; comments in `meadow_grass`, `wheat_ears`, `wheat_canopy`; tools `wind_view`, `wind_probe`, `wind_clock_test`, `wind_stand_probe` | the always-fluid wind and the smoothed clock (5.11) |
+| B, the sea and the boats | `shaders/water.gdshader`, `world/boat_float.gd` (new), `nemea_village.gd`, `models_buildings.gd` (`ship()`, `boat()`), `models_nature.gd` (the boat helpers); tools `sea_lab`, `sea_probe` | no sparkles, half the arcs (5.11); ships that float (5.13) |
+| C, roofs and thin surfaces | `models_buildings.gd` (houses, roofs, balconies, props), `models_nature.gd` (`box6`, `ring6`, props), `nemea_village.gd` (plaza, gate, pen, nets, rope coil), `props/altar.gd`, `props/chain_ring.gd`; tools `mesh_audit`, `roof_shots` | every roof, balcony and prop closed (5.11) |
+| D, the animation | `scripts/gfx/rig_heracles.gd` (4075 -> 5947 lines), `player/hero_melee.gd` (one line); tools `anim_check`, `anim_strips.sh`, `strike_strips.sh`, `preview_heracles.gd`, `clip_check_heracles.gd`; `docs/ANIMATION.md`, `docs/anim_design/` | the gait, the four blows and every other action (5.7) |
+
+**The merge.** The live tree was clean at 1bd425e, so the merged tree is that tree plus every changed or new file of each lane
+(found by `diff -rq` of each lane's copy against it, not from the lanes' lists): 47 files are changed by one lane only and were
+copied; the three files that two lanes changed (`models_buildings.gd`, `models_nature.gd`, `nemea_village.gd`: B and C) were
+merged with `git merge-file` (base = the 1bd425e version): 0 textual conflicts, because the lanes' hunks sit in different
+functions (B: `ship`, `boat`, `hull`, `add_boat_hull`, `_pier_and_boats`, `_beach`; C: the buildings, the props, the plaza, the
+gate, the goat pen, the nets, the pier's rope coil); every lane's own files are byte-identical in the result. What the textual merge cannot see, the regression suite found, and the ship step fixed:
+- **Boats against the audit** (B's new geometry, C's metric): `mesh_audit` failed `ship_galley`, `ship_merchant` and
+  `boat_small_4` (0.29 / 0.04 / 0.04 % of the rays against its 0.02 % limit): an open tube foot and a frame flip in the stern
+  post's curl (inside-out faces), the painted eyes' backs, tubes without caps (oars, furled sail, rigging), open boxes in the
+  beached boats. Fixed in `ModelsBuildings.ship()` (`_tube_foot`, the post built in a frame turned a quarter turn about X,
+  `ModelsNature.box6` eyes, capped oars / sail / rigging) and `ModelsNature.boat_small()` / `add_boat_hull()` (`box6` thwarts,
+  floorboard and oar blades, capped oars): now 0.000 % on both ships and the two beached boats (0.013 % and 0.000 %).
+- **The lab's clock**: B's `tools/sea_lab.gd` pinned the shaders' clock by writing `TimeOfDay._time`; with A's smoothed clock
+  that no longer sticks (the clock is pulled back to the raw sum of the deltas), so it calls `set_shader_time()` when the method
+  exists (and `_time` on the old tree, for the BEFORE renders). Cameras added: `sea_game`, `sea_game_low`, `plaza_game`.
+- **`export_presets.cfg`**: the new dev tools (`tools/anim_*`, `sea_*`, `mesh_audit*`, `roof_shots*`, `wind_*`) are left out of
+  the web build (`exclude_filter`).
+- **A visible change nobody asked for (lane C)**: the plaza's paving (`nemea_village.gd`, the winding of its slabs) was wound
+  facing down, so from above only the dark bed under it showed, a flat brown disc; now the designed limestone paving with its
+  terracotta ring shows. Two calls; restore the old vertex order (`tri(.., p3, p2, ..)` and `quad(p0, p3, p2, p1, ..)`) if the
+  old look is wanted.
+
+**Verified on the merged tree** (headless unless said; logs in the ship work dir): `play=1` clean; `world_check` fails=0;
+`phystest` PASS on the ground and in water; the arena bot 16/16 at 60 and at 24 fps; the island bot 6/6 and the slice walk 2/2;
+`world_tour -- walk=1` PASS (428 m, stuck 0, below ground 0); the encounter bot 12/12; the lion's 12 units, the fights with mouth B
+sealed and open and the careless hero; the playthrough 14/14 (deaths 0, 295 s of game time); `wheat_walk` PASS at a walk and at a
+run; `ui_flow_test` fails=0 (xvfb); `sea_probe` PASS; `wind_clock_test` PASS (12/12); `anim_check` loco 143/143, trans 27/27,
+strike 68/68, combo 8/8, swap 12/12, pops 268/268 and ranges 67/72 (the five known failures, section 11); `mesh_audit` 0 see-through
+models except the cave's crack strip (section 11); `clip_check_heracles` 345 contacts in 2602 samples (847-900 on 1bd425e). No
+web-fatal pattern in any shipped file. Not run by a person: nothing was played by hand with the real camera on the real terrain.
+
+**Measured against the old tree with the same tools** (1bd425e, tools copied in; first-hand in the ship step): `mesh_audit` 62 of 74
+pieces (43 models, 27 village regions, 4 cave regions) seen through -> 1 (the cave's crack strip); `anim_check` loco 39 of 143
+checks failing -> 0, strike 35 of 68 -> 0, trans 15 of 27 -> 0 (run lean 0.1 -> 9.2 degrees, a jog's planted foot slides 9 -> 0.4
+cm); the static-camera meadow video (570 frames at 30 fps, `tools/wind_view.tscn`, golden hour): (30 px patch, second) pairs that
+tremble 23.3 % -> 4.9 %, longest trembling run 19 s -> 2 s, frame-to-frame difference 1.65 -> 0.81 (the merged tree reproduces lane
+A's numbers exactly); `wind_probe`: the shader's wind maths equals the Python port that was analysed, to 2e-5 (clock up to 47 s),
+3e-4 (1234 s) and 7e-3 (36000 s, ten hours into a session).
+
+**Copied into the live tree** (`rsync` without `--delete`, `.godot` excluded; live == merged tree, 51 files over a clean 1bd425e: 18
+changed, 33 new; committed as bffdc74), imported (three passes: the first import of a copy without `.godot/` segfaults on the project
+font, harmless), and re-checked there: `play=1` clean, the playthrough 14/14 (deaths 0), the arena bot 16/16, the island bot 6/6,
+`world_check` fails=0, `mesh_audit` 1 (the cave), `sea_probe` PASS.
+
+**The web build** (`STRICT=1 sh doce/tools/export_web.sh doce/game <scratch>/web` of the live tree at bffdc74, tested in the scratch
+folder; `doce/web` (committed as d1c05c8) holds the same export, rebuilt from the same committed tree: its `index.html`, `index.js`, `index.wasm`, audio
+worklets, icons, fonts and `og.jpg` are byte for byte the tested ones, and its `index.pck` has the same 395 files, 8 small exported
+scenes apart that differ in 4 random bytes each (the `node_ids` Godot rewrites on every export); its README line carries no
+commit hash): 44.34 MB, 15.43 MB with gzip (`index.wasm` 37.68 MB as before, `index.pck` 6.15 MB, 0.07 MB more than 1bd425e's).
+`web_test.mjs` in Chromium 141 (WebGL 2 on SwiftShader), every scenario with 0 console errors and 0 console warnings:
+**title** passed (world ready in 8.4 s of engine time, first frame at 19 s); **flow** (no parameters: the title, Enter, PLAY 5.8 s
+later, sound with no gaps) passed on its first run, the check that the sound keeps running included (it needed a re-run on
+the previous round's builds); **play** passed twice at full resolution, at the pier (`?dev=1&play=1&phystest=1`) and in the wheat
+(`&start=-52,0,24&face=90`: the meadow's and the wheat's shaders and the new wind compile and draw on WebGL 2; the ships float at the
+pier, the hero runs with the new gait). SwiftShader on this machine drew a frame every 3.9-5.4 s on median in those runs (0.3-0.5
+fps; the only warning the test printed), so the in-browser physics self-test, which needs 2.5 s of game time, printed nothing
+there. Run on `doce/web` itself, **title** and **flow** passed again (flow: PLAY 3 s after Enter, sound with no gaps, 0 errors, 0
+warnings) and **play** with the documented lighter query (`&scale3d=0.25&nopost=1&noedges=1&shadows=0`, `--play-wait 40`) gave 0
+errors, 0 warnings and `DOCE phystest engine=Jolt Physics ray_max_err=0.000 on_floor=true moved=12.4 m result=PASS`.
+A separate **flow** run on `doce/web` by the orchestrator reached PLAY 6.2 s after Enter with 0 errors but flagged the "sound keeps
+running" check (no 0.5 s of audio within 30 s of PLAY): the result of that one check changes from run to run on this machine
+(SwiftShader, one frame every ~5 s, the single-threaded build mixes sound only between frames) and it failed the same way on the
+1bd425e build; it says nothing about the build itself.
+No frame time on a real GPU in a browser has been measured yet; what the corrections cost per frame was measured on a desktop
+CPU only (the rig's `advance()` 0.9-1.3 ms; the first rig's 48 ms compile), not in WebAssembly.
+
 ## 11. Known placeholders and open points
 
 - The slice is playable from the title to the boat (wolves, boars, the lion, the pelt, the Lerna teaser; the
@@ -1186,3 +1393,27 @@ real GPU in a browser has been measured yet.
   shows inside the shadow on the face to the right of the lowered arch (light through a gap in the rock above it).
 - The west ramp up to the passage is a cutting between two bare, flat rock walls that read as a purple canyon in the
   golden-hour shadow; the ring standing stones and the cave arena (smooth pillars, flat floor) are plain.
+- Animation (2026-10-16; docs/ANIMATION.md 7 and 8.8): five wrist-extension checks of `anim_check mode=ranges` still fail (67
+  of 72 pass), all on the SWORD hand: dodge (x2: a tumble with the hand twisted ~170 degrees while upside down), don_skin
+  (x2) and pull (x1), authored hand frames that read fine in the strips; a free roll about the blade made 8 pop sequences
+  fail, a tracked roll angle would be the proper fix. The blade-to-forearm angle (28-30 degrees at least in the gaits and
+  blows) is only reported in the other actions (13.6-26 degrees at the minimum in throw, land, jump, hit_heavy...); 34 of
+  the 67 pop sequences sit in the "fast tier" (1.0-1.5 of their calibrated limit: authored explosive motion), none above
+  1.5. The wind-up of attack1 / attack2 is about 4 frames (a longer one needs a combat re-tune); attack2's backhand misses
+  the hero's own side of the old arc (92 % coverage); lunges drag the planted feet a few cm; the throw's left hand is
+  twisted 85-130 degrees about its forearm. The thresholds are for 60 Hz (at 24-30 fps a few strike checks fail by
+  quantisation; the arena bot passes at 24 and 60 fps). Nothing was judged by a person on the real terrain with the real
+  camera, and `advance()` (0.9-1.3 ms) and the first rig's 48 ms compile were measured on desktop only, not in WebAssembly.
+- The grass wind (10.4): the diagnosis comes from the maths, a validated float32 port, software-GL video and a simulated
+  frame-pacing model, not from the client's GPU (`?dev=1&play=1&rawclock=1` A/B tests the smoothed clock on a real
+  device). The waves are always on, so the field is busier than before; thin alpha-tested blade edges still crawl pixel by
+  pixel as the grass leans (no MSAA on the web); the wheat's video metrics did not improve (its gain is continuity: no
+  2-4 s dead stretches); the four-slot pusher assignment still pops a beast's push zone when the ranking changes.
+- The sea (10.4): the arcs are halved, not removed (`keep_cut` in `water.gdshader`); the hard sun and moon glint (the "sun
+  path") is gone, only the soft sky reflection remains; the toon ripple streaks at the horizon are calmer, not gone; the
+  sky's own stars are still mirrored near the horizon at night (not touched).
+- Boats (5.13): no ladder back up to the pier and the rails are not collidable; nobody has tried boarding by hand.
+- Roofs and props (5.11, 10.4): `mesh_audit` gives 0 see-through models in the world except the cave's `cave:arena_wall` (1
+  ray of 2,862 on a crack strip 1.2 cm proud of a column, seen from an audit camera standing inside it: no place the
+  hero's camera can be); the 33 library models the world never places (PHAROS leftovers) still have findings; the soffit
+  colours (`SOFFIT`, `SOFFIT_PLASTER`) were chosen by eye.

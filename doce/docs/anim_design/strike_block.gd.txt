@@ -1,0 +1,494 @@
+# >>> STRIKES BEGIN (spliced by splice_strike.py from strike_block.gd.txt: edit that file, not this block)
+# --- animation: the sword blows (docs/ANIMATION.md section 4) -----------------------------------------------------------
+## attack1, attack2, attack3 and heavy are built from JOINT ANGLES (in degrees, as curves over the action's own seconds),
+## not from hand positions: pelvis and chest turn in the world, the sword arm is a shoulder (plane of elevation, elevation,
+## axial rotation), an elbow and a wrist (ulnar deviation, extension, forearm twist), so the hips lead and the shoulder, the
+## elbow and the wrist follow one after the other (the kinetic chain), the hand travels on an arc, the blade stays where a
+## wrist can hold it (never closer than 30 degrees to the forearm), and nothing pops. The shield arm is keyed where its wrist
+## is, which way its elbow bends and where the shield faces, all in chest space (it travels with the chest: a disc whose rim
+## reaches 0.2 m behind the elbow swings into the belly as soon as it is aimed in the world). `_bake_strike` samples the
+## curves at 120 Hz into the ordinary pose arrays (sample_action plays them like any other action); the footwork
+## (`_strike_feet`) is added while the action plays, because it depends on how far the hero lunges. The keys come from
+## design/defs.py (see docs/ANIMATION.md 4.8): edit that, never the generated `_strike_raw` below.
+
+## A smooth curve through keys [t0, v0, t1, v1, ...]: monotone cubic Hermite (never overshoots between two keys, a slope of
+## zero at the ends and at every turning point, a flowing slope where the value keeps going the same way).
+static func _kc(k: Array, t: float) -> float:
+	var n := k.size() / 2
+	if t <= float(k[0]):
+		return float(k[1])
+	if t >= float(k[2 * n - 2]):
+		return float(k[2 * n - 1])
+	var i := 0
+	while i < n - 2 and t >= float(k[2 * i + 2]):
+		i += 1
+	var t0 := float(k[2 * i])
+	var t1 := float(k[2 * i + 2])
+	var v0 := float(k[2 * i + 1])
+	var v1 := float(k[2 * i + 3])
+	var h := t1 - t0
+	var m0 := _kc_slope(k, i, n)
+	var m1 := _kc_slope(k, i + 1, n)
+	var u := (t - t0) / h
+	var u2 := u * u
+	var u3 := u2 * u
+	return (2.0 * u3 - 3.0 * u2 + 1.0) * v0 + (u3 - 2.0 * u2 + u) * h * m0 + (-2.0 * u3 + 3.0 * u2) * v1 + (u3 - u2) * h * m1
+
+
+static func _kc_slope(k: Array, j: int, n: int) -> float:
+	if j <= 0 or j >= n - 1:
+		return 0.0
+	var h0 := float(k[2 * j]) - float(k[2 * j - 2])
+	var h1 := float(k[2 * j + 2]) - float(k[2 * j])
+	var d0 := (float(k[2 * j + 1]) - float(k[2 * j - 1])) / h0
+	var d1 := (float(k[2 * j + 3]) - float(k[2 * j + 1])) / h1
+	if d0 * d1 <= 0.0:
+		return 0.0
+	var w1 := 2.0 * h1 + h0
+	var w2 := h1 + 2.0 * h0
+	return (w1 + w2) / (w1 / d0 + w2 / d1)
+
+
+static func _sv(S: Dictionary, key: String, t: float, d: float = 0.0) -> float:
+	return _kc(S[key], t) if S.has(key) else d
+
+
+## An arm from its joint angles (radians), in chest space. `az` the plane the upper arm is raised in (+ across the body,
+## 0 forward), `e` its elevation from hanging (90 = horizontal), `r` its axial rotation (+ inward: with the arm forward the
+## forearm bends towards the midline), `el` the elbow's flexion. side +1 right, -1 left. Returns [wrist, elbow pole,
+## forearm direction, elbow, the elbow's hinge axis].
+static func _arm_q(side: float, az: float, e: float, r: float, el: float) -> Array:
+	var rb := Basis(Vector3.UP, az) * Basis(Vector3.RIGHT, e) * Basis(Vector3.UP, r)
+	var u := rb * Vector3(0.0, -1.0, 0.0)
+	var f := rb * Vector3(0.0, -cos(el), -sin(el))
+	var s0 := Vector3(SHOULDER_CS.x, SHOULDER_CS.y, SHOULDER_CS.z)
+	var el_p := s0 + u * LEN_UA
+	var w := el_p + f * LEN_FA
+	var pole := perp(el_p - s0, (w - s0).normalized())
+	if pole.length_squared() < 4e-4:
+		pole = rb * Vector3(0.0, 0.0, 1.0)
+	pole = pole.normalized()
+	var xl := rb * Vector3(1.0, 0.0, 0.0)
+	if side < 0.0:
+		return [mx(w, -1.0), mx(pole, -1.0), mx(f, -1.0), mx(el_p, -1.0), mx(xl, -1.0)]
+	return [w, pole, f, el_p, xl]
+
+
+## The sword hand from the forearm direction f (chest space), like _sword_hand but measured from the elbow's own hinge axis
+## `xl` (the back of the hand lies along it at zero, so the wrist angles never jump when the arm turns): `uln` turns the
+## blade towards the forearm's line (so the blade is 90 - uln degrees off it), `ext` extends the wrist (rolls the fist
+## about the blade), `tw` twists the forearm (carries the blade round the forearm's axis). Returns [blade direction,
+## back of the hand].
+static func _sword_hand2(f: Vector3, xl: Vector3, uln: float, ext: float, tw: float) -> Array:
+	var fn := f.normalized()
+	var x_n := perp(xl, fn).normalized()
+	var y_n := -fn
+	var z_n := x_n.cross(y_n)
+	var rot := Basis(fn, tw) * Basis(x_n, -uln) * Basis(z_n, ext)
+	var h := rot * Basis(x_n, y_n, z_n)
+	return [-h.z, h.x]
+
+
+## Pose channels of strike `S` (raw definition) at action time t (s).
+static func _strike_pose(S: Dictionary, t: float) -> PackedFloat32Array:
+	var c := default_pose()
+	var D := PI / 180.0
+	# pelvis: yaw (+ left), pitch (+ back), roll (+ right side up) in the world, and where it sits
+	var pb_v := Vector3(_sv(S, "pp", t, 1.1) * D, _sv(S, "py", t) * D, _sv(S, "pr", t) * D)
+	var pb := eul(pb_v)
+	set_ch(c, "pelr", pb_v)
+	set_ch(c, "pel", Vector3(_sv(S, "px", t), NEUTRAL["pel"].y + _sv(S, "pdy", t), _sv(S, "pz", t)))
+	# chest (absolute), shared between the spine (40 %) and the chest bone (60 %)
+	var tb_v := Vector3(_sv(S, "cp", t, 4.0) * D, _sv(S, "cy", t) * D, _sv(S, "cr", t) * D)
+	var tb := eul(tb_v)
+	var q_rel := (pb.inverse() * tb).get_rotation_quaternion()
+	var q_s := Quaternion.IDENTITY.slerp(q_rel, 0.4)
+	var q_c := q_s.inverse() * q_rel
+	set_ch(c, "spn", Basis(q_s).get_euler(EULER_ORDER_YXZ))
+	set_ch(c, "chs", Basis(q_c).get_euler(EULER_ORDER_YXZ))
+	# head (absolute): neck 55 %, head 45 % of the turn from the chest
+	var hb := eul(Vector3(_sv(S, "hp", t) * D, _sv(S, "hy", t) * D, _sv(S, "hrl", t) * D))
+	var q_h := (tb.inverse() * hb).get_rotation_quaternion()
+	var q_n := Quaternion.IDENTITY.slerp(q_h, 0.55)
+	set_ch(c, "nek", Basis(q_n).get_euler(EULER_ORDER_YXZ))
+	set_ch(c, "hed", Basis(q_n.inverse() * q_h).get_euler(EULER_ORDER_YXZ))
+	# sword arm
+	var ra := _arm_q(1.0, _sv(S, "az", t) * D, _sv(S, "e", t, 10.0) * D, _sv(S, "r", t) * D, _sv(S, "el", t, 40.0) * D)
+	var hand := _sword_hand2(ra[2], ra[4], _sv(S, "uln", t, 48.0) * D, _sv(S, "ext", t, 8.0) * D, _sv(S, "tw", t) * D)
+	var hrb: Vector3 = hand[0]
+	var hrk: Vector3 = hand[1]
+	set_ch(c, "hrb", hrb)
+	set_ch(c, "hrk", hrk)
+	set_ch(c, "hr", (ra[0] as Vector3) + hand_basis(hrb, hrk, 1.0) * GRIP)
+	set_ch(c, "hrp", ra[1])
+	# shield arm (a counterweight and a guard): where its wrist is, which way its elbow bends and where the shield faces, all in
+	# chest space (hl*, hp*, hf* curves), so it travels with the chest and never swings into it
+	var hl := Vector3(_sv(S, "hlx", t, -0.335), _sv(S, "hly", t, -0.366), _sv(S, "hlz", t, -0.08))
+	set_ch(c, "hl", hl)
+	set_ch(c, "hlp", Vector3(_sv(S, "hpx", t, -0.5), _sv(S, "hpy", t, -0.2), _sv(S, "hpz", t, 1.0)))
+	set_ch(c, "hlf", Vector3(_sv(S, "hfx", t, -1.0), _sv(S, "hfy", t, 0.0), _sv(S, "hfz", t, -0.35)))
+	# the whole body turning about a vertical axis (the heavy's spin about the ball of the standing foot)
+	var rot := _sv(S, "rot", t)
+	if rot != 0.0:
+		set_ch(c, "rot", Vector3(0.0, rot * D, 0.0))
+		set_ch(c, "piv", Vector3(float(S.get("pivx", 0.0)), 0.9, float(S.get("pivz", 0.0))))
+	# feet that are part of the pose (a blow whose feet are baked: ankle x, y, z, pitch, yaw relative to the rig; deg)
+	for i in 2:
+		var k := "f%d" % i
+		if S.has(k + "x"):
+			var ank := Vector3(_sv(S, k + "x", t), _sv(S, k + "y", t), _sv(S, k + "z", t))
+			var o := C_FR if i == 0 else C_FL
+			var yaw := _sv(S, k + "w", t) * D
+			set_ch(c, "fr" if i == 0 else "fl", ank)
+			set_ch(c, "frr" if i == 0 else "flr", Vector3(_sv(S, k + "p", t) * D, yaw, 0.0))
+			set_ch(c, "frp" if i == 0 else "flp", Basis(Vector3.UP, yaw) * Vector3((1.0 if i == 0 else -1.0) * 0.12, 0.0, -1.0))
+	return c
+
+
+## Samples a strike's raw definition into the compiled action form (times, poses, Hermite tangents).
+static func _bake_strike(S: Dictionary) -> Dictionary:
+	var len: float = S["len"]
+	var step := 1.0 / 120.0
+	var n := int(ceil(len / step - 1e-6)) + 1
+	var times := PackedFloat32Array()
+	var poses: Array[PackedFloat32Array] = []
+	for i in n:
+		var t := minf(float(i) * step, len)
+		times.append(t)
+		poses.append(_strike_pose(S, t))
+	var tans: Array[PackedFloat32Array] = []
+	for i in n:
+		var m := PackedFloat32Array()
+		m.resize(C_N)
+		if i > 0 and i < n - 1:
+			var dt := times[i + 1] - times[i - 1]
+			for j in C_N:
+				m[j] = (poses[i + 1][j] - poses[i - 1][j]) / maxf(dt, 1e-4)
+		tans.append(m)
+	return {"len": len, "loop": false, "hold": false, "in": float(S["in"]), "out": float(S["out"]), "ev": S["ev"],
+		"times": times, "poses": poses, "tans": tans, "strike": S}
+
+
+#@@DATA@@
+
+
+# --- a blow that starts on the run ---------------------------------------------------------------------------------------------
+## A blow that starts while the hero runs and carries the run on (HeroMelee: no foe in reach, so the run slows at 13 m/s^2
+## instead of stopping; it says so with set_strike_run, and play() guesses it from the speed, faster than SK_RUN_V m/s, when
+## nobody does) keeps its legs on the gait: the stride goes on under the swing and stops the way a run stops, instead of the
+## feet being planted in the world and dragged along. The blow owns the chest, the head and the arms (as authored, in the
+## world), the turn of the pelvis (mostly) and nothing of the legs. A blow with a foe in reach (the hero stops dead and
+## lunges, 15 m/s for a moment: no gait follows that) plants its feet itself, as from a standstill. The heavy's charge (the
+## hero plays its coil with the legs on the locomotion and holds it at 0.3 s) is layered the same way, so the chest keeps
+## the wind-up it was authored with.
+const SK_RUN_V := 2.5
+var _sk_run := false
+var _skl_on := false
+
+
+## HeroMelee, right after it has aimed the blow it started: whether the run is carried on (the legs stay on the gait) or not.
+func set_strike_run(on: bool) -> void:
+	if action != "" and act_def(_akey).has("strike") and not (act_def(_akey)["strike"] as Dictionary).has("rot"):
+		_sk_run = on
+
+
+func _strike_layer(c: PackedFloat32Array, loco: PackedFloat32Array) -> void:
+	var pb_s := eul(v3(c, C_PELR))
+	var tb := pb_s * eul(v3(c, C_SPN)) * eul(v3(c, C_CHS))
+	for o in LOWER_CH:
+		c[o] = loco[o]
+		c[o + 1] = loco[o + 1]
+		c[o + 2] = loco[o + 2]
+	var ps := v3(c, C_PELR)
+	var pl := v3(loco, C_PELR)
+	var pe := Vector3(lerpf(ps.x, pl.x, 0.5), lerpf(ps.y, pl.y, 0.1), lerpf(ps.z, pl.z, 0.5))
+	_setv(c, C_PELR, pe)
+	# the chest keeps the orientation the blow gave it in the world: the spine and the chest bone take up what the pelvis gave away
+	var q_rel := (eul(pe).inverse() * tb).get_rotation_quaternion()
+	var q_s := Quaternion.IDENTITY.slerp(q_rel, 0.4)
+	var q_c := q_s.inverse() * q_rel
+	_setv(c, C_SPN, Basis(q_s).get_euler(EULER_ORDER_YXZ))
+	_setv(c, C_CHS, Basis(q_c).get_euler(EULER_ORDER_YXZ))
+	for j in 3:
+		c[C_ROT + j] = loco[C_ROT + j]
+		c[C_PIV + j] = loco[C_PIV + j]
+
+
+# --- the wrist's limit -------------------------------------------------------------------------------------------------------
+## A hand cannot point the blade closer than about 30 degrees to its forearm's line (docs/ANIMATION.md 6.3). The blows are
+## authored inside that, but a blend into one (from a run, from the guard, from the blow before) is a straight mix of two
+## poses and can dip below it for a frame or two: while a blow plays and while it blends out, `_solve` turns such a hand away
+## from the forearm about the axis across both (a degree or two, only in those frames).
+const WRIST_MIN := 0.515
+var _wlim := false
+var _wlim_tail := 0.0
+## The forearms' twist about their own axes as last solved (right, left): tracked so that it never jumps (_solve): it follows its
+## target at no more than TWIST_RATE rad/s (the shield's facing sweeping across the forearm's axis, as in the air pose, asks for half a
+## turn in a few frames: the shield turns over in a few frames instead).
+var _tw_fa := PackedFloat32Array([0.0, 0.0])
+const TWIST_RATE := 20.0
+const TWIST_RATE_FREE := 36.0
+## The twist (about the forearm's axis) between the held hand's frame and the one the forearm gives it, as last solved, kept continuous.
+var _wr_tw := 0.0
+var _wr_on := false
+var _dbg_tw := Vector4()
+## The left hand's held frame (the spear, the chain) as this frame's solve has it, and the left forearm's direction of the last solve.
+var _lh_held := Basis()
+var _lh_on := false
+var _fa_dir_l := Vector3.ZERO
+var _dbg_wb := 0.0
+var _dbg_wt := Vector3()
+var _dbg_wb2 := Vector3()
+## How far (rad) the left forearm turns to follow a held hand's frame; the wrist keeps what is beyond.
+const TW_HAND_MAX := 1.2
+## ... and the shield's: the forearm never turns further than this either way from where the arm bends (it cannot go round: the twist
+## was once found at 280 degrees).
+const TW_MAX := 2.0
+const TW_LEAD := 3.0
+## ... and how much of the forearm's twist stays the shield's even with the hand held (the shield is on that arm: it must stay clear of him).
+const TW_SHIELD := 0.5
+var _solve_dt := 0.0
+## The shield's slip about the left forearm (rad), the most it may be, how fast it goes (rad/s), and what the last solve wanted.
+var _sh_slack := 0.0
+var _sh_slack_t := 0.0
+const SH_SLACK_MAX := 1.2
+const SH_SLACK_RATE := 20.0
+
+
+## The turn of the shield about the forearm's axis through the elbow, as a transform in rig space (identity when the strap is not slipping).
+func _slack_xf() -> Transform3D:
+	if absf(_sh_slack) < 1e-4:
+		return Transform3D.IDENTITY
+	var e := _bx[FARM_L].origin
+	var ax := _bx[HAND_L].origin - e
+	if ax.length_squared() < 1e-8:
+		return Transform3D.IDENTITY
+	var rb := Basis(ax.normalized(), _sh_slack)
+	return Transform3D(rb, e - rb * e)
+
+
+## The shield's skinning matrix (rest rig space -> rig): the forearm's, turned by the strap's slip.
+func shield_skin() -> Transform3D:
+	var b := _bx[FARM_L]
+	return _slack_xf() * Transform3D(b.basis, b.origin - b.basis * _rest[FARM_L])
+
+
+func _twist_step(d: float, rate: float = TWIST_RATE) -> float:
+	if _solve_dt <= 0.0:
+		return d
+	return clampf(d, -rate * _solve_dt, rate * _solve_dt)
+
+
+static func _wrist_limit(hb: Basis, fore: Vector3) -> Basis:
+	var bd := -hb.z
+	var ang := bd.angle_to(fore)
+	if ang >= WRIST_MIN:
+		return hb
+	var ax := fore.cross(bd)
+	if ax.length_squared() < 1e-8:
+		ax = hb.x
+	return Basis(ax.normalized(), WRIST_MIN - ang) * hb
+
+
+# --- the footwork of the blows -----------------------------------------------------------------------------------------------
+## While a joint-angle blow plays, its feet are driven here, in the world (the gait's own foot state: `_ft_*`), so the
+## blow ends with the feet exactly where the gait takes over. A blow's "feet" plan: `moves` (one foot swings from where it
+## stands to a spot in the rig's frame: foot f, from t0 to t1, ankle at x, z, yaw (deg from the rig), apex (m) over the
+## ground, landing pitch th (deg, + toes up)), `pitchN` (the planted foot N's pitch over the blow: - lifts the heel, the
+## toe stays down) and `followN` (how much of the pelvis' yaw change the planted foot N turns with: it pivots).
+var _sk_on := false
+var _sk_init := false
+var _sk_yaw0 := PackedFloat32Array([0.0, 0.0])
+var _sk_p0 := PackedFloat32Array([0.0, 0.0])
+var _sk_land_t := PackedFloat32Array([-9.0, -9.0])
+var _sk_land_th := PackedFloat32Array([0.0, 0.0])
+var _sk_mv := PackedByteArray()
+
+
+## A blow (from joint angles) starts: the feet that were swinging or stepping home are put down where they are, the gait
+## stops driving them.
+func _strike_begin() -> void:
+	_gait_on = false
+	for i in 2:
+		if _ft_st[i] != ST_STAND:
+			var psi := wrapf(_ft_wy[i] - _ry, -PI, PI)
+			_ft_st[i] = ST_STAND
+			_ft_kind[i] = 0
+			_ft_pin[i] = _l2w(_pin_of(_w2l(_ft_aw[i]), 0, psi, 0.0))
+			_ft_yaw[i] = _ft_wy[i]
+			_ft_th0[i] = 0.0
+		_sk_land_t[i] = -9.0
+	_sk_init = true
+
+
+## The blow ends (or is cut short): a foot in the air comes down at home, the others stay where they are.
+func _strike_end() -> void:
+	_gait_on = true
+	_gait_stop()
+	_wlim_tail = 0.4
+
+
+## The move of foot `i` that is under way at action time t (one that goes where the foot already is - a "near" distance - is
+## skipped: a blow started from its own stance does not hop on the spot, one chained out of another gathers its feet).
+func _strike_move(plan: Dictionary, i: int, t: float) -> Dictionary:
+	var mvs: Array = plan.get("moves", [])
+	if _sk_mv.size() != mvs.size():
+		_sk_mv.resize(mvs.size())
+		_sk_mv.fill(0)
+	for k in mvs.size():
+		var mv: Dictionary = mvs[k]
+		if int(mv["f"]) != i or t < float(mv["t0"]) or t >= float(mv["t1"]) or _sk_mv[k] == 1:
+			continue
+		if _sk_mv[k] == 0:
+			if mv.has("near") and _ft_st[i] != ST_SWING and _ft_aw[i].distance_to(_l2w(Vector2(float(mv["x"]), float(mv["z"])))) < float(mv["near"]):
+				_sk_mv[k] = 1
+				continue
+			_sk_mv[k] = 2
+		return mv
+	return {}
+
+
+## The feet of the blow at action time `action_t`: writes the ankle, pitch, yaw and knee channels of `c` and the gait's
+## own foot state, then lowers the pelvis where a leg would not reach.
+func _strike_feet(c: PackedFloat32Array, dt: float) -> void:
+	var def := act_def(_akey)
+	var plan: Dictionary = (def["strike"] as Dictionary).get("feet", {})
+	var t := action_t
+	_rig_frame()
+	if plan.get("mode", "") == "baked":
+		# the feet are in the pose (the spin turns the whole body about a planted foot): the gait's foot state follows
+		# them, planted where the pose puts them, so that the gait can take over from here
+		for i in 2:
+			var o := C_FR if i == 0 else C_FL
+			var ank := v3(c, o)
+			var fr := v3(c, o + 3)
+			_ft_st[i] = ST_STAND
+			_ft_kind[i] = 1
+			var psi := fr.y
+			_ft_ank[i] = ank
+			_ft_pit[i] = fr.x
+			_ft_ry[i] = psi
+			_ft_wy[i] = _ry + psi
+			_ft_yaw[i] = _ry + psi
+			_ft_aw[i] = _l2w(Vector2(ank.x, ank.z))
+			_ft_ay[i] = ank.y
+			_ft_pin[i] = _l2w(_pin_of(Vector2(ank.x, ank.z), 1, psi, minf(fr.x, 0.0)))
+			_ft_w[i] = 0.0
+		return
+	var pyaw := c[C_PELR + 1]
+	if _sk_init:
+		_sk_init = false
+		_sk_mv.clear()
+		for i in 2:
+			_sk_yaw0[i] = _ft_yaw[i]
+			_sk_p0[i] = pyaw
+	var pel := v3(c, C_PEL)
+	var pelr := v3(c, C_PELR)
+	for i in 2:
+		var sx := 1.0 if i == 0 else -1.0
+		var mv := _strike_move(plan, i, t)
+		var ank := Vector3.ZERO
+		var pit := 0.0
+		var yaw_w := _ft_yaw[i]
+		var w := 1.0
+		if not mv.is_empty():
+			var t0 := float(mv["t0"])
+			var t1 := float(mv["t1"])
+			if _ft_st[i] != ST_SWING:
+				_ft_st[i] = ST_SWING
+				_ft_from[i] = _ft_aw[i]
+				_ft_from_y[i] = _ft_ay[i]
+				_ft_from_th[i] = _ft_pit[i]
+				_ft_from_yaw[i] = _ft_wy[i]
+				_ft_from_pv[i] = 0.0
+			var s := clampf((t - t0) / maxf(t1 - t0, 0.02), 0.0, 1.0)
+			var tgt := Vector2(float(mv["x"]), float(mv["z"]))
+			var gth := deg_to_rad(float(mv.get("th", 0.0)))
+			var gyaw := _ry + deg_to_rad(float(mv.get("yaw", 0.0)))
+			var goal := _l2w(tgt)
+			_ft_goal[i] = goal
+			_ft_goal_th[i] = gth
+			_ft_goal_yaw[i] = gyaw
+			var e := s * s * (3.0 - 2.0 * s)
+			var ev := s * s * (3.0 - 2.0 * s)
+			var aw := _ft_from[i].lerp(goal, e)
+			var al := _w2l(aw)
+			var arc := sin(PI * pow(s, 0.8)) * smoothstep(0.0, 0.14, s)
+			var y := lerpf(_ft_from_y[i], _ankle_y(gth), ev * ev) + float(mv.get("apex", 0.08)) * arc
+			ank = Vector3(al.x, y, al.y)
+			var sp := clampf(s / 0.85, 0.0, 1.0)
+			var k2 := sp * sp * (3.0 - 2.0 * sp)
+			pit = lerpf(_ft_from_th[i], gth, k2)
+			yaw_w = lerp_angle(_ft_from_yaw[i], gyaw, e)
+			w = maxf(1.0 - smoothstep(0.0, 0.15, s), smoothstep(0.55, 0.85, s))
+		else:
+			if _ft_st[i] == ST_SWING:
+				# the move is over: the foot lands on the spot it was heading for
+				_land(i, _w2l(_ft_goal[i]), _ft_goal_th[i], _ft_goal_yaw[i], false)
+				_sk_yaw0[i] = _ft_yaw[i]
+				_sk_p0[i] = pyaw
+				_sk_land_t[i] = t
+				_sk_land_th[i] = _ft_goal_th[i]
+			# planted: the pitch (a heel lifted while the toe stays down), the pivot with the hips
+			var pk: Variant = plan.get("pitch%d" % i)
+			var th := deg_to_rad(_kc(pk, t)) if pk != null else 0.0
+			if _sk_land_t[i] > -8.0 and _sk_land_th[i] > 0.0:
+				th += _sk_land_th[i] * (1.0 - smoothstep(0.0, 0.07, t - _sk_land_t[i]))
+			var fk: Variant = plan.get("follow%d" % i)
+			if fk != null:
+				_ft_yaw[i] = _sk_yaw0[i] + _kc(fk, t) * (pyaw - _sk_p0[i])
+			var psi := wrapf(_ft_yaw[i] - _ry, -PI, PI)
+			if absf(psi) > 0.8:
+				psi = clampf(psi, -0.8, 0.8)
+				_ft_yaw[i] = _ry + psi
+			var pl := _w2l(_ft_pin[i])
+			if _ft_kind[i] == 0 and th <= 0.0:
+				# the sole has come flat: the toe takes the weight, pinned where it lies
+				_ft_kind[i] = 1
+				pl += Vector2(-sin(psi), -cos(psi)) * SOLE_LEN
+				_ft_pin[i] = _l2w(pl)
+			elif _ft_kind[i] == 1 and th > 0.02:
+				# a toe-pinned foot cannot point its toes up: it lies flat
+				th = 0.0
+			ank = _ankle_of(pl, _ft_kind[i], psi, th)
+			pit = th
+			yaw_w = _ry + psi
+		if _ft_st[i] == ST_SWING:
+			# a swinging foot keeps its own side of the planted leg
+			var oth := _ft_ank[1 - i]
+			if i == 1:
+				ank.x = minf(ank.x, oth.x - 0.11)
+			elif _ft_st[1] == ST_STAND:
+				ank.x = maxf(ank.x, oth.x + 0.11)
+		_ft_ank[i] = ank
+		_ft_pit[i] = pit
+		_ft_wy[i] = yaw_w
+		_ft_ry[i] = wrapf(yaw_w - _ry, -PI, PI)
+		_ft_aw[i] = _l2w(Vector2(ank.x, ank.z))
+		_ft_ay[i] = ank.y
+		_ft_w[i] = w
+		var o := C_FR if i == 0 else C_FL
+		_setv(c, o, ank)
+		_setv(c, o + 3, Vector3(pit, _ft_ry[i], 0.0))
+		_setv(c, o + 6, Basis(Vector3.UP, _ft_ry[i]) * Vector3(sx * 0.12, 0.0, -1.0))
+	pel.y = _softmin(pel.y, _pelvis_limit(pel, pelr), 0.03)
+	_setv(c, C_PEL, pel)
+	# the leg's reach, with the pelvis where it ended up: a foot the pelvis has run away from (a lunge, a blow carried out of a
+	# run) is dragged along by its contact (a planted foot slides in) or pulled in (a foot in the air)
+	var lmax := (LEN_TH + LEN_SH) * LEG_REACH * 0.99
+	for i in 2:
+		var sx2 := 1.0 if i == 0 else -1.0
+		var hip := P_PELVIS + pel + eul(pelr) * (mx(P_HIP, sx2) - P_PELVIS)
+		var a := _ft_ank[i]
+		var dh := Vector2(a.x - hip.x, a.z - hip.z)
+		var hmax := sqrt(maxf(lmax * lmax - (hip.y - a.y) * (hip.y - a.y), 0.0016))
+		if dh.length() > hmax:
+			var sh := dh.normalized() * (dh.length() - hmax)
+			a.x -= sh.x
+			a.z -= sh.y
+			_ft_ank[i] = a
+			_ft_aw[i] = _l2w(Vector2(a.x, a.z))
+			if _ft_st[i] == ST_STAND:
+				_ft_pin[i] = _l2w(_pin_of(Vector2(a.x, a.z), _ft_kind[i], _ft_ry[i], _ft_pit[i]))
+			_setv(c, C_FR if i == 0 else C_FL, a)
+# <<< STRIKES END
