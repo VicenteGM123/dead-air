@@ -1,1 +1,1 @@
-DOCE · Los trabajos de Heracles — build web (Godot 4.7.2.stable, preset "Web", WebGL 2, sin hilos) de `b868324-dirty` generada con `doce/tools/export_web.sh`; no editar a mano. Se juega en https://vicentegm123.github.io/dead-air/doce/web/
+DOCE · Los trabajos de Heracles — build web (Godot 4.7.2.stable, preset "Web", WebGL 2, sin hilos) de `65d3bba` generada con `doce/tools/export_web.sh`; no editar a mano. Se juega en https://vicentegm123.github.io/dead-air/doce/web/
