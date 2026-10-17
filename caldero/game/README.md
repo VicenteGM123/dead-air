@@ -20,6 +20,7 @@ Está hecho y probado con Godot 4.7.2 usando el renderizador Forward+. Si tu com
 - Acaricia a **Miga**, la gata. Con el cojín te da suerte.
 
 Atajos: `Espacio` avanza diálogos y remueve, `R` libro de recetas, `J` diario, `Esc` ajustes.
+Con mando (Xbox y compatibles): el stick izquierdo o la cruceta mueven un cursor, `A` toca, `B` vuelve o cierra, `X` avanza y remueve, `Y` recetas, `Vista` diario, `Menú` ajustes, `LB` / `RB` saltan entre objetos tocables y el stick derecho desplaza las listas. El cursor se esconde al mover el ratón.
 La partida se guarda sola al empezar cada día y después de cada cliente.
 
 ## Dónde cambiar cosas
@@ -32,6 +33,8 @@ La partida se guarda sola al empezar cada día y después de cada cliente.
 | Escenario 3D, posiciones, luces y hora del día | `scripts/world/shop_world.gd` |
 | Caldero (fuego, burbujas, vapor) | `scripts/world/cauldron.gd` |
 | Interfaz (HUD, diálogo, paneles) | `scripts/ui/game_ui.gd`, `scripts/ui/overlays.gd`, `scripts/ui/ui_kit.gd` |
+| Mando (cursor, botones, velocidad) | `scripts/ui/pad_cursor.gd` |
+| Música y sonidos | `scripts/sfx.gd` |
 | Efecto de maqueta, viñeta y color | `shaders/hd2d_post.gdshader` |
 
 Todo el arte está en `assets/`. Los sprites miran a la derecha y miden 32×48 píxeles (personajes). Puedes reemplazar cualquier PNG por uno tuyo con el mismo nombre y tamaño.

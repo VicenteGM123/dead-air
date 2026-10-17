@@ -249,6 +249,10 @@ func hide_dialog() -> void:
 func dialog_open() -> bool:
 	return dialog.visible
 
+## Hay un diálogo escribiéndose o esperando un clic (el botón A del mando lo avanza).
+func dialog_waiting() -> bool:
+	return dialog.visible and (_typing or _waiting_click)
+
 func _finish_typing() -> void:
 	_typing = false
 	dialog_text.visible_characters = -1
@@ -572,6 +576,8 @@ func hide_tooltip() -> void:
 
 func _place_tooltip() -> void:
 	var mp := root.get_local_mouse_position()
+	if PadCursor.active:
+		mp = PadCursor.where   # con el mando, junto a su cursor
 	var s := tooltip.size
 	var vp := root.size
 	var p := mp + Vector2(24, 24)

@@ -34,6 +34,7 @@ var total_today := 1
 var pending_levels: Array = []
 var tutorial_step := -1
 var open_btn: Button
+var pad: PadCursor
 var _alch_at_cauldron := false
 
 # pruebas automáticas / capturas
@@ -73,6 +74,12 @@ func _ready() -> void:
 	fade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fade_layer.add_child(fade)
+	# mando: cursor virtual y botones (ver scripts/ui/pad_cursor.gd)
+	pad = PadCursor.new()
+	pad.ui = ui
+	pad.ov = ov
+	pad.world = world
+	add_child(pad)
 
 	world.jar_clicked.connect(_on_jar_clicked)
 	world.jar_hover.connect(func(id):

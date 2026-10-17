@@ -16,6 +16,10 @@ var current_node: Control
 var _book_sel := ""
 var _market_tab := 0
 var _market_mode := "day"   # "morning" o "day"
+var pad_hint := ""          # controles del mando ("" = ratón y teclado); lo pone PadCursor
+var _hint_label: Label
+
+const MOUSE_HINT := "Ratón para todo · Espacio para avanzar diálogos"
 
 func _ready() -> void:
 	layer = 10
@@ -57,7 +61,10 @@ func _unhandled_input(ev: InputEvent) -> void:
 	if current == "" or current == "title" or current == "stir" or current == "summary" or current == "levelup":
 		return
 	if ev is InputEventKey and ev.pressed and ev.keycode == KEY_ESCAPE:
-		close()
+		if current == "confirm":
+			show_title(true)
+		else:
+			close()
 		get_viewport().set_input_as_handled()
 
 func _title_row(text: String, size := 40) -> Label:
@@ -118,14 +125,21 @@ func show_title(has_save: bool) -> void:
 	q.custom_minimum_size = Vector2(320, 52)
 	q.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	btns.add_child(q)
-	var credit := UIKit.label("Ratón para todo · Espacio para avanzar diálogos", 18, UIKit.MUTED, UIKit.font_italic)
+	var credit := UIKit.label(pad_hint if pad_hint != "" else MOUSE_HINT, 18, UIKit.MUTED, UIKit.font_italic)
 	UIKit.place(credit, Vector2(0, 1), Vector2(120, -60), Vector2(800, 30))
 	holder.add_child(credit)
+	_hint_label = credit
 	current = "title"
 	current_node = holder
 	holder.modulate.a = 0.0
 	var tw := holder.create_tween()
 	tw.tween_property(holder, "modulate:a", 1.0, 1.2)
+
+## Textos de controles: los del mando cuando hay uno conectado o en uso (ver pad_cursor.gd).
+func set_pad_hint(text: String) -> void:
+	pad_hint = text
+	if is_instance_valid(_hint_label):
+		_hint_label.text = text if text != "" else MOUSE_HINT
 
 func _confirm_new(has_save: bool) -> void:
 	if not has_save:
@@ -634,7 +648,8 @@ func show_stir(difficulty := 1.0) -> void:
 	game.speed = 1.6 + 0.3 * difficulty
 	UIKit.place(game, Vector2(0.5, 0.5), Vector2(-180, -250), Vector2(360, 360))
 	holder.add_child(game)
-	var info := UIKit.shadow(UIKit.label("¡Remueve!  Haz clic (o pulsa Espacio) cuando la cuchara pase por la zona dorada.", 26, UIKit.TEXT, UIKit.font_bold, HORIZONTAL_ALIGNMENT_CENTER))
+	var how := "Pulsa A (o X)" if pad_hint != "" else "Haz clic (o pulsa Espacio)"
+	var info := UIKit.shadow(UIKit.label("¡Remueve!  %s cuando la cuchara pase por la zona dorada." % how, 26, UIKit.TEXT, UIKit.font_bold, HORIZONTAL_ALIGNMENT_CENTER))
 	UIKit.place(info, Vector2(0.5, 0.5), Vector2(-600, 130), Vector2(1200, 40))
 	holder.add_child(info)
 	holder.gui_input.connect(func(ev):
