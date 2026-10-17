@@ -222,11 +222,21 @@ def godot_run(args, spec, out_dir, mode, log_path):
     return text
 
 
+def fps_of(gif):
+    """A GIF's frame rate (RENDER: the blows play at 30 fps so a swing shows its path, not a jump; default FPS)."""
+    return gif.get("fps", FPS)
+
+
+def at_fps(gif, frames15):
+    """Frames given at 15 fps (holds, minimum lengths) at the GIF's own frame rate."""
+    return int(round(frames15 * fps_of(gif) / 15.0))
+
+
 def clip_spec(gif, tile, n=None):
     views = gif.get("views") or [tile["view"] or "tq"]
     multi = len(gif.get("views") or []) > 1
     cap = dict(tile["cap"])
-    cap["fps"] = FPS
+    cap["fps"] = fps_of(gif)
     if n is not None:
         cap["n"] = n
         if tile["kind"] in ("gait", "swim"):
@@ -246,12 +256,13 @@ def plan(gif, durs):
     loop may be cut short in its hold (it then goes back to its start as it always does, after a shorter hold), so a loop
     fits L when it divides it or leaves a remainder holding the whole action and at least the minimum hold."""
     shots = [t for t in gif["tiles"] if t["kind"] == "shot"]
-    lo = max([durs[t["key"]] + t["hold"] for t in shots] + [t["minf"] for t in gif["tiles"]] + [MIN_L])
-    for L in range(lo, 400):
+    lo = max([durs[t["key"]] + at_fps(gif, t["hold"]) for t in shots] + [at_fps(gif, t["minf"]) for t in gif["tiles"]] +
+             [at_fps(gif, MIN_L)])
+    for L in range(lo, 800):
         loops = {}
         for t in shots:
-            n, h = durs[t["key"]], t["hold"]
-            for ell in range(n + h, n + h + max(8, n // 2) + 1):
+            n, h = durs[t["key"]], at_fps(gif, t["hold"])
+            for ell in range(n + h, n + h + max(at_fps(gif, 8), n // 2) + 1):
                 if L % ell == 0 or L % ell >= n + h:
                     loops[t["key"]] = ell
                     break
@@ -279,15 +290,30 @@ def text_w(d, s, f):
 def layout(gif):
     n = len(gif["tiles"])
     cols = min(gif.get("cols", 4), n)
-    tw = min(300, (MAX_W - 2 * PAD - (cols - 1) * GAP) // cols) // 2 * 2
+    # (RENDER: tile_max lets the blows' GIFs use two big columns; 300 px otherwise)
+    tw = min(gif.get("tile_max", 300), (MAX_W - 2 * PAD - (cols - 1) * GAP) // cols) // 2 * 2
     th = int(round(tw * gif.get("aspect", 1.2))) // 2 * 2
     gif["_cols"] = cols
     gif["_tile"] = (tw, th)
 
 
+def tile_xy(gif, i):
+    """Top-left of tile i's cell (its label); a last row with fewer tiles is centred."""
+    tw, th = gif["_tile"]
+    cols = gif["_cols"]
+    nv = len(gif.get("views") or [None])
+    cell_h = LABEL_H + nv * th + (nv - 1) * 4 + BAR_H
+    n = len(gif["tiles"])
+    r, c = divmod(i, cols)
+    in_row = min(cols, n - r * cols)
+    x = PAD + c * (tw + GAP) + (cols - in_row) * (tw + GAP) // 2
+    return x, TITLE_H + r * (cell_h + GAP)
+
+
 def compose(gif, work, L, loops, durs, events, out_gif):
     tw, th = gif["_tile"]
     cols = gif["_cols"]
+    fps = fps_of(gif)
     views = gif.get("views") or [None]
     nv = len(views)
     tiles = gif["tiles"]
@@ -312,9 +338,7 @@ def compose(gif, work, L, loops, durs, events, out_gif):
             frames[t["key"]].append([strip.crop((k * tw, 0, (k + 1) * tw, th)) for k in range(n)])
     places = {}
     for i, t in enumerate(tiles):
-        r, c = divmod(i, cols)
-        x = PAD + c * (tw + GAP)
-        y = TITLE_H + r * (cell_h + GAP)
+        x, y = tile_xy(gif, i)
         places[t["key"]] = (x, y)
         lab = t["label"]
         d.text((x + (tw - text_w(d, lab, f_lab)) / 2, y + 4), lab, font=f_lab, fill=FG)
@@ -349,7 +373,7 @@ def compose(gif, work, L, loops, durs, events, out_gif):
                 dd.rectangle((x, by, x + tw - 1, by + BAR_H - 2), fill=BAR_BG)
                 fill = tw if held else int(round(tw * (k + 1) / n))
                 dd.rectangle((x, by, x + fill - 1, by + BAR_H - 2), fill=BAR_HOLD if held else ACC)
-                span = max((n - 1) / FPS, 1e-3)
+                span = max((n - 1) / fps, 1e-3)
                 for nm, at in events.get(t["key"], []):
                     if nm == "impact" and 0.0 <= at <= span + 1e-3:
                         px = x + int(round((tw - 3) * at / span))
@@ -360,17 +384,17 @@ def compose(gif, work, L, loops, durs, events, out_gif):
     os.makedirs(tmp)
     for i, im in enumerate(out):
         im.save(os.path.join(tmp, "f%04d.png" % i))
-    encode(tmp, out_gif)
+    encode(tmp, out_gif, fps)
     shutil.rmtree(tmp, ignore_errors=True)
     return out
 
 
-def encode(frames_dir, out_gif, colors=256):
+def encode(frames_dir, out_gif, fps=FPS, colors=256):
     pal = os.path.join(frames_dir, "palette.png")
     src = os.path.join(frames_dir, "f%04d.png")
-    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-framerate", str(FPS), "-i", src, "-vf",
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-framerate", str(fps), "-i", src, "-vf",
                     "palettegen=max_colors=%d:stats_mode=full" % colors, pal], check=True)
-    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-framerate", str(FPS), "-i", src, "-i", pal, "-lavfi",
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-framerate", str(fps), "-i", src, "-i", pal, "-lavfi",
                     "paletteuse=dither=none:diff_mode=rectangle", "-loop", "0", out_gif], check=True)
 
 
@@ -470,20 +494,18 @@ def main():
         # the index's pictures: each tile at its impact (blows) or in the middle of its action
         thumbs = []
         tw, th = gif["_tile"]
-        cols = gif["_cols"]
-        nv = len(gif.get("views") or [None])
         for i, t in enumerate(gif["tiles"]):
-            r, c = divmod(i, cols)
-            x = PAD + c * (tw + GAP)
-            y = TITLE_H + r * (LABEL_H + nv * th + (nv - 1) * 4 + BAR_H + GAP) + LABEL_H
+            x, y = tile_xy(gif, i)
+            y += LABEL_H
             n = durs.get(t["key"], L)
             imp = [at for nm, at in events.get(t["key"], []) if nm == "impact"]
-            k = min(int(round(imp[0] * FPS)), n - 1) if imp else n // 2
+            k = min(int(round(imp[0] * fps_of(gif))), n - 1) if imp else n // 2
             thumbs.append((t["label"], frames[k].crop((x, y, x + tw, y + th))))
         made.append((gif, thumbs))
         size = os.path.getsize(out_gif) / 1e6
-        print("%s: %d frames (%.1f s), %d tiles, %dx%d, %.1f MB, %.0f s" % (
-            gif["id"], L, L / FPS, len(gif["tiles"]), frames[0].width, frames[0].height, size, time.time() - t0), flush=True)
+        print("%s: %d frames (%.1f s at %d fps), %d tiles, %dx%d, %.1f MB, %.0f s" % (
+            gif["id"], L, L / fps_of(gif), fps_of(gif), len(gif["tiles"]), frames[0].width, frames[0].height, size,
+            time.time() - t0), flush=True)
     if not only:
         index_sheet(made, os.path.join(out, "indice.jpg"))
         print("indice.jpg")
