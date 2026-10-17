@@ -994,29 +994,34 @@ const SKULL_C := Vector3(0.0, 1.737, 0.012)
 const HEAD_SCALE := 1.1
 const HEAD_PIV := Vector3(0.0, 1.64, 0.01)
 ## The head's rings [y (from SKULL_C), rx, r_front, r_back, cz, squareness], crown to the underside of the chin.
+## FACE (2026-10-17, "la cara más redonda"): a round face like the reference: full cheeks down to the mouth's level, a
+## broad round jaw (no corners: exponents near 2) to a short, soft chin raised from -0.138 to -0.123, and a gently convex
+## profile (the forehead and the chin curve back, no long chin).
 const HEAD_PROF := [
 	[0.128, 0.032, 0.035, 0.04, 0.004, 2.0],
 	[0.118, 0.057, 0.061, 0.069, 0.005, 2.1],
 	[0.098, 0.077, 0.081, 0.091, 0.006, 2.2],
 	[0.07, 0.087, 0.091, 0.102, 0.006, 2.2],
-	[0.04, 0.091, 0.095, 0.106, 0.005, 2.3],
-	[0.018, 0.091, 0.097, 0.105, 0.004, 2.3],
-	[0.004, 0.09, 0.098, 0.102, 0.003, 2.35],
-	[-0.01, 0.089, 0.098, 0.099, 0.002, 2.4],
-	[-0.024, 0.087, 0.097, 0.096, 0.001, 2.45],
-	[-0.038, 0.086, 0.096, 0.092, -0.001, 2.5],
-	[-0.05, 0.084, 0.095, 0.088, -0.003, 2.5],
-	[-0.062, 0.082, 0.094, 0.083, -0.005, 2.55],
-	[-0.073, 0.08, 0.092, 0.078, -0.007, 2.6],
-	[-0.085, 0.078, 0.0905, 0.071, -0.01, 2.7],
-	[-0.098, 0.077, 0.0895, 0.063, -0.013, 2.8],
-	[-0.111, 0.075, 0.0885, 0.055, -0.016, 2.9],
-	[-0.122, 0.069, 0.087, 0.048, -0.019, 3.0],
-	[-0.131, 0.057, 0.081, 0.043, -0.022, 3.0],
-	[-0.138, 0.038, 0.066, 0.039, -0.025, 2.6],
+	[0.04, 0.091, 0.0945, 0.106, 0.005, 2.25],
+	[0.018, 0.092, 0.0955, 0.105, 0.004, 2.25],
+	[0.004, 0.092, 0.0963, 0.102, 0.003, 2.25],
+	[-0.01, 0.0925, 0.0965, 0.099, 0.002, 2.25],
+	[-0.024, 0.0935, 0.0965, 0.096, 0.001, 2.2],
+	[-0.038, 0.094, 0.096, 0.092, 0.0, 2.2],
+	[-0.05, 0.0945, 0.095, 0.088, -0.001, 2.2],
+	[-0.062, 0.0935, 0.0935, 0.083, -0.002, 2.2],
+	[-0.073, 0.091, 0.0915, 0.078, -0.003, 2.15],
+	[-0.084, 0.087, 0.088, 0.072, -0.005, 2.15],
+	[-0.094, 0.0835, 0.084, 0.065, -0.007, 2.1],
+	[-0.102, 0.078, 0.0795, 0.058, -0.009, 2.1],
+	[-0.109, 0.07, 0.0745, 0.051, -0.011, 2.05],
+	[-0.114, 0.062, 0.069, 0.045, -0.013, 2.0],
+	[-0.118, 0.053, 0.063, 0.04, -0.015, 2.0],
+	[-0.121, 0.042, 0.055, 0.035, -0.017, 2.0],
+	[-0.123, 0.029, 0.045, 0.029, -0.019, 2.0],
 ]
-## Angles of the head's columns: dense over the face (the nose, the brow, the chin are a few centimetres wide), sparse
-## at the back where the hair covers it.
+## Angles of the head's columns: dense over the face (its curves are a few centimetres wide), sparse at the back where
+## the hair covers it.
 const HEAD_A := [0.0, 0.1, 0.2, 0.31, 0.43, 0.56, 0.71, 0.88, 1.06, 1.26, 1.47, 1.7, 1.96, 2.24, 2.54, 2.84]
 
 
@@ -1049,30 +1054,15 @@ static func _head_raw(a: float, y: float) -> Vector3:
 	return Vector3(signf(sa) * pow(absf(sa), ex) * rx, y, -signf(ca) * pow(absf(ca), ex) * (rf if ca > 0.0 else rb) + cz)
 
 
-## The face sculpted on the head (SKULL_C relative): the brow ridge, a straight nose, the cheekbones, a square chin.
-## Planes only: no eyes, no mouth, no brows.
+## The face sculpted on the head (SKULL_C relative). FACE: the round face is in HEAD_PROF; here only a broad, soft fullness
+## of the middle of the face (the old straight nose cast a long dark band down the face; the brow ridge, cheekbones and
+## jaw corners are gone). No eyes, no mouth, no brows, no hollows.
 static func _face_push(p: Vector3) -> Vector3:
 	var o := Vector3.ZERO
 	if p.z >= 0.0:
 		return o
-	var ax := absf(p.x)
 	var fwd := smoothstep(0.03, 0.085, -p.z)
-	# brow ridge: a broad soft shelf across the forehead (no sockets under it: shadows there read as eyes)
-	var brow := exp(-pow((p.y - 0.01) / 0.018, 2.0)) * (1.0 - smoothstep(0.05, 0.085, ax))
-	o.z -= brow * 0.004 * fwd
-	# a straight nose: the bridge leaves the brow and runs down to the tip, then tucks back under it
-	var t := clampf((0.004 - p.y) / 0.06, 0.0, 1.0)
-	# (the underside slopes back gently: a steep one is a dark bar in the light from above, read as a mouth)
-	var under := smoothstep(-0.054, -0.082, p.y)
-	var nh := lerpf(0.003, 0.018, t) * (1.0 - under)
-	var nw := lerpf(0.01, 0.017, t)
-	var nose := (1.0 - smoothstep(nw * 0.4, nw, ax)) * smoothstep(0.008, -0.002, p.y)
-	o.z -= nose * nh * fwd
-	# cheekbones
-	var cb := bump(Vector2(ax, p.y), Vector2(0.058, -0.042), Vector2(0.03, 0.024))
-	o += Vector3(signf(p.x) * 0.25, 0.0, -1.0) * cb * 0.0055
-	# the jaw's corner (the chin is in the profile: a bump there left a crease above it, read as a mouth)
-	o.x += signf(p.x) * bump(Vector2(ax, p.y), Vector2(0.071, -0.106), Vector2(0.03, 0.026)) * 0.004
+	o.z -= bump(Vector2(p.x, p.y), Vector2(0.0, -0.045), Vector2(0.045, 0.055)) * 0.006 * fwd
 	return o
 
 
@@ -1127,13 +1117,13 @@ static func _build_head() -> ArrayMesh:
 		rings.append(ring)
 	var col := func(p: Vector3, k: int, _i: int) -> Color:
 		var q := p - SKULL_C
-		if q.y < -0.124:
+		if q.y < -0.117:
 			return SKIN_SHADE
 		return SKIN
 	_stitch(mb, rings, col, true, true)
 	# ears: simple, set back on the sides of the head, tilted back
 	for sx in [-1.0, 1.0]:
-		var ep := SKULL_C + Vector3(0.087 * sx, -0.03, 0.016)
+		var ep := SKULL_C + Vector3(0.09 * sx, -0.03, 0.016)
 		mb.push(Transform3D(Basis(Vector3.RIGHT, 0.18) * Basis(Vector3.UP, 0.32 * sx), ep))
 		mb.ico(Vector3.ZERO, 0.028, SKIN, 1, 0.0, Vector3(0.42, 1.0, 0.66))
 		mb.ico(Vector3(0.006 * sx, -0.002, 0.002), 0.018, SKIN_SHADE, 0, 0.0, Vector3(0.4, 0.8, 0.5))
@@ -1153,8 +1143,9 @@ static func _hairline(a: float) -> float:
 
 
 static func _hairline_k(x: float) -> float:
-	# (LOOK2: higher over the forehead, which the hair now leaves clear)
-	var keys := [0.0, 0.08, 0.55, 0.068, 0.95, 0.04, 1.12, 0.0, 1.24, -0.046, 1.38, -0.05, 1.5, -0.006, 1.66, 0.006, 1.86, -0.006, 2.15, -0.056, 2.6, -0.09, PI, -0.1]
+	# (LOOK2: higher over the forehead, which the hair now leaves clear; FACE: the front a little lower again, 0.08 -> 0.066,
+	# so the rounder face reads round, not long)
+	var keys := [0.0, 0.066, 0.55, 0.06, 0.95, 0.038, 1.12, 0.0, 1.24, -0.046, 1.38, -0.05, 1.5, -0.006, 1.66, 0.006, 1.86, -0.006, 2.15, -0.056, 2.6, -0.09, PI, -0.1]
 	for k in range(0, keys.size() - 2, 2):
 		var a0: float = keys[k]
 		var a1: float = keys[k + 2]
