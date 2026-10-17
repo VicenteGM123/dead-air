@@ -620,9 +620,11 @@ if __name__ == '__main__':
                 'pluma_fenix': '#ff6a3a', 'escarcha_luna': '#a8e6ff', 'polvo_estrella': '#ffd84d', 'ceniza_dragon': '#e8452a'}[k]
         jars[k] = make_jar(pad_to(v, 16, 16, 'center'), tint)
         save(jars[k], f'{OUT}/props/jar_{k}.png')
-    cf = cat_frames()
-    save(hstack(cf), f'{OUT}/props/cat.png')
+    # El gato de la tienda (props/cat.png, cuadros de 48x40) lo genera chars64.py junto con el elenco ('miga').
+    # Aquí ya no se escribe: el viejo de 24x20 (cat_frames) pisaría al nuevo si props.py corre después.
+    # Para verlo: python3 props.py --old-cat (solo deja ./prev_cat.png).
     preview([pad_to(v, 16, 16, 'center') for v in ING.values()] + list(POT.values()), scale=8, cols=9, path='./prev_icons.png')
     preview(list(EMOTES.values()) + list(jars.values()), scale=7, cols=8, path='./prev_emotes.png')
-    preview(cf, scale=8, cols=5, path='./prev_cat.png')
+    if '--old-cat' in sys.argv:
+        preview(cat_frames(), scale=8, cols=5, path='./prev_cat.png')
     print('ok')

@@ -2,10 +2,18 @@ extends Node3D
 class_name Actor
 ## Personaje 2D en el mundo 3D: animaciones, caminar, saltitos y emociones.
 
-const FRAME_W := 32
-const FRAME_H := 48
+## Alto de cuadro de referencia: `pixel` en setup() es el tamaño de un píxel para un cuadro de 48 px de alto.
+## Los sprites pueden tener otra resolución (los actuales son de 64x96): se ven del mismo tamaño en el mundo.
+const REF_H := 48.0
+## Escala del arte (pasada 4, estilo Octopath): los personajes se dibujan más chicos dentro del cuadro de 64x96
+## (un adulto mide 60-64 px en vez de ~70), con píxeles más gruesos; este único factor los agranda en el mundo para
+## que un adulto mida lo mismo que antes (mostrador, puerta y estantes están hechos para esa altura). Igual para todos.
+const ART_SCALE := 1.11
 
 var char_id := ""
+var frame_w := 64
+var frame_h := 96
+var _top_px := 0
 var sprite: AnimatedSprite3D
 var shadow: MeshInstance3D
 var emote_sprite: Sprite3D
@@ -21,9 +29,9 @@ func setup(id: String, pixel := 0.04) -> void:
 	char_id = id
 	sprite = AnimatedSprite3D.new()
 	sprite.sprite_frames = _build_frames(id)
-	sprite.pixel_size = pixel
+	sprite.pixel_size = pixel * REF_H / float(frame_h) * ART_SCALE
 	sprite.centered = false
-	sprite.offset = Vector2(-FRAME_W / 2.0, -2.0)
+	sprite.offset = Vector2(-frame_w / 2.0, -2.0 * frame_h / REF_H)
 	sprite.shaded = true
 	sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
@@ -66,13 +74,19 @@ func _build_frames(id: String) -> SpriteFrames:
 		sf.remove_animation("default")
 	var idle_tex: Texture2D = load("res://assets/chars/%s_idle.png" % id)
 	var walk_tex: Texture2D = load("res://assets/chars/%s_walk.png" % id)
+	# tamaño de cuadro según la textura (idle = 2 cuadros, walk = 4 cuadros en fila)
+	frame_h = idle_tex.get_height()
+	frame_w = int(idle_tex.get_width() / 2.0)
+	var walk_w := int(walk_tex.get_width() / 4.0)
+	var img := idle_tex.get_image()
+	_top_px = img.get_used_rect().position.y if img else 0
 	sf.add_animation("idle")
 	sf.set_animation_speed("idle", 1.6)
 	sf.set_animation_loop("idle", true)
 	for i in 2:
 		var at := AtlasTexture.new()
 		at.atlas = idle_tex
-		at.region = Rect2(i * FRAME_W, 0, FRAME_W, FRAME_H)
+		at.region = Rect2(i * frame_w, 0, frame_w, frame_h)
 		sf.add_frame("idle", at)
 	sf.add_animation("walk")
 	sf.set_animation_speed("walk", 7.0)
@@ -80,12 +94,16 @@ func _build_frames(id: String) -> SpriteFrames:
 	for i in 4:
 		var at2 := AtlasTexture.new()
 		at2.atlas = walk_tex
-		at2.region = Rect2(i * FRAME_W, 0, FRAME_W, FRAME_H)
+		at2.region = Rect2(i * walk_w, 0, walk_w, frame_h)
 		sf.add_frame("walk", at2)
 	return sf
 
 func height() -> float:
-	return FRAME_H * sprite.pixel_size
+	return frame_h * sprite.pixel_size
+
+## Alto de la parte visible del sprite (cabeza, sombrero...) sobre el suelo.
+func top_height() -> float:
+	return (frame_h - _top_px - 2.0 * frame_h / REF_H) * sprite.pixel_size
 
 func face(dir: int) -> void:
 	facing = 1 if dir >= 0 else -1
@@ -117,7 +135,7 @@ func _process(delta: float) -> void:
 		_step_timer -= delta
 		if _step_timer <= 0.0:
 			_step_timer = 0.32
-			if char_id != "":
+			if char_id != "" and not quiet:   # --- WORLD: 'quiet' (gente del mercado, sin pasos)
 				Sfx.step()
 
 func hop(times := 1, h := 0.18) -> void:
@@ -137,7 +155,7 @@ func shake() -> void:
 
 func emote(name: String, duration := 1.6) -> void:
 	emote_sprite.texture = load("res://assets/icons/emote_%s.png" % name)
-	emote_sprite.position = Vector3(0, height() + 0.05, 0.05)
+	emote_sprite.position = Vector3(0, top_height() + 0.05, 0.05)
 	emote_sprite.visible = true
 	emote_sprite.scale = Vector3.ONE * 0.2
 	if _emote_tween and _emote_tween.is_valid():
@@ -145,7 +163,7 @@ func emote(name: String, duration := 1.6) -> void:
 	_emote_tween = create_tween()
 	_emote_tween.tween_property(emote_sprite, "scale", Vector3.ONE * 1.15, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_emote_tween.tween_property(emote_sprite, "scale", Vector3.ONE, 0.08)
-	_emote_tween.parallel().tween_property(emote_sprite, "position:y", height() + 0.15, 0.2)
+	_emote_tween.parallel().tween_property(emote_sprite, "position:y", top_height() + 0.15, 0.2)
 	if duration > 0.0:
 		_emote_tween.tween_interval(duration)
 		_emote_tween.tween_property(emote_sprite, "scale", Vector3.ZERO, 0.12)
@@ -155,3 +173,16 @@ func clear_emote() -> void:
 	if _emote_tween and _emote_tween.is_valid():
 		_emote_tween.kill()
 	emote_sprite.visible = false
+
+# --- WORLD: caminar controlado desde fuera (scripts/world/walker.gd) y gente que pasea sin ruido de pasos
+var quiet := false
+
+## Pone o quita la animación de caminar (y los pasos) sin mover al personaje: lo mueve Walker o el mercado.
+func set_walking(on: bool) -> void:
+	if on == _walking:
+		return
+	_walking = on
+	sprite.play("walk" if on else "idle")
+	if on:
+		_step_timer = 0.12
+# --- end WORLD

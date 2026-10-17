@@ -23,6 +23,7 @@ static var where := Vector2.ZERO    # dónde está, en coordenadas del lienzo (l
 var ui: GameUI
 var ov: Overlays
 var world: ShopWorld
+var market: MarketWorld   # --- WORLD: el mercado (sus puestos son tocables cuando está a la vista)
 var needs_gesture := false   # web: el navegador no deja sonar nada hasta un clic o una tecla
 var _sprite: Sprite2D
 var _pos := Vector2(960, 540)
@@ -121,6 +122,10 @@ func _process(delta: float) -> void:
 		if absf(r) > absf(scroll):
 			scroll = r
 	dpad = dpad.clamp(Vector2(-1, -1), Vector2(1, 1))
+	# --- WORLD: mientras se puede caminar, izquierda/derecha de la cruceta mueven a la alquimista (walker.gd)
+	if Walker.dpad_walk:
+		dpad.x = 0.0
+	# --- end WORLD
 	var m := (stick.length() - DEAD) / (1.0 - DEAD)
 	if m > 0.0 or dpad != Vector2.ZERO or absf(scroll) > DEAD:
 		_show(true)
@@ -277,17 +282,31 @@ func _targets() -> Array:
 		out.append(b.get_global_rect())
 	if world == null or ov.is_open():
 		return out
-	var picks := [[world.cauldron, 0.6], [world.cat, 0.3]]
-	for id in world.jars:
-		picks.append([world.jars[id], 0.36])
+	# --- WORLD: en el mercado, los puestos y la puerta de la tienda; en la tienda, también las estaciones.
+	# Solo cuenta lo que está en pantalla (la tienda y el mercado son más anchos que ella).
+	var in_market := market != null and market.visible
+	var cam: Camera3D = market.camera if in_market else world.camera
+	var picks := []
+	if in_market:
+		picks = market.pad_picks()
+	else:
+		picks = [[world.cauldron, 0.6], [world.cat, 0.3]]
+		for id in world.jars:
+			picks.append([world.jars[id], 0.36])
+		picks.append_array(world.pad_picks())
+	var view := get_viewport().get_visible_rect()
+	# --- end WORLD
 	for pk in picks:
 		var n: Node3D = pk[0]
 		if not n.is_visible_in_tree():
 			continue
 		var w: Vector3 = n.global_position + Vector3(0, pk[1], 0)
-		if world.camera.is_position_behind(w):
+		if cam.is_position_behind(w):
 			continue
-		out.append(Rect2(world.screen_pos(w) - Vector2(30, 30), Vector2(60, 60)))
+		var sp := cam.unproject_position(w)
+		if not view.has_point(sp):   # --- WORLD
+			continue
+		out.append(Rect2(sp - Vector2(30, 30), Vector2(60, 60)))
 	return out
 
 ## Al soltar el stick: el centro de lo tocable que tiene debajo o a menos de SNAP_DIST (o (-1, -1) si no hay nada).

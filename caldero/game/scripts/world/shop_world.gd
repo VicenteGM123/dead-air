@@ -10,16 +10,46 @@ signal cat_clicked
 signal book_clicked
 signal customer_clicked
 signal rack_clicked
+# --- WORLD: estaciones. La alquimista camina hasta una estación antes de usarla.
+## Usó una estación ("biblioteca", "caldero", "mostrador", "puerta"): hizo clic en ella (o pulsó E) y ya llegó.
+signal station_clicked(id: String)
+## Entró en el sector de una estación (caminando con teclas o cruceta, con un clic en el suelo o enviada por código).
+signal station_reached(id: String)
+## Salió de ese sector.
+signal station_left(id: String)
+# --- end WORLD
 
 const P_OUTSIDE := Vector3(4.0, 0, -6.2)
 const P_DOOR_IN := Vector3(4.0, 0, -3.35)
 const P_DOOR_FRONT := Vector3(3.6, 0, -2.2)
 const P_CUSTOMER := Vector3(1.75, 0, -1.2)
 const P_ALCH_COUNTER := Vector3(-1.6, 0, -1.25)
-const P_ALCH_CAULDRON := Vector3(-2.35, 0, -2.25)
+const P_ALCH_CAULDRON := Vector3(-2.35, 0, -1.65)
 const CAULDRON_POS := Vector3(-3.4, 0, -2.55)
 const COUNTER_TOP := 1.08
 const WALL_Z := -4.0
+# --- WORLD: la tienda es más ancha que la pantalla. De izquierda a derecha: biblioteca | caldero | mostrador | puerta.
+const ROOM_X0 := -15.8          # pared izquierda (biblioteca)
+const ROOM_X1 := 7.6            # pared derecha
+const LIB_X1 := -7.6            # tabique entre la biblioteca y la sala del caldero
+const DESK_POS := Vector3(-11.45, 0, -2.7)
+## Carril por donde camina la alquimista: Vector2(x, z). Pasa por delante del caldero y por detrás del mostrador.
+const LANE := [
+	Vector2(-15.0, -2.1), Vector2(-10.2, -2.2), Vector2(-8.6, -2.0), Vector2(-7.0, -1.6),
+	Vector2(-2.35, -1.65), Vector2(-1.6, -1.25), Vector2(-1.0, -1.62), Vector2(1.5, -1.7),
+	Vector2(3.95, -2.5), Vector2(6.9, -2.3),
+]
+## Estaciones: x del punto donde se para, hacia dónde mira, su sector [x0, x1] y su nombre.
+const STATIONS := {
+	"biblioteca": {"x": -10.2, "face": -1, "zone": Vector2(-15.8, -7.6), "name": "Biblioteca · grimorio"},
+	"caldero": {"x": -2.35, "face": -1, "zone": Vector2(-7.6, -1.9), "name": "Caldero"},
+	"mostrador": {"x": -1.6, "face": 1, "zone": Vector2(-1.9, 2.2), "name": "Mostrador"},
+	"puerta": {"x": 3.95, "face": 1, "zone": Vector2(2.2, 7.6), "name": "Puerta"},
+}
+const STATION_LABEL_Y := {"biblioteca": 1.75, "caldero": 1.75, "mostrador": 1.75, "puerta": 2.85}
+const CAM_X0 := -10.0           # la cámara sigue a la alquimista entre estos límites
+const CAM_X1 := 1.3
+# --- end WORLD
 
 var camera: Camera3D
 var env: Environment
@@ -46,6 +76,17 @@ var _t := 0.0
 var _time_tween: Tween
 var _hovered := ""
 var _font: Font
+# --- WORLD
+var walker: Walker
+var can_use: Callable           # (id: String) -> bool: si ahora se puede usar esa estación (lo pone main.gd)
+var station_nodes := {}         # id -> Node3D (lo que se toca)
+var grimoire_sprite: Sprite3D
+var _station_label: Label3D
+var _station_label_text := {}   # id -> texto al pasar el cursor
+var _hover_station := ""
+var _cam_x := 0.0
+var cam_fixed_x := INF          # si es finito, la cámara se queda en esa x (capturas de toda la tienda)
+# --- end WORLD
 
 var _mats := {}
 
@@ -170,7 +211,10 @@ func build() -> void:
 	_build_counter()
 	_build_cauldron()
 	_build_decor()
+	_build_library()   # --- WORLD
 	_build_characters()
+	_build_stations()   # --- WORLD
+	_build_walker()     # --- WORLD
 	_build_particles()
 	refresh_jars()
 	refresh_rack()
@@ -182,8 +226,8 @@ func _build_camera_and_env() -> void:
 	camera.fov = 35.0
 	camera.near = 0.1
 	camera.far = 80.0
-	_cam_base = Vector3(-0.15, 3.9, 8.7)
-	_cam_target = Vector3(-0.15, 1.3, -2.0)
+	_cam_base = Vector3(0.0, 3.9, 8.7)      # --- WORLD: la x la pone _cam_x (sigue a la alquimista)
+	_cam_target = Vector3(0.0, 1.3, -2.0)
 	camera.position = _cam_base
 	add_child(camera)
 	camera.look_at(_cam_target, Vector3.UP)
@@ -259,7 +303,7 @@ func _build_room() -> void:
 	var stone := _mat("res://assets/tex/stone.png", "res://assets/tex/stone_n.png", 0.5, 0.9)
 	var wood_d := _mat("res://assets/tex/wood_dark.png", "res://assets/tex/wood_dark_n.png", 1.0, 0.8)
 	# suelo
-	_box_b(-7.6, 7.6, -0.2, 0.0, -4.3, 3.6, floor_m)
+	_box_b(LIB_X1, 7.6, -0.2, 0.0, -4.3, 3.6, floor_m)   # --- WORLD: la biblioteca tiene su propio suelo
 	# pared trasera con hueco para ventana (x 0.5..2.5, y 1.4..3.1) y puerta (x 3.3..4.7, y 0..2.5)
 	var z0 := -4.3
 	var z1 := WALL_Z
@@ -278,20 +322,21 @@ func _build_room() -> void:
 	# techo (no se ve, pero bloquea el sol y la niebla de arriba)
 	var ceil_m := StandardMaterial3D.new()
 	ceil_m.albedo_color = Color(0.1, 0.08, 0.1)
-	_box_b(-8.2, 8.2, H, H + 0.3, -4.6, 14.0, ceil_m)
+	_box_b(ROOM_X0 - 0.6, 8.2, H, H + 0.3, -4.6, 14.0, ceil_m)
 	# paredes laterales
-	_box_b(-7.9, -7.6, 0.0, H, -4.3, 3.6, plaster)
-	_box_b(-7.88, -7.6, 0.0, 1.0, -4.3, 3.6, stone)
+	# --- WORLD: donde estaba la pared izquierda queda un tabique corto: detrás, la biblioteca
+	_box_b(-7.9, -7.6, 0.0, H, -4.3, -3.05, plaster)
+	_box_b(-7.92, -7.58, 0.0, 1.0, -4.3, -3.05, stone)
 	_box_b(7.6, 7.9, 0.0, H, -4.3, 3.6, plaster)
 	_box_b(7.6, 7.88, 0.0, 1.0, -4.3, 3.6, stone)
 	# vigas y postes
 	_box_b(-7.6, 3.25, 1.0, 1.14, z1, z1 + 0.09, wood_d)
 	_box_b(4.75, 7.6, 1.0, 1.14, z1, z1 + 0.09, wood_d)
-	_box_b(-7.6, 7.6, 4.55, 4.8, z1, z1 + 0.14, wood_d)
+	_box_b(ROOM_X0, 7.6, 4.55, 4.8, z1, z1 + 0.14, wood_d)
 	for x in [-7.35, -2.45, 2.9, 7.35]:
 		_box_b(x - 0.12, x + 0.12, 1.14, 4.55, z1, z1 + 0.12, wood_d)
 	# viga delantera (queda desenfocada en primer plano)
-	_box_b(-8.0, 8.0, 4.1, 4.36, 2.4, 2.7, wood_d)
+	_box_b(ROOM_X0 - 0.2, 8.0, 4.1, 4.36, 2.4, 2.7, wood_d)
 	# marco de la ventana
 	_box_b(0.38, 2.62, 1.3, 1.42, z1 - 0.05, z1 + 0.26, wood_d)   # alféizar
 	_box_b(0.38, 2.62, 3.1, 3.22, z1 - 0.05, z1 + 0.1, wood_d)
@@ -340,10 +385,13 @@ func _build_outside() -> void:
 	sh.shader = load("res://shaders/sky.gdshader")
 	sh.set_shader_parameter("hills", _tex("res://assets/tex/backdrop.png"))
 	sky_mat = sh
-	var q := _quad(Vector2(30, 14), Vector3(2.0, 4.0, -10.0), sh)
+	# --- WORLD: más ancho, para que también se vea por el ventanal de la biblioteca
+	sh.set_shader_parameter("hills_repeat", 3.4)
+	sh.set_shader_parameter("aspect", 50.0 / 14.0)
+	var q := _quad(Vector2(50, 14), Vector3(-5.0, 4.0, -10.0), sh)
 	q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var grass := _mat("res://assets/tex/cobble.png", "", 0.5, 1.0, Color(0.85, 0.9, 0.8))
-	_box_b(-6.0, 12.0, -0.25, -0.02, -10.0, -4.3, grass)
+	_box_b(-30.0, 20.0, -0.25, -0.02, -10.0, -4.3, grass)
 
 func _build_shelves() -> void:
 	var wood := _mat("res://assets/tex/wood.png", "res://assets/tex/wood_n.png", 1.0, 0.8)
@@ -522,7 +570,7 @@ func _build_counter() -> void:
 	# área del cliente
 	var cust_area := Node3D.new()
 	add_child(cust_area)
-	_pick(cust_area, Vector3(0.9, 1.8, 0.6), P_CUSTOMER + Vector3(0, 0.9, 0), func(): customer_clicked.emit())
+	_pick(cust_area, Vector3(0.9, 1.8, 0.6), P_CUSTOMER + Vector3(0, 0.9, 0), func(): _station_press("mostrador"))   # --- WORLD
 	# campanilla (mejora) sobre la puerta
 	var bell := _sprite("res://assets/props/bell.png", 0.035, Vector3(4.0, 2.62, -3.92), null, "bottom")
 	_register_upgrade("campanilla", bell)
@@ -532,7 +580,9 @@ func _build_cauldron() -> void:
 	cauldron.position = CAULDRON_POS
 	add_child(cauldron)
 	cauldron.build()
-	_pick(cauldron, Vector3(1.5, 1.3, 0.8), Vector3(0, 0.6, 0), func(): cauldron_clicked.emit())
+	# --- WORLD: el caldero es una estación (camina hasta él y luego se usa)
+	_pick(cauldron, Vector3(1.5, 1.3, 0.8), Vector3(0, 0.6, 0), func(): _station_press("caldero"),
+		func(): _station_hover("caldero", true), func(): _station_hover("caldero", false))
 
 func _build_decor() -> void:
 	# barriles y cajas junto a la puerta
@@ -600,12 +650,12 @@ func _build_characters() -> void:
 		for fi in anim[1]:
 			var at := AtlasTexture.new()
 			at.atlas = ct
-			at.region = Rect2(fi * 24, 0, 24, 20)
+			at.region = Rect2(fi * 48, 0, 48, 40)
 			sf.add_frame(anim[0], at)
 	cat.sprite_frames = sf
-	cat.pixel_size = 0.035
+	cat.pixel_size = 0.0175
 	cat.centered = false
-	cat.offset = Vector2(-12, 0)
+	cat.offset = Vector2(-24, 0)
 	cat.position = Vector3(-4.55, 0.0, -2.0)
 	cat.shaded = true
 	cat.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
@@ -892,5 +942,345 @@ func time_label() -> String:
 func _process(delta: float) -> void:
 	_t += delta
 	if camera:
-		camera.position = _cam_base + Vector3(sin(_t * 0.11) * 0.08, sin(_t * 0.17) * 0.04, 0.0)
-		camera.look_at(_cam_target, Vector3.UP)
+		# --- WORLD: la cámara sigue a la alquimista por la tienda (y la luz de relleno con ella)
+		_cam_x = lerpf(_cam_x, _cam_goal(), 1.0 - exp(-2.6 * delta))
+		fill.position.x = _cam_x + 0.5
+		var off := Vector3(_cam_x, 0.0, 0.0)
+		# --- end WORLD
+		camera.position = _cam_base + off + Vector3(sin(_t * 0.11) * 0.08, sin(_t * 0.17) * 0.04, 0.0)
+		camera.look_at(_cam_target + off, Vector3.UP)
+
+# --- WORLD: biblioteca, estaciones, caminar y cámara ------------------------------------------------
+
+## La biblioteca, a la izquierda: estanterías, un ventanal, el escritorio con el grimorio (la estación de MAGIC),
+## un sillón de lectura, el retrato de la maestra y una alfombra.
+func _build_library() -> void:
+	var H := 5.8
+	var z0 := -4.3
+	var z1 := WALL_Z
+	var floor_l := _mat("res://assets/tex/floor.png", "res://assets/tex/floor_n.png", 0.5, 0.85, Color(0.95, 0.82, 0.76))
+	var plaster_l := _mat("res://assets/tex/plaster.png", "res://assets/tex/plaster_n.png", 0.25, 0.95, Color(0.8, 0.88, 0.98))
+	var panel := _mat("res://assets/tex/wood_dark.png", "res://assets/tex/wood_dark_n.png", 1.0, 0.8, Color(0.92, 0.8, 0.74))
+	var wood_d := _mat("res://assets/tex/wood_dark.png", "res://assets/tex/wood_dark_n.png", 1.0, 0.8)
+	var wood_l := _mat("res://assets/tex/wood_light.png", "res://assets/tex/wood_light_n.png", 1.0, 0.6)
+	# suelo y paredes (ventanal en x -12.3..-10.5, y 1.3..3.5)
+	_box_b(ROOM_X0, LIB_X1, -0.2, 0.0, -4.3, 3.6, floor_l)
+	var wx0 := -12.3
+	var wx1 := -10.5
+	var wy0 := 1.3
+	var wy1 := 3.5
+	for p in [[ROOM_X0, wx0, 0.0, H], [wx0, wx1, 0.0, wy0], [wx0, wx1, wy1, H], [wx1, LIB_X1, 0.0, H]]:
+		var ya: float = p[2]
+		var yb: float = p[3]
+		if ya < 1.0:
+			_box_b(p[0], p[1], ya, minf(yb, 1.0), z0, z1 + 0.04, panel)
+		if yb > 1.0:
+			_box_b(p[0], p[1], maxf(ya, 1.0), yb, z0, z1, plaster_l)
+	_box_b(ROOM_X0 - 0.3, ROOM_X0, 0.0, H, -4.3, 3.6, plaster_l)
+	_box_b(ROOM_X0 - 0.28, ROOM_X0, 0.0, 1.0, -4.3, 3.6, panel)
+	_box_b(ROOM_X0, LIB_X1, 1.0, 1.1, z1, z1 + 0.08, wood_d)
+	for x in [-15.62, -9.95, -7.75]:
+		_box_b(x - 0.12, x + 0.12, 1.1, 4.55, z1, z1 + 0.12, wood_d)
+	# poste del tabique (lado de la biblioteca)
+	_box_b(-7.98, -7.52, 0.0, 4.55, -3.12, -2.95, wood_d)
+	# ventanal
+	_box_b(wx0 - 0.12, wx1 + 0.12, wy0 - 0.1, wy0 + 0.02, z1 - 0.05, z1 + 0.26, wood_d)
+	_box_b(wx0 - 0.12, wx1 + 0.12, wy1, wy1 + 0.12, z1 - 0.05, z1 + 0.1, wood_d)
+	_box_b(wx0 - 0.12, wx0, wy0, wy1, z1 - 0.05, z1 + 0.1, wood_d)
+	_box_b(wx1, wx1 + 0.12, wy0, wy1, z1 - 0.05, z1 + 0.1, wood_d)
+	var mx := (wx0 + wx1) / 2.0
+	_box_b(mx - 0.03, mx + 0.03, wy0, wy1, -4.2, -4.1, wood_d)
+	for yy in [2.05, 2.8]:
+		_box_b(wx0, wx1, yy - 0.03, yy + 0.03, -4.2, -4.1, wood_d)
+	var glass := StandardMaterial3D.new()
+	glass.albedo_texture = _tex("res://assets/tex/glass.png")
+	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	glass.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glass.uv1_scale = Vector3(2, 2, 1)
+	var g := _quad(Vector2(wx1 - wx0, wy1 - wy0), Vector3(mx, (wy0 + wy1) / 2.0, -4.15), glass)
+	g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# estanterías (con un poco de cuerpo detrás del dibujo) y la escalera
+	for b in [["bookshelf", -14.75], ["bookshelf_b", -13.2]]:
+		var bx: float = b[1]
+		_box_b(bx - 0.68, bx + 0.68, 0.0, 3.05, -3.98, -3.8, wood_d)
+		_sprite("res://assets/props/%s.png" % b[0], 0.026, Vector3(bx, 0, -3.78))
+	_sprite("res://assets/props/ladder.png", 0.028, Vector3(-14.15, 0, -3.55))
+	_sprite("res://assets/props/scroll_basket.png", 0.03, Vector3(-12.75, 0, -2.75))
+	# escritorio con el grimorio
+	var dx0 := DESK_POS.x - 0.7
+	var dx1 := DESK_POS.x + 0.7
+	var dz0 := DESK_POS.z - 0.35
+	var dz1 := DESK_POS.z + 0.35
+	var top := 0.82
+	_box_b(dx0, dx1, top - 0.07, top, dz0, dz1, wood_l)
+	_box_b(dx0 + 0.06, dx1 - 0.06, top - 0.26, top - 0.07, dz1 - 0.06, dz1 - 0.02, wood_d)
+	for lx in [dx0 + 0.09, dx1 - 0.09]:
+		for lz in [dz0 + 0.08, dz1 - 0.08]:
+			_box_b(lx - 0.05, lx + 0.05, 0.0, top - 0.07, lz - 0.05, lz + 0.05, wood_d)
+	grimoire_sprite = _sprite("res://assets/props/grimoire.png", 0.018, Vector3(DESK_POS.x + 0.05, top, DESK_POS.z - 0.05))
+	_sprite("res://assets/props/inkwell.png", 0.02, Vector3(DESK_POS.x + 0.52, top, DESK_POS.z + 0.15))
+	_sprite("res://assets/props/paper_stack.png", 0.022, Vector3(DESK_POS.x - 0.5, top, DESK_POS.z + 0.2))
+	_candle_stick(Vector3(DESK_POS.x - 0.52, top, DESK_POS.z - 0.12))
+	_omni(Vector3(DESK_POS.x - 0.45, top + 0.75, DESK_POS.z + 0.35), Color(1.0, 0.72, 0.42), 0.85, 3.6)
+	var glow := _omni(Vector3(DESK_POS.x, top + 0.45, DESK_POS.z + 0.4), Color(0.72, 0.55, 1.0), 0.65, 2.4)
+	glow.light_volumetric_fog_energy = 0.6
+	_motes(Vector3(DESK_POS.x, top + 0.35, DESK_POS.z))
+	# rincón de lectura
+	_sprite("res://assets/props/armchair.png", 0.03, Vector3(-9.05, 0, -3.25))
+	_sprite("res://assets/props/portrait.png", 0.032, Vector3(-9.05, 2.05, -3.94))
+	_sprite("res://assets/props/star_chart.png", 0.032, Vector3(-8.55, 3.1, -3.93), null, "top")
+	_sprite("res://assets/props/globe.png", 0.03, Vector3(-8.2, 0, -2.85))
+	_sprite("res://assets/props/plant_big.png", 0.036, Vector3(-15.0, 0, -0.6))
+	# farol colgante
+	var lamp := _sprite("res://assets/props/lantern.png", 0.045, Vector3(-13.5, 3.35, -2.2), null, "top")
+	lamp.shaded = false
+	lamp.modulate = Color(1.4, 1.25, 1.0)
+	lamp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var cord := _box_b(-13.515, -13.485, 3.35, 5.8, -2.22, -2.18, wood_d)
+	cord.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_omni(Vector3(-13.5, 2.9, -1.9), Color(1.0, 0.76, 0.48), 1.0, 5.5)
+	# alfombra
+	var rug_m := StandardMaterial3D.new()
+	rug_m.albedo_texture = _tex("res://assets/tex/rug_library.png")
+	rug_m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	rug_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	rug_m.roughness = 1.0
+	var rug := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(3.6, 2.5)
+	rug.mesh = pm
+	rug.material_override = rug_m
+	rug.position = Vector3(-11.3, 0.012, -1.45)
+	add_child(rug)
+
+## Un candelero con su llama animada.
+func _candle_stick(pos: Vector3) -> void:
+	var c := _sprite("res://assets/props/candlestick.png", 0.025, pos)
+	var fl := AnimatedSprite3D.new()
+	var sf := SpriteFrames.new()
+	var ft := _tex("res://assets/props/flame.png")
+	sf.set_animation_speed("default", 8.0)
+	for i in 3:
+		var at := AtlasTexture.new()
+		at.atlas = ft
+		at.region = Rect2(i * 5, 0, 5, 6)
+		sf.add_frame("default", at)
+	fl.sprite_frames = sf
+	fl.pixel_size = 0.025
+	fl.centered = false
+	fl.offset = Vector2(-2.5, 0)
+	fl.position = Vector3(0, 14 * 0.025, 0.01)
+	fl.shaded = false
+	fl.modulate = Color(2.0, 1.7, 1.2)
+	fl.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	fl.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+	fl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	c.add_child(fl)
+	fl.play("default")
+
+## Motas de luz violeta que suben despacio del grimorio.
+func _motes(pos: Vector3) -> void:
+	var p := GPUParticles3D.new()
+	p.amount = 12
+	p.lifetime = 3.2
+	p.preprocess = 3.0
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(0.35, 0.05, 0.15)
+	pm.direction = Vector3(0, 1, 0)
+	pm.spread = 25.0
+	pm.initial_velocity_min = 0.06
+	pm.initial_velocity_max = 0.16
+	pm.gravity = Vector3(0, 0.02, 0)
+	pm.color = Color(1.1, 0.9, 1.6)
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 0))
+	g.add_point(0.25, Color(1, 1, 1, 1))
+	g.set_color(g.get_point_count() - 1, Color(1, 1, 1, 0))
+	var gt := GradientTexture1D.new()
+	gt.gradient = g
+	pm.color_ramp = gt
+	p.process_material = pm
+	p.draw_pass_1 = _particle_quad("res://assets/fx/sparkle.png", 0.022)
+	p.position = pos
+	p.visibility_aabb = AABB(Vector3(-1, -1, -1), Vector3(2, 3, 2))
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(p)
+
+## Lo que se toca de cada estación, el letrero que aparece al pasar el cursor y el suelo (clic = caminar ahí).
+func _build_stations() -> void:
+	var desk := Node3D.new()
+	desk.position = DESK_POS
+	add_child(desk)
+	station_nodes["biblioteca"] = desk
+	_pick(desk, Vector3(1.6, 1.5, 0.9), Vector3(0, 0.75, 0.15), func(): _station_press("biblioteca"),
+		func(): _station_hover("biblioteca", true), func(): _station_hover("biblioteca", false))
+	station_nodes["caldero"] = cauldron
+	var counter := Node3D.new()
+	counter.position = Vector3(0.0, 0, -1.25)
+	add_child(counter)
+	station_nodes["mostrador"] = counter
+	_pick(counter, Vector3(2.16, 1.08, 0.86), Vector3(0, 0.54, 0), func(): _station_press("mostrador"),
+		func(): _station_hover("mostrador", true), func(): _station_hover("mostrador", false))
+	var door := Node3D.new()
+	door.position = Vector3(4.0, 0, -3.95)
+	add_child(door)
+	station_nodes["puerta"] = door
+	_pick(door, Vector3(1.5, 2.6, 0.4), Vector3(0, 1.3, 0.15), func(): _station_press("puerta"),
+		func(): _station_hover("puerta", true), func(): _station_hover("puerta", false))
+	_station_label = Label3D.new()
+	_station_label.font = _font
+	_station_label.font_size = 44
+	_station_label.pixel_size = 0.0055
+	_station_label.outline_size = 12
+	_station_label.outline_modulate = Color(0.1, 0.06, 0.12)
+	_station_label.modulate = Color(1.0, 0.88, 0.55)
+	_station_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_station_label.no_depth_test = true
+	_station_label.render_priority = 8
+	_station_label.shaded = false
+	_station_label.visible = false
+	add_child(_station_label)
+	_pick_floor()
+
+func _pick_floor() -> void:
+	var a := Area3D.new()
+	a.name = "Floor"
+	a.monitoring = false
+	a.monitorable = false
+	a.input_ray_pickable = true
+	var cs := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = Vector3(ROOM_X1 - ROOM_X0, 0.1, 6.8)
+	cs.shape = bs
+	cs.position = Vector3((ROOM_X0 + ROOM_X1) / 2.0, -0.05, -0.6)
+	a.add_child(cs)
+	a.input_event.connect(func(_cam, ev, pos, _n, _i):
+		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+			_floor_click(pos))
+	add_child(a)
+
+func _floor_click(pos: Vector3) -> void:
+	if walker == null or not (walker.can_walk.is_valid() and walker.can_walk.call()):
+		return
+	var tx := clampf(pos.x, walker.x_min(), walker.x_max())
+	spawn_sparkles(walker.point(tx) + Vector3(0, 0.05, 0.05), Color(1.3, 1.2, 0.9), 5)
+	walker.go_to(tx)
+
+func _build_walker() -> void:
+	walker = Walker.new()
+	walker.name = "Walker"
+	add_child(walker)
+	walker.stations = STATIONS.duplicate(true)
+	walker.setup(alchemist, LANE, P_ALCH_COUNTER.x, 1)
+	walker.station_reached.connect(func(id): station_reached.emit(id))
+	walker.station_left.connect(func(id): station_left.emit(id))
+	snap_camera()
+
+func _station_press(id: String) -> void:
+	if can_use.is_valid() and not can_use.call(id):
+		return
+	use_station(id)
+
+## Camina hasta la estación y la usa: emite station_clicked(id) al llegar. false si la interrumpieron.
+func use_station(id: String) -> bool:
+	if walker == null or not STATIONS.has(id):
+		return false
+	if not await walker.go_station(id):
+		return false
+	station_clicked.emit(id)
+	return true
+
+## Solo camina hasta la estación (sin usarla). true al llegar.
+func go_station(id: String) -> bool:
+	if walker == null:
+		return false
+	return await walker.go_station(id)
+
+## Está en el sector de esa estación.
+func at_station(id: String) -> bool:
+	return walker != null and walker.current == id
+
+func current_station() -> String:
+	return walker.current if walker else ""
+
+## Cambia el letrero que aparece al pasar el cursor por una estación (p. ej. "Puerta · ir al mercado").
+func set_station_label(id: String, text: String) -> void:
+	_station_label_text[id] = text
+	if _hover_station == id and _station_label:
+		_station_label.text = text
+
+func _station_hover(id: String, on: bool) -> void:
+	if _station_label == null:
+		return
+	if on:
+		_hover_station = id
+		_station_label.text = _station_label_text.get(id, STATIONS[id]["name"])
+		var n: Node3D = station_nodes[id]
+		_station_label.global_position = n.global_position + Vector3(0, STATION_LABEL_Y.get(id, 1.8), 0.35)
+		_station_label.visible = true
+		if id == "biblioteca" and grimoire_sprite:
+			grimoire_sprite.modulate = Color(1.3, 1.25, 1.4)
+	elif _hover_station == id:
+		_hover_station = ""
+		_station_label.visible = false
+		if grimoire_sprite:
+			grimoire_sprite.modulate = Color.WHITE
+
+func _cam_goal() -> float:
+	if is_finite(cam_fixed_x):
+		return cam_fixed_x
+	if alchemist == null:
+		return 0.0
+	return clampf(alchemist.position.x + alchemist.facing * 0.6, CAM_X0, CAM_X1)
+
+## Pone la cámara sobre la alquimista sin deslizarse (tras teletransportarla).
+func snap_camera() -> void:
+	_cam_x = _cam_goal()
+
+## Objetos de las estaciones para el cursor del mando (LB / RB): [[Node3D, altura], ...].
+func pad_picks() -> Array:
+	return [[station_nodes["biblioteca"], 0.95], [station_nodes["mostrador"], 0.9], [station_nodes["puerta"], 1.3]]
+# --- end WORLD
+
+# --- MAGIC: el estante de pergaminos, colgado en la pared junto al de pociones (a la derecha del mapa) --------------
+# Un panal de madera de 3 x 2 huecos (assets/props/scroll_rack.png); cada pergamino del estante es un rollo atado con
+# una cinta del color de su hechizo (assets/props/roll_<hechizo>.png). Lo dibuja tools/arte/magic_art.py.
+const SCROLL_RACK_POS := Vector3(-0.02, 2.8, -3.95)
+const SCROLL_RACK_PX := 0.024
+var scroll_rack: Sprite3D
+var scroll_rolls: Array[Sprite3D] = []
+
+## main.gd lo llama después de build().
+func build_scroll_rack() -> void:
+	if scroll_rack:
+		return
+	var px := SCROLL_RACK_PX
+	scroll_rack = _sprite("res://assets/props/scroll_rack.png", px, SCROLL_RACK_POS)
+	for i in mini(Game.scroll_capacity(), 6):
+		var col := i % 3
+		var row := i / 3
+		var pos := SCROLL_RACK_POS + Vector3((col - 1) * 9.0 * px, (9.0 if row == 0 else 3.0) * px, 0.02)
+		var s := _sprite("res://assets/props/roll_sello_calor.png", px, pos)
+		s.visible = false
+		scroll_rolls.append(s)
+	Game.scrolls_changed.connect(refresh_scroll_rack)
+	refresh_scroll_rack()
+
+func refresh_scroll_rack() -> void:
+	for i in scroll_rolls.size():
+		var s := scroll_rolls[i]
+		if i < Game.scrolls.size():
+			s.texture = _tex("res://assets/props/roll_%s.png" % Game.scrolls[i]["id"])
+			s.visible = true
+		else:
+			s.visible = false
+
+## Dónde está (en el mundo) el pergamino i del estante: de ahí sale volando al entregarlo.
+func scroll_slot_position(index: int) -> Vector3:
+	if scroll_rolls.is_empty():
+		return SCROLL_RACK_POS + Vector3(0, 0.3, 0.05)
+	index = clampi(index, 0, scroll_rolls.size() - 1)
+	return scroll_rolls[index].global_position + Vector3(0, 0.05, 0.05)
+# --- end MAGIC

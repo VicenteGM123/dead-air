@@ -46,6 +46,10 @@ var empty_btn: Button
 var potion_panel: PanelContainer
 var potion_title: Label
 var potion_grid: GridContainer
+# --- PREP: un solo estante abajo a la derecha (Pociones y, con el grimorio abierto, la pestaña Pergaminos)
+var rack_box: VBoxContainer     # contenido del panel: cabecera + rejilla visible
+var rack_head: HBoxContainer    # cabecera: el título, o las dos pestañas
+# --- end PREP
 
 var tooltip: PanelContainer
 var tooltip_box: VBoxContainer
@@ -412,6 +416,7 @@ func set_cauldron(contents: Array) -> void:
 		result_label.text = "[b][color=#ffd987]%s[/color][/b]\n[color=#a99fbf]%s + %s · potencia %d (%d %s)[/color]" % [name, e1, e2, pot, stars, "estrella" if stars == 1 else "estrellas"]
 	brew_btn.disabled = r.get("potion", "") == ""
 	empty_btn.disabled = contents.is_empty()
+	_magic_cauldron(contents)   # --- MAGIC: la tinta posible y el botón «Tinta»
 
 func set_cauldron_enabled(on: bool) -> void:
 	cauldron_panel.modulate.a = 1.0 if on else 0.55
@@ -426,8 +431,10 @@ func _build_potion_panel() -> void:
 	root.add_child(potion_panel)
 	var v := UIKit.vbox(6)
 	potion_panel.add_child(v)
-	var head := UIKit.hbox(10)
+	rack_box = v   # --- PREP: la pestaña de pergaminos (MAGIC) va en este mismo panel
+	var head := UIKit.hbox(8)
 	v.add_child(head)
+	rack_head = head   # --- PREP
 	potion_title = UIKit.shadow(UIKit.label("Pociones", 26, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold))
 	head.add_child(potion_title)
 	potion_grid = GridContainer.new()
@@ -440,6 +447,7 @@ func _build_potion_panel() -> void:
 func refresh_potions() -> void:
 	var cap := Game.potion_capacity()
 	potion_title.text = "Pociones  %d/%d" % [Game.potions.size(), cap]
+	_rack_titles()   # --- PREP: el número también va en la pestaña
 	for c in potion_grid.get_children():
 		c.queue_free()
 	potion_grid.columns = 6
@@ -654,6 +662,14 @@ func fly_coins(from: Vector2, count: int) -> void:
 			bump_gold()
 			c.queue_free())
 
+# --- WORLD: en el mercado no se ven el caldero ni las pociones (son cosas de la tienda)
+func set_shop_panels_visible(on: bool) -> void:
+	cauldron_panel.visible = on
+	potion_panel.visible = on
+	if not on:
+		hide_tooltip()
+# --- end WORLD
+
 func set_gameplay_visible(on: bool) -> void:
 	cauldron_panel.visible = on
 	potion_panel.visible = on
@@ -662,3 +678,210 @@ func set_gameplay_visible(on: bool) -> void:
 		hide_order()
 		hide_tip()
 		hide_tooltip()
+
+# --- MAGIC: el estante de pergaminos y el botón «Tinta» del caldero ----------------------------------------------
+# --- PREP: los pergaminos ya no van en un panel encima de las pociones (tapaba el mostrador y al cliente): son la
+# pestaña «Pergaminos» del mismo estante de abajo a la derecha, que ocupa lo mismo que antes el de pociones.
+# Pestañas: botones (el ratón y el cursor del mando, A / LB / RB, las tocan). show_rack_tab() la cambia sola: main.gd
+# la pone en lo que pide el cliente que espera, en «Pociones» al preparar una poción y en «Pergaminos» al inscribir.
+## Tocar un pergamino del estante (main.gd lo entrega como una poción).
+signal scroll_pressed(index: int)
+## «Tinta» en el panel del caldero (main.gd convierte la mezcla en tinta).
+signal ink_pressed
+
+var scroll_grid: GridContainer
+var ink_btn: Button
+var tab_potions: Button     # --- PREP
+var tab_scrolls: Button     # --- PREP
+var rack_tab := "potion"    # --- PREP: la pestaña a la vista ("potion" o "scroll")
+var _magic_on := false
+var _magic_seen_unlock := false
+var _last_contents: Array = []
+
+## Lo llama main.gd en _ready(), después de crear la interfaz.
+func magic_setup() -> void:
+	if _magic_on:
+		return
+	# --- PREP: las dos pestañas en la cabecera del estante (en lugar del título «Pociones») y la rejilla debajo
+	tab_potions = _rack_tab_button("potion")
+	tab_scrolls = _rack_tab_button("scroll")
+	rack_head.add_child(tab_potions)
+	rack_head.add_child(tab_scrolls)
+	scroll_grid = GridContainer.new()
+	scroll_grid.columns = 6
+	scroll_grid.add_theme_constant_override("h_separation", 6)
+	scroll_grid.add_theme_constant_override("v_separation", 6)
+	scroll_grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rack_box.add_child(scroll_grid)
+	Game.upgrades_changed.connect(refresh_scrolls)   # sus huecos miden lo mismo que los de las pociones
+	# --- end PREP
+	ink_btn = UIKit.button("Tinta", func(): ink_pressed.emit(), 20)
+	ink_btn.tooltip_text = "Convierte la mezcla en tinta para pergaminos (la decide la esencia más fuerte)."
+	var row := brew_btn.get_parent()
+	row.add_child(ink_btn)
+	row.move_child(ink_btn, empty_btn.get_index())
+	Game.scrolls_changed.connect(refresh_scrolls)
+	Game.magic_changed.connect(_magic_sync)
+	_magic_on = true
+	refresh_scrolls()
+	_magic_sync()
+
+## Las pestañas del estante se ven desde que se abrió el grimorio (antes, el título «Pociones» de siempre).
+func _magic_sync() -> void:
+	if not _magic_on:
+		return
+	# --- PREP
+	potion_title.visible = not Game.magic_unlocked
+	tab_potions.visible = Game.magic_unlocked
+	tab_scrolls.visible = Game.magic_unlocked
+	if not Game.magic_unlocked:
+		rack_tab = "potion"
+	_rack_show()
+	# --- end PREP
+	ink_btn.visible = Game.magic_unlocked
+	if Game.magic_unlocked != _magic_seen_unlock:
+		_magic_seen_unlock = Game.magic_unlocked
+		set_cauldron(_last_contents)
+
+func refresh_scrolls() -> void:
+	if not _magic_on:
+		return
+	var cap := Game.scroll_capacity()
+	_rack_titles()   # --- PREP
+	for c in scroll_grid.get_children():
+		c.queue_free()
+	# --- PREP: huecos tan altos como la rejilla de pociones (el estante no cambia de tamaño al cambiar de pestaña)
+	var tall := Game.potion_capacity() <= 6
+	for i in cap:
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(64, 140 if tall else 146)
+		# --- end PREP
+		b.focus_mode = Control.FOCUS_NONE
+		b.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		if i < Game.scrolls.size():
+			var s: Dictionary = Game.scrolls[i]
+			var v := UIKit.vbox(0)
+			v.set_anchors_preset(Control.PRESET_FULL_RECT)
+			v.alignment = BoxContainer.ALIGNMENT_CENTER
+			b.add_child(v)
+			var ic := UIKit.icon("res://assets/icons/spell_%s.png" % s["id"], 3.0 if tall else 2.6)   # --- PREP
+			ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+			v.add_child(ic)
+			var st := UIKit.stars(Game.stars_for(int(s["potency"])), 0.9 if tall else 0.7)   # --- PREP
+			st.alignment = BoxContainer.ALIGNMENT_CENTER
+			v.add_child(st)
+			var idx := i
+			b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+			b.pressed.connect(func(): scroll_pressed.emit(idx))
+			b.mouse_entered.connect(func(): show_scroll_tooltip(idx))
+			b.mouse_exited.connect(hide_tooltip)
+		else:
+			b.disabled = true
+		scroll_grid.add_child(b)
+
+## Centro (en pantalla) del hueco i del estante de pergaminos.
+func scroll_slot_center(index: int) -> Vector2:
+	if not _magic_on:
+		return root.size / 2.0
+	# --- PREP: con la pestaña de pociones a la vista, el pergamino vuela hasta la pestaña «Pergaminos»
+	if not scroll_grid.is_visible_in_tree():
+		return (tab_scrolls if tab_scrolls.is_visible_in_tree() else potion_panel).get_global_rect().get_center()
+	# --- end PREP
+	var live := []
+	for c in scroll_grid.get_children():
+		if not c.is_queued_for_deletion():
+			live.append(c)
+	if index >= 0 and index < live.size():
+		return (live[index] as Control).get_global_rect().get_center()
+	return potion_panel.get_global_rect().get_center()
+
+# --- PREP: las pestañas del estante ------------------------------------------------------------------------------
+## Pone a la vista la pestaña de pociones ("potion") o la de pergaminos ("scroll"). La de pergaminos solo existe
+## desde que se abrió el grimorio.
+func show_rack_tab(kind: String) -> void:
+	if kind != "scroll" or not _magic_on or not Game.magic_unlocked:
+		kind = "potion"
+	if kind == rack_tab:
+		return
+	rack_tab = kind
+	hide_tooltip()
+	_rack_show()
+
+func _rack_tab_button(kind: String) -> Button:
+	var b := Button.new()
+	b.focus_mode = Control.FOCUS_NONE
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.add_theme_font_override("font", UIKit.font_sc_bold)
+	b.add_theme_font_size_override("font_size", 21)
+	b.visible = false
+	b.pressed.connect(func():
+		if rack_tab != kind:
+			Sfx.play("page" if kind == "scroll" else "click", 0.05, -6.0)
+		show_rack_tab(kind))
+	b.mouse_entered.connect(func(): Sfx.play("hover", 0.05, -14.0))
+	return b
+
+## Estilo de una pestaña: la elegida, dorada; la otra, apagada (como las pestañas de los paneles grandes).
+func _rack_tab_style(b: Button, on: bool) -> void:
+	for st in ["normal", "hover", "pressed", "disabled"]:
+		var bg := Color(0.26, 0.2, 0.36, 0.98) if on else (Color(0.2, 0.16, 0.28, 0.98) if st == "hover" else Color(0.12, 0.1, 0.18, 0.9))
+		var border := UIKit.GOLD_BRIGHT if on else (UIKit.GOLD if st == "hover" else Color(UIKit.GOLD.r, UIKit.GOLD.g, UIKit.GOLD.b, 0.4))
+		var sb := UIKit.button_style(bg, border)
+		sb.content_margin_left = 12
+		sb.content_margin_right = 12
+		sb.content_margin_top = 1
+		sb.content_margin_bottom = 1
+		b.add_theme_stylebox_override(st, sb)
+	for c in ["font_color", "font_hover_color", "font_pressed_color"]:
+		b.add_theme_color_override(c, UIKit.GOLD_BRIGHT if on or c != "font_color" else UIKit.MUTED)
+
+func _rack_show() -> void:
+	if not _magic_on:
+		return
+	var scrolls := rack_tab == "scroll"
+	potion_grid.visible = not scrolls
+	scroll_grid.visible = scrolls
+	_rack_tab_style(tab_potions, not scrolls)
+	_rack_tab_style(tab_scrolls, scrolls)
+
+func _rack_titles() -> void:
+	if not _magic_on:
+		return
+	tab_potions.text = "Pociones %d/%d" % [Game.potions.size(), Game.potion_capacity()]
+	tab_scrolls.text = "Pergaminos %d/%d" % [Game.scrolls.size(), Game.scroll_capacity()]
+# --- end PREP
+
+func show_scroll_tooltip(idx: int) -> void:
+	if idx >= Game.scrolls.size():
+		return
+	_clear_tooltip()
+	var s: Dictionary = Game.scrolls[idx]
+	var d: Dictionary = Data.SPELLS[s["id"]]
+	var h := UIKit.hbox(10)
+	tooltip_box.add_child(h)
+	h.add_child(UIKit.icon("res://assets/icons/spell_%s.png" % s["id"], 2.5))
+	var v := UIKit.vbox(2)
+	h.add_child(v)
+	v.add_child(UIKit.label(d["name"], 25, UIKit.GOLD_BRIGHT, UIKit.font_bold))
+	v.add_child(UIKit.stars(Game.stars_for(int(s["potency"])), 1.2))
+	var desc := UIKit.rich(19)
+	desc.custom_minimum_size = Vector2(360, 0)
+	desc.text = "[i][color=#b8aecb]%s[/color][/i]\n[color=#a99fbf]%s · potencia %d · Toca para entregar.[/color]" % [d["effect"], d["kind"], s["potency"]]
+	tooltip_box.add_child(desc)
+	tooltip.visible = true
+	tooltip.reset_size()
+	_place_tooltip()
+
+## Después de set_cauldron(): enseña qué tinta saldría de la mezcla y activa el botón «Tinta».
+func _magic_cauldron(contents: Array) -> void:
+	_last_contents = contents.duplicate()
+	if not _magic_on:
+		return
+	ink_btn.visible = Game.magic_unlocked
+	var r := Game.ink_for_mix(contents)
+	ink_btn.disabled = r.is_empty()
+	if Game.magic_unlocked and not r.is_empty():
+		var d: Dictionary = Data.INKS[r["ink"]]
+		var col: Color = d["color"]
+		result_label.text += "\n[color=#a99fbf]o en tinta:[/color] [color=#%s]%s ×%d[/color]" % [col.lightened(0.2).to_html(false), d["name"], r["qty"]]
+# --- end MAGIC

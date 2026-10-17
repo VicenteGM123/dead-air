@@ -89,3 +89,73 @@ func bubble() -> void:
 
 func step() -> void:
 	play("step_%d" % (randi() % 3), 0.1, -10.0)
+
+# --- WORLD: el mercado tiene su propio ambiente (gente, pájaros, la fuente) y su música. La tienda se pausa.
+const SHOP_MUSIC_DB := -4.0
+const SHOP_FIRE_DB := -16.0
+const MARKET_AMB_DB := -7.0
+const MARKET_MUSIC_DB := -7.0
+var market_amb: AudioStreamPlayer
+var market_music: AudioStreamPlayer
+var _place := "shop"
+var _place_tween: Tween
+
+## "market": suenan la calle y la música del mercado; "shop": vuelven la música, el fuego y los grillos de la tienda.
+func set_place(place: String) -> void:
+	if place == _place:
+		return
+	_place = place
+	if market_amb == null:
+		market_amb = _make_loop("market_loop", "SFX", -60.0)
+		market_music = _make_loop("music_mercado", "Music", -60.0)
+	if _place_tween and _place_tween.is_valid():
+		_place_tween.kill()
+	_place_tween = create_tween().set_parallel(true)
+	if place == "market":
+		for p in [market_amb, market_music]:
+			p.stream_paused = false
+			if not p.playing:
+				p.play()
+		_place_tween.tween_property(market_amb, "volume_db", MARKET_AMB_DB, 0.8)
+		_place_tween.tween_property(market_music, "volume_db", MARKET_MUSIC_DB, 1.2)
+		_place_tween.tween_property(music, "volume_db", -50.0, 0.6)
+		_place_tween.tween_property(fire, "volume_db", -60.0, 0.6)
+		_place_tween.chain().tween_callback(func():
+			music.stream_paused = true
+			fire.stream_paused = true
+			night.stream_paused = true)
+	else:
+		music.stream_paused = false
+		fire.stream_paused = false
+		night.stream_paused = false
+		_place_tween.tween_property(music, "volume_db", SHOP_MUSIC_DB, 1.0)
+		_place_tween.tween_property(fire, "volume_db", SHOP_FIRE_DB, 0.8)
+		_place_tween.tween_property(market_amb, "volume_db", -60.0, 0.6)
+		_place_tween.tween_property(market_music, "volume_db", -60.0, 0.6)
+		_place_tween.chain().tween_callback(func():
+			market_amb.stream_paused = true
+			market_music.stream_paused = true)
+# --- end WORLD
+
+# --- MAGIC: sonidos del grimorio (tools/arte/magic_audio.py). Se cargan la primera vez que se usan (magic_load).
+const MAGIC_SOUNDS := ["rune_node", "rune_done", "quill", "grimoire"]
+
+func magic_load() -> void:
+	for s in MAGIC_SOUNDS:
+		if not _streams.has(s) and ResourceLoader.exists("res://assets/audio/%s.ogg" % s):
+			_streams[s] = load("res://assets/audio/%s.ogg" % s)
+
+## Como play(), pero con un tono exacto (los puntos de la runa suenan cada vez más agudos).
+func play_pitched(name: String, pitch: float, db := 0.0) -> void:
+	if not _streams.has(name):
+		magic_load()
+	if not _streams.has(name):
+		return
+	for p in _pool:
+		if not p.playing:
+			p.stream = _streams[name]
+			p.pitch_scale = pitch
+			p.volume_db = db
+			p.play()
+			return
+# --- end MAGIC

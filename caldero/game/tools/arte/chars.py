@@ -1,10 +1,13 @@
-"""Character sprites for Caldero Nocturno. 32x48 frames, facing right, feet on row 45."""
+"""Character sprites for Caldero Nocturno. 32x48 frames, facing right, feet on row 45.
+
+LEGADO: el juego usa los sprites de 64x96 de chars64.py. Este script escribe en ./salida/chars32 para no pisar
+./salida/chars (lo que chars64.py deja para copiar a assets/chars)."""
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from pixlib import *
 
 W, H = 32, 48
-OUT = './salida/chars'
+OUT = './salida/chars32'   # legado (32x48): no pisa ./salida/chars de chars64.py
 os.makedirs(OUT, exist_ok=True)
 
 def put(g, x, y, ch):
