@@ -1269,3 +1269,32 @@ usual few cm. Older than this round and left as they were: in the lion outfit th
 throw (0.43 s, two frames). b2's first frames when played on its own from the idle
 (it always follows b1 in play) and the stow actions played on an armed rig are the checker's artefacts.
 
+
+## 11. The hero round in short (2026-10-17)
+
+The client asked for the hero of his reference picture, a bigger sword carried low with the blade trailing like his sword
+picture, blows with variety that land with weight, and the weapons put away when he is not fighting; then he sent nine key
+poses of the same Heracles (with a club, read as the sword). Where each answer lives:
+
+- **Two carries** (section 9). STOWED, exploring (the game starts so): the sword in its scabbard at the left hip, the shield
+  on his back with the spear over it; loose fists swinging, the run leaning in like P2 (13.5 degrees at 6.2 m/s, 27 at 9);
+  the idle is P1, the weight on one leg, now and then the left hand on the pommel. ARMED (a blow, the guard, the lock-on, a
+  foe within 8 m, a hit): the sword low in the right fist with the 0.98 m blade trailing back and down, 26 cm over the
+  ground (the sword picture, P2, P9), the shield on the left arm; the ready stance when a foe is near. Four seconds of calm
+  put them away; a blow pressed with the sword away draws straight into it (section 10).
+- **The client's poses**: P1 / P9 the idles (stowed / armed), P2 the runs, P5 the low wide load (the heavy's coil, and
+  the low carry that b1 rises out of), P6 the jump and the air pose, P7 the guard and the guard walk, P8 the end of a4
+  and of the dash (the blade struck into the ground). P3 (the climb) and P4 (the weapon on the shoulder) are not used.
+- **The blows** (4.9; numbers in COMBAT.md 3.2): combo A, pressed standing: a1 diagonal forehand, a2 rising backhand,
+  a3 wide horizontal, a4 stepping overhead chop into the ground; combo B, pressed on the move or right after A: b1
+  rising diagonal out of the low carry, b2 descending backhand, b3 lunging thrust; the dash attack out of a sprint (a
+  leap and an overhead slash into the ground); the heavy, the charged spin. Each has its trail style, cut flash, camera
+  kick and sound (ARCHITECTURE.md 4.1 and 5.11, AUDIO.md).
+- **The client's sheets** were rendered with `tools/preview_heracles.gd fns=sheet` (rows `views:idle`, `loco:6.2`,
+  `chain:a1,a2,a3,a4` with `ct0=` / `ct1=`, `heavy` with `t0=` / `t1=`, `air`, `guard`; per view `yaw_`, `dist_`,
+  `height_`, `look_`, `fov_<view>`; `sun_azim=` / `sun_elev=` on the preview stage turn the sun for a turnaround) and the
+  GIFs with the arena's render scenarios `bot=reel_stow`, `reel_fight`, `reel_run` (COMBAT.md 8).
+- **Known limits.** From the gameplay camera (behind and above him) the cloak covers much of his back and the blade is a
+  thin line: the cuts read best from the front or the side. P5's club is coiled forehand; the heavy's coil is a backhand,
+  its blade hidden behind him from the front. P6's leap is more stretched than our air pose. At a sprint the blade trails
+  level, at the run low and back.

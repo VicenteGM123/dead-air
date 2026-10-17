@@ -31,13 +31,16 @@ a cada bestia hay que entenderla para vencerla. Este es el **primer tramo jugabl
 | Esprintar | mantener Shift | mantener B o pulsar L3 |
 | Voltereta (esquivar) | pulsar Shift | pulsar B |
 | Saltar | Espacio | A |
-| Golpe (combo de 3) | clic izquierdo | X |
-| Golpe fuerte | mantener clic izquierdo | mantener X |
+| Golpe: quieto, combo de 4; en movimiento o justo después, combo de 3; esprintando, ataque en carrera | clic izquierdo | X |
+| Golpe fuerte (giro cargado) | mantener clic izquierdo y soltar | mantener X y soltar |
 | Escudo / parada | clic derecho (mantener / justo antes del golpe) | LT |
 | Lanza con cadena | Q (apunta a lo que miras) | RT |
 | Fijar objetivo | Tab o clic central | R3 |
 | Usar, agarrar, acariciar, rezar | E | Y |
 | Pausa | Esc o P | Start |
+
+Fuera de combate Heracles lleva la espada envainada y el escudo a la espalda: los saca al atacar (desenvaina directo al
+golpe), al cubrirse, al fijar un objetivo o si un enemigo se le acerca, y los guarda solo tras unos segundos de calma.
 
 Pistas: los lobos atacan de uno en uno mientras los demás rodean (voltereta o escudo, y castiga); los jabalíes avisan
 antes de embestir en línea recta (ponte delante de una roca o para el golpe con el escudo en el momento justo).

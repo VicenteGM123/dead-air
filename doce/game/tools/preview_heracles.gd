@@ -223,6 +223,8 @@ static func lineup(_seed: int) -> Node3D:
 ## `guard`, `air:<vy>`, `swim:<speed>`, `zip`, `hang`, `strafe:<speed>` / `strafel:<speed>` / `back:<speed>` (the gait going
 ## sideways right / left, backwards), `guardback:<speed>`, `guardstrafe:<speed>`, optionally followed by @view and @outfit, e.g. `attack1@back`,
 ## `idle@front@lion`. Tile views: back, tq, side, front, close, closeback, sidel, low.
+## Per view, yaw_<view>= dist_<view>= height_<view>= look_<view>= fov_<view>= override its camera (e.g. `game` with fov_game=26
+## is the gameplay camera cropped to the hero); the stage's sun_azim= / sun_elev= (tools/preview.gd) turn the sun.
 class SheetStage extends Node3D:
 	var _head_yaw := 160.0
 	var sv: SubViewport
@@ -594,6 +596,11 @@ class SheetStage extends Node3D:
 				cam.fov = 55.0
 		# (LOOK lane, local only: yaw_<view>=deg overrides a view's yaw)
 		yaw = float(_arg("yaw_" + view, str(yaw)))
+		# (SHIP, 2026-10-17) dist_/height_/look_/fov_<view> frame a view (the client's sheets: aspecto, poses, golpes)
+		dist = float(_arg("dist_" + view, str(dist)))
+		height = float(_arg("height_" + view, str(height)))
+		look = float(_arg("look_" + view, str(look)))
+		cam.fov = float(_arg("fov_" + view, str(cam.fov)))
 		var r := deg_to_rad(yaw)
 		cam.global_position = rig.global_position + Vector3(sin(r), 0, cos(r)) * dist + Vector3(0, height, 0)
 		cam.look_at(rig.global_position + Vector3(0, look, 0), Vector3.UP)

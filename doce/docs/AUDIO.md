@@ -85,6 +85,13 @@ the heavy, pitch 0.95–1.06) and a hit at the contact point (−1 dB, pitch 0.9
 | `shield_draw` | 0.60 | the shield is taken off the back | the strap creaks as it slips off, the wooden shield thuds into the arm at ~0.25 s (a tick of the rim) |
 | `shield_stow` | 0.60 | the shield is slung onto the back | a muffled wooden thud at ~0.08 s, the strap pulled tight (creak), the buckle's clink |
 
+**As wired** (INTEGRATE, `hero_melee.gd` move tables; swing / hit): a1 `swing_light_a` / `hit_cut_a`, a2 `swing_light_b` /
+`hit_cut_b`, a3 `swing_light_c` / `hit_cut_c`, a4 `swing_big` / `hit_big` + `slam`, b1 `swing_light_b` / `hit_cut_a`, b2
+`swing_light_a` / `hit_cut_b`, b3 `swing_thrust` / `hit_thrust`, dash `swing_dash` / `hit_big` + `slam`, heavy `swing_spin` /
+`hit_big`. Levels: swings −4 dB (light), −3 (finishers, the dash), −2 (the spin); hits −1; the slam −3 dB at a4's
+impact and −3.6 at the dash's landing (−3 − 3 × (1 − power)). The draw and sheathe sounds play at −6 dB from the rig's
+own events (the grip taken, the blade clear, the shield on the arm or the back).
+
 ## ENCOUNTERS: wolves, boars, the Nemean Lion
 
 | Sound | Play it when |

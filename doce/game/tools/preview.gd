@@ -9,6 +9,12 @@ func _ready() -> void:
 	var tod := TimeOfDay.new()
 	add_child(tod)
 	tod.set_state(Game.arg("tod", "golden"))
+	# (SHIP, 2026-10-17) sun_azim= / sun_elev= (degrees) turn the sun round the model, e.g. to light every view of a turnaround
+	if String(Game.arg("sun_azim", "")) != "" or String(Game.arg("sun_elev", "")) != "":
+		var cur: Dictionary = tod.current()
+		cur["azim"] = float(Game.arg("sun_azim", str(cur["azim"])))
+		cur["elev"] = float(Game.arg("sun_elev", str(cur["elev"])))
+		tod._apply(cur)
 	Game.tod = tod
 	var toon := ToonScreen.new()
 	add_child(toon)

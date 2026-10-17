@@ -79,7 +79,7 @@ Frames are at 60 fps.
 - the **dash attack** when the hero sprints faster than 5 m/s (`DASH_SPEED`);
 - **combo B** when he moves faster than 2 m/s (`B_SPEED`), and also when his last string was combo A and it ended less
   than 3 s ago (`ALTERNATE`), so in a fight the strings alternate A, B, A, B;
-- **combo A** otherwise (standing or walking).
+- **combo A** otherwise (standing, or moving slower than 2 m/s: a full walk, 2.2 m/s, already starts combo B).
 
 A press during a string goes on with that string. It is buffered and starts the next blow at the current blow's `open`
 key, and up to 0.25 s after a blow has ended it still goes on with the string. The finisher (a4, b3) ends the string.
@@ -518,7 +518,12 @@ the death action, back at the start with full health after main.gd's 3 s), and t
 inside the world and never within 1.2 m of the hero's head for 0.35 s). 19/19 pass at `--fixed-fps 60` (the moveset, 2026-10-17,
 and again after INTEGRATE wired the weapons carried, the draw into the blow and the FX lane's feel;
 before it 16/16 at `--fixed-fps 60` and at `--fixed-fps 24`, also inside the live project with CORE's files overlaid).
-`showreel` (only by name, not in `autotest`) is a render scenario: see the command above.
+`showreel` (only by name, not in `autotest`) is a render scenario: see the command above. So are the client's GIFs
+(SHIP, 2026-10-17; same command, `--resolution 1280x720 --quit-after 420` and `noui=1`): `reel_stow` (a stowed walk, the
+draw straight into combo A on a straw soldier, calm until he puts the weapons away), `reel_fight` (armed: combo B on
+the move, a sprint into the dash attack, the charged spin) and `reel_run` (the camera held on his right side, as a player
+turning the view would: the relaxed run, the draw on the run, the armed run). With a reel running the bot prints
+`REEL f=<frame> x= y=` (the hero's place on screen) for a crop that follows him.
 Debug args: `meleedebug=1` (blade sweep distances, "MELEE HIT <blow> blow_t= rig_t= dist="), `camdebug=1` (camera per
 frame), `feeldebug=1` (hit-stops).
 

@@ -529,7 +529,7 @@ func _build_controls() -> void:
 		["sprint", "Correr", [["word", "mantener"], ["key", "Shift"]], [["pill", "L3"], ["word", "o mantener"], ["pad", "B"]]],
 		["jump", "Saltar", null, null],
 		["dodge", "Voltereta", [["word", "pulsar"], ["key", "Shift"]], null],
-		["attack", "Golpe (combo de tres)", null, null],
+		["attack", "Golpe · combos · en carrera", null, null],
 		["heavy", "Golpe fuerte", null, null],
 		["guard", "Escudo · parada a tiempo", null, null],
 		["chain", "Lanza con cadena", [["key", "Q"]], null],
