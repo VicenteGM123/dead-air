@@ -10,12 +10,17 @@ extends Object
 ## the cloak's particles and the visible props over all its frames); each view's camera is then aimed and zoomed so that all of it
 ## fits the tile with a margin, one zoom per `group` and view (the heroes of one GIF the same size). The shaders' clock is stopped
 ## (the clouds stay put) and the preview's ground is widened (and lowered for the `deep` prop).
-## mode=measure renders nothing: per clip "DUR <id> n=<frames> t0= t1=" (how long it lasts by itself). Else out: <out>/<id>@<view>.png,
-## the frames left to right (one tile wide each); on stdout "FRAMING ...", "EVENTS <id> [[name, s], ...]" and "CLIP ..." per clip;
-## "CLIPS done" at the end.
+## mode=measure renders nothing: per clip "DUR <id> n=<frames> t0= t1=" (how long it lasts by itself) and, for a clip with
+## "extent": true, per view "EXT <id> <view> kx= ky= h=": the half width and half height (tangents, margin included) that hold
+## everything the clip shows over all its frames when the aim is centred on it, and h, the height (tangent) of the hero standing
+## (feet to the top of the hair) in that view: tools/anim_gifs.py sizes the tiles of a GIF from them so that the hero is the same
+## number of pixels tall in every tile and the long blade stays inside through the whole swing.
+## Else out: <out>/<id>@<view>.png, the frames left to right (one tile wide each); on stdout "FRAMING ...", "EVENTS <id> [[name, s],
+## ...]" and "CLIP ..." per clip; "CLIPS done" at the end.
 ##
 ## Spec (JSON) {"clips": [clip, ...]}; a clip:
-##   id, tile [w, h], views [name | {name, yaw, pitch, dist, look, fov}] (names: VIEWS), group, one_zoom (the group's zoom shared by
+##   id, tile [w, h], views [name | {name, yaw, pitch, dist, look, fov, tile [w, h]}] (names: VIEWS; a view's own tile overrides the
+##   clip's), extent (measure), group, one_zoom (the group's zoom shared by
 ##   all its views), follow "xz" (default) | "xyz", margin (of the tile, each side, 0.06), sun [azimuth, elevation] (deg, this clip),
 ##   cap {fps 15, n frames (none: until all is over plus `tail` s, 0.25), t0 (s after the pre-roll, or "blow:<k>": when the k-th blow
 ##     starts), cyclic "" | "gait" | "swim" | <period s>}: a cyclic clip spreads its n frames over a whole number of cycles (it loops
@@ -42,6 +47,10 @@ const RUN_SPEED := 6.2 # Hero.RUN_SPEED (the rig's speed_max, as Hero feeds it)
 const GRAVITY := 24.0 # Hero.GRAVITY, Hero.FALL_MULT
 const FALL_MULT := 1.55
 const DT := 1.0 / 60.0
+## Render layers 11..19 carry the views' edge quads (one per camera), layer 20 the preview's own (seen by no tile).
+const EDGE_LAYER0 := 10
+const EDGE_LAYERS := 0x3FF << 10
+const EDGE_LAYER_OFF := 1 << 19
 
 ## The views: yaw (deg round the hero: 0 behind him, 90 his right, 180 in front), pitch (deg, looking down), distance (m) and the
 ## height (m) the camera aims at before the framing centres it.
@@ -87,6 +96,10 @@ class ClipStage extends Node3D:
 				_ground = ch # (the preview's ground block: made wide enough for any travel, lowered for the deep props)
 			elif ch is TimeOfDay:
 				_tod = ch
+			elif ch is ToonScreen and (ch as ToonScreen).edges:
+				# the preview's own edge quad (on its window's camera) is in the world the tiles film: a full-screen pass,
+				# every tile drew it on top of its own (lines and rim twice, and a bright band under the horizon)
+				(ch as ToonScreen).edges.layers = EDGE_LAYER_OFF
 		if _ground:
 			_ground.scale = Vector3(30.0, 1.0, 30.0)
 		if _tod:
@@ -100,11 +113,27 @@ class ClipStage extends Node3D:
 				list.append(c)
 		await get_tree().process_frame
 		if _arg("mode", "") == "measure":
-			# how long each clip lasts by itself (tools/anim_gifs.py plans the GIFs' loops from it): "DUR <id> n=.. t0=.. t1=.."
+			# how long each clip lasts by itself (tools/anim_gifs.py plans the GIFs' loops from it): "DUR <id> n=.. t0=.. t1=..";
+			# with extent, what it needs on screen per view: "EXT <id> <view> kx=.. ky=.. h=.."
+			var href := -1.0
 			for c in list:
 				var res := {}
-				await _simulate(c, Callable(), res)
+				var ext := bool(c.get("extent", false))
+				var pts: Array = []
+				var cb := Callable()
+				if ext:
+					cb = func(rig: RigHeracles, _k: int, anchor: Vector3) -> void: _points(rig, anchor, pts)
+					if href < 0.0:
+						href = _hero_height()
+				await _simulate(c, cb, res)
 				print("DUR %s n=%d t0=%.4f t1=%.4f" % [c["id"], int(res["n"]), float(res["t0"]), float(res["t1"])])
+				if ext:
+					for v in c.get("views", ["tq"]):
+						var vw := _view(v)
+						var cs := _cam_space(pts, vw)
+						var m := float(c.get("margin", 0.06))
+						print("EXT %s %s kx=%.5f ky=%.5f h=%.5f" % [c["id"], vw["name"], _fit_axis(cs, 0) / (1.0 - 2.0 * m),
+							_fit_axis(cs, 1) / (1.0 - 2.0 * m), _hero_tan(vw, href)])
 			print("CLIPS done")
 			get_tree().quit()
 			return
@@ -120,7 +149,7 @@ class ClipStage extends Node3D:
 			for v in c.get("views", ["tq"]):
 				var vw := _view(v)
 				var key := _zoom_key(c, vw)
-				var t := _fit_tan(pts, vw, _aspect(c), float(c.get("margin", 0.06)))
+				var t := _fit_tan(pts, vw, _aspect(c, vw), float(c.get("margin", 0.06)))
 				own[String(c["id"]) + "|" + String(vw["name"])] = t
 				need[key] = maxf(float(need.get(key, 0.0)), t)
 		print("MEASURED %d clips in %.1f s" % [list.size(), (Time.get_ticks_msec() - t_meas) / 1000.0])
@@ -132,16 +161,16 @@ class ClipStage extends Node3D:
 			for v in c.get("views", ["tq"]):
 				var vw := _view(v)
 				var key := _zoom_key(c, vw)
-				var fr := _frame(meas[c["id"]], vw, _aspect(c), float(c.get("margin", 0.06)), float(need[key]))
-				cams.append(_make_cam(c, vw, fr))
+				var fr := _frame(meas[c["id"]], vw, _aspect(c, vw), float(c.get("margin", 0.06)), float(need[key]))
+				cams.append(_make_cam(c, vw, fr, cams.size()))
 				var own_fov := rad_to_deg(2.0 * atan(float(own[String(c["id"]) + "|" + String(vw["name"])])))
-				print("FRAMING %s %s fov=%.1f (alone %.1f) look=(%.2f, %.2f) group=%s" % [c["id"], vw["name"], fr["fov"], own_fov,
-					fr["a"], fr["b"], key])
+				print("FRAMING %s %s fov=%.1f (alone %.1f) look=(%.2f, %.2f) group=%s%s" % [c["id"], vw["name"], fr["fov"], own_fov,
+					fr["a"], fr["b"], key, "" if fr["ok"] else " (TIGHT: something leaves the tile)"])
 			var n := _frames_n(c)
-			var tile := _tile(c)
 			var strips: Array[Image] = []
 			for cm in cams:
-				var im := Image.create(tile.x * n, tile.y, false, Image.FORMAT_RGB8)
+				var vt: Vector2i = cm["tile"]
+				var im := Image.create(vt.x * n, vt.y, false, Image.FORMAT_RGB8)
 				im.fill(Color(0.1, 0.1, 0.12))
 				strips.append(im)
 			var settle := int(_arg("settle", "1"))
@@ -155,7 +184,8 @@ class ClipStage extends Node3D:
 				for j in cams.size():
 					var img: Image = (cams[j]["sv"] as SubViewport).get_texture().get_image()
 					img.convert(Image.FORMAT_RGB8)
-					strips[j].blit_rect(img, Rect2i(0, 0, tile.x, tile.y), Vector2i(k * tile.x, 0)), res)
+					var vt: Vector2i = cams[j]["tile"]
+					strips[j].blit_rect(img, Rect2i(0, 0, vt.x, vt.y), Vector2i(k * vt.x, 0)), res)
 			# the rig's events (impact, release, ...) in s from the first frame: the GIF's progress bar marks them
 			print("EVENTS %s %s" % [c["id"], JSON.stringify(res.get("events", []))])
 			for j in cams.size():
@@ -184,12 +214,13 @@ class ClipStage extends Node3D:
 
 	# --- the timeline -------------------------------------------------------------------------------------------------------
 
-	func _tile(c: Dictionary) -> Vector2i:
-		var t: Array = c.get("tile", [300, 360])
+	## The clip's tile, or the view's own (a GIF whose rows of views are not equally tall).
+	func _tile(c: Dictionary, vw: Dictionary = {}) -> Vector2i:
+		var t: Array = vw.get("tile", c.get("tile", [300, 360]))
 		return Vector2i(int(t[0]), int(t[1]))
 
-	func _aspect(c: Dictionary) -> float:
-		var t := _tile(c)
+	func _aspect(c: Dictionary, vw: Dictionary = {}) -> float:
+		var t := _tile(c, vw)
 		return float(t.x) / float(t.y)
 
 	func _frames_n(c: Dictionary) -> int:
@@ -390,20 +421,66 @@ class ClipStage extends Node3D:
 				lo = mid
 		return hi
 
+	## One axis alone (0: across, 1: up): the smallest half extent (tangent, margin not included) that holds every point with
+	## the aim centred on them along it (min over the aim of max |x - a| + r over depth).
+	static func _fit_axis(cs: Array, axis: int) -> float:
+		var lo := 0.0
+		var hi := 4.0
+		for i in 44:
+			var k := (lo + hi) * 0.5
+			var alo := -INF
+			var ahi := INF
+			for q in cs:
+				var x: float = q[axis]
+				var w: float = k * float(q[2]) - float(q[3])
+				alo = maxf(alo, x - w)
+				ahi = minf(ahi, x + w)
+			if alo <= ahi:
+				hi = k
+			else:
+				lo = k
+		return hi
+
+	## The standing hero's height (m, the ground to the top of the hair): a rig at rest, armed, measured once.
+	func _hero_height() -> float:
+		var rig := RigHeracles.new()
+		add_child(rig)
+		rig.process_mode = Node.PROCESS_MODE_DISABLED
+		rig.set_armed(true, true)
+		rig.set_locomotion(0.0, RUN_SPEED)
+		for i in 60:
+			rig.advance(DT)
+		var h := rig.head().global_position.y - rig.global_position.y + 0.22
+		remove_child(rig)
+		rig.free()
+		print("HERO height %.3f m" % h)
+		return h
+
+	## The standing hero's height in a view (tangent: the top of the hair over the feet, seen by the view's nominal camera).
+	static func _hero_tan(vw: Dictionary, h: float) -> float:
+		var cs := _cam_space([[Vector3.ZERO, 0.0], [Vector3(0.0, h, 0.0), 0.0]], vw)
+		if cs.size() < 2:
+			return 0.4
+		return absf(float(cs[1][1]) / float(cs[1][2]) - float(cs[0][1]) / float(cs[0][2]))
+
 	func _frame(pts: Array, vw: Dictionary, aspect: float, m: float, t: float) -> Dictionary:
 		var f := _feasible(_cam_space(pts, vw), t, aspect, m)
-		var a := float(f[1]) if f[0] else 0.0
-		var b := float(f[2]) if f[0] else 0.0
+		# (a zoom fixed from outside that turns out a little tight still centres what is there: a little cut on both sides
+		# rather than all of it on one)
+		var a := float(f[1]) if is_finite(float(f[1])) else 0.0
+		var b := float(f[2]) if is_finite(float(f[2])) else 0.0
 		if vw.has("aim"):
 			var am: Array = vw["aim"]
 			a = float(am[0])
 			b = float(am[1])
-		return {"t": t, "fov": rad_to_deg(2.0 * atan(t)), "a": a, "b": b}
+		return {"t": t, "fov": rad_to_deg(2.0 * atan(t)), "a": a, "b": b, "ok": bool(f[0])}
 
 	# --- cameras --------------------------------------------------------------------------------------------------------------
 
-	func _make_cam(c: Dictionary, vw: Dictionary, fr: Dictionary) -> Dictionary:
-		var tile := _tile(c)
+	## A view's camera in its own SubViewport (the world shared), with the game's toon passes. `j`: the view's index in the clip,
+	## the render layer of its edge quad (a full-screen pass: each camera sees its own quad only).
+	func _make_cam(c: Dictionary, vw: Dictionary, fr: Dictionary, j: int) -> Dictionary:
+		var tile := _tile(c, vw)
 		var sv := SubViewport.new()
 		sv.size = tile
 		sv.world_3d = get_viewport().world_3d
@@ -426,6 +503,8 @@ class ClipStage extends Node3D:
 		edges_mat.render_priority = 100
 		edges.material_override = edges_mat
 		edges.position = Vector3(0, 0, -1.0)
+		edges.layers = 1 << (EDGE_LAYER0 + j)
+		cam.cull_mask = (0xFFFFF & ~EDGE_LAYERS) | edges.layers
 		cam.add_child(edges)
 		var layer := CanvasLayer.new()
 		sv.add_child(layer)
@@ -443,9 +522,15 @@ class ClipStage extends Node3D:
 			edges_mat.set_shader_parameter("line_tint", m["line"])
 			post_mat.set_shader_parameter("bloom", m["bloom"])
 			post_mat.set_shader_parameter("sat", m["sat"])
+		if c.has("line_far"):
+			# (the ink lines and the rim light fade out from half this distance: on the flat ground seen low, the rim reads a
+			# farther neighbour everywhere past ~10 m and paints a bright band under the horizon that stops in a straight
+			# slant where the sun's direction on screen turns sideways; the bigger the tile, the nearer it starts)
+			edges_mat.set_shader_parameter("line_far", float(c["line_far"]))
 		var ax := _axes(vw)
 		var aim := Vector3(0.0, float(vw["look"]), 0.0) + (ax[1] as Vector3) * float(fr["a"]) + (ax[2] as Vector3) * float(fr["b"])
-		return {"sv": sv, "cam": cam, "name": String(vw["name"]), "aim": aim, "back": ax[0], "dist": float(vw["dist"])}
+		return {"sv": sv, "cam": cam, "name": String(vw["name"]), "aim": aim, "back": ax[0], "dist": float(vw["dist"]),
+			"tile": tile}
 
 	func _place_cam(cm: Dictionary, anchor: Vector3) -> void:
 		var cam: Camera3D = cm["cam"]

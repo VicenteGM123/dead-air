@@ -106,9 +106,10 @@ const FWD := Vector3(0.0, 0.0, -1.0)
 const SHIELD_R := 0.39
 ## The left fist holds the spear this far towards its head from the spear's own origin.
 const SPEAR_HOLD := 0.22
-## The direction (chest space) the spear's local x axis lies along on the back, the leaf's broad side being the way across it.
-const SPEAR_ROLL := Vector3(0.12, 0.11, 1.01)
-const SPEAR_ROLL_LION := Vector3(0.0, 0.0, 1.0)
+## The direction (chest space) the spear's local x axis lies along on the back, the leaf's broad side being the way across it (FACE2:
+## the roll the left fist has when it closes on the shaft there, `anim_check mode=swap verbose=1`).
+const SPEAR_ROLL := Vector3(-0.07, -0.02, 0.99)
+const SPEAR_ROLL_LION := Vector3(-0.08, -0.03, 0.99)
 ## don_skin: when the pelt replaces the cape and when the paws are knotted on the chest (s).
 const DON_SWAP := 0.78
 const DON_KNOT := 1.62
@@ -1128,9 +1129,64 @@ static func _build_head() -> ArrayMesh:
 		mb.ico(Vector3.ZERO, 0.028, SKIN, 1, 0.0, Vector3(0.42, 1.0, 0.66))
 		mb.ico(Vector3(0.006 * sx, -0.002, 0.002), 0.018, SKIN_SHADE, 0, 0.0, Vector3(0.4, 0.8, 0.5))
 		mb.pop()
+	# FACE2: the eyes
+	for sx in [-1.0, 1.0]:
+		_eye(mb, sx)
 	mb.pop()
 	sm.rigid(HEAD)
 	return sm.commit()[0]
+
+
+## FACE2 (2026-10-17, "ponle ojos"): the eyes, two small dark vertical ovals like the reference's (a very dark warm brown that
+## reads the same in the sun and in the shade): their half-width and half-height (head space: drawn HEAD_SCALE bigger, 1.8 x 3.3
+## cm; tried against the reference side by side, 1.2 x 2.2 read as beady dots, the reference's are about a fifth of the face's
+## height), their centres EYE_X either side of the middle (5.3 cm apart) at height EYE_Y (SKULL_C relative, a touch above the
+## middle of the face), laid on the face (each point found on its surface as seen from the front, so they follow its curve) and
+## lifted EYE_LIFT off the skin along its normal, never fighting with it. No mouth, no brows.
+const EYE := Color("2B1B16")
+const EYE_R := Vector2(0.0082, 0.015)
+const EYE_X := 0.0243
+const EYE_Y := -0.007
+const EYE_LIFT := 0.0012
+
+
+## The point of the face (SKULL_C relative) that lies at (x, y) seen from the front, and the skin's normal there.
+static func _face_at(x: float, y: float) -> Array:
+	var lo := -1.45
+	var hi := 1.45
+	for i in 20:
+		var m := (lo + hi) * 0.5
+		if head_pt(m, y).x < x:
+			lo = m
+		else:
+			hi = m
+	var a := (lo + hi) * 0.5
+	var e := 0.002
+	var n := (head_pt(a + e, y) - head_pt(a - e, y)).cross(head_pt(a, y + e) - head_pt(a, y - e)).normalized()
+	if n.z > 0.0:
+		n = -n
+	return [head_pt(a, y), n]
+
+
+## One eye (side sx): an oval fan laid on the face.
+static func _eye(mb: MeshBuilder, sx: float) -> void:
+	var c: Array = _face_at(EYE_X * sx, EYE_Y)
+	var cp: Vector3 = c[0]
+	var cn: Vector3 = c[1]
+	var ctr := SKULL_C + cp + cn * EYE_LIFT
+	var rim: Array[Vector3] = []
+	var rn: Array[Vector3] = []
+	var n := 16
+	for i in n:
+		var th := TAU * float(i) / float(n)
+		var q: Array = _face_at(EYE_X * sx + cos(th) * EYE_R.x, EYE_Y + sin(th) * EYE_R.y)
+		var qp: Vector3 = q[0]
+		var qn: Vector3 = q[1]
+		rim.append(SKULL_C + qp + qn * EYE_LIFT)
+		rn.append(qn)
+	for i in n:
+		var j := (i + 1) % n
+		_tri_out_n(mb, ctr, rim[i], rim[j], cn, rn[i], rn[j], EYE)
 
 
 ## The hairline (SKULL_C-relative height) at angle a: high over the forehead, down to the sideburns in front of the
@@ -1159,154 +1215,354 @@ static func _hair_n(p: Vector3) -> Vector3:
 	return Vector3(p.x, p.y * 1.5 + 0.012, p.z - 0.004).normalized()
 
 
-## The hair's outer surface at angle a, height y, `t` above the scalp (SKULL_C relative).
-static func _hair_pt(a: float, y: float, t: float) -> Vector3:
-	var p := _head_raw(a, y)
-	return p + _hair_n(p) * t
+## FACE2 (2026-10-17, "haz el pelo como en la referencia"): short tousled wavy hair like the reference's: a rounded mass on top
+## of the head and behind it, a little out at the back, in two layers (_hair_layer: the base down to the hairline, darker, and an
+## upper layer over it down to the temples and round the back of the skull), its outline broken all round into soft pointed
+## clumps (HAIR_ROWS: along the upper layer's edge, round the crown, the sides and the nape, swept back and down, the ones at the
+## back curling out); the forehead clear under a soft wave (clumps from the crown forward, curling up over it), the sideburns down
+## to the ears, the ears showing.
+## The mass is drawn round HAIR_C: every direction from it meets the scalp once (_scalp_r), the mass stands _hair_t off it, and
+## a direction is named by its polar angle a round the vertical (0 front, PI/2 his right) and the fraction f of the way from
+## straight up (0) down to the hairline (1). The clumps follow great circles of directions: over the crown as anywhere else.
+
+## The centre the hair is drawn round (SKULL_C relative) and the mass's fullness over the top.
+const HAIR_C := Vector3(0.0, 0.0, 0.012)
+const HAIR_FULL := 0.028
+const HAIR_FULL1 := 0.024
+## The seed that varies the clumps a little (the same hair every run).
+const HAIR_SEED := 90210
 
 
-## The hair's thickness over the scalp at angle a, a fraction f of the way from the crown (0) to the hairline (1).
-## LOOK2: swept up and back: over the forehead it rises from the hairline in a long slope (its front face leaning back, the
-## forehead clear) to a quiff, the fullest of it, above the front of the skull, a little lower over the crown and the back,
-## close over the ears and short at the nape.
-static func _hair_t(a: float, f: float) -> float:
+## Whether q (SKULL_C relative) lies inside the head's rings (_head_raw: a superellipse at every height, without the face; HEAD_PROF
+## flattened once into a packed array, read thousands of times while the hair is built).
+static func _in_head(q: Vector3) -> bool:
+	if not _cache.has("head_prof"):
+		var flat := PackedFloat32Array()
+		for e: Array in HEAD_PROF:
+			for v: float in e:
+				flat.append(v)
+		_cache["head_prof"] = flat
+	var pf: PackedFloat32Array = _cache["head_prof"]
+	var n := pf.size() / 6
+	if q.y > pf[0] or q.y < pf[(n - 1) * 6]:
+		return false
+	var k := 0
+	while k < n - 2 and q.y < pf[(k + 1) * 6]:
+		k += 1
+	var i0 := k * 6
+	var i1 := i0 + 6
+	var f := (q.y - pf[i0]) / (pf[i1] - pf[i0])
+	var cz := lerpf(pf[i0 + 4], pf[i1 + 4], f)
+	var rz := lerpf(pf[i0 + 2], pf[i1 + 2], f) if q.z < cz else lerpf(pf[i0 + 3], pf[i1 + 3], f)
+	var sq := lerpf(pf[i0 + 5], pf[i1 + 5], f)
+	return pow(absf(q.x) / lerpf(pf[i0 + 1], pf[i1 + 1], f), sq) + pow(absf(q.z - cz) / rz, sq) <= 1.0
+
+
+## How far the scalp lies from HAIR_C in the direction d (every direction the hair covers meets it 6 to 16 cm out).
+static func _scalp_r(d: Vector3) -> float:
+	var lo := 0.06
+	var hi := 0.16
+	for i in 12:
+		var m := (lo + hi) * 0.5
+		if _in_head(HAIR_C + d * m):
+			lo = m
+		else:
+			hi = m
+	return (lo + hi) * 0.5
+
+
+## The hairline's angle from straight up (seen from HAIR_C) at the polar angle a: a table of 64 steps round the head, made once
+## (the hairline is drawn on the head's own angle, _hairline: each step finds the hairline point that lies its way).
+static func _hair_th(a: float) -> float:
+	if not _cache.has("hair_th"):
+		var tab := PackedFloat32Array()
+		for i in 65:
+			var ap := -PI + TAU * float(i) / 64.0
+			var ah := ap
+			var p := Vector3.ZERO
+			for it in 2:
+				var y := _hairline(ah)
+				var lo := ah - 0.4
+				var hi := ah + 0.4
+				for b in 14:
+					var m := (lo + hi) * 0.5
+					var q := _head_raw(m, y) - HAIR_C
+					if wrapf(atan2(q.x, -q.z) - ap, -PI, PI) < 0.0:
+						lo = m
+					else:
+						hi = m
+				ah = (lo + hi) * 0.5
+				p = _head_raw(ah, y) - HAIR_C
+			tab.append(acos(clampf(p.y / p.length(), -1.0, 1.0)))
+		_cache["hair_th"] = tab
+	var t: PackedFloat32Array = _cache["hair_th"]
+	var u := (wrapf(a, -PI, PI) + PI) / TAU * 64.0
+	var i0 := clampi(int(floorf(u)), 0, 63)
+	return lerpf(t[i0], t[i0 + 1], u - float(i0))
+
+
+## The direction (from HAIR_C) at polar angle a, a fraction f of the way from straight up down to the hairline; and back.
+static func _hair_dir(a: float, f: float) -> Vector3:
+	var th := f * _hair_th(a)
+	return Vector3(sin(th) * sin(a), cos(th), -sin(th) * cos(a))
+
+
+static func _hair_af(d: Vector3) -> Vector2:
+	var a := atan2(d.x, -d.z)
+	return Vector2(a, acos(clampf(d.y, -1.0, 1.0)) / _hair_th(a))
+
+
+## The base mass's thickness at polar angle a, fraction f: full over the top, fullest a little out at the back of the skull,
+## close over the ears; its edge a soft roll over the forehead (it rises steeply from the hairline, so the forehead stays clear),
+## longer tapers over the ears and down to the nape.
+static func _hair_t0(a: float, f: float) -> float:
 	var x := absf(wrapf(a, -PI, PI))
-	var front := 1.0 - smoothstep(0.3, 1.1, x)
-	var side := smoothstep(0.95, 1.4, x) * (1.0 - smoothstep(1.85, 2.35, x))
-	var nape := smoothstep(2.3, 2.9, x)
-	var base := lerpf(0.034, 0.054, front) - side * 0.018 - nape * 0.006
-	# the slope up from the hairline: long in front (the quiff's face), short at the sides and the back
-	var rise := smoothstep(1.0, lerpf(0.62, 0.22, front), f)
-	# the quiff stands highest above the forehead and settles towards the crown
-	var crown := lerpf(1.0, 0.78, (1.0 - smoothstep(0.0, 0.42, f)) * front)
-	return base * (0.14 + 0.86 * rise) * crown
+	var front := 1.0 - smoothstep(0.35, 1.0, x)
+	var side := smoothstep(1.0, 1.45, x) * (1.0 - smoothstep(1.95, 2.45, x))
+	var back := smoothstep(2.0, 2.75, x)
+	var around := smoothstep(0.05, 0.4, f)
+	var temple := smoothstep(0.45, 0.85, x) * (1.0 - smoothstep(1.15, 1.5, x))
+	var full := HAIR_FULL + (back * 0.012 - side * 0.01 - temple * 0.008) * around
+	full *= 1.0 + 0.45 * back * around * exp(-pow((f - 0.55) / 0.24, 2.0))
+	var e := lerpf(lerpf(0.3, 0.34, front), 0.5, back)
+	var u := clampf((1.0 - f) / e, 0.0, 1.0)
+	var k := lerpf(sqrt(u * (2.0 - u)), u * (2.0 - u), back)
+	return full * lerpf(0.1, 1.0, k)
 
 
-## The hair's surface height above the scalp at angle a and height y (SKULL_C relative).
+## The upper layer's edge (the fraction f) at polar angle a: down to the hairline over the forehead (its lip the soft wave there),
+## round the temples, above the ears and round the back of the skull.
+static func _hair_e1(a: float) -> float:
+	var x := absf(wrapf(a, -PI, PI))
+	var th := lerpf(lerpf(1.08, 1.16, smoothstep(1.3, 1.9, x)), 1.5, smoothstep(1.9, 2.6, x)) + 0.07 * sin(a * 5.0 + 0.7) * smoothstep(0.9, 1.4, x)
+	return lerpf(1.0, minf(th / _hair_th(a), 1.0), smoothstep(0.7, 1.25, x))
+
+
+## The upper layer's thickness over the base mass (0 below its edge), rounded off towards its edge.
+static func _hair_t1(a: float, f: float) -> float:
+	var e := _hair_e1(a)
+	if f > e:
+		return 0.0
+	var x := absf(wrapf(a, -PI, PI))
+	var back := smoothstep(2.0, 2.75, x)
+	var side := smoothstep(1.0, 1.45, x) * (1.0 - smoothstep(1.95, 2.45, x))
+	var u := clampf((e - f) / 0.16, 0.0, 1.0)
+	var front := 1.0 - smoothstep(0.35, 1.0, x)
+	var temple := smoothstep(0.45, 0.85, x) * (1.0 - smoothstep(1.15, 1.5, x))
+	return (HAIR_FULL1 + back * 0.002) * (1.0 - 0.35 * side - 0.4 * front - 0.3 * temple) * lerpf(0.18, 1.0, sqrt(u * (2.0 - u)))
+
+
+## The hair's thickness (both layers) at polar angle a, fraction f.
+static func _hair_t(a: float, f: float) -> float:
+	return _hair_t0(a, f) + _hair_t1(a, f)
+
+
+## A point of the hair (SKULL_C relative) at polar angle a, fraction f, `lift` off the mass's surface.
+static func _hair_at(a: float, f: float, lift: float = 0.0) -> Vector3:
+	var d := _hair_dir(a, f)
+	return HAIR_C + d * (_scalp_r(d) + _hair_t(a, f) + lift)
+
+
+## The hair's height over the scalp at the head's angle a and height y (SKULL_C relative; tools: helm_pt).
 static func _hair_shell(a: float, y: float) -> float:
-	var y_h := _hairline(a)
-	var f := clampf((0.131 - y) / maxf(0.131 - y_h, 1e-3), 0.0, 1.0)
-	return _hair_t(a, pow(f, 1.0 / 0.85))
+	var af := _hair_af((_head_raw(a, y) - HAIR_C).normalized())
+	return _hair_t(af.x, af.y) if af.y <= 1.0 else 0.0
 
 
 static func _build_hair() -> ArrayMesh:
 	var sm := SkinMesh.new(43)
 	var mb := sm.soft
 	mb.push(_head_xf())
-	# the mass: columns from the crown down to the hairline, thick over the top, thin at the edge
-	var na := 30
-	var nv := 8
-	var cols: Array = []
-	for i in na:
-		var a := TAU * float(i) / float(na)
-		var y_h := _hairline(a)
-		var col_pts: Array[Vector3] = []
-		for v in nv + 1:
-			var f := float(v) / float(nv)
-			var y := lerpf(0.131, y_h, pow(f, 0.85))
-			col_pts.append(SKULL_C + _hair_pt(a, y, _hair_t(a, f)))
-		# the lip down onto the scalp at the hairline
-		col_pts.append(SKULL_C + _hair_pt(a, y_h - 0.003, 0.0015))
-		cols.append(col_pts)
-	var rings: Array = []
-	for v in nv + 2:
-		var ring: Array[Vector3] = []
-		for i in na:
-			ring.append(cols[i][v])
-		rings.append(ring)
-	rings.reverse() # bottom (the hairline) first: the faces turn outwards
-	var cap_col := func(p: Vector3, k: int, _i: int) -> Color:
-		# (LOOK2: the lip at the hairline is dark at the sides and the back; over the forehead the hair just rises from it)
-		return HAIR_DARK if k == 0 and (p - SKULL_C).z > -0.06 else HAIR
-	_stitch(mb, rings, cap_col, false, true)
-	# the locks: chunky, swept back from the forehead over the top, back and down over the sides, short at the nape
-	for lk in HAIR_LOCKS:
-		_lock(mb, lk[0], lk[1], lk[2], lk[3], lk[4], lk[5], lk[6])
+	_hair_layer(mb, false)
+	_hair_layer(mb, true)
+	for c: Array in _hair_clumps():
+		_clump(mb, c)
 	mb.pop()
 	sm.rigid(HEAD)
 	return sm.commit()[0]
 
 
-## The locks: [root angle, root height, tip angle, tip height, width, thickness, lift] (heights SKULL_C relative; lift:
-## how far the tip stands off the hair's surface).
-const HAIR_LOCKS := [
-	# the front: waves rising from the hairline and swept back over the top, their tips lifted (LOOK2: the quiff)
-	[0.06, 0.104, 0.2, 0.131, 0.05, 0.03, 0.05],
-	[0.46, 0.098, 0.8, 0.13, 0.046, 0.028, 0.042],
-	[-0.4, 0.1, -0.7, 0.13, 0.046, 0.028, 0.042],
-	[0.9, 0.07, 1.3, 0.115, 0.04, 0.024, 0.03],
-	[-0.9, 0.07, -1.3, 0.115, 0.04, 0.024, 0.03],
-	# the crown, swept back, the tips curling up off the back of the head
-	[0.25, 0.128, 2.95, 0.1, 0.048, 0.028, 0.034],
-	[-0.3, 0.127, -2.8, 0.095, 0.048, 0.028, 0.032],
-	[1.05, 0.115, 2.3, 0.07, 0.044, 0.025, 0.03],
-	[-1.05, 0.115, -2.3, 0.07, 0.044, 0.025, 0.03],
-	# the sides: back over the temples, above the ears
-	[1.12, 0.074, 1.98, 0.042, 0.034, 0.02, 0.016],
-	[-1.12, 0.074, -1.98, 0.042, 0.034, 0.02, 0.016],
-	# the sideburns
-	[1.29, 0.012, 1.31, -0.046, 0.021, 0.011, 0.004],
-	[-1.29, 0.012, -1.31, -0.046, 0.021, 0.011, 0.004],
-	# the back: down to the nape, shorter there, the tips flicking out
-	[2.05, 0.08, 2.3, -0.015, 0.038, 0.022, 0.018],
-	[-2.05, 0.08, -2.3, -0.015, 0.038, 0.022, 0.018],
-	[2.62, 0.105, 2.7, -0.068, 0.044, 0.025, 0.03],
-	[-2.62, 0.105, -2.7, -0.068, 0.044, 0.025, 0.03],
-	[PI, 0.11, PI, -0.083, 0.044, 0.025, 0.03],
-	[1.75, 0.06, 2.02, 0.0, 0.03, 0.019, 0.014],
-	[-1.75, 0.06, -2.02, 0.0, 0.03, 0.019, 0.014],
+## One layer of the mass, its lip tucked under: the upper layer, columns from the crown down to its edge (_hair_e1; the rows closer
+## together towards it), its lip under onto the base; the base (darker), a band from under the upper layer down to the hairline,
+## its lip onto the scalp.
+static func _hair_layer(mb: MeshBuilder, upper: bool) -> void:
+	var na := 32
+	var nv := 8 if upper else 7
+	var f0 := PackedFloat32Array()
+	var f1 := PackedFloat32Array()
+	var lip: Array[Vector3] = []
+	for i in na:
+		var a := -PI + TAU * float(i) / float(na)
+		var e := _hair_e1(a)
+		f0.append(0.0 if upper else maxf(e - 0.14, 0.04))
+		f1.append(e if upper else 1.0)
+		var fl := e + 0.012 if upper else 1.03
+		var d := _hair_dir(a, fl)
+		lip.append(SKULL_C + HAIR_C + d * (_scalp_r(d) + (_hair_t0(a, fl) - 0.002 if upper else 0.0015)))
+	var rings: Array = [lip]
+	for v in range(nv, -1, -1):
+		var ring: Array[Vector3] = []
+		for i in na:
+			var a := -PI + TAU * float(i) / float(na)
+			var f := maxf(lerpf(f0[i], f1[i], 1.0 - pow(1.0 - float(v) / float(nv), 1.35)), 0.04)
+			var d := _hair_dir(a, f)
+			ring.append(SKULL_C + HAIR_C + d * (_scalp_r(d) + _hair_t0(a, f) + (_hair_t1(a, f) if upper else 0.0)))
+		rings.append(ring)
+	var body := HAIR if upper else HAIR.lerp(HAIR_DARK, 0.35)
+	var cap_col := func(_p: Vector3, k: int, _i: int) -> Color:
+		return HAIR_DARK if k == 0 else body
+	_stitch(mb, rings, cap_col, false, upper)
+
+
+## The clumps [a, f, length, half-width, thickness, lift, turn, tone, under] (HAIR_ROWS): pointed tufts along the upper layer's
+## edge, from under it down over the base (their points its broken edge), on the upper layer round the sides and the back, round
+## the crown and at the nape; a few over the top, from the crown forward, curling up over the forehead. `under`: lying on the base,
+## under the upper layer. The rng only varies them a little (the same hair every run).
+static func _hair_clumps() -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = HAIR_SEED
+	var out: Array = []
+	for r: Array in HAIR_ROWS:
+		var angs: Array = r[1]
+		for a0: float in angs:
+			for sx: float in ([-1.0, 1.0] if int(r[7]) == 1 and a0 != 0.0 and a0 != PI else [1.0]):
+				var a := wrapf(a0 * sx + rng.randf_range(-0.08, 0.08), -PI, PI)
+				var f: float = (_hair_e1(a) + float(r[0]) if bool(r[8]) else absf(float(r[0])) / _hair_th(a)) + rng.randf_range(-0.02, 0.02)
+				var k := rng.randf_range(0.8, 1.2)
+				# (the tips stand out more at the back than at the sides, over the ears)
+				var lk := lerpf(0.65, 1.2, smoothstep(1.6, 2.6, absf(a))) if absf(a) > 0.9 else 1.0
+				var turn := rng.randf_range(-0.3, 0.3) + (PI if float(r[0]) < 0.0 and not bool(r[8]) else 0.0)
+				out.append([a, f, float(r[2]) * k, float(r[3]) * k, float(r[4]) * k, float(r[5]) * lk + rng.randf_range(-0.002, 0.003),
+					turn, float(r[6]) + rng.randf_range(-0.1, 0.1), bool(r[8])])
+	return out
+
+
+## The rows of clumps: [where (the angle from straight up, seen from HAIR_C, negative: the clumps turn forward; or, for the tufts
+## under the upper layer's edge, how far above that edge their roots lie, in f), the polar angles round the head, length,
+## half-width, thickness, lift, tone (-1 dark .. 1 light), mirrored (1: each also on his other side), under]. Head space, before
+## HEAD_SCALE.
+const HAIR_ROWS := [
+	# over the top, from the crown forward, curling up over the forehead (the soft wave)
+	[-0.22, [0.28, -0.36], 0.1, 0.032, 0.017, 0.016, 0.45, 0, false],
+	[-0.32, [0.88, -0.98], 0.085, 0.026, 0.015, 0.016, 0.4, 0, false],
+	# round the crown, back
+	[0.36, [2.3, PI], 0.1, 0.03, 0.016, 0.022, 0.3, 1, false],
+	# on the upper layer round the sides and the back, swept back
+	[0.78, [1.25, 1.8, 2.35, 2.9], 0.09, 0.03, 0.016, 0.02, 0.2, 1, false],
+	# the upper layer's edge: from under it down over the base
+	[-0.1, [1.0, 1.3, 1.6, 1.9, 2.2, 2.5, 2.8, PI], 0.095, 0.032, 0.016, 0.024, 0.0, 1, true],
+	# the nape
+	[1.95, [2.35, 2.85], 0.055, 0.024, 0.014, 0.012, -0.35, 1, false],
 ]
 
 
-## One lock of hair: a chunky, pointed wedge lying on the scalp from (a0, y0) to (a1, y1), its tip standing off by `lift`.
-## The faces turned up are the lighter brown.
-static func _lock(mb: MeshBuilder, a0: float, y0: float, a1: float, y1: float, w0: float, h0: float, lift: float) -> void:
-	var n := 5
+## One clump of hair (see _hair_clumps): grown from its root along the sweep for `length` (a great circle of directions), no
+## further than the hairline: its rounded root end on the mass, its body riding on it, its tip curling `lift` off it. Six-sided
+## and soft (smooth normals); the faces turned up the lighter brown.
+static func _clump(mb: MeshBuilder, c: Array) -> void:
+	var a: float = c[0]
+	var f: float = c[1]
+	var w0: float = c[3]
+	var h0: float = c[4]
+	var lift: float = c[5]
+	var tone: float = c[7]
+	var under: bool = c[8]
+	var d0 := _hair_dir(a, f)
+	# the sweep: back and a little down, turned by `turn` about the direction
+	var fl := perp(Vector3(0.0, -0.35, 1.0).normalized(), d0)
+	if fl.length_squared() < 1e-4:
+		fl = perp(Vector3.DOWN, d0)
+	fl = fl.normalized().rotated(d0, float(c[6]))
+	var ax := d0.cross(fl).normalized()
+	var ang: float = float(c[2]) / (_scalp_r(d0) + _hair_t0(a, f))
+	# no further than the hairline
+	var s_max := 1.0
+	for i in 20:
+		var s := float(i + 1) / 20.0
+		if _hair_af(d0.rotated(ax, s * ang)).y > 0.96:
+			s_max = float(i) / 20.0
+			break
+	if s_max < 0.3:
+		return
+	ang *= s_max
+	# stations [s, radial offset (of h0), lift share]: the root end, the root, the fullest, the narrowing, the tip
+	var st := [[-0.14, 0.0, 0.0], [0.0, 0.15, 0.0], [0.36, 0.3, 0.3], [0.74, 0.25, 0.75], [1.0, 0.1, 1.0]]
 	var cen: Array[Vector3] = []
-	var nrm: Array[Vector3] = []
-	for k in n:
-		var s := float(k) / float(n - 1)
-		var a := lerpf(a0, a1, s)
-		var y := minf(lerpf(y0, y1, s), 0.13)
-		var base := _head_raw(a, y)
-		var nn := _hair_n(base)
-		var shell := _hair_shell(a, y)
-		# (the root starts inside the hair's mass, so the lock grows out of it)
-		cen.append(SKULL_C + base + nn * (shell * lerpf(0.45, 0.85, smoothstep(0.0, 0.35, s)) + lift * pow(s, 1.4) + h0 * 0.3 * (1.0 - s)))
-		nrm.append(nn)
-	var ring: Array = []
-	for k in n:
-		var s := float(k) / float(n - 1)
-		var t: Vector3 = (cen[mini(k + 1, n - 1)] - cen[maxi(k - 1, 0)]).normalized()
-		var nn: Vector3 = perp(nrm[k], t).normalized()
-		var b := t.cross(nn).normalized()
-		var w := w0 * (1.0 - pow(s, 1.7)) * (0.6 + 0.65 * sin(minf(s * 1.6, 1.0) * PI * 0.5))
-		var h := h0 * (1.0 - s * 0.85)
-		var c: Vector3 = cen[k]
-		if k == n - 1:
-			ring.append([c, c, c, c])
-		else:
-			ring.append([c + b * w, c + nn * h * 0.55, c - b * w, c - nn * h * 0.45])
-	for k in n - 1:
-		var r0: Array = ring[k]
-		var r1: Array = ring[k + 1]
-		for i in 4:
-			var j := (i + 1) % 4
-			var mid: Vector3 = (r0[i] + r0[j] + r1[i] + r1[j]) * 0.25
-			var inside: Vector3 = cen[k] if k < n - 2 else cen[n - 2]
-			var fn: Vector3 = (r1[i] - r0[i]).cross(r0[j] - r0[i]) + (r1[j] - r0[i]).cross(r0[j] - r0[i])
-			if fn.dot(mid - inside) < 0.0:
-				fn = -fn
-			var up := fn.normalized().y if fn.length_squared() > 1e-14 else 0.0
-			var col := HAIR
-			if i < 2:
-				col = HAIR_LIGHT if up > 0.25 else HAIR
-			elif up < 0.2:
-				col = HAIR_DARK
-			_quad_out(mb, r0[i], r1[i], r1[j], r0[j], inside, col)
-	# the root end, closed
-	var r0e: Array = ring[0]
-	_quad_out(mb, r0e[0], r0e[1], r0e[2], r0e[3], cen[1], HAIR)
+	var dir: Array[Vector3] = []
+	for e: Array in st:
+		var d := d0.rotated(ax, float(e[0]) * ang)
+		var af := _hair_af(d)
+		var t := _hair_t0(af.x, af.y) if under else _hair_t(af.x, af.y)
+		cen.append(SKULL_C + HAIR_C + d * (_scalp_r(d) + t + h0 * float(e[1]) + lift * float(e[2])))
+		dir.append(d)
+	var sides := 6
+	var wk := [0.8, 1.0, 0.58]
+	var hk := [0.85, 1.0, 0.62]
+	var rings: Array = []
+	var rnorm: Array = []
+	for k in 3:
+		var t := (cen[k + 2] - cen[k]).normalized()
+		var n := perp(dir[k + 1], t).normalized()
+		var b := t.cross(n).normalized()
+		var rw: float = w0 * float(wk[k])
+		var rh: float = h0 * 0.5 * float(hk[k])
+		var ring: Array[Vector3] = []
+		var rn: Array[Vector3] = []
+		for i in sides:
+			var th := TAU * float(i) / float(sides)
+			ring.append(cen[k + 1] + b * (rw * cos(th)) + n * (rh * sin(th)))
+			rn.append((b * (cos(th) / rw) + n * (sin(th) / rh)).normalized())
+		rings.append(ring)
+		rnorm.append(rn)
+	var base := HAIR.lerp(HAIR_LIGHT if tone > 0.0 else HAIR_DARK, minf(absf(tone), 1.0))
+	var t_root := (cen[0] - cen[1]).normalized()
+	var t_tip := (cen[4] - cen[3]).normalized()
+	for i in sides:
+		var j := (i + 1) % sides
+		for k in 2:
+			var a0: Vector3 = rings[k][i]
+			var a1: Vector3 = rings[k + 1][i]
+			var b1: Vector3 = rings[k + 1][j]
+			var b0: Vector3 = rings[k][j]
+			var na0: Vector3 = rnorm[k][i]
+			var na1: Vector3 = rnorm[k + 1][i]
+			var nb1: Vector3 = rnorm[k + 1][j]
+			var nb0: Vector3 = rnorm[k][j]
+			var col := _clump_col(a0, a1, b1, na0 + na1 + nb1 + nb0, base)
+			_tri_out_n(mb, a0, a1, b1, na0, na1, nb1, col)
+			_tri_out_n(mb, a0, b1, b0, na0, nb1, nb0, col)
+		# the tip, and the rounded root end
+		var e0: Vector3 = rings[2][i]
+		var e1: Vector3 = rings[2][j]
+		var ne0: Vector3 = rnorm[2][i]
+		var ne1: Vector3 = rnorm[2][j]
+		var tn := (t_tip * 1.2 + (ne0 + ne1) * 0.5).normalized()
+		_tri_out_n(mb, e0, cen[4], e1, ne0, tn, ne1, _clump_col(e0, cen[4], e1, tn, base))
+		var g0: Vector3 = rings[0][i]
+		var g1: Vector3 = rings[0][j]
+		var ng0: Vector3 = rnorm[0][i]
+		var ng1: Vector3 = rnorm[0][j]
+		var rn0 := (t_root * 0.8 + (ng0 + ng1) * 0.5).normalized()
+		_tri_out_n(mb, g0, cen[0], g1, ng0, rn0, ng1, _clump_col(g0, cen[0], g1, rn0, base))
+
+
+## A clump's face colour: the lighter brown on the faces turned up (the face a, b, c; `out` its outward side).
+static func _clump_col(a: Vector3, b: Vector3, c: Vector3, out: Vector3, base: Color) -> Color:
+	var fn := (b - a).cross(c - a)
+	if fn.dot(out) < 0.0:
+		fn = -fn
+	var up := fn.normalized().y if fn.length_squared() > 1e-14 else 0.0
+	if up > 0.7:
+		return base.lerp(HAIR_LIGHT, 0.35)
+	return base
+
+
+## Triangle a, b, c with its vertex normals, turned to face the way they point.
+static func _tri_out_n(mb: MeshBuilder, a: Vector3, b: Vector3, c: Vector3, na: Vector3, nb: Vector3, nc: Vector3, col: Color) -> void:
+	if (b - a).cross(c - a).dot(na + nb + nc) < 0.0:
+		mb.tri_n(a, c, b, na, nc, nb, col)
+	else:
+		mb.tri_n(a, b, c, na, nb, nc, col)
 
 
 ## A quad a, b, c, d turned to face away from `inside`.
@@ -2230,14 +2486,16 @@ func _build() -> void:
 
 
 ## Where the spear sits on the back (rest rig space): head up over the left shoulder, butt at the right hip (the head's end and a point
-## on the line to the butt). Under the lion pelt it lies lower and flatter, clear of the mane. (INTEGRATE: tilted out further, its head
-## lower and wider of the head: from the front the old placement put the spearhead right beside his head, like a horn.)
-const SPEAR_BACK_TIP := Vector3(-0.47, 1.8, 0.24)
-const SPEAR_BACK_BUTT := Vector3(0.26, 0.72, 0.31)
-const SPEAR_BACK_TIP_LION := Vector3(-0.45, 1.79, 0.24)
-const SPEAR_BACK_BUTT_LION := Vector3(0.25, 0.89, 0.3)
+## on the line to the butt). (INTEGRATE: tilted out further, its head lower and wider of the head: from the front the old placement put
+## the spearhead right beside his head, like a horn. FACE2, 2026-10-17: lower it still read as a pointed ear beside his head in the
+## 3/4 views; now slung across the back at 42 degrees, the head high and well out over the left shoulder, above his head's height, the
+## shaft showing the way up to it from behind the shoulder: a spear on his back from every side. Flatter still, past the shoulder, the
+## shield on the arm swept through it in the blows. The lion's pelt is thicker: a little further out behind.)
+const SPEAR_BACK_TIP := Vector3(-0.7, 2.04, 0.26)
+const SPEAR_BACK_BUTT := Vector3(0.169, 1.075, 0.318)
+const SPEAR_BACK_TIP_LION := Vector3(-0.7, 2.02, 0.28)
+const SPEAR_BACK_BUTT_LION := Vector3(0.186, 1.07, 0.338)
 ## Where the spear sits on the back (rest rig space): head up over the left shoulder, butt at the right hip.
-## Under the lion pelt it lies lower and flatter, clear of the mane.
 static func spear_back_xf(lion: bool = false) -> Transform3D:
 	var tip := SPEAR_BACK_TIP if not lion else SPEAR_BACK_TIP_LION
 	var butt := SPEAR_BACK_BUTT if not lion else SPEAR_BACK_BUTT_LION

@@ -1,7 +1,8 @@
 class_name Icons
 ## Minimal vector icons drawn with CanvasItem calls, so the UI stays crisp at any resolution and needs no image
-## assets. Designed on a 0..1 square, flat, in one colour plus at most a lighter or darker tint of it. No faces:
-## the hero's head is a faceless profile (INTEGRATE: no longer the Corinthian helmet), beasts show only a glowing eye.
+## assets. Designed on a 0..1 square, flat, in one colour plus at most a lighter or darker tint of it. No faces drawn
+## beyond an eye: the hero's head is a profile with its eye, the dark dot of the 3D face (INTEGRATE: no longer the Corinthian
+## helmet; FACE2: the eye), beasts show only a glowing eye.
 
 static func draw(ci: CanvasItem, icon: String, r: Rect2, col: Color) -> void:
 	var s := minf(r.size.x, r.size.y)
@@ -13,37 +14,41 @@ static func draw(ci: CanvasItem, icon: String, r: Rect2, col: Color) -> void:
 	match icon:
 		"helmet":
 			# (INTEGRATE: the hero as he looks now, the bare-headed default; the outfit's name stays "helmet") his head in profile, facing
-			# right, faceless (only the planes of brow, nose and jaw make the outline), on a thick neck, the short wavy hair swept up off
-			# the brow and back over the crown in waves; the locks incised in the dark, as on a vase.
-			ci.draw_colored_polygon(PackedVector2Array([p.call(0.37, 0.98), p.call(0.41, 0.7), p.call(0.6, 0.72), p.call(0.68, 0.98)]), col)
-			var head := PackedVector2Array([p.call(0.3, 0.52), p.call(0.33, 0.38), p.call(0.42, 0.3), p.call(0.55, 0.27),
-				p.call(0.66, 0.31), p.call(0.72, 0.38), p.call(0.735, 0.45), p.call(0.725, 0.48), p.call(0.795, 0.57),
-				p.call(0.745, 0.6), p.call(0.755, 0.65), p.call(0.735, 0.72), p.call(0.68, 0.76), p.call(0.57, 0.77),
-				p.call(0.48, 0.72), p.call(0.4, 0.68), p.call(0.33, 0.62)])
+			# right, on a thick neck. FACE2 (2026-10-17): the round face with its eye, a small dark upright oval, and the short tousled
+			# hair of the reference: a rounded mass over the top and the back, its outline broken into soft tufts swept back, the
+			# forehead clear, a sideburn down in front of the ear.
+			ci.draw_colored_polygon(PackedVector2Array([p.call(0.39, 0.98), p.call(0.42, 0.7), p.call(0.6, 0.72), p.call(0.67, 0.98)]), col)
+			var head := PackedVector2Array([p.call(0.3, 0.5), p.call(0.32, 0.4), p.call(0.37, 0.32), p.call(0.46, 0.27),
+				p.call(0.57, 0.26), p.call(0.67, 0.3), p.call(0.735, 0.38), p.call(0.765, 0.47), p.call(0.772, 0.56),
+				p.call(0.755, 0.645), p.call(0.71, 0.72), p.call(0.645, 0.765), p.call(0.565, 0.775), p.call(0.48, 0.745),
+				p.call(0.4, 0.69), p.call(0.335, 0.61)])
 			ci.draw_colored_polygon(head, col)
-			# the hair: a crest of waves round the crown from the quiff over the brow to the nape
+			# the hair: a dark mass round the crown and the back of the head, its rim in soft tufts swept back and down
 			var hair := PackedVector2Array()
-			var hc: Vector2 = p.call(0.5, 0.48)
-			for i in 29:
-				var a := lerpf(-0.9, -3.95, float(i) / 28.0)
-				var rr := 0.26 + 0.035 * absf(sin(a * 5.0)) + 0.06 * exp(-pow((a + 1.15) / 0.3, 2.0))
+			var hc: Vector2 = p.call(0.5, 0.5)
+			for i in 48:
+				var a := lerpf(-1.0, -3.88, float(i) / 47.0)
+				var u := (a + 3.88) / 2.88 * 5.0 + 0.3
+				var fw := fposmod(u, 1.0)
+				var rr := 0.27 + 0.034 * pow(sin(fw * PI), 0.8) * (1.0 - 0.45 * fw) + 0.035 * exp(-pow((a + 2.5) / 0.6, 2.0))
 				hair.append(hc + Vector2(cos(a), sin(a)) * rr * s)
-			for q: Vector2 in [Vector2(0.37, 0.6), Vector2(0.43, 0.56), Vector2(0.47, 0.48), Vector2(0.55, 0.4), Vector2(0.63, 0.36), Vector2(0.69, 0.37)]:
+			for q: Vector2 in [Vector2(0.37, 0.7), Vector2(0.405, 0.63), Vector2(0.445, 0.56), Vector2(0.49, 0.505), Vector2(0.53, 0.505),
+					Vector2(0.545, 0.6), Vector2(0.572, 0.6), Vector2(0.585, 0.5), Vector2(0.625, 0.425), Vector2(0.68, 0.385),
+					Vector2(0.725, 0.39)]:
 				hair.append(p.call(q.x, q.y))
-			ci.draw_colored_polygon(hair, light)
-			var lw := maxf(1.0, s * 0.028)
-			var inc := Color(dark, dark.a * 0.7)
-			# the hairline at the temple and the sideburn
-			ci.draw_polyline(PackedVector2Array([p.call(0.69, 0.375), p.call(0.62, 0.37), p.call(0.55, 0.42), p.call(0.5, 0.5), p.call(0.49, 0.6)]), inc, lw, true)
-			# the locks, swept back from the brow in waves
-			for k in 3:
-				var pts := PackedVector2Array()
-				for j in 7:
-					var u := float(j) / 6.0
-					var x := lerpf(0.66 - 0.06 * k, 0.33 - 0.01 * k, u)
-					var y := lerpf(0.25 + 0.09 * k, 0.33 + 0.12 * k, u * u) + 0.018 * sin(u * TAU * 1.5)
-					pts.append(p.call(x, y))
-				ci.draw_polyline(pts, inc, lw * 0.85, true)
+			# (dark, as on a red-figure vase: the black glaze with a reserved line round it, the locks drawn in it)
+			var lw := maxf(1.0, s * 0.026)
+			ci.draw_colored_polygon(hair, dark)
+			var rim := PackedVector2Array(hair)
+			rim.append(hair[0])
+			ci.draw_polyline(rim, col, maxf(1.0, s * 0.03), true)
+			var lock := Color(col, col.a * 0.55)
+			ci.draw_polyline(PackedVector2Array([p.call(0.64, 0.335), p.call(0.53, 0.305), p.call(0.43, 0.345)]), lock, lw * 0.8, true)
+			ci.draw_polyline(PackedVector2Array([p.call(0.5, 0.425), p.call(0.41, 0.435), p.call(0.35, 0.495)]), lock, lw * 0.8, true)
+			# the ear
+			ci.draw_arc(p.call(0.505, 0.57), s * 0.032, -1.3, 2.1, 8, Color(dark, dark.a * 0.6), lw, true)
+			# the eye
+			ci.draw_colored_polygon(_ellipse(p.call(0.69, 0.485), s * 0.024, s * 0.042, 12), dark)
 		"lion":
 			# The lion's head in profile within a ruff of mane (the hood Heracles wins).
 			var ruff := PackedVector2Array()
