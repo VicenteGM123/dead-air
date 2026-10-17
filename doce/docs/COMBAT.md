@@ -522,8 +522,10 @@ before it 16/16 at `--fixed-fps 60` and at `--fixed-fps 24`, also inside the liv
 (SHIP, 2026-10-17; same command, `--resolution 1280x720 --quit-after 420` and `noui=1`): `reel_stow` (a stowed walk, the
 draw straight into combo A on a straw soldier, calm until he puts the weapons away), `reel_fight` (armed: combo B on
 the move, a sprint into the dash attack, the charged spin) and `reel_run` (the camera held on his right side, as a player
-turning the view would: the relaxed run, the draw on the run, the armed run). With a reel running the bot prints
-`REEL f=<frame> x= y=` (the hero's place on screen) for a crop that follows him.
+turning the view would; two takes along z = 8 with every dummy out of the `enemy` group, since a training dummy draws his
+weapons by being within 8 m: the run and the sprint with the weapons away, then the draw on the run, the armed run and
+the armed sprint). With a reel running the bot prints `REEL f=<frame> x= y=` (the hero's place on screen) for a crop
+that follows him.
 Debug args: `meleedebug=1` (blade sweep distances, "MELEE HIT <blow> blow_t= rig_t= dist="), `camdebug=1` (camera per
 frame), `feeldebug=1` (hit-stops).
 

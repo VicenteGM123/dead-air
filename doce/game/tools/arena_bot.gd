@@ -43,6 +43,8 @@ var _perf_proc := 0.0
 var _perf_phys := 0.0
 var _perf_proc_max := 0.0
 var _perf_phys_max := 0.0
+## (SHIP reels: render scenarios for the client's GIFs; not tests) print the hero's screen position every frame.
+var _reel := false
 
 
 func _ready() -> void:
@@ -63,6 +65,11 @@ func _process(delta: float) -> void:
 	_perf_phys += ph
 	_perf_proc_max = maxf(_perf_proc_max, pp)
 	_perf_phys_max = maxf(_perf_phys_max, ph)
+	if _reel:
+		# (SHIP reels) where the hero is on screen this frame, for a crop that follows him
+		var vs := get_viewport().get_visible_rect().size
+		var sp := cam.cam.unproject_position(hero.visual_position() + Vector3(0, 1.0, 0))
+		print("REEL f=%d x=%.1f y=%.1f w=%d h=%d" % [Engine.get_frames_drawn(), sp.x, sp.y, int(vs.x), int(vs.y)])
 	var c := cam.cam.global_position
 	var d := c.distance_to(hero.visual_position() + Vector3(0, 1.45, 0))
 	if d < _cam_min:
@@ -162,6 +169,12 @@ func _run_test(t: String) -> bool:
 			return await _t_death()
 		"showreel":
 			return await _t_showreel()
+		"reel_stow":
+			return await _t_reel_stow()
+		"reel_fight":
+			return await _t_reel_fight()
+		"reel_run":
+			return await _t_reel_run()
 	print("ARENA test %s FAIL unknown test" % t)
 	return false
 
@@ -816,3 +829,176 @@ func _t_showreel() -> bool:
 	_mark("show_end")
 	return _result("showreel", stowed, "stowed_at_end=%s" % str(stowed))
 
+
+
+# --- SHIP: render scenarios for the client's GIFs (bot=reel_stow|reel_fight|reel_run; not tests) ---------------------------
+
+func _reel_place_straw(p0: Vector3, p1: Vector3, enemy: bool) -> Array:
+	var straw: Array = arena.get("straw")
+	var w: Node = arena.get("world")
+	var s0 := straw[0] as TrainingDummy
+	var s1 := straw[1] as TrainingDummy
+	s0.teleport(w.call("ground", p0), PI * 0.5)
+	s1.teleport(w.call("ground", p1), PI * 0.5)
+	for m in [s0, s1]:
+		if not enemy:
+			(m as Node).remove_from_group("enemy")
+	return [s0, s1]
+
+
+func _reel_start(at: Vector3, armed: bool) -> void:
+	_reel = true
+	hero.revive(Transform3D(Basis(Vector3(0, 0, 1), Vector3.UP, Vector3(-1, 0, 0)), at))
+	hero.invulnerable = 0.0
+	if armed:
+		hero._want_sword = true
+		hero._want_shield = true
+		hero.rig.set_armed(true, true)
+	cam.lock_on(null)
+	cam.follow(hero, true)
+
+
+func _hspeed() -> float:
+	return Vector2(hero.velocity.x, hero.velocity.z).length()
+
+
+## Walk with the weapons away, a press: the sword drawn straight into combo A on a straw soldier, then calm until he puts
+## them away by himself (STOW_AFTER).
+func _t_reel_stow() -> bool:
+	var y := 1.2
+	var ss := _reel_place_straw(Vector3(-0.2, y, 27.0), Vector3(-25.0, y, 0.0), false)
+	_reel_start(Vector3(-6.4, y, 27.0), false)
+	await _wait(0.9)
+	_mark("reel_walk")
+	var east := Vector3(40.0, y, 27.0)
+	var t0 := _time
+	while _time - t0 < 2.4:
+		hero.debug_move = _stick_to(east) * 0.45
+		await get_tree().physics_frame
+	hero.debug_move = Vector2.ZERO
+	(ss[0] as Node).add_to_group("enemy")
+	_mark("reel_attack")
+	for i in 4:
+		await _tap(&"attack")
+		await _wait(0.3 if i < 3 else 0.2)
+	await _wait(0.9)
+	_mark("reel_calm")
+	var stowed: bool = await _until(func() -> bool: return not hero.rig.sword_in_hand() and not hero.rig.shield_in_hand(), 7.0)
+	_mark("reel_stowed")
+	await _wait(1.2)
+	_mark("reel_end")
+	return _result("reel_stow", stowed, "stowed=%s" % str(stowed))
+
+
+## Armed: combo B on the move (a straw soldier), a sprint into the dash attack on a second one, then the charged spin.
+func _t_reel_fight() -> bool:
+	var y := 1.2
+	var ss := _reel_place_straw(Vector3(1.2, y, 27.0), Vector3(12.0, y, 26.4), true)
+	var s1 := ss[1] as TrainingDummy
+	_reel_start(Vector3(-3.4, y, 27.0), true)
+	await _wait(0.8)
+	_mark("reel_b")
+	var east := Vector3(40.0, y, 27.0)
+	var t0 := _time
+	while _time - t0 < 0.4:
+		hero.debug_move = _stick_to(east)
+		await get_tree().physics_frame
+	await _tap(&"attack")
+	hero.debug_move = Vector2.ZERO
+	for i in 2:
+		await _wait(0.24)
+		await _tap(&"attack")
+	await _wait(1.0)
+	_mark("reel_dash")
+	hero.inp.bot[&"sprint"] = true
+	t0 = _time
+	while _time - t0 < 2.5:
+		hero.debug_move = _stick_to(s1.global_position)
+		var dist := Combat.flat(s1.global_position - hero.global_position).length()
+		if hero.sprinting and _hspeed() > HeroMelee.DASH_SPEED + 0.5 and dist < 4.6:
+			break
+		await get_tree().physics_frame
+	await _tap(&"attack")
+	hero.inp.bot[&"sprint"] = false
+	hero.debug_move = Vector2.ZERO
+	await _wait(1.1)
+	_mark("reel_heavy")
+	hero.inp.bot[&"attack"] = true
+	await _wait(1.0)
+	hero.inp.bot[&"attack"] = false
+	await _wait(1.7)
+	_mark("reel_end")
+	return _result("reel_fight", true, "")
+
+
+## The camera held on his right side (as a player turning the view would), in two takes along a clear line (z = 8): with the
+## weapons away, a run then a sprint; back at the start, the draw on the run, then the armed run and the armed sprint (P2).
+## Every dummy leaves the "enemy" group first (a training dummy is a foe by being there: he would draw near it) and the straw
+## posts, the sparring post, the bull and the straw soldiers are moved off the line.
+func _reel_side_cam(off: float) -> void:
+	cam.yaw = rad_to_deg(hero.facing) + off
+	cam.pitch = -9.0
+	cam._look_idle = 0.0
+
+
+## `secs` s of the camera held on his right side, running at `goal` (or standing still when `move` is false); `arms` keeps
+## asking for the sword and the shield (the draw on the run; no sheathing).
+func _reel_go(goal: Vector3, secs: float, move: bool, sprint: bool, arms: bool) -> void:
+	hero.inp.bot[&"sprint"] = sprint
+	var t0 := _time
+	while _time - t0 < secs:
+		hero.debug_move = _stick_to(goal) if move else Vector2.ZERO
+		if arms:
+			hero.request_arms(true, true)
+		_reel_side_cam(104.0)
+		await get_tree().physics_frame
+	hero.inp.bot[&"sprint"] = false
+	hero.debug_move = Vector2.ZERO
+
+
+func _t_reel_run() -> bool:
+	var y := 1.2
+	var w: Node = arena.get("world")
+	_reel_place_straw(Vector3(-25.0, y, -20.0), Vector3(-28.0, y, -18.0), false)
+	var posts: Array = arena.get("dummies")
+	for i in posts.size():
+		(posts[i] as TrainingDummy).teleport(w.call("ground", Vector3(-4.0 + 4.0 * i, y, 26.0)), PI)
+	var bull: Enemy = arena.get("beast")
+	if bull:
+		bull.teleport(w.call("ground", Vector3(8.0, y, -14.0)), 0.0)
+	var spar: Enemy = arena.get("sparring")
+	if spar:
+		spar.teleport(w.call("ground", Vector3(-4.0, y, -16.0)), 0.0)
+	var all: Array = posts.duplicate()
+	all.append_array(arena.get("sacks"))
+	all.append_array(arena.get("straw"))
+	all.append(bull)
+	all.append(spar)
+	for n in all:
+		if n != null and is_instance_valid(n):
+			(n as Node).remove_from_group("enemy")
+	var start := Vector3(-21.0, y, 8.0)
+	var east := Vector3(80.0, y, 8.0)
+	# take 1: the weapons away, a run then a sprint
+	_reel_start(start, false)
+	await _reel_go(east, 0.6, false, false, false)
+	_mark("reel_relaxed")
+	await _reel_go(east, 2.0, true, false, false)
+	_mark("reel_relaxed_sprint")
+	await _reel_go(east, 1.6, true, true, false)
+	await _reel_go(east, 0.35, false, false, false)
+	var stowed := not hero.rig.sword_in_hand() and not hero.rig.shield_in_hand()
+	_mark("reel_cut")
+	# take 2: back at the start, the draw on the run, the armed run, the armed sprint
+	_reel_start(start, false)
+	await _reel_go(east, 0.4, false, false, false)
+	_mark("reel_draw")
+	await _reel_go(east, 0.8, true, false, true)
+	_mark("reel_armed_run")
+	await _reel_go(east, 1.8, true, false, true)
+	_mark("reel_armed_sprint")
+	await _reel_go(east, 1.6, true, true, true)
+	await _reel_go(east, 0.6, false, false, true)
+	var armed := hero.rig.sword_in_hand() and hero.rig.shield_in_hand()
+	_mark("reel_end")
+	return _result("reel_run", stowed and armed, "stowed_take1=%s armed_take2=%s" % [str(stowed), str(armed)])
