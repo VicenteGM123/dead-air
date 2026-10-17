@@ -114,13 +114,17 @@ GIFS = [
         gait("fijado_atras", "Fijado: retroceder", "", 5.0, heading=180, armed=1, ready=1),
     ]},
     {"id": "04_desenvainar_envainar", "title": "Sacar y guardar las armas",
-     "sub": "La espada sale de la vaina de la cadera y el escudo de la espalda. Atacar con la espada envainada: en el 04b.",
-     "cols": 3, "tiles": [
+     "sub": "La espada sale de la vaina de la cadera y el escudo de la espalda; al cubrirse, el escudo sale directo delante. "
+            "Atacar con la espada envainada: en el 04b.",
+     "cols": 4, "tiles": [
         T("desenvainar", "Desenvainar", "espada y escudo", STOWED, [[0.25, "play", "draw", 1, 1]], {"tail": 0.35}),
         T("envainar", "Envainar", "espada y escudo", {"armed": 1, "ready": 0}, [[0.25, "play", "sheathe", 1, 1]],
           {"tail": 0.35}),
         T("sacar_espada", "Sacar la espada", "", STOWED, [[0.25, "play", "draw_sword", 1, 1]], {"tail": 0.45}),
         T("sacar_escudo", "Sacar el escudo", "", STOWED, [[0.25, "play", "draw_shield", 1, 1]], {"tail": 0.45}),
+        # the guard pressed with both stowed (Hero: the shield first, as draw_shield_guard: straight to the front, then the sword)
+        T("cubrirse", "Cubrirse con todo guardado", "escudo delante, luego la espada", STOWED,
+          [[0.25, "guard", 1], [0.25, "play", "draw_shield", 1, 1], [0.52, "play", "draw_sword", 1, 1]], {"tail": 0.45}),
         T("guardar_espada", "Guardar la espada", "", {"armed": 1, "ready": 0}, [[0.25, "play", "sheathe_sword", 1, 1]],
           {"tail": 0.35}),
         T("guardar_escudo", "Guardar el escudo", "", {"armed": 1, "ready": 0}, [[0.25, "play", "sheathe_shield", 1, 1]],
@@ -194,10 +198,12 @@ GIFS = [
         T("muerte", "Muerte", "", ARMED, [[0.2, "play", "death"]], {"tail": 0.6}),
     ]}),
     {"id": "09_salto_trepar_nadar", "title": "Saltar, trepar, colgarse, tirolesa y nadar",
-     "sub": "La tirolesa y el colgarse van con la cadena de la lanza clavada en una anilla.", "cols": 4, "tiles": [
+     "sub": "La tirolesa y el colgarse van con la cadena de la lanza clavada en una anilla.", "cols": 3, "tiles": [
         T("salto", "Salto", "", STOWED, [[0.2, "jump"]], {"tail": 0.25}, group="saltos"),
         T("salto_corriendo", "Salto corriendo", "", {"armed": 0, "speed": 6.2}, [[0.15, "jump"]], {"tail": 0.25},
           view="side", group="saltos"),
+        T("salto_armado", "Salto armado", "la espada afuera, lejos de las piernas", ARMED, [[0.2, "jump"]], {"tail": 0.25},
+          group="saltos"),
         T("caida", "Aterrizaje", "cayendo desde 3 m", {"armed": 0, "state": "air", "y": 3.0, "vy": 0.0},
           [[0.0, "fall"]], {"tail": 0.35}, follow="xyz", group="saltos"),
         T("trepar", "Trepar a un saliente", "", {"armed": 0, "props": ["ledge"]},
