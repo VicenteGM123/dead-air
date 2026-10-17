@@ -34,7 +34,7 @@ run `godot --headless --path doce/game --import` so Godot picks the new files up
 | `dsp.py` | core: envelopes, RBJ biquads applied by FFT, time-varying spectral noise, convolution reverb with a synthetic IR, panning, limiter (from PHAROS) |
 | `instruments.py` | lyre (Karplus–Strong), aulos (additive, vibrato, portamento, breath), string/choir pads (formants), frame drums, bells, brass, drone, cymbal (from PHAROS) |
 | `common.py` | building blocks for the effects: impacts, band-noise whooshes, grit, debris, bronze and blade modes, chain links, leather creaks, cave reverb, growling voices (formants + subharmonics), clean animal voices (howls, yelps, squeals), snorts, paws, hooves, body falls |
-| `sfx.py` | Heracles (sword, shield, parry, roll, jump, footsteps on grass / stone / sand), the chain spear, the world (altar, boulder, water, cats, goats, gulls) and the UI |
+| `sfx.py` | Heracles (sword, shield, parry, roll, jump, footsteps on grass / stone / sand; the long blade's swings and hits, the ground slam, drawing and stowing the weapons), the chain spear, the world (altar, boulder, water, cats, goats, gulls) and the UI |
 | `beasts.py` | wolves, boars, the Nemean Lion and the wrestle |
 | `music.py` | compositions written as data (chords, arpeggios, melodies) and a bus mix: `explore`, `tension`, `boss_lion`, two stingers |
 | `ambience.py` | sea (PHAROS), wind in the grass, day (birds and cicadas), the cave, the boulder-drag loop |
@@ -45,7 +45,7 @@ To change a sound: edit its recipe and run `--only name --png /tmp/png` to check
 
 ## Levels
 
-- **Effects**: peak −3 dBFS. On purpose quieter: footsteps −8/−10, `ui_select`/`ui_back` −4, `ui_move` −6,
+- **Effects**: peak −3 dBFS. On purpose quieter: `sword_draw`, `sword_sheathe`, `shield_draw`, `shield_stow` −4, footsteps −8/−10, `ui_select`/`ui_back` −4, `ui_move` −6,
   `ui_lock` −7, `ui_toast` −9, `ui_unlock` −10, `jump` −6, `land` −4, `swim` −8, `gull` −10, `goat_bleat` −6, `wolf_howl` −5.
 - **Loops**: RMS ≈ −20.5 (`explore`), −21 (`tension`), −19 dBFS (`boss_lion`), peaks ≤ −1 dBFS.
   **Stingers**: active RMS ≈ −18/−19 dBFS.
@@ -69,6 +69,17 @@ The audio manager sets `loop = true` on music and `amb/` streams when it loads t
 | `swing_heavy` | 0.62 | the charged blow: long low arc, cloth of the wind-up |
 | `hit_1..3` | 0.28 | blade into flesh and fur: meaty smack, the cut, fur grit |
 | `hit_heavy` | 0.55 | heavy blow landing: deep thump, crunch, grit |
+| `swing_light_a..c` | 0.40 / 0.34 / 0.48 | the long blade's light cuts: a deeper body and a longer tail than the xiphos, a low woom; b higher and snappier, c lower with a falling Doppler tail |
+| `swing_big` | 0.62 | the finisher's chop: pre-swish, heavy whoosh and woom, a whistle rising into the pass |
+| `swing_thrust` | 0.28 | the thrust: a narrow fast rush, a thin high whistle, the push |
+| `swing_spin` | 0.90 | the charged spin: a circling whoosh (a Doppler cycle per turn), deep woom, cloth |
+| `swing_dash` | 0.78 | the dash attack: push-off grit and thump, the rush of the leap, the cut |
+| `hit_cut_a..c` | 0.32 | the long blade into fur and flesh: sharp transient, wet-ish slice, short body thump |
+| `hit_big` | 0.65 | a finisher landing: the cut over a deep falling bass thump and a sub boom |
+| `hit_thrust` | 0.42 | a stab: a dull thud, a short tearing tail |
+| `slam` | 1.00 | a blow into the ground / the dash's landing: deep thump, crunch of earth, short rumble, grit |
+| `sword_draw`, `sword_sheathe` | 0.80 / 0.65 | the blade out of its leather scabbard (rising scrape, short ring); back in (falling scrape, soft click) |
+| `shield_draw`, `shield_stow` | 0.60 | strap creak and the wooden shield thudding into the arm; a muffled thud on the back, strap pulled, buckle clink |
 | `blade_bounce` | 0.85 | blade skidding off the Lion: dull knock, ringing blade, sparks, scrape |
 | `shield_block` | 0.50 | bronze-faced shield: wooden bonk and a bronze rim |
 | `parry` | 1.20 | perfect parry: bright bronze ring and a fifth above |

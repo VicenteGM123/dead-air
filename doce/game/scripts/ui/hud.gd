@@ -1,7 +1,8 @@
 extends Control
 ## The in-game HUD. Small and quiet:
-##  - vitals, bottom-left: a black-glaze medallion with Heracles' Corinthian helmet (the lion's head once he wears
-##    the skin) and a slim health bar; it flashes and pulses when hurt or low;
+##  - vitals, bottom-left: a black-glaze medallion with Heracles' bare head in profile, wavy hair, no face (icon
+##    "helmet", the name kept; INTEGRATE) (the lion's head once he wears the skin) and a slim health bar; it flashes
+##    and pulses when hurt or low;
 ##  - stamina: a ring beside the hero (projected from the 3D position) that only appears while stamina is
 ##    being spent or refilling, and fades once full; red while the hero is winded;
 ##  - the boss bar, top-centre: the beast's name and a long bar with notches at its phases (66 % and 33 %);

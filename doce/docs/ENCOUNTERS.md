@@ -242,6 +242,15 @@ Balance, every run since the last change to the wolves (five suites and a 6-run 
 Earlier 4-run measurements of the guard policy (mashes, raises the shield when a wolf winds up at him): against 3,
 won 3 of 4 with 81-100 health; against 5, won 2 of 4 with 2-19 health.
 
+The hero's long blade (2026-10-17, HERO lanes): with MOVESET's moveset as delivered the careless hero beat five wolves
+in nearly every run (won 8 of 8 with 56 health on average, bitten 2.6 times; the lunge, 2.8 m of magnetism and a
+0.95 m strike gap with the long reach ran down every wolf backing off round him, and the wide cuts swept two or three at
+once). INTEGRATE fixed it on the hero's side, the wolves untouched (docs/COMBAT.md 3.2): a light blow bites the first
+foe it meets only (`HeroMelee.CLEAVE_LIGHT`), magnetism back to CORE's 2.5 / 4.5 m, the lunge stopping 0.7 m from the
+foe. Then, a 12-run balance: careless vs 5 won 3 of 12 (bitten 5.7 times on average, as before the new blade), skilled
+vs 5 won 12 of 12 (78 health on average, 11 of 12 with 40 or more); `encbot=all` 12/12. (Faster pack attacks,
+`TOKEN_CD` 0.85 and 0.75, were tried first and dropped: they hardly moved the careless runs.)
+
 So: a player who never defends usually dies even to the first pack (the hint toasts teach the roll and the guard);
 one who only raises the shield beats the first pack and has a hard time against five; one who rolls and punishes wins
 comfortably.

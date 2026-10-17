@@ -8,6 +8,9 @@ extends Object
 ##   fns=strip           act=<action> frames=<n>: the action at n evenly spaced moments, laid out left to right
 ##   fns=loco            speed=<m/s> frames=<n>: one locomotion cycle
 ##   fns=lineup          idle, run, guard and the lion outfit side by side
+## STOW: armed=1|0 puts the sword and the shield in his hands or away (on his back, in the scabbard) before the pose (default: as the
+## rig starts, armed); ready=<0..1> how close a foe is (the armed idle's ready stance). Action rows of a draw start stowed and of a
+## sheathe armed by themselves.
 
 
 class Stage extends Node3D:
@@ -22,8 +25,23 @@ class Stage extends Node3D:
 	func add_rig(setup: Array) -> void:
 		var r := RigHeracles.new()
 		add_child(r)
+		_stow_args(r, String(setup[0]))
 		rigs.append(r)
 		setups.append(setup)
+
+	## STOW: the carrying state the preview asks for (armed=, ready=); a draw starts stowed, a sheathe armed.
+	func _stow_args(rig: RigHeracles, act: String) -> void:
+		var a := String(Game.arg("armed", ""))
+		if act.begins_with("draw"):
+			a = "0"
+		elif act.begins_with("sheathe"):
+			a = "1"
+		if a != "":
+			rig.set_armed(a == "1", true)
+		var rd := String(Game.arg("ready", ""))
+		if rd != "":
+			rig.alert = float(rd)
+			rig._alert = float(rd)
 
 	func _process(_delta: float) -> void:
 		if not _done:
@@ -199,15 +217,32 @@ static func lineup(_seed: int) -> Node3D:
 ## Contact sheet renderer: rows of tiles rendered off-screen (SubViewport sharing the preview's world, with the
 ## toon passes) and composited into one PNG, all in one run.
 ##   fns=sheet rows=<row>;<row>... cols=<n> tile=<w>x<h> view=tq out=<png> [label=1]
-## A row is `attack1` (the action at n evenly spaced moments), `loco:5.5` (a run cycle at 5.5 m/s), `idle`,
+## A row is `attack1` (the action at n evenly spaced moments), `chain:a1,a2,a3,a4` (a combo string as HeroMelee chains it:
+## each blow starts at the one before's `open` key, blended in like the game does; `chain:dash` after a run of SPEED m/s;
+## lunge= moves the hero each blow as a lunge would), `loco:5.5` (a run cycle at 5.5 m/s), `idle`,
 ## `guard`, `air:<vy>`, `swim:<speed>`, `zip`, `hang`, `strafe:<speed>` / `strafel:<speed>` / `back:<speed>` (the gait going
 ## sideways right / left, backwards), `guardback:<speed>`, `guardstrafe:<speed>`, optionally followed by @view and @outfit, e.g. `attack1@back`,
 ## `idle@front@lion`. Tile views: back, tq, side, front, close, closeback, sidel, low.
 class SheetStage extends Node3D:
+	var _head_yaw := 160.0
 	var sv: SubViewport
 	var cam: Camera3D
 	var edges_mat: ShaderMaterial
 	var post_mat: ShaderMaterial
+
+	## STOW: the carrying state the preview asks for (armed=, ready=); a draw starts stowed, a sheathe armed.
+	func _stow_args(rig: RigHeracles, act: String) -> void:
+		var a := String(Game.arg("armed", ""))
+		if act.begins_with("draw"):
+			a = "0"
+		elif act.begins_with("sheathe"):
+			a = "1"
+		if a != "":
+			rig.set_armed(a == "1", true)
+		var rd := String(Game.arg("ready", ""))
+		if rd != "":
+			rig.alert = float(rd)
+			rig._alert = float(rd)
 
 	func _ready() -> void:
 		_run.call_deferred()
@@ -262,9 +297,17 @@ class SheetStage extends Node3D:
 			for ci in cols:
 				var rig := RigHeracles.new()
 				add_child(rig)
+				_stow_args(rig, what.split(":")[1] if what.begins_with("views") and what.split(":").size() > 1 else what.split(":")[0])
 				var k := float(ci) / float(maxi(cols - 1, 1))
 				var tile_view := view
-				if what.begins_with("views"):
+				if what.begins_with("heads"):
+					# (LOOK2) heads[:<outfit pose>]: the idle head up close, turning round it column by column (front, 3/4, side,
+					# 3/4 back, back, the other side)
+					var hy := [160.0, 205.0, 250.0, 300.0, 0.0, 90.0, 130.0, 30.0]
+					_pose(rig, "idle", 0.0, 0.0, out_name)
+					tile_view = "head"
+					_head_yaw = hy[ci % hy.size()]
+				elif what.begins_with("views"):
 					# views:<action|idle|loco|guard>[:<t or speed>] one pose seen from every side
 					var vp := what.split(":")
 					var vlist := ["back", "tq", "side", "front", "close", "closeback", "tql", "low", "game"]
@@ -329,9 +372,109 @@ class SheetStage extends Node3D:
 			"hang":
 				rig.preview_pose("", 0.0, 0.0, &"hang", out_name, false, 0.0, ph)
 				rig.t_offset(ph * 6.0)
+			"idlelong":
+				# STOW: standing on for `val` s more, simulated (the weight shifts, the hand comes to rest on the pommel)
+				rig.preview_pose("", 0.0, 0.0, &"ground", out_name, false, 0.0, ph)
+				for i in int(maxf(val, 0.0) * 60.0 * (0.4 + 0.6 * k)):
+					rig.advance(1.0 / 60.0)
+			"chain":
+				_pose_chain(rig, p[1].split(","), k, out_name, float(p[2]) if p.size() > 2 else float(_arg("speed", "0")))
+			"entry":
+				# INTEGRATE: `entry:<blow>[:<speed>]` a blow pressed with the sword in its scabbard, as Hero plays it: the quick draw that
+				# leads into it, then the blow from its `skip` (et0= / et1= the window shown, in seconds from the press)
+				_pose_entry(rig, p[1], k, out_name, float(p[2]) if p.size() > 2 else 0.0)
 			_:
 				# (an action row may name the speed the hero runs at when it starts: `attack1:5.5`)
-				rig.preview_pose(nm, _action_k(nm, k), val, &"ground", out_name, false, 0.0, 0.0, 0.0, float(_arg("lunge", "0")))
+				# (INTEGRATE: guard=1 holds the guard through the pre-roll: the action starts from the P7 guard, as a parry does)
+				rig.preview_pose(nm, _action_k(nm, k), val, &"ground", out_name, _arg("guard", "0") == "1", 0.0, 0.0, 0.0, float(_arg("lunge", "0")))
+
+	## A combo string at the fraction k of its whole length: each blow is played at the time HeroMelee chains it (the blow
+	## before's `open` key), the hero lunging `lunge` m into each (preview: the node moves, then is put back for the picture).
+	func _pose_chain(rig: RigHeracles, names: PackedStringArray, k: float, out_name: StringName, spd: float = 0.0) -> void:
+		var opens := {}
+		for d in HeroMelee.COMBO_A + HeroMelee.COMBO_B + [HeroMelee.DASH, HeroMelee.HEAVY]:
+			opens[String(d["anim"])] = float(d["open"])
+		var starts: Array[float] = []
+		var t := 0.0
+		for i in names.size():
+			starts.append(t)
+			if names[i].begins_with("+"):
+				# (INTEGRATE: `+<s>` nothing for that long after the blow before has ended: its recovery into the idle or the run)
+				t += float(names[i].substr(1))
+				continue
+			var d := RigHeracles.act_def(names[i])
+			var last := i == names.size() - 1 or names[i + 1].begins_with("+")
+			t += float(d["len"]) if last else float(opens.get(names[i], d["len"]))
+		var total := t
+		var target := k * total * 0.999
+		if _arg("ct1", "") != "":
+			# (INTEGRATE: ct0= / ct1= the window shown, in seconds from the first blow's start)
+			target = float(_arg("ct0", "0")) + k * (float(_arg("ct1", "0")) - float(_arg("ct0", "0")))
+		rig.preview_pose("", 0.0, spd, &"ground", out_name, false, 0.0, 0.0)
+		rig.process_mode = Node.PROCESS_MODE_DISABLED
+		var lunge := float(_arg("lunge", "0"))
+		var base := rig.global_position
+		var fwd := -rig.global_transform.basis.z
+		var dt := 1.0 / 60.0
+		var now := 0.0
+		var cur := -1
+		var done := 0.0
+		var ln := 0.0
+		while now <= target + 1e-6:
+			var nxt := cur + 1
+			if nxt < names.size() and now >= starts[nxt] - 1e-6 and names[nxt].begins_with("+"):
+				cur = nxt
+				done += ln
+				ln = 0.0
+			elif nxt < names.size() and now >= starts[nxt] - 1e-6:
+				cur = nxt
+				done += ln
+				ln = lunge * (2.4 if names[cur] == "dash" else 1.0)
+				rig.play(names[cur])
+				rig.set_strike_run(spd > 2.5 and lunge <= 0.0)
+				if cur == 0:
+					rig._blend_t = 1.0
+					rig._io_pending = false
+					rig._io_on = false
+			if cur >= 0 and lunge > 0.0:
+				var d := RigHeracles.act_def(names[cur])
+				var l_end := float(d["ev"].get("swing", 0.12)) + 0.04
+				var u := clampf((now - starts[cur] - 0.02) / maxf(l_end - 0.02, 0.05), 0.0, 1.0)
+				rig.global_position = base + fwd * (done + ln * sin(u * PI * 0.5))
+			var step := minf(dt, target - now)
+			if step <= 1e-6:
+				break
+			rig.advance(step)
+			now += step
+		rig.global_position = base
+
+	## INTEGRATE: the press of a blow with the sword in its scabbard at the fraction k of the window et0..et1 (s from the press;
+	## default the whole draw and blow): stowed (moving at `spd`), the draw that leads into `blow`, the blow from its `skip` at `go`.
+	func _pose_entry(rig: RigHeracles, blow: String, k: float, out_name: StringName, spd: float) -> void:
+		var e: Dictionary = RigHeracles.DRAW_INTO.get(blow, {"go": 0.15, "skip": 0.0})
+		var go := float(e["go"])
+		var skip := float(e["skip"])
+		var total := go + float(RigHeracles.act_def(blow)["len"]) - skip
+		var w0 := float(_arg("et0", "0"))
+		var w1 := float(_arg("et1", str(total)))
+		var target := w0 + k * (w1 - w0)
+		rig.preview_pose("", 0.0, spd, &"ground", out_name, false, 0.0, 0.0, 0.0, 0.0, 0)
+		rig.process_mode = Node.PROCESS_MODE_DISABLED
+		rig.draw_into = blow
+		rig.play_at("draw_sword", 1.0, true)
+		rig.draw_into = ""
+		var dt := 1.0 / 60.0
+		var now := 0.0
+		var started := false
+		while now < target - 1e-6:
+			if not started and now >= go - 1e-6:
+				started = true
+				rig.play(blow)
+				rig.action_t = skip
+				rig.set_strike_run(spd > 2.5)
+			var step := minf(dt, target - now)
+			rig.advance(step)
+			now += step
 
 	## Action rows show the action's own seconds t0..t1 across the columns (t0=, t1= in the preview args; default the
 	## whole action), so a blow's 0.2 s of contact can be looked at frame by frame.
@@ -405,6 +548,39 @@ class SheetStage extends Node3D:
 				yaw = 45.0
 				height = 0.5
 				look = 0.8
+			"head":
+				# (LOOK2: the head and the hair up close; yaw_head= turns round it)
+				yaw = _head_yaw
+				dist = 1.05
+				height = 1.82
+				look = 1.74
+			# STOW: close on the left hip from his left (hipl), from behind (hipb), on his back (backc)
+			"hipl":
+				yaw = -90.0
+				dist = 2.4
+				height = 1.05
+				look = 0.75
+			"hipb":
+				yaw = -20.0
+				dist = 2.6
+				height = 1.3
+				look = 0.85
+			"backc":
+				yaw = 10.0
+				dist = 2.7
+				height = 1.75
+				look = 1.25
+			"gamec":
+				yaw = 0.0
+				dist = 3.3
+				height = 2.05
+				look = 1.2
+				cam.fov = 50.0
+			"tqlc":
+				yaw = -40.0
+				dist = 2.9
+				height = 1.5
+				look = 1.1
 			"top":
 				yaw = 2.0
 				dist = 0.5
@@ -416,6 +592,8 @@ class SheetStage extends Node3D:
 				height = 2.3
 				look = 1.35
 				cam.fov = 55.0
+		# (LOOK lane, local only: yaw_<view>=deg overrides a view's yaw)
+		yaw = float(_arg("yaw_" + view, str(yaw)))
 		var r := deg_to_rad(yaw)
 		cam.global_position = rig.global_position + Vector3(sin(r), 0, cos(r)) * dist + Vector3(0, height, 0)
 		cam.look_at(rig.global_position + Vector3(0, look, 0), Vector3.UP)

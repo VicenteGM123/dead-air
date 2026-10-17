@@ -1,39 +1,97 @@
 class_name HeroMelee
 extends RefCounted
-## The hero's sword (CORE): the 3-hit combo, the charged heavy blow, magnetism, the blade sweep and the feel of a
-## blow landing. Driven by Hero (states ATTACK, CHARGE, HEAVY); numbers in docs/COMBAT.md.
+## The hero's sword (CORE; the moveset for the long blade: docs/COMBAT.md 3.2, docs/ANIMATION.md 4.9): two combo strings, the
+## dash attack, the charged heavy blow, magnetism, the blade sweep and the feel of a blow landing. Driven by Hero (states
+## ATTACK, CHARGE, HEAVY).
 ##
-## A press of attack starts the next light blow at once, at full speed, however long the button stays down (a
-## firm tap never waits). Still held when the blow's active frames are over and CHARGE_HOLD s after the press, the
-## heavy blow winds up from the follow-through (CHARGE: slow walk, the body coils, the blade trembles; the Zelda
-## spin attack); CHARGE_TIME s later a glint and a ring say it is charged; released then: the spin slash; released
-## before: the coil relaxes (the combo goes on from the last light blow). Attack held in MOVE (through a recoil, a
-## roll) coils too. Hits: the blade (root to tip, RigHeracles.blade_segment) is swept
-## between the rig's posed frames through the active window (act0..act1, clipped exactly inside the frame that
-## straddles each end) against every foe's hurt volumes (Combat.hurt_volumes), top-down with a generous vertical
-## band; each point of the blade travels an arc round the hero between two frames (sub-steps of 12 degrees), so a
-## fast swing at 24 fps hits what it hits at 144 fps; each foe at most once per blow.
+## Combo A (a1 diagonal forehand, a2 rising backhand, a3 wide horizontal forehand, a4 the overhead chop into the ground) starts
+## when the hero stands or walks; combo B (b1 rising diagonal out of the low carry, b2 descending backhand, b3 the lunging
+## thrust) when he is on the move, and whenever his last string was A and ended less than ALTERNATE s ago (fighting on
+## alternates the two); attack while sprinting is the dash attack (a leaping overhead slash). A press starts the next blow of the
+## string at once, at full speed, however long the button stays down (a firm tap never waits); a press inside a blow is
+## buffered and flows into the next blow at its `open` key. Still held when the blow's active frames are over and CHARGE_HOLD s
+## after the press, the heavy blow winds up from the follow-through (CHARGE: slow walk, the body coils, the blade trembles);
+## CHARGE_TIME s later a glint and a ring say it is charged; released then: the spin slash; released before: the coil relaxes.
+## Attack held in MOVE (through a recoil, a roll) coils too. Hits: the blade (root to tip, RigHeracles.blade_segment) is swept
+## between the rig's posed frames through the active window (act0..act1, clipped exactly inside the frame that straddles each
+## end) against every foe's hurt volumes (Combat.hurt_volumes), top-down with a generous vertical band; each point of the blade
+## travels an arc round the hero between two frames (sub-steps of 12 degrees), so a fast swing at 24 fps hits what it hits at
+## 144 fps; each foe at most once per blow.
 
 enum { RUNNING, DONE }
 
-## Light blows. Times are the rig action's own seconds (RigHeracles keys); `speed` scales them. act0..act1: active
-## frames (the blade sweeps); open: the combo window opens; cancel: the recovery can be cancelled (dodge, guard,
-## throw) from here; move: a push of the stick (> 0.6) ends it from here (into the run); rearm: a press starts a
-## new combo from here (the finisher and the heavy, which have no combo window). hold: the heavy's coil key.
-const LIGHT := [
-	{"name": &"attack1", "anim": "attack1", "speed": 1.05, "hold": 0.11, "act0": 0.125, "act1": 0.29, "open": 0.29, "cancel": 0.3, "move": 0.38,
-		"amount": 10.0, "knockback": 3.8, "stagger": 0.35, "hitstop": 0.07, "shake": 0.35, "nudge": 0.18, "power": 0.7,
-		"lunge": 1.4, "swing": "swing_1", "hit": "hit_1"},
-	{"name": &"attack2", "anim": "attack2", "speed": 1.05, "hold": 0.1, "act0": 0.115, "act1": 0.28, "open": 0.28, "cancel": 0.29, "move": 0.37,
-		"amount": 10.0, "knockback": 3.8, "stagger": 0.35, "hitstop": 0.07, "shake": 0.35, "nudge": 0.18, "power": 0.7,
-		"lunge": 1.4, "swing": "swing_2", "hit": "hit_2"},
-	{"name": &"attack3", "anim": "attack3", "speed": 1.0, "hold": 0.22, "act0": 0.262, "act1": 0.42, "open": 99.0, "cancel": 0.5, "move": 0.58, "rearm": 0.55,
-		"amount": 18.0, "knockback": 8.5, "stagger": 0.75, "hitstop": 0.11, "shake": 0.47, "nudge": 0.4, "power": 1.1,
-		"lunge": 1.5, "swing": "swing_3", "hit": "hit_3", "finisher": true},
-]
-const HEAVY := {"name": &"heavy", "anim": "heavy", "speed": 1.0, "hold": 0.3, "act0": 0.37, "act1": 0.68, "open": 99.0, "cancel": 0.8, "move": 0.88, "rearm": 0.85,
-	"amount": 30.0, "knockback": 11.0, "stagger": 1.1, "hitstop": 0.16, "shake": 0.62, "nudge": 0.36, "power": 1.6,
-	"lunge": 0.6, "swing": "swing_heavy", "hit": "hit_heavy", "guard_break": true}
+## The blows. Times are the rig action's own seconds (RigHeracles: the strike data generated by docs/anim_design/moveset.py);
+## `speed` scales them. act0..act1: active frames (the blade sweeps); open: the combo window opens (a buffered press starts the
+## next blow of the string here: its first pose is this blow's pose at `open`); cancel: the recovery can be cancelled (dodge,
+## guard, throw) from here; move: a push of the stick (> 0.6) ends it from here (into the run); rearm: a press starts a new
+## string from here (finishers, the dash, the heavy). Feel: trail (BladeTrail style: light|finisher|heavy|thrust), slash (a cut
+## flash where it lands), kick + kick_amount (the camera's knock: left|right|down|up|forward), fov (degrees: a finisher's FOV
+## punch), slam (a slam at the blade's tip when it strikes the ground at the `impact` event: power, 0 = none), swing/hit (the
+## sounds; swing_fb/hit_fb: the older ones while the new are missing), kb_side (how much of the blade's own motion goes into
+## the knockback: a horizontal cut pushes sideways and back, the chop and the thrust straight back).
+## INTEGRATE (the FX lane's tools wired): slash_size / slash_col (the cut flash's length and rim colour, drawn along the blade's
+## real motion at the contact), kick_amount (the camera's knock, along that same cut; `kick` names the way it goes when the blade
+## barely moves), fov / fov_dur (a finisher's punch: degrees, seconds).
+const A1 := {"name": &"a1", "anim": "a1", "string": &"A", "speed": 1.0, "hold": 0.14, "act0": 0.135, "act1": 0.25,
+	"open": 0.28, "cancel": 0.30, "move": 0.40,
+	"amount": 10.0, "knockback": 3.8, "kb_side": 0.45, "stagger": 0.35, "hitstop": 0.07, "shake": 0.34, "nudge": 0.18, "power": 0.7,
+	"lunge": 1.3, "trail": &"light", "slash": true, "slash_size": 1.0, "kick": &"left", "kick_amount": 0.5, "fov": 0.0, "slam": 0.0,
+	"swing": "swing_light_a", "hit": "hit_cut_a", "swing_fb": "swing_1", "hit_fb": "hit_1"}
+const A2 := {"name": &"a2", "anim": "a2", "string": &"A", "speed": 1.0, "hold": 0.085, "act0": 0.075, "act1": 0.18,
+	"open": 0.19, "cancel": 0.24, "move": 0.32,
+	"amount": 10.0, "knockback": 3.8, "kb_side": 0.45, "stagger": 0.35, "hitstop": 0.06, "shake": 0.32, "nudge": 0.18, "power": 0.7,
+	"lunge": 1.2, "trail": &"light", "slash": true, "slash_size": 1.0, "kick": &"right", "kick_amount": 0.5, "fov": 0.0, "slam": 0.0,
+	"swing": "swing_light_b", "hit": "hit_cut_b", "swing_fb": "swing_2", "hit_fb": "hit_2"}
+const A3 := {"name": &"a3", "anim": "a3", "string": &"A", "speed": 1.0, "hold": 0.105, "act0": 0.10, "act1": 0.21,
+	"open": 0.22, "cancel": 0.28, "move": 0.36,
+	"amount": 12.0, "knockback": 4.6, "kb_side": 0.75, "stagger": 0.4, "hitstop": 0.08, "shake": 0.38, "nudge": 0.22, "power": 0.8,
+	"lunge": 1.3, "trail": &"light", "slash": true, "slash_size": 1.1, "kick": &"left", "kick_amount": 0.6, "fov": 0.0, "slam": 0.0,
+	"swing": "swing_light_c", "hit": "hit_cut_c", "swing_fb": "swing_2", "hit_fb": "hit_2"}
+const A4 := {"name": &"a4", "anim": "a4", "string": &"A", "speed": 1.0, "hold": 0.205, "act0": 0.20, "act1": 0.31,
+	"open": 99.0, "cancel": 0.50, "move": 0.58, "rearm": 0.60,
+	"amount": 20.0, "knockback": 8.5, "kb_side": 0.0, "stagger": 0.75, "hitstop": 0.13, "shake": 0.5, "nudge": 0.4, "power": 1.1,
+	"lunge": 1.5, "trail": &"finisher", "slash": true, "slash_size": 1.5, "slash_col": Color(1.0, 0.8, 0.42), "kick": &"down",
+	"kick_amount": 1.0, "fov": 3.0, "fov_dur": 0.25, "slam": 1.0,
+	"swing": "swing_big", "hit": "hit_big", "swing_fb": "swing_3", "hit_fb": "hit_3", "finisher": true}
+const B1 := {"name": &"b1", "anim": "b1", "string": &"B", "speed": 1.0, "hold": 0.12, "act0": 0.115, "act1": 0.215,
+	"open": 0.215, "cancel": 0.27, "move": 0.35,
+	"amount": 10.0, "knockback": 3.8, "kb_side": 0.45, "stagger": 0.35, "hitstop": 0.07, "shake": 0.34, "nudge": 0.18, "power": 0.7,
+	"lunge": 1.3, "trail": &"light", "slash": true, "slash_size": 1.0, "kick": &"left", "kick_amount": 0.5, "fov": 0.0, "slam": 0.0,
+	"swing": "swing_light_b", "hit": "hit_cut_a", "swing_fb": "swing_1", "hit_fb": "hit_1"}
+const B2 := {"name": &"b2", "anim": "b2", "string": &"B", "speed": 1.0, "hold": 0.075, "act0": 0.07, "act1": 0.17,
+	"open": 0.19, "cancel": 0.24, "move": 0.32,
+	"amount": 10.0, "knockback": 3.8, "kb_side": 0.45, "stagger": 0.35, "hitstop": 0.06, "shake": 0.32, "nudge": 0.18, "power": 0.7,
+	"lunge": 1.2, "trail": &"light", "slash": true, "slash_size": 1.0, "kick": &"right", "kick_amount": 0.5, "fov": 0.0, "slam": 0.0,
+	"swing": "swing_light_a", "hit": "hit_cut_b", "swing_fb": "swing_2", "hit_fb": "hit_2"}
+const B3 := {"name": &"b3", "anim": "b3", "string": &"B", "speed": 1.0, "hold": 0.165, "act0": 0.16, "act1": 0.27,
+	"open": 99.0, "cancel": 0.46, "move": 0.54, "rearm": 0.56,
+	"amount": 18.0, "knockback": 9.0, "kb_side": 0.0, "stagger": 0.75, "hitstop": 0.14, "shake": 0.48, "nudge": 0.42, "power": 1.1,
+	"lunge": 1.8, "trail": &"thrust", "slash": true, "slash_size": 1.5, "slash_col": Color(1.0, 0.84, 0.46), "kick": &"forward",
+	"kick_amount": 0.9, "fov": 3.0, "fov_dur": 0.24, "slam": 0.0,
+	"swing": "swing_thrust", "hit": "hit_thrust", "swing_fb": "swing_3", "hit_fb": "hit_3", "finisher": true}
+## The dash attack: out of a sprint the hero leaps (the run carried into a long lunge that lands at the `impact` event: it is
+## the dash's own `land`), and the slash comes down through the landing.
+const DASH := {"name": &"dash", "anim": "dash", "string": &"dash", "speed": 1.0, "hold": 0.225, "act0": 0.22, "act1": 0.36,
+	"open": 99.0, "cancel": 0.56, "move": 0.62, "rearm": 0.62, "land": 0.30,
+	"amount": 14.0, "knockback": 7.0, "kb_side": 0.0, "stagger": 0.6, "hitstop": 0.12, "shake": 0.48, "nudge": 0.36, "power": 1.0,
+	"lunge": 3.2, "trail": &"finisher", "slash": true, "slash_size": 1.3, "kick": &"down", "kick_amount": 0.9, "fov": 2.5,
+	"fov_dur": 0.24, "slam": 0.8,
+	"swing": "swing_dash", "hit": "hit_big", "swing_fb": "swing_3", "hit_fb": "hit_3", "finisher": true}
+const HEAVY := {"name": &"heavy", "anim": "heavy", "string": &"heavy", "speed": 1.0, "hold": 0.3, "act0": 0.37, "act1": 0.68,
+	"open": 99.0, "cancel": 0.8, "move": 0.88, "rearm": 0.85,
+	"amount": 30.0, "knockback": 11.0, "kb_side": 0.6, "stagger": 1.1, "hitstop": 0.17, "shake": 0.62, "nudge": 0.36, "power": 1.6,
+	"lunge": 0.6, "trail": &"heavy", "slash": true, "slash_size": 1.8, "slash_col": Color(1.0, 0.72, 0.28), "kick": &"right",
+	"kick_amount": 1.0, "fov": 4.0, "fov_dur": 0.3, "slam": 0.0,
+	"swing": "swing_spin", "hit": "hit_big", "swing_fb": "swing_heavy", "hit_fb": "hit_heavy", "guard_break": true}
+const COMBO_A := [A1, A2, A3, A4]
+const COMBO_B := [B1, B2, B3]
+## (older callers and tools: the light blows are combo A's)
+const LIGHT := COMBO_A
+## A new string is B when the hero moves faster than this (m/s) as it starts; the dash when he sprints faster than DASH_SPEED.
+const B_SPEED := 2.0
+const DASH_SPEED := 5.0
+## ... and B too when his last string was A and ended less than this long ago (s of game time): fighting on alternates them.
+const ALTERNATE := 3.0
 ## Attack held this long (s, from its press) and the blow's active frames over: the heavy blow starts to coil.
 const CHARGE_HOLD := 0.28
 ## Seconds of coil until the heavy blow is charged.
@@ -44,30 +102,37 @@ const COIL_FROM_BLOW := 0.1
 const MOVE_OUT := 0.6
 ## After a blow ends, a press still continues the combo for this long (s of game time).
 const COMBO_GRACE := 0.25
-## Half-thickness of the blade's sweep (m) and how far past the visible tip it still counts (m): generous on
-## purpose (a blow that looks like it touched, touched).
+## Half-thickness of the blade's sweep (m) and how far past the visible tip it still counts (m): generous on purpose (a blow
+## that looks like it touched, touched).
 const BLADE_R := 0.12
-const TIP_EXTRA := 0.12
+const TIP_EXTRA := 0.10
 ## Magnetism: a foe in this cone (half-angle, degrees) within this distance (m, to its surface) draws the blow.
+## (INTEGRATE: back to CORE's 2.5 / 4.5 from MOVESET's 2.8 / 4.8, and STRIKE_GAP 0.95 -> 0.7: with the long blade's reach the
+## lunge ran down every wolf backing off round him, and a hero mashing the attack beat a pack of five nine times in ten; now he
+## loses three in four again, as the encounter bot's balance test wants, and the skilled hero still wins every fight)
 const MAGNET_ANGLE := 35.0
 const MAGNET_RANGE := 2.5
 const MAGNET_RANGE_LOCKED := 4.5
-## The lunge stops this far from the foe's surface (m): inside the xiphos' reach (0.85 m straight ahead, 1.2-1.4 m
-## at the ends of the arcs; tools: the arc dump in docs/COMBAT.md).
-const STRIKE_GAP := 0.5
+## The lunge stops this far from the foe's surface (m): the long blade (0.98 m, its tip 1.6-1.9 m from the hero's middle in the
+## cuts) bites with its outer two thirds there, and the hero does not walk into the foe.
+const STRIKE_GAP := 0.7
 ## The lunge starts this long (s) into the blow; with no foe in reach the blow still steps LUNGE_STEP m.
 const LUNGE_T0 := 0.02
 const LUNGE_STEP := 0.3
-## A blow out of a run (faster than CARRY_MIN m/s) with no foe to lunge at carries the run on, slowing at
-## CARRY_DECEL m/s^2 (1.5 m from 6.2 m/s), instead of stopping dead.
+## A blow out of a run (faster than CARRY_MIN m/s) with no foe to lunge at carries the run on, slowing at CARRY_DECEL m/s^2
+## (1.5 m from 6.2 m/s), instead of stopping dead.
 const CARRY_MIN := 3.0
 const CARRY_DECEL := 13.0
+## The dash's leap with nothing to aim at: this share of the sprint's speed over the time to the landing (m).
+const DASH_FREE := 0.8
 
 var hero: Hero
 var rig: RigHeracles
 var trail: BladeTrail
-## Index (1..3) of the current / last light blow; 0 after the finisher or when the combo lapsed.
+## Index (1..) of the current / last blow in its string (combo A or B); 0 after a finisher or when the combo lapsed.
 var combo := 0
+## The string of the current / last blow: &"A", &"B", &"dash" or &"heavy".
+var chain := &""
 var cur: Dictionary = {}
 var charging := false
 var charged := false
@@ -83,6 +148,8 @@ var _c0 := Vector3.ZERO
 var _rt0 := 0.0
 var _have := false
 var _stopped := false
+var _kicked := false
+var _slammed := false
 var _face_dir := Vector3.ZERO
 var _lunge_dir := Vector3.ZERO
 ## The lunge's length (m) and its end (s of the blow); _lunge_vel is this tick's velocity along its curve.
@@ -93,6 +160,9 @@ var _lunge_vel := Vector3.ZERO
 var _carry := Vector3.ZERO
 ## When the last blow ended (Hero._clock: game seconds, so the grace is the same at any frame rate or speed).
 var _end_t := -100.0
+## The last string that ended (and when): the A / B alternation.
+var _last_chain := &""
+var _last_chain_end := -100.0
 ## Until when (Hero._clock) the camera's soft framing turns to the foe at once (a blow was just aimed or landed).
 var engaged_until := -1.0
 var _pts := PackedVector3Array([Vector3.ZERO, Vector3.ZERO])
@@ -135,38 +205,95 @@ func focus_target() -> Node3D:
 	return focus
 
 
-## The next blow of the combo (or blow `n` 1..3, e.g. a strike on arriving at the end of the chain).
+## The blows of a string.
+static func string_blows(c: StringName) -> Array:
+	if c == &"B":
+		return COMBO_B
+	return COMBO_A
+
+
+## The next blow: the one after the current in its string, or (the string over or lapsed) the first of a new one, chosen by
+## the routing rule: the dash out of a sprint, B on the move or right after an A string, else A. `n` (1..3, older callers: a
+## strike on arriving at the end of the chain is `3`) picks combo A's blow n (3: its finisher).
 func start_light(n: int = 0) -> void:
-	if n <= 0:
-		var lapsed := hero._clock - _end_t > COMBO_GRACE and cur.is_empty()
-		n = 1 if (combo <= 0 or combo >= 3 or lapsed) else combo + 1
-	combo = clampi(n, 1, 3)
-	_begin(LIGHT[combo - 1], Hero.St.ATTACK)
+	if n > 0:
+		_end_chain()
+		chain = &"A"
+		combo = 4 if n >= 3 else n
+		_begin(COMBO_A[combo - 1], Hero.St.ATTACK)
+		return
+	var lapsed := hero._clock - _end_t > COMBO_GRACE and cur.is_empty()
+	var seq := string_blows(chain)
+	if not lapsed and (chain == &"A" or chain == &"B") and combo > 0 and combo < seq.size():
+		combo += 1
+		_begin(seq[combo - 1], Hero.St.ATTACK)
+		return
+	start_entry(route(), 0.0)
 
 
-func _begin(def: Dictionary, st: int) -> void:
+## INTEGRATE: the first blow of a new string a press would start now, by the routing rule (the dash out of a sprint, B on the move
+## or right after an A string, else A): [blow, string, combo index]. Hero asks it at the press when the sword is in its scabbard, to
+## draw the sword into that blow (RigHeracles.draw_into).
+func route() -> Array:
+	var run := Vector2(hero.velocity.x, hero.velocity.z).length()
+	if hero.sprinting and run > DASH_SPEED:
+		return [DASH, &"dash", 0]
+	if run > B_SPEED or (_last_chain == &"A" and hero._clock - _last_chain_end < ALTERNATE):
+		return [COMBO_B[0], &"B", 1]
+	return [COMBO_A[0], &"A", 1]
+
+
+## A new string (or the dash) with the blow `r` (route()), started `skip` s into its wind-up (INTEGRATE: out of the quick draw that
+## brought the sword to the blow's pose there).
+func start_entry(r: Array, skip: float = 0.0) -> void:
+	_end_chain()
+	chain = r[1]
+	combo = int(r[2])
+	_begin(r[0], Hero.St.ATTACK, skip)
+
+
+## The string that was running is over (its finisher ended, it lapsed, a new one starts): remembered for the alternation.
+func _end_chain() -> void:
+	if chain == &"A" or chain == &"B":
+		_last_chain = chain
+		_last_chain_end = _end_t if cur.is_empty() else hero._clock
+	elif chain == &"dash" or chain == &"heavy":
+		_last_chain = chain
+		_last_chain_end = hero._clock
+
+
+func _begin(def: Dictionary, st: int, skip: float = 0.0) -> void:
 	cur = def
 	charging = false
 	charged = false
 	rig.charge = 0.0
 	hero._set_state(st)
+	if combo <= 1 and hero.has_method("request_arms"):
+		# (STOW: a string, the dash or the heavy asks for the sword; the shield stays where it is unless the fight asks for it)
+		hero.call("request_arms", true, false)
 	rig.play_at(def["anim"], float(def["speed"]), false)
+	if skip > 0.0:
+		rig.action_t = skip
 	rig.action_hold = -1.0
 	_t = 0.0
 	_swing_played = false
+	_kicked = false
+	_slammed = false
 	_hit.clear()
 	_foes = Combat.foes(hero.get_tree(), hero.team)
 	_have = false
 	_stopped = false
-	_aim(def)
+	_aim(def, skip)
 	rig.set_strike_run(_carry != Vector3.ZERO) # (animation: a run carried into the blow keeps its legs on the gait, a lunge plants them)
 	trail.clear()
 	trail.active = false
 	trail.heavy = def["name"] == &"heavy"
+	if "style" in trail:
+		trail.set("style", def.get("trail", &"light"))
 
 
 ## Magnetism: turn to the foe the blow is meant for and lunge to striking distance (stronger when locked on).
-func _aim(def: Dictionary) -> void:
+func _aim(def: Dictionary, skip: float = 0.0) -> void:
 	var from := hero.global_position
 	var iv := hero._input_vector()
 	var aim := hero._move_dir(iv)
@@ -176,14 +303,17 @@ func _aim(def: Dictionary) -> void:
 	var lock := hero.lock_target()
 	var t: Node3D = null
 	var reach := float(def["lunge"])
-	if lock and Combat.flat(lock.global_position - from).length() - Combat.body_radius(lock) <= MAGNET_RANGE_LOCKED:
+	var dash: bool = def["name"] == &"dash"
+	if lock and Combat.flat(lock.global_position - from).length() - Combat.body_radius(lock) <= MAGNET_RANGE_LOCKED + (2.0 if dash else 0.0):
 		t = lock
 		reach += 0.5
 	else:
-		t = Combat.best_in_cone(_foes, from, aim, MAGNET_RANGE, MAGNET_ANGLE)
+		t = Combat.best_in_cone(_foes, from, aim, MAGNET_RANGE + (2.0 if dash else 0.0), MAGNET_ANGLE)
 	var spd := float(def["speed"])
-	# the lunge runs from the start to the first active frame
-	_lunge_end = maxf(float(def["act0"]) / spd + 0.04, 0.08)
+	# the lunge runs from the start to the first active frame (the dash's: to its landing); a blow started `skip` s in (out of the
+	# quick draw) has that much less of its wind-up left to lunge in
+	_lunge_end = maxf((float(def.get("land", float(def["act0"]) + 0.04 * spd)) - skip) / spd, 0.08)
+	var run := Vector3(hero.velocity.x, 0.0, hero.velocity.z)
 	if t:
 		focus = t
 		_focus_until = hero._clock + FOCUS_HOLD
@@ -197,9 +327,13 @@ func _aim(def: Dictionary) -> void:
 		_face_dir = aim
 		_lunge_dir = aim
 		_lunge_dist = LUNGE_STEP # a step into the blow
+		if dash:
+			# nothing to aim at: the leap carries the sprint
+			_face_dir = run.normalized() if run.length() > 0.5 else aim
+			_lunge_dir = _face_dir
+			_lunge_dist = clampf(run.length() * _lunge_end * DASH_FREE, 1.2, reach)
 	_carry = Vector3.ZERO
-	var run := Vector3(hero.velocity.x, 0.0, hero.velocity.z)
-	if t == null and run.length() > CARRY_MIN and def["name"] != &"heavy":
+	if t == null and run.length() > CARRY_MIN and def["name"] != &"heavy" and not dash:
 		# out of a run at nothing: the run carries on into the blow and slows down (no dead stop)
 		_carry = run
 		_lunge_dist = 0.0
@@ -243,16 +377,20 @@ func tick(delta: float, dir: Vector3, mag: float) -> int:
 		return DONE # a deflect ended the blow
 	if not _swing_played and rt >= a0 - 0.01:
 		_play_swing()
-	# the combo window: a buffered press flows into the next blow
-	if hero.state == Hero.St.ATTACK and rt >= float(cur["open"]) and combo < 3 and hero._buf_attack > 0.0:
+	if not _slammed and float(cur.get("slam", 0.0)) > 0.0 and rt >= float(RigHeracles.act_def(String(cur["anim"]))["ev"].get("impact", 99.0)):
+		_slam()
+	# the combo window: a buffered press flows into the next blow of the string
+	if hero.state == Hero.St.ATTACK and rt >= float(cur["open"]) and combo > 0 and combo < string_blows(chain).size() \
+			and hero._buf_attack > 0.0:
 		hero._buf_attack = 0.0
 		start_light()
 		return RUNNING
-	# the finisher's and the heavy's recovery: a buffered press starts a new combo
+	# the finishers', the dash's and the heavy's recovery: a buffered press starts a new string
 	if rt >= float(cur.get("rearm", 99.0)) and hero._buf_attack > 0.0:
 		hero._buf_attack = 0.0
+		_end_t = hero._clock
 		combo = 0
-		start_light(1)
+		start_light()
 		return RUNNING
 	return RUNNING
 
@@ -320,6 +458,8 @@ func abort() -> void:
 func _finish() -> void:
 	if cur.get("finisher", false) or cur.get("name", &"") == &"heavy":
 		combo = 0
+		_end_t = hero._clock
+		_end_chain()
 	abort()
 
 
@@ -328,10 +468,40 @@ func on_rig_event(ev: String) -> void:
 		_play_swing()
 
 
+## A sound by its new name, or its older stand-in while the new one is missing.
+static func _snd(def: Dictionary, key: String) -> String:
+	var nm := String(def.get(key, ""))
+	if nm != "" and ResourceLoader.exists("res://assets/audio/sfx/%s.ogg" % nm):
+		return nm
+	return String(def.get(key + "_fb", nm))
+
+
 func _play_swing() -> void:
 	_swing_played = true
-	var heavy: bool = cur.get("name", &"") == &"heavy"
-	Sfx.play(String(cur["swing"]), hero.global_position + Vector3(0, 1.2, 0), -2.0 if heavy else -4.0, randf_range(0.95, 1.06))
+	# (the FX lane's levels: the spin -2 dB, the finishers -3, the light cuts -4)
+	var db := -2.0 if cur.get("name", &"") == &"heavy" else (-3.0 if bool(cur.get("finisher", false)) else -4.0)
+	Sfx.play(_snd(cur, "swing"), hero.global_position + Vector3(0, 1.2, 0), db, randf_range(0.95, 1.06))
+
+
+## The blade strikes the ground (the chop's `impact`, the dash's landing): a slam where its tip meets the ground (on a miss too),
+## the camera jolted down.
+func _slam() -> void:
+	_slammed = true
+	var seg := rig.blade_segment()
+	var tip := seg[1]
+	var ground := hero.global_position.y
+	if tip.y - ground > 0.45:
+		return # (cut short above the ground: something was in the way)
+	var at := Vector3(tip.x, ground + 0.02, tip.z)
+	var power := float(cur.get("slam", 1.0))
+	if Game.fx and Game.fx.has_method("slam"):
+		Game.fx.call("slam", at, power)
+	elif Game.fx:
+		Game.fx.call("dust", at, 4, 0.5)
+	Sfx.play("slam" if ResourceLoader.exists("res://assets/audio/sfx/slam.ogg") else "hit_heavy", at, -3.0 - 3.0 * (1.0 - minf(power, 1.0)), randf_range(0.95, 1.04))
+	Game.shake(0.3 * power)
+	if Game.has_method("kick"):
+		Game.call("kick", Vector3.DOWN, 0.7 * power)
 
 
 # --- the heavy blow's charge ---------------------------------------------------------------------------------
@@ -341,11 +511,16 @@ func _play_swing() -> void:
 func start_charge(from_blow: bool = false) -> void:
 	if not cur.is_empty():
 		_end_t = hero._clock
+	_end_chain()
+	chain = &"heavy"
+	combo = 0
 	cur = HEAVY
 	charging = true
 	charged = false
 	_charge_t = 0.0
 	hero._set_state(Hero.St.CHARGE)
+	if hero.has_method("request_arms"):
+		hero.call("request_arms", true, false)
 	rig.play_at("heavy", 1.0, true)
 	if from_blow:
 		rig.action_t = COIL_FROM_BLOW
@@ -379,7 +554,7 @@ func _tick_charge(delta: float) -> int:
 		if charged:
 			_release_heavy()
 			return RUNNING
-		# let go before it was charged: the coil relaxes into the stance (a press now goes on with the combo)
+		# let go before it was charged: the coil relaxes into the stance (a press now starts a new string)
 		charging = false
 		cur = {}
 		rig.charge = 0.0
@@ -399,6 +574,7 @@ func _release_heavy() -> void:
 	rig.action_t = float(HEAVY["hold"])
 	_t = float(HEAVY["hold"])
 	_lunge_end = 0.0
+	chain = &"heavy"
 	combo = 0
 
 
@@ -425,6 +601,9 @@ func _sweep(rt: float, a0: float, a1: float) -> void:
 
 ## Sub-steps (radians) of a blade point's arc between two frames.
 const ARC_STEP := 0.21
+## (INTEGRATE) How many foes one light blow (a1-a3, b1, b2) can hit: the long blade's wide cuts swept a whole wolf pack at once,
+## and a hero mashing the attack beat five wolves (the encounter bot's balance test: he must lose most of those fights).
+const CLEAVE_LIGHT := 1
 
 
 ## The blade from the last sample (_r0, _t0 round _c0) to this one (r1, t1 round c1), between the fractions f0
@@ -432,6 +611,10 @@ const ARC_STEP := 0.21
 func _test(r1: Vector3, t1: Vector3, c1: Vector3, f0: float, f1: float) -> void:
 	for foe in _foes:
 		if cur.is_empty():
+			return
+		# (INTEGRATE) a light blow bites into the first foe it meets (CLEAVE_LIGHT); the finishers, the dash and the heavy sweep
+		# through all of them
+		if not bool(cur.get("finisher", false)) and cur["name"] != &"heavy" and _hit.size() >= CLEAVE_LIGHT:
 			return
 		if not Combat.is_alive(foe) or _hit.has(foe.get_instance_id()):
 			continue
@@ -443,6 +626,7 @@ func _test(r1: Vector3, t1: Vector3, c1: Vector3, f0: float, f1: float) -> void:
 			var a2 := Vector3(a.x, 0.0, a.z)
 			var b2 := Vector3(b.x, 0.0, b.z)
 			var hit_p := Vector3.INF
+			var cut := Vector3.ZERO
 			var best := INF
 			for k in 4:
 				var u := 0.28 + 0.24 * float(k)
@@ -469,6 +653,8 @@ func _test(r1: Vector3, t1: Vector3, c1: Vector3, f0: float, f1: float) -> void:
 					best = minf(best, d2)
 					if d2 <= rr * rr:
 						hit_p = Vector3(_pts[0].x, lerpf(p0.y, p1.y, sf), _pts[0].z)
+						# (INTEGRATE: the blade's real motion there: the cut's direction for the flash, the knock-back and the camera)
+						cut = _arc_vel(g0, dg, l0, l1, c1, sf) + Vector3(0.0, p1.y - p0.y, 0.0)
 						break
 					q0 = q1
 				if hit_p != Vector3.INF:
@@ -482,7 +668,9 @@ func _test(r1: Vector3, t1: Vector3, c1: Vector3, f0: float, f1: float) -> void:
 				var off := hit_p - axis_p
 				var point := axis_p + (off.normalized() * r if off.length() > 0.01 else Vector3.ZERO)
 				point.y = clampf(hit_p.y, minf(a.y, b.y) - r * 0.5, maxf(a.y, b.y) + r * 0.5)
-				_contact(foe, point, Combat.flat(t1 - _t0))
+				if cut.length_squared() < 1e-8:
+					cut = t1 - _t0
+				_contact(foe, point, cut)
 				break
 
 
@@ -494,13 +682,52 @@ func _arc(g0: float, dg: float, l0: float, l1: float, c1: Vector3, s: float) -> 
 	return Vector3(c.x + sin(g) * l, 0.0, c.z + cos(g) * l)
 
 
-func _contact(foe: Node3D, point: Vector3, motion: Vector3) -> void:
+## The motion of an arc's point (top-down) per unit of `s` at s: the hero's centre moving, the point turning round it and its
+## distance from it changing (with the blade point's own rise or fall, the blade's real direction of motion there).
+func _arc_vel(g0: float, dg: float, l0: float, l1: float, c1: Vector3, s: float) -> Vector3:
+	var g := g0 + dg * s
+	var l := lerpf(l0, l1, s)
+	var dc := c1 - _c0
+	return Vector3(dc.x + cos(g) * dg * l + sin(g) * (l1 - l0), 0.0, dc.z - sin(g) * dg * l + cos(g) * (l1 - l0))
+
+
+## The feel of a blow landing (the FX lane's tools): the cut's flash at the contact along the blade's real motion there (every foe
+## the blow hits), the camera knocked along that same cut and a finisher's FOV punch (once per blow).
+func _feel(point: Vector3, cut: Vector3) -> void:
+	var dir := cut.normalized() if cut.length_squared() > 1e-8 else Vector3.ZERO
+	if bool(cur.get("slash", false)) and Game.fx and Game.fx.has_method("slash_mark") and dir != Vector3.ZERO:
+		if cur.has("slash_col"):
+			Game.fx.call("slash_mark", point, dir, float(cur.get("slash_size", 1.0)), cur["slash_col"])
+		else:
+			Game.fx.call("slash_mark", point, dir, float(cur.get("slash_size", 1.0)))
+	if _kicked:
+		return
+	_kicked = true
+	var amt := float(cur.get("kick_amount", 0.0))
+	if amt > 0.0 and Game.has_method("kick"):
+		var kd := dir
+		if kd == Vector3.ZERO:
+			# (the blade barely moving at the contact: the way the blow's table names)
+			if Game.camera and is_instance_valid(Game.camera) and Game.camera.has_method("kick_dir"):
+				kd = Game.camera.call("kick_dir", cur.get("kick", &"forward"))
+			else:
+				kd = -hero.global_transform.basis.z
+		Game.call("kick", kd, amt)
+	var fov := float(cur.get("fov", 0.0))
+	if fov > 0.0 and Game.has_method("fov_punch"):
+		Game.call("fov_punch", fov, float(cur.get("fov_dur", 0.26)))
+
+
+func _contact(foe: Node3D, point: Vector3, motion3: Vector3) -> void:
 	_hit[foe.get_instance_id()] = true
+	var motion := Combat.flat(motion3)
 	var away := Combat.flat(foe.global_position - hero.global_position)
 	away = away.normalized() if away.length() > 0.05 else hero.forward()
+	# the knockback goes along the cut: a horizontal cut pushes sideways and back, the chop and the thrust straight back
 	var kdir := away
-	if cur["name"] != &"heavy" and motion.length() > 0.05:
-		kdir = (away + motion.normalized() * 0.45).normalized()
+	var side := float(cur.get("kb_side", 0.45))
+	if side > 0.0 and motion.length() > 0.05:
+		kdir = (away + motion.normalized() * side).normalized()
 	var finisher := bool(cur.get("finisher", false))
 	var heavy: bool = cur["name"] == &"heavy"
 	var h := Combat.make_hit(float(cur["amount"]), &"blade", kdir, float(cur["knockback"]), float(cur["stagger"]), hero,
@@ -517,7 +744,7 @@ func _contact(foe: Node3D, point: Vector3, motion: Vector3) -> void:
 			Game.fx.call("impact", point, kdir, float(cur["power"]))
 			if heavy or finisher:
 				Game.fx.call("dust", foe.global_position, 5 if heavy else 3, 0.5)
-		Sfx.play(String(cur["hit"]), point, -1.0, randf_range(0.92, 1.08))
+		Sfx.play(_snd(cur, "hit"), point, -1.0, randf_range(0.92, 1.08))
 		var killed := not Combat.is_alive(foe)
 		if not _stopped:
 			_stopped = true
@@ -531,6 +758,7 @@ func _contact(foe: Node3D, point: Vector3, motion: Vector3) -> void:
 		Game.shake(float(cur["shake"]) + (0.15 if killed else 0.0))
 		if Game.camera and is_instance_valid(Game.camera) and Game.camera.has_method("nudge"):
 			Game.camera.call("nudge", kdir, float(cur["nudge"]))
+		_feel(point, motion3)
 		hero.blow_landed.emit(foe, h)
 	elif bool(h.get("deflected", false)):
 		# the blade cannot bite (the Nemean Lion): it bounces off with sparks and a clang, the arm flies back

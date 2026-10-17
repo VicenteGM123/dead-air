@@ -9,6 +9,8 @@ uniform bool soft_round = false;
 // Metres the geometry is drawn towards the camera (same place on screen, nearer in depth): a sword trail shows
 // over the body that swings it and the foe it cuts, but not through walls further away. 0 = off.
 uniform float view_pull = 0.0;
+// FX lane: overall opacity (the slam's cracks fade with it). 1 = as before.
+uniform float alpha_mul = 1.0;
 
 void vertex() {
 	if (billboard) {
@@ -31,5 +33,5 @@ void fragment() {
 	}
 	vec3 c = ph_srgb_to_linear(COLOR.rgb);
 	ALBEDO = ph_out(mix(c, g_fog_color, ph_fog(VERTEX)));
-	ALPHA = a;
+	ALPHA = a * alpha_mul;
 }

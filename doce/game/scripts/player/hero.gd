@@ -127,6 +127,16 @@ const HAUL_REEL := 0.9 # m/s the chain shortens while the button is held
 const GRAPPLE_RANGE := 3.0
 ## threat(): foes telegraphing within this range (m) and this angle of the view (degrees), held this long (s).
 const THREAT_RANGE := 7.0
+# --- carrying the weapons (STOW: docs/ANIMATION.md section 9) -------------------------------------------------------------------
+## Exploring he carries the sword in its scabbard and the shield on his back; they come out for a blow, the heavy charge, the guard
+## (the shield first), the lock-on, after a hit, and when a living foe turns on him within ARMS_FOE_DRAW m; they go away by
+## themselves after STOW_AFTER s with no blow, no guard and no hostile foe within ARMS_FOE_CALM m (never in a fight), and before
+## deep water. A blow pressed with the sword away draws it first (the blow starts as soon as the blade is clear: 0.15 s).
+const STOW_AFTER := 4.0
+const ARMS_FOE_DRAW := 8.0
+const ARMS_FOE_CALM := 12.0
+## Water this deep (Hero._wade() below it) puts the weapons away: he swims with them stowed.
+const ARMS_WADE := 0.75
 const THREAT_VIEW := 110.0
 const THREAT_HOLD := 0.8
 
@@ -264,6 +274,23 @@ var _step_t := 0.0
 var _ripple_t := 0.0
 var _world = null
 var _cam_sprint := 0.0
+## STOW: what the rules want in his hands, the shield asked first (the guard), seconds of calm, the foes about him (scanned five times a
+## second), a blow (its combo number, 0 the next) or the heavy's coil waiting for the sword, a hit to answer by drawing.
+var _want_sword := false
+var _want_shield := false
+var _shield_first := false
+var _arms_calm := 0.0
+var _arms_scan := 0.0
+var _foe_draw := false
+var _foe_near := false
+var _blow_pending := -1
+var _blow_wait := 0.0
+## INTEGRATE: the blow a press with the sword in its scabbard will start (HeroMelee.route() at the press): the quick draw played for it
+## leads into it (RigHeracles.draw_into) and hands over at its `go`.
+var _blow_route: Array = []
+var _charge_pending := false
+var _arms_hit := false
+var _arms_debug := false
 
 
 func _ready() -> void:
@@ -288,6 +315,8 @@ func _ready() -> void:
 	add_child(rig)
 	rig.top_level = true
 	rig.event.connect(_on_rig_event)
+	rig.set_armed(false, true) # STOW: the game starts with the weapons put away
+	_arms_debug = Game.arg_on("armsdebug")
 	melee = HeroMelee.new(self)
 	spear = ChainSpear.new()
 	spear.name = "ChainSpear"
@@ -343,6 +372,11 @@ func revive(xf: Transform3D) -> void:
 	dodging = false
 	teleport(xf)
 	rig.stop_action(0.0)
+	# STOW: up again at the altar with the weapons put away
+	_want_sword = false
+	_want_shield = false
+	_arms_calm = STOW_AFTER
+	rig.set_armed(false, true)
 
 
 ## The current state's name (&"move", &"attack", ...).
@@ -445,7 +479,7 @@ func _guard_focus() -> Node3D:
 ## A light blow now (tests): the next blow of the combo.
 func attack() -> void:
 	if alive and state in [St.MOVE, St.ATTACK]:
-		melee.start_light()
+		_start_blow(0)
 
 
 ## The lion's pelt: blades hurt 50 % less (PELT_BLADE; the rig plays don_skin and changes the outfit itself). He lays his
@@ -474,6 +508,9 @@ func _set_state(s: int) -> void:
 ## Cancels whatever the hero was doing (attacks, throws, the chain, the wrestle): used by hits, teleports, death.
 func _end_actions() -> void:
 	melee.abort()
+	_blow_pending = -1
+	_blow_route = []
+	_charge_pending = false
 	if state == St.GRAPPLE:
 		_end_grapple(false, false)
 	if spear.mode != ChainSpear.BACK:
@@ -569,6 +606,7 @@ func _hurt(hit: Dictionary, amount: float) -> void:
 		motion_state = &"air"
 	var react := "hit_heavy" if heavy else "hit"
 	var st := rig.play(react) * (0.62 if heavy else 0.7)
+	_arms_hit = true # STOW: he draws once the reaction is over
 	_stagger(st, react)
 	# no second blow before he can act again (a pack must not stun-lock him)
 	invulnerable = maxf(HIT_INVULN, st + 0.1)
@@ -728,6 +766,7 @@ func _physics_process(delta: float) -> void:
 	_update_candidate(delta)
 	spear.physics(delta)
 	_update_ripples(delta)
+	_tick_arms(delta)
 	_curr_pos = global_position
 	_feed_rig()
 
@@ -831,6 +870,10 @@ func _update_buttons(delta: float, mag: float) -> void:
 	if g != guarding:
 		guarding = g
 		rig.set_guard(g)
+		if g and not rig.shield_in_hand():
+			# STOW: the shield comes off his back first (the guard and its parry window are up from the press all the same)
+			_shield_first = true
+			request_arms(true, true)
 
 
 func _update_stamina(delta: float) -> void:
@@ -867,15 +910,43 @@ func _st_move(delta: float, dir: Vector3, mag: float) -> void:
 		if _buf_chain > 0.0 and motion_state != &"swim":
 			if _try_throw():
 				return
-		if _buf_attack > 0.0 and grounded and _land_lock <= 0.0:
-			# (from the guard too: the shield drops for the blow and comes back if guard is still held)
+		# INTEGRATE: the blow pressed with the sword in its scabbard takes over from the quick draw that leads into it, at the draw's
+		# `go` (the draw ends on the blow's own pose `skip` s into its wind-up: no stop, no snap)
+		var go := rig.draw_go()
+		if go >= 0.0 and grounded and _blow_pending == 0 and not _blow_route.is_empty() and not _charge_pending:
+			if rig.action_t >= go:
+				var r := _blow_route
+				_blow_pending = -1
+				_blow_route = []
+				melee.start_entry(r, rig.draw_skip())
+				return
+		# STOW: a blow (or the heavy's coil) that waited for the sword starts as soon as the blade is clear of the scabbard
+		elif grounded and weapons_ready() and (_blow_pending >= 0 or _charge_pending):
+			var n := _blow_pending
+			_blow_pending = -1
+			_blow_route = []
+			if _charge_pending and melee.wants_charge():
+				_charge_pending = false
+				melee.start_charge(false)
+				return
+			_charge_pending = false
+			if n >= 0:
+				melee.start_light(n)
+				return
+		if _buf_attack > 0.0 and grounded and _land_lock <= 0.0 and not (_blow_pending >= 0 and go >= 0.0):
+			# (from the guard too: the shield drops for the blow and comes back if guard is still held; INTEGRATE: a press while the
+			# draw leads into the blow pressed waits in the buffer: it chains the next blow)
 			_buf_attack = 0.0
-			melee.start_light()
-			return
-		if grounded and _land_lock <= 0.0 and not guarding and melee.wants_charge():
+			_start_blow(0)
+			if state != St.MOVE:
+				return
+		if grounded and _land_lock <= 0.0 and not guarding and melee.wants_charge() and _blow_pending < 0:
 			# attack held on (through a recoil, a roll, a landing): the heavy blow coils from the stance
-			melee.start_charge(false)
-			return
+			if weapons_ready():
+				melee.start_charge(false)
+				return
+			_charge_pending = true
+			request_arms(true, false)
 		if inp.just_pressed(&"interact") and grounded and _try_grapple():
 			return
 	# speed
@@ -1024,6 +1095,8 @@ func _update_water() -> void:
 		if state != St.MOVE:
 			_set_state(St.MOVE)
 		motion_state = &"swim"
+		_want_sword = false # STOW: he swims with the weapons put away
+		_want_shield = false
 		velocity.y = minf(velocity.y, 0.0) * 0.2
 
 
@@ -1254,7 +1327,7 @@ func _st_dodge(delta: float) -> void:
 			_buf_attack = 0.0
 			dodging = false
 			_set_state(St.MOVE)
-			melee.start_light()
+			_start_blow(0)
 			return
 		if _buf_dodge > 0.0:
 			var iv := _input_vector()
@@ -1517,6 +1590,10 @@ func _start_zip(target: Node3D, ring: bool) -> void:
 	spear.taut = 1.0
 	_set_state(St.CHAIN)
 	motion_state = &"zip"
+	if ring and not _foe_near and lock_target() == null and rig.sword_in_hand() and not rig.stow_busy():
+		# STOW: across to a ring he puts the sword away on the way (the left fist is on the chain: the shield waits)
+		_want_sword = false
+		rig.play_at("sheathe_sword", 1.0, true)
 	velocity = Vector3.ZERO
 	Sfx.play("chain_taut", global_position + Vector3(0, 1.5, 0), -2.0)
 	Sfx.play("chain_zip", Vector3.INF, -3.0)
@@ -1666,7 +1743,7 @@ func _arrive_zip() -> void:
 		velocity = forward() * 2.0
 		_set_state(St.MOVE)
 		if _zip_strike:
-			melee.start_light(3)
+			_start_blow(3)
 		return
 	if _zip_land:
 		# a ring with ground under it: the zip set him down at the foot of its stone
@@ -1891,7 +1968,7 @@ func _tick_pull(delta: float) -> void:
 			rig.stop_action(0.08)
 			if _buf_attack > 0.0:
 				_buf_attack = 0.0
-				melee.start_light()
+				_start_blow(0)
 			else:
 				var d := _move_dir(_input_vector())
 				_start_dodge(d, minf(d.length(), 1.0))
@@ -1978,8 +2055,9 @@ func _try_grapple() -> bool:
 	_set_state(St.GRAPPLE)
 	rig.play("grapple_start")
 	# bare hands, as with the lion: the sword and the shield are laid on the ground beside him (the shield would
-	# cut into the beast's head)
-	_lay_weapons(true)
+	# cut into the beast's head); STOW: put away on his back and at his hip they stay there
+	if rig.sword_in_hand() or rig.shield_in_hand():
+		_lay_weapons(true)
 	Sfx.play("chain_taut", global_position, -8.0, 0.7)
 	g.call("grapple_begin", self)
 	return true
@@ -2269,6 +2347,8 @@ func _feed_rig() -> void:
 	rig.set_locomotion(hs, RUN_SPEED)
 	rig.set_motion_state(motion_state)
 	rig.set_vertical_speed(velocity.y)
+	# STOW: a foe close by (or the lock-on): the armed idle is the ready stance
+	rig.alert = 1.0 if (_foe_draw or lock_target() != null) else 0.0
 	_feed_brush(hs)
 
 
@@ -2350,3 +2430,141 @@ func _sync_visual(frac: float) -> void:
 		return
 	rig.global_position = _prev_pos.lerp(_curr_pos, frac)
 	rig.global_rotation = Vector3(0.0, _vis_yaw, 0.0)
+
+
+# --- STOW: carrying the weapons (docs/ANIMATION.md section 9) -----------------------------------------------------------------
+
+## The sword is in his hand and clear of its scabbard: a blow can start.
+func weapons_ready() -> bool:
+	return rig.sword_free()
+
+
+## The blow / guard code asks for the sword and/or the shield in the hands: the draws play as soon as he is free (the quick ones:
+## draw_sword for a blow, draw_shield for the guard; both at once, draw). What is already in his hands stays.
+func request_arms(sword: bool, shield: bool) -> void:
+	_arms_calm = 0.0
+	if sword:
+		_want_sword = true
+	if shield:
+		_want_shield = true
+	_tick_arms(0.0)
+
+
+## A blow now (the next of the combo, or blow `n`) if the sword is in his hand, else the sword comes out first and the blow follows the
+## moment the blade is clear (it waits at most 0.7 s: a draw cut short forgets it).
+func _start_blow(n: int = 0) -> void:
+	if weapons_ready():
+		_blow_pending = -1
+		_blow_route = []
+		melee.start_light(n)
+		return
+	_blow_pending = maxi(n, 0)
+	_blow_wait = 0.0
+	# INTEGRATE: the first blow it will be is chosen now (the routing rule as he is at the press), so the draw can lead into it; a blow
+	# asks for the sword only (the shield stays on his back unless the guard, the lock-on or a foe close by asks for it)
+	_blow_route = melee.route() if _blow_pending == 0 and not rig.sword_in_hand() else []
+	request_arms(true, false)
+
+
+## Every tick: the foes about him, what the rules want in his hands, and the draw or the sheathe that brings it about when he is free.
+func _tick_arms(delta: float) -> void:
+	if not alive or rig == null:
+		return
+	_arms_scan -= delta
+	if _arms_scan <= 0.0:
+		_arms_scan = 0.2
+		_scan_foes()
+	var locked := lock_target() != null
+	if locked or _foe_draw:
+		_want_sword = true
+		_want_shield = true
+	if _arms_hit and state == St.MOVE:
+		_arms_hit = false
+		_want_sword = true
+		_want_shield = true
+	var fighting := _foe_near or locked or guarding or state == St.ATTACK or state == St.CHARGE or state == St.HEAVY \
+		or state == St.STAGGER or _blow_pending >= 0 or _charge_pending
+	_arms_calm = 0.0 if fighting else _arms_calm + delta
+	if _arms_calm >= STOW_AFTER:
+		_want_sword = false
+		_want_shield = false
+	if _blow_pending >= 0 or _charge_pending:
+		_blow_wait += delta
+		if _blow_wait > 0.7:
+			_blow_pending = -1
+			_blow_route = []
+			_charge_pending = false
+	# deep water: they go away (he swims with them on his back and at his hip)
+	if motion_state == &"swim" or (motion_state == &"ground" and _wade() < ARMS_WADE):
+		_want_sword = false
+		_want_shield = false
+		_blow_pending = -1
+		_blow_route = []
+		_charge_pending = false
+	if not _arms_free():
+		return
+	var has_sw := rig.sword_in_hand()
+	var has_sh := rig.shield_in_hand()
+	var need_sw := _want_sword and not has_sw
+	var need_sh := _want_shield and not has_sh
+	var act := ""
+	if (need_sw or need_sh) and motion_state != &"swim":
+		if need_sh and (_shield_first or not need_sw):
+			act = "draw_shield"
+		elif need_sw and (_blow_pending >= 0 or _charge_pending or not need_sh):
+			act = "draw_sword"
+		else:
+			act = "draw"
+	elif (has_sw and not _want_sword) or (has_sh and not _want_shield):
+		act = rig.stow_action_for(false, has_sw and not _want_sword, has_sh and not _want_shield)
+	if act != "":
+		# INTEGRATE: the quick draw for a pressed blow is the one that leads into it (RigHeracles.DRAW_INTO)
+		rig.draw_into = String((_blow_route[0] as Dictionary)["anim"]) if act == "draw_sword" and _blow_pending == 0 and not _blow_route.is_empty() else ""
+		rig.play_at(act, 1.0, true)
+		rig.draw_into = ""
+		if act == "draw_shield":
+			_shield_first = false
+		if _arms_debug:
+			print("ARMS %s t=%.2f state=%s foe_draw=%s foe_near=%s calm=%.2f" % [act, _clock, ST_NAMES[state], str(_foe_draw), str(_foe_near), _arms_calm])
+
+
+## Free for a draw or a sheathe: moving about (on the ground, in the air or afloat) and the rig doing nothing that must finish (a
+## landing, a jump, the tail of a blow or a roll, a reaction may be cut; the throw, the catch, the chain's pull, the parry, the
+## wrestle, the pelt, petting a cat, a draw already playing may not).
+func _arms_free() -> bool:
+	if state != St.MOVE or dodging or motion_state == &"zip" or motion_state == &"hang":
+		return false
+	var a := rig.action
+	if a == "" or a in ["land", "jump", "interact", "recoil", "hit", "hit_heavy", "backstep", "dodge", "climb", "grapple_end"]:
+		return true
+	return RigHeracles.act_def(a).has("strike")
+
+
+## The foes about him: one turned on him within ARMS_FOE_DRAW m (draw), one within ARMS_FOE_CALM m (no sheathing).
+func _scan_foes() -> void:
+	_foe_draw = false
+	_foe_near = false
+	for n in get_tree().get_nodes_in_group("enemy"):
+		var e := n as Node3D
+		if e == null or not Combat.is_alive(e):
+			continue
+		var d := e.global_position.distance_to(global_position)
+		if d > ARMS_FOE_CALM or not _foe_hostile(e):
+			continue
+		_foe_near = true
+		if d <= ARMS_FOE_DRAW:
+			_foe_draw = true
+			return
+
+
+## A foe that has turned on him: the lion in its fight, a beast whose brain is past its idle (and not walking home), one winding up a
+## blow; a foe with no brain to read (the training dummies) by being there.
+static func _foe_hostile(e: Node3D) -> bool:
+	if e.has_method("is_fighting"):
+		return bool(e.call("is_fighting"))
+	if "telegraph_t" in e and float(e.get("telegraph_t")) > 0.0:
+		return true
+	if e.has_method("state_name"):
+		var sn := StringName(e.call("state_name"))
+		return sn != &"idle" and sn != &"return"
+	return true

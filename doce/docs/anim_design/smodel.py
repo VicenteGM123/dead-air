@@ -17,6 +17,9 @@ SHOULDER_CS = np.array([0.255, 0.175, 0.02])
 LEN_UA = float(np.linalg.norm(P_SHOULDER - P_ELBOW))
 LEN_FA = float(np.linalg.norm(P_ELBOW - P_WRIST))
 GRIP = np.array([0.0, -0.104, 0.0])
+# the blade (rig_heracles.gd SWORD_ROOT / SWORD_TIP, grip space): 0.095 .. 1.075 m from the fist (0.64 before the long sword)
+BLADE_ROOT = 0.095
+BLADE_TIP = 1.075
 NEUTRAL_PEL_Y = -0.035
 
 
@@ -207,8 +210,8 @@ def pose(S, t):
     hrb, hrk = sword_hand2(f, xl, sv(S, "uln", t, 48.0) * D, sv(S, "ext", t, 8.0) * D, sv(S, "tw", t) * D)
     hb = hand_basis(hrb, hrk, 1.0)
     grip_cs = W + hb @ GRIP
-    tip_cs = grip_cs + 0.64 * hrb
-    root_cs = grip_cs + 0.10 * hrb
+    tip_cs = grip_cs + BLADE_TIP * hrb
+    root_cs = grip_cs + BLADE_ROOT * hrb
     rot = sv(S, "rot", t) * D
     if rot != 0.0:
         Rr = Ry(rot)

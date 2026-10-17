@@ -171,6 +171,9 @@ static func _bake_strike(S: Dictionary) -> Dictionary:
 
 #@@DATA@@
 
+## The old blow names still play (tools, older callers): attack1/attack2/attack3 are combo A's first, second and last blow.
+const STRIKE_ALIAS := {"attack1": "a1", "attack2": "a2", "attack3": "a4"}
+
 
 # --- a blow that starts on the run ---------------------------------------------------------------------------------------------
 ## A blow that starts while the hero runs and carries the run on (HeroMelee: no foe in reach, so the run slows at 13 m/s^2
@@ -188,20 +191,29 @@ var _skl_on := false
 
 ## HeroMelee, right after it has aimed the blow it started: whether the run is carried on (the legs stay on the gait) or not.
 func set_strike_run(on: bool) -> void:
-	if action != "" and act_def(_akey).has("strike") and not (act_def(_akey)["strike"] as Dictionary).has("rot"):
+	if action != "" and act_def(_akey).has("strike") and not _strike_own_legs(act_def(_akey)["strike"]):
 		_sk_run = on
+
+
+## A blow whose legs are its own (the heavy's spin, the dash's leap: the feet are baked into it) never runs on the gait.
+static func _strike_own_legs(S: Dictionary) -> bool:
+	return S.has("rot") or String((S.get("feet", {}) as Dictionary).get("mode", "")) == "baked"
 
 
 func _strike_layer(c: PackedFloat32Array, loco: PackedFloat32Array) -> void:
 	var pb_s := eul(v3(c, C_PELR))
 	var tb := pb_s * eul(v3(c, C_SPN)) * eul(v3(c, C_CHS))
+	# the heavy's held coil keeps its own wide, low stance (P5) while he stands; walking, the legs are the gait's
+	var own := 0.0
+	if _upper > 0.0 and _strike_own_legs(act_def(_akey)["strike"]):
+		own = 1.0 - smoothstep(0.25, 0.9, _spd)
 	for o in LOWER_CH:
-		c[o] = loco[o]
-		c[o + 1] = loco[o + 1]
-		c[o + 2] = loco[o + 2]
+		c[o] = lerpf(loco[o], c[o], own)
+		c[o + 1] = lerpf(loco[o + 1], c[o + 1], own)
+		c[o + 2] = lerpf(loco[o + 2], c[o + 2], own)
 	var ps := v3(c, C_PELR)
 	var pl := v3(loco, C_PELR)
-	var pe := Vector3(lerpf(ps.x, pl.x, 0.5), lerpf(ps.y, pl.y, 0.1), lerpf(ps.z, pl.z, 0.5))
+	var pe := Vector3(lerpf(ps.x, pl.x, 0.5 * (1.0 - own)), lerpf(ps.y, pl.y, 0.1 * (1.0 - own)), lerpf(ps.z, pl.z, 0.5 * (1.0 - own)))
 	_setv(c, C_PELR, pe)
 	# the chest keeps the orientation the blow gave it in the world: the spine and the chest bone take up what the pelvis gave away
 	var q_rel := (eul(pe).inverse() * tb).get_rotation_quaternion()

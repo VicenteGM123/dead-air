@@ -1,7 +1,8 @@
 class_name RigHeracles
 extends Rig
-## Heracles: a skinned code rig (Skeleton3D, 30 bones) about 1.9 m tall with a Corinthian helmet and crest, a bronze
-## cuirass, the red cape (cloth: one bone per particle), the aspis on the left forearm, the xiphos in the right hand
+## Heracles: a skinned code rig (Skeleton3D, 30 bones) about 1.9 m tall: bare-headed (short wavy hair, a faceless face),
+## bare-chested, a linen kilt, the red cape (cloth: one bone per particle) under a mantle pinned by a gold brooch, the
+## round shield on the left forearm, the sword in the right hand
 ## and the chain spear on the back; the lion outfit (hood and pelt) after the first labour. Built by the HERO
 ## stream, owned and tuned for combat by CORE.
 ## API (docs/ARCHITECTURE.md 5.7): set_locomotion, set_motion_state (&"ground" &"air" &"swim" &"zip" &"hang"),
@@ -13,16 +14,33 @@ extends Rig
 ## pose, and the recoil / backstep actions. Clip check: tools/clip_check_heracles.tscn.
 
 # --- palette -----------------------------------------------------------------------------------------------
-const SKIN := Color("D69A68")
-const SKIN_DARK := Color("B97C52")
+# LOOK: warm orange-tan skin (SKIN_SHADE: the creases' gentle vertex shading, SKIN_LIGHT: the upper planes)
+const SKIN := Color("E0A35F")
+const SKIN_DARK := Color("B97B47")
+const SKIN_SHADE := Color("CD8F55")
+const SKIN_LIGHT := Color("E9B26F")
 const BRONZE := Color("D19A44")
 const BRONZE_DARK := Color("9C6B2E")
 const BRONZE_LIGHT := Color("EFC172")
 const RED := Color("B8302A")
 const RED_DARK := Color("8C2226")
-const CREST := Color("C9372C")
-const CREST_DARK := Color("98272A")
-const CREST_LIGHT := Color("E25A40")
+# LOOK: short wavy hair (dark brown, the upper faces of the locks lighter)
+const HAIR := Color("5E3722")
+const HAIR_DARK := Color("3B2217")
+const HAIR_LIGHT := Color("87562F")
+# LOOK: the linen kilt, the deep red mantle and its gold brooch
+const LINEN := Color("F2DAAA")
+const LINEN_SHADE := Color("DEC18E")
+const LINEN_DARK := Color("B49F79")
+## LOOK2: the kilt's ambient in the shade: how much of the sky's blue it keeps, and a warm tint (see lowpoly.gdshader).
+const KILT_AMB_SAT := 0.15
+const KILT_AMB_TINT := Vector3(1.15, 1.1, 1.0)
+const CAPE := Color("8C3329")
+const CAPE_DARK := Color("62221F")
+const CAPE_LIGHT := Color("9E3B2E")
+const GOLD := Color("E2AE45")
+const GOLD_LIGHT := Color("F6D584")
+const GOLD_DARK := Color("A77629")
 const LEATHER := Color("7C4A2C")
 const LEATHER_DARK := Color("4E2C1C")
 const LEATHER_LIGHT := Color("9C6238")
@@ -32,6 +50,12 @@ const STEEL_DARK := Color("8D98A8")
 const STEEL_LIGHT := Color("EEF3F7")
 const WOOD := Color("5A3A28")
 const WOOD_DARK := Color("432A1E")
+# LOOK: the round shield's leather face (two browns) and its dark iron-brown rim
+const SHIELD_FACE := Color("7A4A2D")
+const SHIELD_FACE_LIGHT := Color("94603A")
+const SHIELD_FACE_DARK := Color("5E3823")
+const SHIELD_RIM := Color("4E3626")
+const SHIELD_RIM_LIGHT := Color("6E4E36")
 const IRON := Color("5B6070")
 ## CORE: the darker bronze of the chain links (alternating with BRONZE_DARK).
 const CHAIN_DARK := Color("7A5226")
@@ -68,7 +92,7 @@ const P_WRIST := Vector3(0.315, 0.90, 0.005)
 const P_HIP := Vector3(0.112, 0.93, 0.0)
 const P_KNEE := Vector3(0.12, 0.505, -0.018)
 const P_ANKLE := Vector3(0.125, 0.093, 0.012)
-const HEAD_C := Vector3(0.0, 1.75, 0.005) # helmet centre
+const HEAD_C := Vector3(0.0, 1.75, 0.005) # head centre (the head() node; the lion hood is placed from it)
 const P_CREST := Vector3(0.0, 1.90, 0.02)
 const SKIRT_Y := 1.0
 const SKIRT_R := 0.19
@@ -76,6 +100,8 @@ const SKIRT_R := 0.19
 const GRIP := Vector3(0.0, -0.104, 0.0)
 ## Hands are drawn this much bigger than life (heroic proportions).
 const HAND_K := 1.18
+## LOOK2: and grown this much more round the grip (the reference's big fists).
+const HAND_GROW := 1.12
 const FWD := Vector3(0.0, 0.0, -1.0)
 const SHIELD_R := 0.39
 ## The left fist holds the spear this far towards its head from the spear's own origin.
@@ -124,7 +150,7 @@ const CH := {"pel": C_PEL, "pelr": C_PELR, "spn": C_SPN, "chs": C_CHS, "nek": C_
 const NEUTRAL := {
 	"pel": Vector3(0.0, -0.035, 0.0), "pelr": Vector3(0.02, 0.0, 0.0), "spn": Vector3(0.0, 0.0, 0.0),
 	"chs": Vector3(0.05, 0.0, 0.0), "nek": Vector3(-0.05, 0.0, 0.0), "hed": Vector3(0.0, 0.0, 0.0),
-	"hr": Vector3(0.335, -0.42, -0.1), "hrb": Vector3(0.12, -0.38, -1.0), "hrk": Vector3(1.0, 0.1, 0.15),
+	"hr": Vector3(0.33, -0.44, 0.0), "hrb": Vector3(0.29, -0.62, 0.73), "hrk": Vector3(0.7, 0.05, -0.7),
 	"hrp": Vector3(0.5, 0.0, 1.0),
 	"hl": Vector3(-0.335, -0.36, -0.08), "hlf": Vector3(-1.0, 0.0, -0.35), "hlp": Vector3(-0.5, -0.2, 1.0),
 	"hlw": Vector3.ZERO,
@@ -166,9 +192,13 @@ var _don_hide := false
 ## CORE: the cape stays in front of walls behind him and over rising ground (two rays and one down per frame);
 ## tools without a world can switch it off.
 var cape_world := true
+## LOOK: no helmet and no crest any more: _crest_mi is an empty hidden node (tools ask for it), _helm_mi the head,
+## _hair_mi the hair.
 var _crest_mi: MeshInstance3D
 var _helm_mi: MeshInstance3D
+var _hair_mi: MeshInstance3D
 var _mat_helm: ShaderMaterial
+var _mat_kilt: ShaderMaterial
 var _hood_mi: MeshInstance3D
 var _paws_mi: MeshInstance3D
 var _collar_mi: Array[MeshInstance3D] = []
@@ -192,8 +222,12 @@ func _init() -> void:
 	_mat_soft = Materials.lowpoly().duplicate() as ShaderMaterial
 	_mat_metal = Materials.lowpoly().duplicate() as ShaderMaterial
 	_mat_metal.set_shader_parameter("metal", 1.0)
-	# the helmet has its own copy: under the lion hood it sinks into shadow
-	_mat_helm = _mat_metal.duplicate() as ShaderMaterial
+	# LOOK: the head and the hair have their own copy: under the lion hood the face sinks into its shade
+	_mat_helm = _mat_soft.duplicate() as ShaderMaterial
+	# LOOK2: and the linen kilt: a neutral, slightly warm ambient in its shade (lowpoly.gdshader amb_sat / amb_tint)
+	_mat_kilt = _mat_soft.duplicate() as ShaderMaterial
+	_mat_kilt.set_shader_parameter("amb_sat", KILT_AMB_SAT)
+	_mat_kilt.set_shader_parameter("amb_tint", KILT_AMB_TINT)
 	_init_rest()
 	_build()
 	_pose = default_pose()
@@ -443,11 +477,32 @@ static func bump(p: Vector2, c: Vector2, r: Vector2) -> float:
 
 # --- body ----------------------------------------------------------------------------------------------------
 
-## [soft mesh, metal mesh] of the whole body (helmet, hands and props excluded), skinned to the NB bones.
+## [soft mesh, metal mesh] of the whole body (head, hair, hands and props excluded), skinned to the NB bones.
 static func body_meshes() -> Array:
 	if not _cache.has("body"):
-		_cache["body"] = _build_body()
+		# (LOOK2: [soft, metal, the kilt])
+		_cache["body"] = _build_body() + [_build_kilt()]
 	return _cache["body"]
+
+
+## LOOK2: the linen (the hips' dark under-layer, so nothing shows under the kilt, and the cream kilt to mid-thigh with its soft
+## vertical folds and darker inner face, skinned to the skirt bones by angle): its own mesh, drawn with _mat_kilt (the cream
+## stays warm in the shade).
+static func _build_kilt() -> ArrayMesh:
+	var sm := SkinMesh.new(37)
+	var soft := sm.soft
+	soft.vary = 0.0
+	hloft(soft, [[0.80, 0.11, 0.09, 0.10, 0.01], [0.86, 0.17, 0.12, 0.14, 0.01], [0.93, 0.172, 0.135, 0.145, 0.0], [0.985, 0.165, 0.135, 0.14, 0.0]], 18, LINEN_DARK, 2.5, Callable(), false, true)
+	sm.rigid(PELVIS)
+	hloft(soft, KILT_PROF, 32, _kilt_col, 2.2, _kilt_fold)
+	# inner face of the kilt (darker), so the inside reads when the hem lifts
+	var inner := []
+	for e in KILT_PROF:
+		inner.append([e[0], e[1] - 0.008, e[2] - 0.008, e[3] - 0.008, 0.0])
+	inner.reverse()
+	hloft(soft, inner, 32, LINEN_DARK, 2.2, _kilt_fold)
+	sm.bind(func(p: Vector3) -> PackedFloat32Array: return _skirt_w(p))
+	return sm.commit()[0]
 
 
 static func _w2(b0: int, b1: int, k: float) -> PackedFloat32Array:
@@ -461,122 +516,47 @@ static func _build_body() -> Array:
 	var metal := sm.metal
 	soft.vary = 0.0
 	metal.vary = 0.0
-	# --- cuirass (bronze), chest + spine ---
-	var prof := [
-		[0.995, 0.184, 0.15, 0.148, 0.0],
-		[1.02, 0.188, 0.155, 0.152, 0.0],
-		[1.045, 0.171, 0.145, 0.14, 0.0],
-		[1.09, 0.156, 0.135, 0.126, 0.002],
-		[1.15, 0.163, 0.138, 0.126, 0.0],
-		[1.21, 0.182, 0.147, 0.133, 0.0],
-		[1.27, 0.205, 0.159, 0.143, -0.002],
-		[1.33, 0.224, 0.171, 0.153, -0.004],
-		[1.39, 0.233, 0.176, 0.159, -0.004],
-		[1.44, 0.228, 0.166, 0.161, 0.0],
-		[1.48, 0.207, 0.138, 0.153, 0.008],
-		[1.51, 0.168, 0.106, 0.133, 0.012],
-		[1.535, 0.122, 0.086, 0.102, 0.015],
-		[1.548, 0.1, 0.078, 0.088, 0.016],
-	]
-	var sculpt := func(p: Vector3) -> Vector3:
-		var o := Vector3.ZERO
-		if p.z < 0.0:
-			var q := Vector2(absf(p.x), p.y)
-			# pectorals with a crisp lower edge
-			var pec := bump(q, Vector2(0.088, 1.405), Vector2(0.11, 0.09))
-			pec *= smoothstep(1.305, 1.345, p.y)
-			# abdominals: 2 x 3 pads either side of the linea alba
-			var ab := 0.0
-			for yy in [1.13, 1.19, 1.25]:
-				ab += bump(q, Vector2(0.05, yy), Vector2(0.042, 0.032))
-			var groove := 1.0 - smoothstep(0.0, 0.016, absf(p.x))
-			o.z -= pec * 0.032 + ab * 0.014 - groove * 0.008 * smoothstep(1.1, 1.18, p.y) * (1.0 - smoothstep(1.36, 1.44, p.y))
-		else:
-			# shoulder blades and the spine groove
-			var q2 := Vector2(absf(p.x), p.y)
-			o.z += bump(q2, Vector2(0.1, 1.38), Vector2(0.09, 0.1)) * 0.014
-			o.z -= (1.0 - smoothstep(0.0, 0.02, absf(p.x))) * 0.008 * smoothstep(1.1, 1.2, p.y)
-		return o
-	var cuirass_col := func(p: Vector3, k: int, _i: int) -> Color:
-		if k <= 1:
-			return BRONZE_DARK
-		if k == 2:
-			return BRONZE_LIGHT
-		return BRONZE
-	hloft(metal, prof, 28, cuirass_col, 2.5, sculpt)
-	# underside of the flared rim (so the hem reads from below)
-	hloft(metal, [[0.995, 0.188, 0.152, 0.150, 0.0], [1.02, 0.165, 0.13, 0.13, 0.0]], 28, BRONZE_DARK, 2.5)
+	# --- LOOK: the bare torso (skin): a narrow waist in the belt, the V up to broad lats and chest, the pectorals, a hint
+	# of abdominals and obliques, the shoulder blades, the trapezius sloping into the neck ---
+	var trings: Array = []
+	for e in TORSO_PROF:
+		var ring: Array[Vector3] = []
+		for i in TORSO_SIDES:
+			ring.append(_torso_pt(TAU * float(i) / float(TORSO_SIDES), e))
+		trings.append(ring)
+	_stitch(soft, trings, _torso_col, false, true)
 	sm.bind(func(p: Vector3) -> PackedFloat32Array:
-		if p.y > 1.5:
-			return PackedFloat32Array([float(CHEST), 1.0])
-		return _w2(SPINE, CHEST, smoothstep(1.17, 1.28, p.y)))
-	# neck (skin), from inside the cuirass collar into the helmet
-	soft.push(Transform3D.IDENTITY)
-	loft(soft, [[Vector3(0, 1.49, 0.02), 0.078, 0.08], [Vector3(0, 1.56, 0.018), 0.074, 0.076], [Vector3(0, 1.64, 0.01), 0.068, 0.07], [Vector3(0, 1.70, 0.0), 0.06, 0.06]], 12, SKIN, FWD, false, true)
-	soft.pop()
+		if p.y < 1.06:
+			return _w2(PELVIS, SPINE, smoothstep(0.98, 1.04, p.y))
+		var w := _w2(SPINE, CHEST, smoothstep(1.17, 1.28, p.y))
+		# the top of the shoulders rises with the clavicle (a shrug), the trapezius with it
+		var wc := smoothstep(0.12, 0.2, absf(p.x)) * smoothstep(1.42, 1.48, p.y) * 0.7
+		if wc > 0.001:
+			var cl := CLAV_R if p.x > 0.0 else CLAV_L
+			return PackedFloat32Array([float(CHEST), 1.0 - wc, float(cl), wc])
+		return w)
+	# neck (skin): thick, from inside the trapezius into the head
+	loft(soft, [[Vector3(0, 1.47, 0.022), 0.086, 0.085], [Vector3(0, 1.545, 0.02), 0.081, 0.079], [Vector3(0, 1.615, 0.013), 0.074, 0.072], [Vector3(0, 1.69, 0.006), 0.064, 0.064]], 16, SKIN, FWD, false, true)
 	sm.bind(func(p: Vector3) -> PackedFloat32Array:
 		if p.y < 1.56:
 			return _w2(CHEST, NECK, smoothstep(1.5, 1.56, p.y))
 		return _w2(NECK, HEAD, smoothstep(1.6, 1.68, p.y)))
-	# belt (leather) under the cuirass flare
-	hloft(soft, [[0.955, 0.176, 0.146, 0.146, 0.0], [1.005, 0.181, 0.150, 0.150, 0.0], [1.04, 0.172, 0.140, 0.138, 0.0]], 24, LEATHER_DARK, 2.5)
+	# --- belt: wide dark-brown leather with rolled edges, a square plate buckle at the front ---
+	var belt := [[0.938, 0.167, 0.138, 0.141, 0.0], [0.945, 0.176, 0.147, 0.150, 0.0], [0.955, 0.18, 0.151, 0.154, 0.0],
+		[1.047, 0.181, 0.152, 0.155, 0.0], [1.057, 0.177, 0.148, 0.151, 0.0], [1.064, 0.166, 0.137, 0.14, 0.0], [1.068, 0.152, 0.123, 0.125, 0.0]]
+	var belt_col := func(_p: Vector3, k: int, _i: int) -> Color:
+		return LEATHER_DARK if k != 2 else LEATHER
+	hloft(soft, belt, 28, belt_col, 2.5)
+	# the buckle: a dark bronze plate with a raised square in it
+	metal.push(Transform3D(Basis.IDENTITY, Vector3(0.0, 1.001, -0.155)))
+	metal.box(Vector3(0, 0, 0.0), Vector3(0.092, 0.082, 0.012), BRONZE_DARK)
+	metal.box(Vector3(0, 0, -0.006), Vector3(0.064, 0.054, 0.008), BRONZE, BRONZE_LIGHT)
+	metal.box(Vector3(0, 0, -0.0105), Vector3(0.034, 0.026, 0.004), BRONZE_DARK)
+	metal.pop()
 	sm.bind(func(p: Vector3) -> PackedFloat32Array: return _w2(PELVIS, SPINE, smoothstep(0.98, 1.04, p.y)))
-	# hips / chiton under-layer (red) so nothing shows under the skirt
-	hloft(soft, [[0.80, 0.11, 0.09, 0.10, 0.01], [0.86, 0.17, 0.12, 0.14, 0.01], [0.93, 0.182, 0.14, 0.15, 0.0], [0.98, 0.18, 0.145, 0.15, 0.0]], 18, RED_DARK, 2.5, Callable(), false, true)
-	sm.rigid(PELVIS)
-	# chiton skirt (red, pleated), skinned to the skirt bones by angle
-	var skirt_prof := []
-	var ys := [1.02, 0.97, 0.91, 0.85, 0.79, 0.745, 0.732]
-	var rs := [0.18, 0.196, 0.211, 0.226, 0.241, 0.25, 0.248]
-	for k in ys.size():
-		skirt_prof.append([ys[k], rs[k] * 1.04, rs[k] * 0.96, rs[k] * 0.98, 0.0])
-	var pleat := func(p: Vector3) -> Vector3:
-		var a := atan2(p.x, -p.z)
-		var depth := smoothstep(0.98, 0.72, p.y)
-		var r := cos(a * 14.0) * 0.011 * depth
-		var d := Vector3(p.x, 0, p.z).normalized()
-		return d * r
-	var skirt_col := func(p: Vector3, k: int, _i: int) -> Color:
-		if k >= ys.size() - 2:
-			return RED_DARK
-		return RED
-	hloft(soft, skirt_prof, 28, skirt_col, 2.2, pleat)
-	# inner face of the skirt (darker), so the inside reads when the hem lifts
-	var inner := []
-	for e in skirt_prof:
-		inner.append([e[0], e[1] - 0.01, e[2] - 0.01, e[3] - 0.01, 0.0])
-	inner.reverse()
-	hloft(soft, inner, 28, RED_DARK.darkened(0.25), 2.2, pleat)
-	sm.bind(func(p: Vector3) -> PackedFloat32Array: return _skirt_w(p))
-	# pteruges: leather strips over the skirt, bronze studs
-	var nstrip := 14
-	for i in nstrip:
-		var a := TAU * (float(i) + 0.5) / float(nstrip)
-		var d := Vector3(sin(a), 0.0, -cos(a))
-		var t := Vector3(cos(a), 0.0, sin(a))
-		var top := 1.035
-		var bot := 0.79 if i % 2 == 0 else 0.805
-		var r_top := 0.188
-		var r_bot := 0.24
-		var w := 0.043
-		var th := 0.014
-		var p0 := Vector3(0, top, 0) + d * (r_top + 0.012)
-		var p1 := Vector3(0, bot, 0) + d * (r_bot + 0.02)
-		var nrm := (d * (top - bot) + Vector3.UP * (r_bot - r_top)).normalized()
-		var colr := LEATHER if i % 2 == 0 else LEATHER_LIGHT
-		# a slab: front face, back face, sides, rounded bottom
-		var fa := [p0 - t * w + nrm * th, p0 + t * w + nrm * th, p1 + t * (w * 0.95) + nrm * th, p1 - t * (w * 0.95) + nrm * th]
-		var ba := [p0 - t * w, p0 + t * w, p1 + t * (w * 0.95), p1 - t * (w * 0.95)]
-		var tip := p1 + (p1 - p0).normalized() * 0.03
-		soft.quad(fa[0], fa[3], fa[2], fa[1], colr)
-		soft.quad(ba[0], ba[1], ba[2], ba[3], colr.darkened(0.3))
-		soft.quad(ba[0], ba[3], fa[3], fa[0], colr.darkened(0.12))
-		soft.quad(ba[1], fa[1], fa[2], ba[2], colr.darkened(0.12))
-		soft.tri(fa[3], tip + nrm * th, fa[2], colr)
-		soft.tri(ba[3], ba[2], tip, colr.darkened(0.3))
-		soft.quad(fa[3], ba[3], tip, tip + nrm * th, colr.darkened(0.12))
-		soft.quad(ba[2], fa[2], tip + nrm * th, tip, colr.darkened(0.12))
-		metal.ico(p1 + nrm * (th + 0.004) - (p1 - p0).normalized() * 0.015, 0.012, BRONZE_LIGHT, 0)
+	# (LOOK2: the hips' under-layer and the kilt are their own mesh, _build_kilt: the linen has its own material)
+	# the red front panel hanging from the belt over the kilt (his left of centre), on the front skirt bones
+	_flap(soft)
 	sm.bind(func(p: Vector3) -> PackedFloat32Array: return _skirt_w(p))
 	# --- arms ---
 	for side in 2:
@@ -588,55 +568,51 @@ static func _build_body() -> Array:
 		var dua := (el - sh).normalized()
 		var dfa := (wr - el).normalized()
 		var lat := Vector3(s, 0, 0)
-		# stations along the arm: arc length from the shoulder joint, radii (side, front)
-		var st := [[-0.055, 0.05, 0.05], [-0.025, 0.083, 0.086], [0.02, 0.094, 0.09], [0.07, 0.09, 0.086],
-			[0.12, 0.083, 0.082], [0.18, 0.076, 0.08], [0.24, 0.068, 0.073], [0.285, 0.062, 0.064],
-			[0.315, 0.062, 0.062], [0.35, 0.071, 0.067], [0.395, 0.074, 0.065], [0.45, 0.066, 0.057],
-			[0.51, 0.056, 0.048], [0.555, 0.049, 0.043], [0.575, 0.046, 0.04]]
 		var rings := []
-		for e in st:
+		for e in ARM_ST:
 			var sd: float = e[0]
 			var c: Vector3
 			if sd <= LEN_UA:
 				c = sh + dua * sd
 			else:
 				c = el + dfa * (sd - LEN_UA)
-			# deltoid sits outwards, biceps forwards
-			c += lat * 0.012 * bump(Vector2(sd, 0), Vector2(0.02, 0), Vector2(0.1, 1))
-			c += FWD * 0.008 * bump(Vector2(sd, 0), Vector2(0.15, 0), Vector2(0.09, 1))
+			# the deltoid sits outwards and a little forwards
+			c += lat * 0.016 * bump(Vector2(sd, 0), Vector2(0.03, 0), Vector2(0.11, 1))
+			c += FWD * 0.006 * bump(Vector2(sd, 0), Vector2(0.02, 0), Vector2(0.08, 1))
 			rings.append([c, e[1], e[2]])
-		loft(soft, rings, 12, SKIN, FWD, true, true)
+		var musc := func(k: int, a: float) -> Vector2:
+			var sd: float = ARM_ST[k][0]
+			var fr := maxf(0.0, sin(a))
+			var bk := maxf(0.0, -sin(a))
+			var lt := maxf(0.0, cos(a) * s)
+			var m := bump(Vector2(sd, 0), Vector2(0.2, 0), Vector2(0.085, 1)) * fr * fr * 0.016 # biceps
+			m += bump(Vector2(sd, 0), Vector2(0.15, 0), Vector2(0.1, 1)) * bk * bk * 0.012 # triceps
+			m += bump(Vector2(sd, 0), Vector2(0.36, 0), Vector2(0.06, 1)) * pow(lt, 1.5) * 0.0105 # forearm extensors
+			return Vector2(cos(a), sin(a)) * m
+		loft(soft, rings, 14, SKIN, FWD, true, true, musc)
 		var cl := CLAV_R + o
 		var ua := UARM_R + o
 		var fa := FARM_R + o
+		var pa := PAUL_R + side
 		sm.bind(func(p: Vector3) -> PackedFloat32Array:
 			var e := (p - el).dot((dua + dfa).normalized())
 			if e > -0.07:
 				return _w2(ua, fa, smoothstep(-0.05, 0.05, e))
+			# the deltoid on the PAUL bone (half way between the clavicle and the upper arm): the shoulder keeps its volume
 			var top := (p - sh).dot(dua)
-			return _w2(cl, ua, smoothstep(-0.05, 0.035, top)))
-		# bracer (leather) with bronze rims
-		var b0 := el + dfa * 0.10
-		var b1 := el + dfa * 0.268
-		loft(soft, [[b0, 0.079, 0.072], [el + dfa * 0.14, 0.078, 0.07], [el + dfa * 0.2, 0.07, 0.062], [b1 - dfa * 0.01, 0.061, 0.054], [b1, 0.062, 0.055]], 12, LEATHER, FWD, false, false)
-		loft(soft, [[b1, 0.062, 0.055], [b1 - dfa * 0.01, 0.052, 0.045]], 12, LEATHER_DARK, FWD, false, false)
-		loft(soft, [[b0 - dfa * 0.004, 0.068, 0.062], [b0, 0.079, 0.072]], 12, LEATHER_DARK, FWD, false, false)
-		loft(metal, [[b0 - dfa * 0.006, 0.082, 0.075], [b0 + dfa * 0.016, 0.083, 0.076]], 12, BRONZE, FWD, false, false)
-		loft(metal, [[b1 - dfa * 0.02, 0.066, 0.059], [b1 - dfa * 0.004, 0.066, 0.059]], 12, BRONZE, FWD, false, false)
-		# lacing on the inner forearm
-		for k in 3:
-			var lp := el + dfa * (0.15 + 0.035 * float(k))
-			soft.box(lp - lat * 0.067, Vector3(0.012, 0.012, 0.03), LEATHER_DARK)
+			var w_ua := smoothstep(0.03, 0.13, top)
+			var w_cl := 1.0 - smoothstep(-0.075, -0.015, top)
+			return PackedFloat32Array([float(cl), w_cl, float(pa), maxf(0.0, 1.0 - w_ua - w_cl), float(ua), w_ua]))
+		# bracer: brown leather from two thirds up the forearm to the wrist, a lighter strap round its upper edge
+		var brc := []
+		for e in BRACER_ST:
+			brc.append([el + dfa * float(e[0]), e[1], e[2]])
+		var brc_col := func(_p: Vector3, k: int, _i: int) -> Color:
+			return LEATHER_DARK if k == 0 or k == BRACER_ST.size() - 2 else LEATHER
+		loft(soft, brc, 14, brc_col, FWD, false, false)
+		# the edge strap (lighter leather)
+		loft(soft, [[el + dfa * 0.088, 0.098, 0.088], [el + dfa * 0.096, 0.105, 0.095], [el + dfa * 0.118, 0.104, 0.094], [el + dfa * 0.126, 0.097, 0.087]], 14, LEATHER_LIGHT, FWD, false, false)
 		sm.rigid(fa)
-		# pauldron (bronze), on its own bone between the clavicle and the upper arm
-		var pc := sh + Vector3(0.012 * s, 0.03, 0.0)
-		metal.push(Transform3D(Basis(Vector3.BACK, -0.32 * s), pc))
-		var pp := []
-		for e2 in [[0.075, 0.0, 0.0], [0.07, 0.03, 0.0], [0.055, 0.06, 0.0], [0.03, 0.08, 0.0]]:
-			pp.append(e2)
-		_pauldron(metal)
-		metal.pop()
-		sm.rigid(PAUL_R + side)
 	# --- legs ---
 	for side in 2:
 		var s := 1.0 if side == 0 else -1.0
@@ -647,61 +623,308 @@ static func _build_body() -> Array:
 		var dth := (kn - hp).normalized()
 		var dsh := (an - kn).normalized()
 		var lat := Vector3(s, 0, 0)
-		var st := [[-0.08, 0.05, 0.05], [-0.04, 0.094, 0.098], [0.02, 0.106, 0.108], [0.1, 0.104, 0.104],
-			[0.18, 0.097, 0.097], [0.26, 0.089, 0.088], [0.34, 0.078, 0.078], [0.4, 0.069, 0.07],
-			[0.43, 0.066, 0.068], [0.47, 0.066, 0.07], [0.53, 0.067, 0.077], [0.6, 0.066, 0.08],
-			[0.68, 0.06, 0.068], [0.76, 0.05, 0.053], [0.815, 0.045, 0.047], [0.84, 0.043, 0.044]]
-		var rings := []
-		for e in st:
-			var sd: float = e[0]
+		var leg_c := func(sd: float) -> Vector3:
 			var c: Vector3
 			if sd <= LEN_TH:
 				c = hp + dth * sd
 			else:
 				c = kn + dsh * (sd - LEN_TH)
 			c += lat * 0.01 * bump(Vector2(sd, 0), Vector2(0.06, 0), Vector2(0.14, 1))
-			c -= FWD * 0.012 * bump(Vector2(sd, 0), Vector2(0.6, 0), Vector2(0.12, 1))
-			rings.append([c, e[1], e[2]])
-		loft(soft, rings, 12, SKIN, FWD, true, false)
+			c -= FWD * 0.01 * bump(Vector2(sd, 0), Vector2(0.6, 0), Vector2(0.12, 1))
+			return c
+		var rings := []
+		for e in LEG_ST:
+			rings.append([leg_c.call(float(e[0])), e[1], e[2]])
+		var musc := func(k: int, a: float) -> Vector2:
+			return Vector2(cos(a), sin(a)) * _leg_bulge(float(LEG_ST[k][0]), a, s)
+		loft(soft, rings, 14, SKIN, FWD, true, false, musc)
 		var th := THIGH_R + o
 		var shb := SHIN_R + o
 		var ft := FOOT_R + o
-		sm.bind(func(p: Vector3) -> PackedFloat32Array:
+		var leg_w := func(p: Vector3) -> PackedFloat32Array:
 			var e := (p - kn).dot((dth + dsh).normalized())
 			if e > 0.25:
 				return _w2(shb, ft, smoothstep(0.37, 0.41, (p - kn).dot(dsh)))
 			if e > -0.08:
 				return _w2(th, shb, smoothstep(-0.05, 0.05, e))
 			var top := (p - hp).dot(dth)
-			return _w2(PELVIS, th, smoothstep(-0.06, 0.06, top)))
-		# greave (bronze shell) with a knee cap
-		var gst := [[0.418, 0.06, 0.066], [0.44, 0.077, 0.082], [0.49, 0.079, 0.087], [0.55, 0.08, 0.091],
-			[0.62, 0.078, 0.092], [0.69, 0.07, 0.08], [0.75, 0.06, 0.064], [0.782, 0.056, 0.058], [0.797, 0.047, 0.048]]
-		var grings := []
-		for e in gst:
-			var sd: float = e[0]
-			var c := kn + dsh * (sd - LEN_TH)
-			c -= FWD * 0.012 * bump(Vector2(sd, 0), Vector2(0.6, 0), Vector2(0.12, 1))
-			grings.append([c, e[1], e[2]])
-		var gshape := func(_k: int, a: float) -> Vector2:
-			# a ridge down the shin (front = +z of the ring frame = forward)
-			var f := maxf(0.0, sin(a))
-			return Vector2(0.0, pow(f, 6.0) * 0.012)
-		loft(metal, grings, 18, func(_p: Vector3, k: int, _i: int) -> Color: return BRONZE_LIGHT if k == 0 or k == 7 else BRONZE, FWD, false, false, gshape)
-		metal.ico(kn + dsh * 0.02 + FWD * 0.072, 0.05, BRONZE_LIGHT, 1, 0.0, Vector3(1.0, 1.05, 0.5))
-		sm.rigid(shb)
+			return _w2(PELVIS, th, smoothstep(-0.06, 0.06, top))
+		sm.bind(leg_w)
+		# leather wraps from below the knee to the ankle: a cuff, then bands that overlap downwards
+		var wr_rings := []
+		var wr_cols: Array[Color] = []
+		var bands := WRAP_BANDS
+		var sd0 := WRAP_TOP
+		for b in bands + 1:
+			var sd := sd0 + (WRAP_BOT - sd0) * float(b) / float(bands)
+			var r := _leg_r(sd)
+			if b > 0:
+				# the lower lip of the band above, then the step in to the next band
+				wr_rings.append([leg_c.call(sd - 0.004), r.x + 0.019, r.y + 0.019])
+				wr_cols.append(LEATHER if b > 1 else LEATHER_LIGHT)
+			wr_rings.append([leg_c.call(sd), r.x + 0.012, r.y + 0.012])
+			wr_cols.append(LEATHER_DARK)
+		var wcol := func(_p: Vector3, k: int, _i: int) -> Color:
+			return wr_cols[clampi(k + 1, 0, wr_cols.size() - 1)]
+		var wmusc := func(k: int, a: float) -> Vector2:
+			var sd: float = sd0
+			# (the ring's own station: its centre's distance down the leg)
+			var cen: Vector3 = wr_rings[k][0]
+			sd = LEN_TH + (cen - kn).dot(dsh)
+			return Vector2(cos(a), sin(a)) * _leg_bulge(sd, a, s)
+		loft(soft, wr_rings, 14, wcol, FWD, false, false, wmusc)
+		sm.bind(leg_w)
 		# foot (skin) and sandal (leather)
 		_foot(soft, an, s)
 		sm.bind(func(p: Vector3) -> PackedFloat32Array:
 			if p.y > an.y + 0.02:
 				return _w2(shb, ft, smoothstep(an.y + 0.06, an.y + 0.02, p.y))
 			return PackedFloat32Array([float(ft), 1.0]))
-	# --- chest details (metal): the cuirass collar rim ---
-	metal.push(Transform3D.IDENTITY)
-	hloft(metal, [[1.538, 0.12, 0.088, 0.1, 0.015], [1.552, 0.112, 0.082, 0.094, 0.016], [1.556, 0.098, 0.074, 0.086, 0.016]], 20, BRONZE_LIGHT, 2.5)
-	metal.pop()
-	sm.rigid(CHEST)
 	return sm.commit()
+
+
+## LOOK: torso rings [y, rx, r_front, r_back, cz, squareness] (rest rig space, bottom to top).
+const TORSO_PROF := [
+	[0.975, 0.148, 0.118, 0.122, 0.0, 2.4],
+	[1.03, 0.150, 0.12, 0.122, 0.0, 2.4],
+	[1.09, 0.155, 0.124, 0.121, 0.002, 2.4],
+	[1.15, 0.165, 0.13, 0.122, 0.002, 2.45],
+	[1.21, 0.188, 0.14, 0.128, 0.0, 2.5],
+	[1.27, 0.212, 0.151, 0.137, -0.002, 2.55],
+	[1.325, 0.233, 0.161, 0.147, -0.004, 2.6],
+	[1.375, 0.243, 0.165, 0.154, -0.004, 2.6],
+	[1.42, 0.243, 0.158, 0.158, -0.002, 2.6],
+	[1.46, 0.229, 0.142, 0.154, 0.004, 2.5],
+	[1.495, 0.195, 0.117, 0.141, 0.01, 2.4],
+	[1.52, 0.155, 0.098, 0.121, 0.014, 2.3],
+	[1.54, 0.114, 0.086, 0.099, 0.016, 2.2],
+	[1.556, 0.088, 0.08, 0.087, 0.016, 2.1],
+]
+const TORSO_SIDES := 32
+
+
+## A point of the torso at angle a (0 front, PI/2 his right) on profile ring e, with the muscles sculpted in.
+static func _torso_pt(a: float, e: Array) -> Vector3:
+	var sa := sin(a)
+	var ca := cos(a)
+	var ex := 2.0 / float(e[5])
+	var p := Vector3(signf(sa) * pow(absf(sa), ex) * float(e[1]), float(e[0]), -signf(ca) * pow(absf(ca), ex) * (float(e[2]) if ca > 0.0 else float(e[3])) + float(e[4]))
+	return p + _torso_push(p)
+
+
+static func _torso_push(p: Vector3) -> Vector3:
+	var o := Vector3.ZERO
+	var ax := absf(p.x)
+	var q := Vector2(ax, p.y)
+	if p.z < 0.0:
+		var front := smoothstep(0.0, -0.07, p.z)
+		# pectorals: two broad pads with a firm lower edge, the sternum's groove between them
+		var pec := bump(q, Vector2(0.094, 1.398), Vector2(0.108, 0.088)) * smoothstep(1.312, 1.35, p.y)
+		var groove := (1.0 - smoothstep(0.0, 0.022, ax)) * smoothstep(1.3, 1.36, p.y) * (1.0 - smoothstep(1.43, 1.47, p.y))
+		# abdominals (a hint: three soft pads either side) and the line between them
+		var ab := 0.0
+		for yy in [1.115, 1.178, 1.243]:
+			ab += bump(q, Vector2(0.046, yy), Vector2(0.042, 0.032))
+		var alba := (1.0 - smoothstep(0.0, 0.013, ax)) * smoothstep(1.07, 1.12, p.y) * (1.0 - smoothstep(1.28, 1.32, p.y))
+		o.z -= (pec * 0.03 + ab * 0.0075 - groove * 0.006 - alba * 0.004) * front
+	else:
+		# shoulder blades and the spine's groove
+		o.z += bump(q, Vector2(0.095, 1.385), Vector2(0.08, 0.1)) * 0.012
+		o.z -= (1.0 - smoothstep(0.0, 0.018, ax)) * 0.008 * smoothstep(1.08, 1.18, p.y) * (1.0 - smoothstep(1.47, 1.52, p.y))
+	# obliques swelling over the belt
+	o.x += signf(p.x) * bump(q, Vector2(0.15, 1.085), Vector2(0.04, 0.055)) * 0.007
+	return o
+
+
+## Gentle shading of the torso's planes: the creases under the pectorals and between the abdominals a touch darker, the
+## tops of the shoulders and the upper chest a touch lighter (no painted lines: a few percent either way).
+static func _torso_col(p: Vector3, _k: int, _i: int) -> Color:
+	var ax := absf(p.x)
+	var q := Vector2(ax, p.y)
+	var c := SKIN
+	if p.z < -0.04:
+		var under := bump(q, Vector2(0.09, 1.322), Vector2(0.1, 0.026))
+		var mid := (1.0 - smoothstep(0.006, 0.02, ax)) * smoothstep(1.08, 1.14, p.y) * (1.0 - smoothstep(1.3, 1.34, p.y))
+		c = c.lerp(SKIN_SHADE, clampf(under * 1.3 + mid * 0.6, 0.0, 0.85))
+		c = c.lerp(SKIN_LIGHT, bump(q, Vector2(0.1, 1.43), Vector2(0.09, 0.05)) * 0.6)
+	if p.y > 1.47:
+		c = c.lerp(SKIN_LIGHT, smoothstep(1.47, 1.52, p.y) * 0.5)
+	return c
+
+
+## Quads between consecutive rings (each ring the same count of points, ordered round from the front towards +x):
+## rings bottom to top give outward faces; `closed_top` fans the last ring shut.
+static func _stitch(mb: MeshBuilder, rings: Array, col: Variant, closed_bot: bool = false, closed_top: bool = false) -> void:
+	var n: int = (rings[0] as Array).size()
+	for k in rings.size() - 1:
+		var r0: Array = rings[k]
+		var r1: Array = rings[k + 1]
+		for i in n:
+			var j := (i + 1) % n
+			var a: Vector3 = r0[i]
+			var b: Vector3 = r1[i]
+			var c: Vector3 = r1[j]
+			var d: Vector3 = r0[j]
+			var fc: Color = col.call((a + b + c + d) * 0.25, k, i) if col is Callable else col
+			mb.quad(a, b, c, d, fc)
+	if closed_top:
+		var last: Array = rings[rings.size() - 1]
+		var cen := Vector3.ZERO
+		for p in last:
+			cen += p
+		cen /= float(n)
+		for i in n:
+			var fc: Color = col.call(cen, rings.size(), i) if col is Callable else col
+			mb.tri(cen, last[(i + 1) % n], last[i], fc)
+	if closed_bot:
+		var first: Array = rings[0]
+		var cb := Vector3.ZERO
+		for p in first:
+			cb += p
+		cb /= float(n)
+		for i in n:
+			var fc: Color = col.call(cb, -1, i) if col is Callable else col
+			mb.tri(cb, first[i], first[(i + 1) % n], fc)
+
+
+## LOOK: the kilt's rings [y, rx, r_front, r_back, cz]: tucked under the belt, flaring to a hem at mid-thigh.
+const KILT_PROF := [
+	[1.0, 0.163, 0.136, 0.14, 0.0],
+	[0.955, 0.172, 0.144, 0.147, 0.0],
+	[0.91, 0.19, 0.165, 0.169, 0.0],
+	[0.85, 0.21, 0.19, 0.194, 0.0],
+	[0.79, 0.227, 0.211, 0.214, 0.0],
+	[0.752, 0.237, 0.222, 0.224, 0.0],
+	[0.737, 0.235, 0.22, 0.222, 0.0],
+]
+
+
+## Soft vertical folds of the linen, deeper towards the hem (two waves, so they do not read as pleats).
+static func _kilt_fold(p: Vector3) -> Vector3:
+	var a := atan2(p.x, -p.z)
+	var depth := smoothstep(0.985, 0.76, p.y)
+	var r := (cos(a * 7.0 + 0.5) * 0.65 + cos(a * 12.0 + 2.1) * 0.35) * 0.0105 * depth
+	return Vector3(p.x, 0, p.z).normalized() * r
+
+
+static func _kilt_col(p: Vector3, k: int, _i: int) -> Color:
+	if k >= KILT_PROF.size() - 2:
+		return LINEN_SHADE
+	var a := atan2(p.x, -p.z)
+	# the folds' troughs a shade darker
+	var f := cos(a * 7.0 + 0.5) * 0.65 + cos(a * 12.0 + 2.1) * 0.35
+	return LINEN.lerp(LINEN_SHADE, clampf(-f, 0.0, 1.0) * smoothstep(0.96, 0.82, p.y) * 0.8)
+
+
+## The kilt's front panel: a red cloth slab hanging from under the belt, over the kilt to below its hem, a little to his
+## left of the centre (rest rig space; skinned like the kilt by its angle).
+const FLAP_A := -0.36
+static func _flap(mb: MeshBuilder) -> void:
+	var hw := 0.25 # half-width (rad)
+	var ys := [0.975, 0.95, 0.91, 0.85, 0.79, 0.745, 0.705, 0.685]
+	var nu := 5
+	var front: Array = []
+	var back: Array = []
+	for y: float in ys:
+		var rowf: Array[Vector3] = []
+		var rowb: Array[Vector3] = []
+		for iu in nu:
+			var a := FLAP_A + lerpf(-hw, hw, float(iu) / float(nu - 1))
+			var yy := clampf(y, KILT_PROF[KILT_PROF.size() - 1][0], 1.0)
+			var r := _kilt_r(a, yy)
+			# below the hem it keeps falling along the kilt's flare
+			var below := maxf(0.0, float(KILT_PROF[KILT_PROF.size() - 1][0]) - y)
+			var d := Vector3(sin(a), 0.0, -cos(a))
+			var base := Vector3(0.0, y, 0.0) + d * (r + below * 0.22)
+			# a slight sag in the middle of the cloth
+			var sag := sin(float(iu) / float(nu - 1) * PI) * 0.004 * smoothstep(0.95, 0.8, y)
+			rowf.append(base + d * (0.0135 + sag))
+			rowb.append(base + d * (0.0045 + sag))
+		front.append(rowf)
+		back.append(rowb)
+	var n := ys.size()
+	for k in n - 1:
+		for iu in nu - 1:
+			var col := CAPE if k < n - 2 else CAPE_DARK
+			# front faces outwards (rows go down, columns towards +a)
+			mb.quad(front[k][iu], front[k][iu + 1], front[k + 1][iu + 1], front[k + 1][iu], col)
+			mb.quad(back[k][iu], back[k + 1][iu], back[k + 1][iu + 1], back[k][iu + 1], CAPE_DARK)
+		# the side edges
+		var cin: Vector3 = (front[k][nu / 2] + back[k + 1][nu / 2]) * 0.5
+		_quad_out(mb, front[k][0], front[k + 1][0], back[k + 1][0], back[k][0], cin, CAPE_DARK)
+		_quad_out(mb, front[k][nu - 1], back[k][nu - 1], back[k + 1][nu - 1], front[k + 1][nu - 1], cin, CAPE_DARK)
+	for iu in nu - 1:
+		var cb: Vector3 = (front[n - 2][iu] + back[n - 2][iu + 1]) * 0.5
+		_quad_out(mb, front[n - 1][iu], front[n - 1][iu + 1], back[n - 1][iu + 1], back[n - 1][iu], cb, CAPE_DARK)
+
+
+## The kilt's outer radius (before the folds) at angle a and height y.
+static func _kilt_r(a: float, y: float) -> float:
+	var prof := KILT_PROF
+	var e0: Array = prof[0]
+	var e1: Array = prof[1]
+	var f := 0.0
+	for k in prof.size() - 1:
+		var y0: float = prof[k][0]
+		var y1: float = prof[k + 1][0]
+		if y <= y0 and y >= y1:
+			e0 = prof[k]
+			e1 = prof[k + 1]
+			f = (y - y0) / (y1 - y0)
+	var rx := lerpf(e0[1], e1[1], f)
+	var rf := lerpf(e0[2], e1[2], f)
+	var rb := lerpf(e0[3], e1[3], f)
+	var sa := sin(a)
+	var ca := cos(a)
+	var ex := 2.0 / 2.2
+	var p := Vector2(signf(sa) * pow(absf(sa), ex) * rx, signf(ca) * pow(absf(ca), ex) * (rf if ca > 0.0 else rb))
+	return p.length()
+
+
+## LOOK: arm stations [arc length from the shoulder joint, radius out, radius forward]: the deltoid capping the shoulder,
+## the biceps, the elbow, a strong forearm narrowing to the wrist.
+## (LOOK2: the forearms a sixth thicker, the reference's chunky build)
+const ARM_ST := [[-0.064, 0.046, 0.046], [-0.042, 0.084, 0.087], [-0.012, 0.1, 0.099], [0.035, 0.104, 0.099], [0.085, 0.097, 0.093],
+	[0.135, 0.084, 0.088], [0.185, 0.075, 0.087], [0.235, 0.069, 0.08], [0.28, 0.065, 0.07], [0.308, 0.064, 0.067],
+	[0.34, 0.079, 0.076], [0.385, 0.085, 0.076], [0.44, 0.078, 0.067], [0.5, 0.067, 0.056], [0.548, 0.058, 0.049], [0.58, 0.053, 0.046]]
+## The bracer's stations [distance from the elbow along the forearm, radius out, radius forward].
+const BRACER_ST := [[0.084, 0.086, 0.078], [0.09, 0.1, 0.09], [0.15, 0.095, 0.083], [0.21, 0.083, 0.072], [0.258, 0.073, 0.064], [0.266, 0.073, 0.064], [0.272, 0.064, 0.056]]
+## LOOK: leg stations [arc length from the hip joint, radius out, radius forward] and the wraps (below the knee to the ankle).
+## (LOOK2: the calves an eighth thicker)
+const LEG_ST := [[-0.09, 0.05, 0.05], [-0.05, 0.098, 0.1], [0.0, 0.108, 0.11], [0.06, 0.11, 0.112], [0.13, 0.106, 0.107],
+	[0.2, 0.099, 0.099], [0.27, 0.09, 0.09], [0.34, 0.079, 0.079], [0.39, 0.07, 0.071], [0.425, 0.066, 0.068],
+	[0.46, 0.068, 0.07], [0.5, 0.073, 0.078], [0.555, 0.078, 0.086], [0.615, 0.075, 0.083], [0.685, 0.065, 0.068],
+	[0.755, 0.054, 0.056], [0.81, 0.047, 0.049], [0.84, 0.044, 0.045]]
+## LOOK2: the feet and the sandals drawn this much bigger (width, height, length).
+const FOOT_K := Vector3(1.1, 1.05, 1.1)
+const WRAP_TOP := 0.48
+const WRAP_BOT := 0.835
+const WRAP_BANDS := 5
+
+
+## The leg's radii (out, forward) at arc length sd.
+static func _leg_r(sd: float) -> Vector2:
+	for k in LEG_ST.size() - 1:
+		var s0: float = LEG_ST[k][0]
+		var s1: float = LEG_ST[k + 1][0]
+		if sd >= s0 and sd <= s1:
+			var f := (sd - s0) / (s1 - s0)
+			return Vector2(lerpf(LEG_ST[k][1], LEG_ST[k + 1][1], f), lerpf(LEG_ST[k][2], LEG_ST[k + 1][2], f))
+	var e: Array = LEG_ST[LEG_ST.size() - 1]
+	return Vector2(e[1], e[2])
+
+
+## The leg's muscles at arc length sd and ring angle a (side s): the quadriceps in front of the thigh, the kneecap,
+## the calf swelling behind the shin.
+static func _leg_bulge(sd: float, a: float, s: float) -> float:
+	var fr := maxf(0.0, sin(a))
+	var bk := maxf(0.0, -sin(a))
+	var inner := maxf(0.0, -cos(a) * s)
+	var m := bump(Vector2(sd, 0), Vector2(0.21, 0), Vector2(0.15, 1)) * pow(fr, 1.5) * 0.012
+	m += bump(Vector2(sd, 0), Vector2(0.43, 0), Vector2(0.045, 1)) * pow(fr, 4.0) * 0.01
+	m += bump(Vector2(sd, 0), Vector2(0.565, 0), Vector2(0.11, 1)) * pow(bk, 1.3) * 0.022
+	m += bump(Vector2(sd, 0), Vector2(0.56, 0), Vector2(0.09, 1)) * pow(inner, 2.0) * 0.006
+	return m
 
 
 static func _skirt_w(p: Vector3) -> PackedFloat32Array:
@@ -711,17 +934,6 @@ static func _skirt_w(p: Vector3) -> PackedFloat32Array:
 	var f := a - floorf(a)
 	var down := smoothstep(1.04, 0.95, p.y)
 	return PackedFloat32Array([float(PELVIS), 1.0 - down, float(SKIRT0 + i0), down * (1.0 - f), float(SKIRT0 + i1), down * f])
-
-
-static func _pauldron(metal: MeshBuilder) -> void:
-	# a rounded shell over the shoulder (local +Y up, outward +X after the parent's roll), with a rolled rim
-	var prof := [Vector2(0.105, -0.035), Vector2(0.108, -0.01), Vector2(0.1, 0.02), Vector2(0.082, 0.048), Vector2(0.052, 0.068), Vector2(0.0, 0.078)]
-	metal.push(Transform3D(Basis.from_scale(Vector3(1.0, 1.0, 1.12)), Vector3.ZERO))
-	metal.lathe(prof, 16, BRONZE, 0.0, false, true)
-	metal.ring(Vector3(0, -0.045, 0), 0.112, 0.098, 0.016, 16, BRONZE_LIGHT)
-	# second lame below
-	metal.lathe([Vector2(0.118, -0.07), Vector2(0.116, -0.045), Vector2(0.104, -0.03)], 16, BRONZE_DARK, 0.0)
-	metal.pop()
 
 
 ## Rounded sandal sole, `base` = on the ground under the ankle.
@@ -750,6 +962,9 @@ static func _sole(mb: MeshBuilder, base: Vector3) -> void:
 
 static func _foot(soft: MeshBuilder, an: Vector3, s: float) -> void:
 	var g := -an.y # ground, relative to the ankle
+	# (LOOK2: the foot and its sandal bigger, about the ground under the ankle)
+	var pv := an + Vector3(0, g, 0)
+	soft.push(Transform3D(Basis.from_scale(FOOT_K), pv - FOOT_K * pv))
 	var fp := func(z: float, rx: float, ry: float, yc: float) -> Array:
 		return [an + Vector3(0.0, yc, z), rx, ry]
 	# foot body along -Z (rings in XY planes)
@@ -758,182 +973,363 @@ static func _foot(soft: MeshBuilder, an: Vector3, s: float) -> void:
 		fp.call(-0.195, 0.056, 0.022, g + 0.033), fp.call(-0.215, 0.04, 0.016, g + 0.032)]
 	# loft with frames: tangent -Z, z_hint up -> x = t x z
 	loft(soft, rings, 10, SKIN, Vector3.UP, true, true)
-	# ankle column joining the shin
+	# toes: the big toe a little apart from the others (a groove of shade between them)
+	soft.ico(an + Vector3(-0.026 * s, g + 0.036, -0.2), 0.024, SKIN, 0, 0.0, Vector3(0.8, 0.62, 1.0))
+	# ankle column joining the shin (under the wraps)
 	loft(soft, [[an + Vector3(0, 0.03, 0), 0.046, 0.048], [an + Vector3(0, -0.01, 0.0), 0.05, 0.054], [an + Vector3(0, -0.045, 0.01), 0.05, 0.056]], 10, SKIN, FWD, false, false)
 	# sandal sole and straps
 	_sole(soft, an + Vector3(0, g, 0))
 	for z in [-0.14, -0.06]:
-		loft(soft, [[an + Vector3(0, g + 0.042, z - 0.008), 0.066, 0.034], [an + Vector3(0, g + 0.042, z + 0.008), 0.066, 0.034]], 10, LEATHER, Vector3.UP, false, false)
-	loft(soft, [[an + Vector3(0, -0.012, 0.0), 0.054, 0.058], [an + Vector3(0, 0.004, 0.0), 0.053, 0.056]], 10, LEATHER, FWD, false, false)
-	loft(soft, [[an + Vector3(0, 0.035, 0.0), 0.05, 0.052], [an + Vector3(0, 0.05, 0.0), 0.049, 0.051]], 10, LEATHER, FWD, false, false)
-	soft.limb(an + Vector3(0, g + 0.045, -0.1), an + Vector3(0, -0.005, -0.04), 0.012, 0.012, 5, LEATHER)
+		loft(soft, [[an + Vector3(0, g + 0.042, z - 0.009), 0.066, 0.034], [an + Vector3(0, g + 0.042, z + 0.009), 0.066, 0.034]], 10, LEATHER_DARK, Vector3.UP, false, false)
+	loft(soft, [[an + Vector3(0, -0.02, 0.0), 0.055, 0.059], [an + Vector3(0, -0.002, 0.0), 0.054, 0.058]], 10, LEATHER_DARK, FWD, false, false)
+	soft.limb(an + Vector3(0, g + 0.045, -0.1), an + Vector3(0, -0.012, -0.045), 0.012, 0.012, 5, LEATHER_DARK)
+	soft.pop()
 
 
-# --- helmet ------------------------------------------------------------------------------------------------
+# --- head (LOOK: no helmet: the head, a faceless face and short wavy hair) ------------------------------------
 
-## [soft, metal] meshes of the Corinthian helmet, skinned to HEAD (crest to CREST_B).
-static func helmet_meshes() -> Array:
-	if not _cache.has("helmet"):
-		_cache["helmet"] = _build_helmet()
-	return _cache["helmet"]
-
-
-const HELM_PROF := [
-	[0.176, 0.03, 0.032, 0.034, 0.012],
-	[0.166, 0.074, 0.078, 0.082, 0.012],
-	[0.146, 0.11, 0.12, 0.124, 0.012],
-	[0.112, 0.138, 0.154, 0.156, 0.012],
-	[0.068, 0.152, 0.174, 0.168, 0.01],
-	[0.028, 0.156, 0.184, 0.172, 0.008],
-	[-0.012, 0.154, 0.188, 0.174, 0.006],
-	[-0.052, 0.148, 0.184, 0.178, 0.006],
-	[-0.09, 0.136, 0.172, 0.188, 0.008],
-	[-0.124, 0.118, 0.152, 0.2, 0.01],
-	[-0.15, 0.098, 0.13, 0.21, 0.012],
-	[-0.168, 0.086, 0.116, 0.216, 0.012],
+## Centre of the skull at eye level (rest rig space): the head, the face and the hair are built round it.
+const SKULL_C := Vector3(0.0, 1.737, 0.012)
+## The head and the hair are drawn this much bigger, about HEAD_PIV under the skull (stylised, like the reference).
+const HEAD_SCALE := 1.1
+const HEAD_PIV := Vector3(0.0, 1.64, 0.01)
+## The head's rings [y (from SKULL_C), rx, r_front, r_back, cz, squareness], crown to the underside of the chin.
+const HEAD_PROF := [
+	[0.128, 0.032, 0.035, 0.04, 0.004, 2.0],
+	[0.118, 0.057, 0.061, 0.069, 0.005, 2.1],
+	[0.098, 0.077, 0.081, 0.091, 0.006, 2.2],
+	[0.07, 0.087, 0.091, 0.102, 0.006, 2.2],
+	[0.04, 0.091, 0.095, 0.106, 0.005, 2.3],
+	[0.018, 0.091, 0.097, 0.105, 0.004, 2.3],
+	[0.004, 0.09, 0.098, 0.102, 0.003, 2.35],
+	[-0.01, 0.089, 0.098, 0.099, 0.002, 2.4],
+	[-0.024, 0.087, 0.097, 0.096, 0.001, 2.45],
+	[-0.038, 0.086, 0.096, 0.092, -0.001, 2.5],
+	[-0.05, 0.084, 0.095, 0.088, -0.003, 2.5],
+	[-0.062, 0.082, 0.094, 0.083, -0.005, 2.55],
+	[-0.073, 0.08, 0.092, 0.078, -0.007, 2.6],
+	[-0.085, 0.078, 0.0905, 0.071, -0.01, 2.7],
+	[-0.098, 0.077, 0.0895, 0.063, -0.013, 2.8],
+	[-0.111, 0.075, 0.0885, 0.055, -0.016, 2.9],
+	[-0.122, 0.069, 0.087, 0.048, -0.019, 3.0],
+	[-0.131, 0.057, 0.081, 0.043, -0.022, 3.0],
+	[-0.138, 0.038, 0.066, 0.039, -0.025, 2.6],
 ]
-const HELM_SQ := 2.2
+## Angles of the head's columns: dense over the face (the nose, the brow, the chin are a few centimetres wide), sparse
+## at the back where the hair covers it.
+const HEAD_A := [0.0, 0.1, 0.2, 0.31, 0.43, 0.56, 0.71, 0.88, 1.06, 1.26, 1.47, 1.7, 1.96, 2.24, 2.54, 2.84]
 
 
-## Sculpt of the Corinthian shell (offset for a point p of the plain profile surface, helmet-centre relative).
-static func _helm_push(p: Vector3) -> Vector3:
-	var o := Vector3.ZERO
-	var ax := absf(p.x)
-	if p.z < 0.0:
-		# brow arches over the eyes, meeting at the nose guard
-		var by := 0.03 - 0.016 * pow(minf(ax / 0.11, 1.0), 2.0)
-		o.z -= bump(Vector2(0, p.y), Vector2(0, by), Vector2(1, 0.02)) * 0.014 * (1.0 - smoothstep(0.1, 0.15, ax))
-		# nose guard: a long bar down between the eyes
-		o.z -= bump(Vector2(p.x, p.y), Vector2(0, -0.035), Vector2(0.026, 0.085)) * 0.02
-		# cheek guards: a soft ridge along the jaw
-		o.x += signf(p.x) * bump(Vector2(0, p.y), Vector2(0, -0.11), Vector2(1, 0.05)) * 0.006
-	# ear notch: the lower edge rises at the sides between the cheek guard and the neck guard
-	var side := smoothstep(0.5, 0.86, ax / maxf(Vector2(p.x, p.z).length(), 1e-4))
-	side *= smoothstep(-0.1, 0.05, p.z)
-	if p.y < -0.052:
-		o.y += (-0.052 - p.y) * 0.72 * side
-		o.x -= signf(p.x) * 0.012 * side * smoothstep(-0.052, -0.168, p.y)
-	return o
-
-
-## Point of the helmet shell (helmet-centre relative) at angle a (0 = front, +x side at PI/2) and height y.
-static func helm_pt(a: float, y: float) -> Vector3:
-	var prof := HELM_PROF
+## The head's surface at angle a (0 front, PI/2 his right) and height y (SKULL_C relative), without the face.
+static func _head_raw(a: float, y: float) -> Vector3:
+	var prof := HEAD_PROF
 	var e0: Array = prof[0]
-	var e1: Array = prof[1]
+	var e1: Array = prof[0]
 	var f := 0.0
-	for k in prof.size() - 1:
-		var y0: float = prof[k][0]
-		var y1: float = prof[k + 1][0]
-		if y <= y0 and y >= y1:
-			e0 = prof[k]
-			e1 = prof[k + 1]
-			f = (y - y0) / (y1 - y0)
+	if y < float(prof[prof.size() - 1][0]):
+		e0 = prof[prof.size() - 1]
+		e1 = e0
+	elif y <= float(prof[0][0]):
+		for k in prof.size() - 1:
+			var y0: float = prof[k][0]
+			var y1: float = prof[k + 1][0]
+			if y <= y0 and y >= y1:
+				e0 = prof[k]
+				e1 = prof[k + 1]
+				f = (y - y0) / (y1 - y0)
+				break
 	var rx := lerpf(e0[1], e1[1], f)
 	var rf := lerpf(e0[2], e1[2], f)
 	var rb := lerpf(e0[3], e1[3], f)
 	var cz := lerpf(e0[4], e1[4], f)
+	var sq := lerpf(e0[5], e1[5], f)
 	var sa := sin(a)
 	var ca := cos(a)
-	var ex := 2.0 / HELM_SQ
-	var p := Vector3(signf(sa) * pow(absf(sa), ex) * rx, y, -signf(ca) * pow(absf(ca), ex) * (rf if ca > 0.0 else rb) + cz)
-	return p + _helm_push(p)
+	var ex := 2.0 / sq
+	return Vector3(signf(sa) * pow(absf(sa), ex) * rx, y, -signf(ca) * pow(absf(ca), ex) * (rf if ca > 0.0 else rb) + cz)
 
 
-static func _build_helmet() -> Array:
+## The face sculpted on the head (SKULL_C relative): the brow ridge, a straight nose, the cheekbones, a square chin.
+## Planes only: no eyes, no mouth, no brows.
+static func _face_push(p: Vector3) -> Vector3:
+	var o := Vector3.ZERO
+	if p.z >= 0.0:
+		return o
+	var ax := absf(p.x)
+	var fwd := smoothstep(0.03, 0.085, -p.z)
+	# brow ridge: a broad soft shelf across the forehead (no sockets under it: shadows there read as eyes)
+	var brow := exp(-pow((p.y - 0.01) / 0.018, 2.0)) * (1.0 - smoothstep(0.05, 0.085, ax))
+	o.z -= brow * 0.004 * fwd
+	# a straight nose: the bridge leaves the brow and runs down to the tip, then tucks back under it
+	var t := clampf((0.004 - p.y) / 0.06, 0.0, 1.0)
+	# (the underside slopes back gently: a steep one is a dark bar in the light from above, read as a mouth)
+	var under := smoothstep(-0.054, -0.082, p.y)
+	var nh := lerpf(0.003, 0.018, t) * (1.0 - under)
+	var nw := lerpf(0.01, 0.017, t)
+	var nose := (1.0 - smoothstep(nw * 0.4, nw, ax)) * smoothstep(0.008, -0.002, p.y)
+	o.z -= nose * nh * fwd
+	# cheekbones
+	var cb := bump(Vector2(ax, p.y), Vector2(0.058, -0.042), Vector2(0.03, 0.024))
+	o += Vector3(signf(p.x) * 0.25, 0.0, -1.0) * cb * 0.0055
+	# the jaw's corner (the chin is in the profile: a bump there left a crease above it, read as a mouth)
+	o.x += signf(p.x) * bump(Vector2(ax, p.y), Vector2(0.071, -0.106), Vector2(0.03, 0.026)) * 0.004
+	return o
+
+
+static func head_pt(a: float, y: float) -> Vector3:
+	var p := _head_raw(a, y)
+	return p + _face_push(p)
+
+
+## Tools (clip checks): the outer surface of the head and its hair at angle a and height y, HEAD_C relative.
+static func helm_pt(a: float, y: float) -> Vector3:
+	var yl := (y + HEAD_C.y - HEAD_PIV.y) / HEAD_SCALE + HEAD_PIV.y - SKULL_C.y
+	var p := head_pt(a, yl)
+	if yl > _hairline(a):
+		p += _hair_n(p) * _hair_shell(a, yl)
+	return _head_xf() * (p + SKULL_C) - HEAD_C
+
+
+## The head's and the hair's drawing transform (rest rig space): HEAD_SCALE about HEAD_PIV.
+static func _head_xf() -> Transform3D:
+	return Transform3D(Basis.from_scale(Vector3.ONE * HEAD_SCALE), HEAD_PIV * (1.0 - HEAD_SCALE))
+
+
+## [head (skin), hair] meshes skinned to HEAD.
+static func head_meshes() -> Array:
+	if not _cache.has("head"):
+		_cache["head"] = [_build_head(), _build_hair()]
+	return _cache["head"]
+
+
+## (old name, kept for the tools)
+static func helmet_meshes() -> Array:
+	return head_meshes()
+
+
+static func _build_head() -> ArrayMesh:
 	var sm := SkinMesh.new(41)
-	var metal := sm.metal
-	var c := HEAD_C
-	metal.push(Transform3D(Basis.IDENTITY, c))
-	var col := func(p: Vector3, k: int, _i: int) -> Color:
-		if k >= 10:
-			return BRONZE_LIGHT
-		if k == 4 and p.z < 0.0:
-			return BRONZE_LIGHT
-		return BRONZE
-	hloft(metal, HELM_PROF, 32, col, HELM_SQ, _helm_push, true, false)
-	# rolled rim and the inner flange meeting the neck
-	var last: Array = HELM_PROF[HELM_PROF.size() - 1]
-	var ly: float = last[0]
-	hloft(metal, [[ly, last[1], last[2], last[3], last[4]], [ly + 0.008, last[1] - 0.022, last[2] - 0.026, last[3] - 0.04, 0.006], [ly + 0.02, 0.07, 0.07, 0.085, 0.004]], 32, BRONZE_DARK, HELM_SQ, _helm_push)
-	# eyes: dark almonds on the face plate with a bronze lip
-	for sxv in [-1.0, 1.0]:
-		var sx: float = sxv
+	var mb := sm.soft
+	mb.push(_head_xf())
+	var angs: Array[float] = []
+	for a: float in HEAD_A:
+		angs.append(a)
+	for k in range(HEAD_A.size() - 1, 0, -1):
+		angs.append(TAU - float(HEAD_A[k]))
+	angs.append(PI)
+	angs.sort()
+	var rings: Array = []
+	for k in range(HEAD_PROF.size() - 1, -1, -1):
+		var y: float = HEAD_PROF[k][0]
 		var ring: Array[Vector3] = []
-		var n := 16
-		for i in n:
-			var t := TAU * float(i) / float(n)
-			# almond in (angle, height): pointed corners, fuller top
-			var u := cos(t)
-			var v := sin(t)
-			var ang := sx * (0.36 + u * 0.24)
-			var hy := -0.012 + v * (0.024 if v > 0.0 else 0.017) * pow(1.0 - absf(u) * 0.55, 1.0) - u * sx * 0.0 + (absf(u) * 0.006)
-			var pt := helm_pt(ang, hy)
-			var nrm := Vector3(pt.x, 0.0, pt.z - 0.006).normalized()
-			ring.append(pt + nrm * 0.0035)
-		var cen := helm_pt(sx * 0.36, -0.01)
-		var cn := Vector3(cen.x, 0.0, cen.z).normalized()
-		cen += cn * 0.0035
-		for i in n:
-			var a2 := ring[i]
-			var b2 := ring[(i + 1) % n]
-			if sx > 0.0:
-				metal.tri(cen, b2, a2, SHADOW)
-			else:
-				metal.tri(cen, a2, b2, SHADOW)
-		# lip
-		var pts: Array = []
-		for i in n + 1:
-			pts.append(ring[i % n])
-		metal.tube(pts, 0.0055, 0.0055, 5, BRONZE_DARK, false)
-	# crest holder ridge
-	var ridge := []
-	for i in 9:
-		var ang := lerpf(-0.72, 1.78, float(i) / 8.0)
-		ridge.append([Vector3(0, cos(ang), sin(ang)) * 0.18 + Vector3(0, 0.0, 0.012), 0.022, 0.016])
-	loft(metal, ridge, 6, BRONZE_DARK, Vector3.RIGHT, true, true)
-	metal.pop()
+		for a in angs:
+			ring.append(SKULL_C + head_pt(a, y))
+		rings.append(ring)
+	var col := func(p: Vector3, k: int, _i: int) -> Color:
+		var q := p - SKULL_C
+		if q.y < -0.124:
+			return SKIN_SHADE
+		return SKIN
+	_stitch(mb, rings, col, true, true)
+	# ears: simple, set back on the sides of the head, tilted back
+	for sx in [-1.0, 1.0]:
+		var ep := SKULL_C + Vector3(0.087 * sx, -0.03, 0.016)
+		mb.push(Transform3D(Basis(Vector3.RIGHT, 0.18) * Basis(Vector3.UP, 0.32 * sx), ep))
+		mb.ico(Vector3.ZERO, 0.028, SKIN, 1, 0.0, Vector3(0.42, 1.0, 0.66))
+		mb.ico(Vector3(0.006 * sx, -0.002, 0.002), 0.018, SKIN_SHADE, 0, 0.0, Vector3(0.4, 0.8, 0.5))
+		mb.pop()
+	mb.pop()
 	sm.rigid(HEAD)
-	# crest: a thick horsehair fan along the ridge
-	var soft := sm.soft
-	soft.push(Transform3D(Basis.IDENTITY, c + Vector3(0, 0, 0.012)))
-	var n2 := 18
-	var prev_in := Vector3.ZERO
-	var prev_out := Vector3.ZERO
-	var hw := 0.042
-	for i in n2 + 1:
-		var k := float(i) / float(n2)
-		var ang := lerpf(-0.66, 2.0, k)
-		var dir := Vector3(0, cos(ang), sin(ang))
-		var h := 0.035 + 0.215 * pow(sin(clampf(k * 1.1, 0.0, 1.0) * PI), 0.7) * (1.0 - 0.3 * k)
-		var pin := dir * 0.192
-		var pout := dir * (0.192 + h)
-		var w0 := hw * (0.8 + 0.2 * sin(k * PI))
-		var ox := Vector3(w0, 0, 0)
-		if i > 0:
-			var strand := CREST if i % 2 == 0 else CREST_DARK
-			soft.quad(prev_in + ox, prev_out + ox, pout + ox, pin + ox, strand)
-			soft.quad(prev_in - ox, pin - ox, pout - ox, prev_out - ox, strand)
-			var up0 := prev_out.normalized() * 0.024
-			var up1 := pout.normalized() * 0.024
-			var tc := CREST_LIGHT if i % 2 == 0 else CREST
-			soft.quad(prev_out + ox, prev_out + ox * 0.45 + up0, pout + ox * 0.45 + up1, pout + ox, tc)
-			soft.quad(prev_out - ox, pout - ox, pout - ox * 0.45 + up1, prev_out - ox * 0.45 + up0, tc)
-			soft.quad(prev_out + ox * 0.45 + up0, prev_out - ox * 0.45 + up0, pout - ox * 0.45 + up1, pout + ox * 0.45 + up1, tc)
+	return sm.commit()[0]
+
+
+## The hairline (SKULL_C-relative height) at angle a: high over the forehead, down to the sideburns in front of the
+## ears, up over the ears and down to the nape.
+static func _hairline(a: float) -> float:
+	var x := absf(wrapf(a, -PI, PI))
+	if x < 1.0:
+		return _hairline_k(x) + cos(x * 9.0) * 0.005 * (1.0 - smoothstep(0.6, 1.0, x))
+	return _hairline_k(x)
+
+
+static func _hairline_k(x: float) -> float:
+	# (LOOK2: higher over the forehead, which the hair now leaves clear)
+	var keys := [0.0, 0.08, 0.55, 0.068, 0.95, 0.04, 1.12, 0.0, 1.24, -0.046, 1.38, -0.05, 1.5, -0.006, 1.66, 0.006, 1.86, -0.006, 2.15, -0.056, 2.6, -0.09, PI, -0.1]
+	for k in range(0, keys.size() - 2, 2):
+		var a0: float = keys[k]
+		var a1: float = keys[k + 2]
+		if x >= a0 and x <= a1:
+			return lerpf(keys[k + 1], keys[k + 3], smoothstep(0.0, 1.0, (x - a0) / (a1 - a0)))
+	return keys[keys.size() - 1]
+
+
+## Outward normal of the scalp (roughly: up over the crown, out at the sides), SKULL_C relative.
+static func _hair_n(p: Vector3) -> Vector3:
+	return Vector3(p.x, p.y * 1.5 + 0.012, p.z - 0.004).normalized()
+
+
+## The hair's outer surface at angle a, height y, `t` above the scalp (SKULL_C relative).
+static func _hair_pt(a: float, y: float, t: float) -> Vector3:
+	var p := _head_raw(a, y)
+	return p + _hair_n(p) * t
+
+
+## The hair's thickness over the scalp at angle a, a fraction f of the way from the crown (0) to the hairline (1).
+## LOOK2: swept up and back: over the forehead it rises from the hairline in a long slope (its front face leaning back, the
+## forehead clear) to a quiff, the fullest of it, above the front of the skull, a little lower over the crown and the back,
+## close over the ears and short at the nape.
+static func _hair_t(a: float, f: float) -> float:
+	var x := absf(wrapf(a, -PI, PI))
+	var front := 1.0 - smoothstep(0.3, 1.1, x)
+	var side := smoothstep(0.95, 1.4, x) * (1.0 - smoothstep(1.85, 2.35, x))
+	var nape := smoothstep(2.3, 2.9, x)
+	var base := lerpf(0.034, 0.054, front) - side * 0.018 - nape * 0.006
+	# the slope up from the hairline: long in front (the quiff's face), short at the sides and the back
+	var rise := smoothstep(1.0, lerpf(0.62, 0.22, front), f)
+	# the quiff stands highest above the forehead and settles towards the crown
+	var crown := lerpf(1.0, 0.78, (1.0 - smoothstep(0.0, 0.42, f)) * front)
+	return base * (0.14 + 0.86 * rise) * crown
+
+
+## The hair's surface height above the scalp at angle a and height y (SKULL_C relative).
+static func _hair_shell(a: float, y: float) -> float:
+	var y_h := _hairline(a)
+	var f := clampf((0.131 - y) / maxf(0.131 - y_h, 1e-3), 0.0, 1.0)
+	return _hair_t(a, pow(f, 1.0 / 0.85))
+
+
+static func _build_hair() -> ArrayMesh:
+	var sm := SkinMesh.new(43)
+	var mb := sm.soft
+	mb.push(_head_xf())
+	# the mass: columns from the crown down to the hairline, thick over the top, thin at the edge
+	var na := 30
+	var nv := 8
+	var cols: Array = []
+	for i in na:
+		var a := TAU * float(i) / float(na)
+		var y_h := _hairline(a)
+		var col_pts: Array[Vector3] = []
+		for v in nv + 1:
+			var f := float(v) / float(nv)
+			var y := lerpf(0.131, y_h, pow(f, 0.85))
+			col_pts.append(SKULL_C + _hair_pt(a, y, _hair_t(a, f)))
+		# the lip down onto the scalp at the hairline
+		col_pts.append(SKULL_C + _hair_pt(a, y_h - 0.003, 0.0015))
+		cols.append(col_pts)
+	var rings: Array = []
+	for v in nv + 2:
+		var ring: Array[Vector3] = []
+		for i in na:
+			ring.append(cols[i][v])
+		rings.append(ring)
+	rings.reverse() # bottom (the hairline) first: the faces turn outwards
+	var cap_col := func(p: Vector3, k: int, _i: int) -> Color:
+		# (LOOK2: the lip at the hairline is dark at the sides and the back; over the forehead the hair just rises from it)
+		return HAIR_DARK if k == 0 and (p - SKULL_C).z > -0.06 else HAIR
+	_stitch(mb, rings, cap_col, false, true)
+	# the locks: chunky, swept back from the forehead over the top, back and down over the sides, short at the nape
+	for lk in HAIR_LOCKS:
+		_lock(mb, lk[0], lk[1], lk[2], lk[3], lk[4], lk[5], lk[6])
+	mb.pop()
+	sm.rigid(HEAD)
+	return sm.commit()[0]
+
+
+## The locks: [root angle, root height, tip angle, tip height, width, thickness, lift] (heights SKULL_C relative; lift:
+## how far the tip stands off the hair's surface).
+const HAIR_LOCKS := [
+	# the front: waves rising from the hairline and swept back over the top, their tips lifted (LOOK2: the quiff)
+	[0.06, 0.104, 0.2, 0.131, 0.05, 0.03, 0.05],
+	[0.46, 0.098, 0.8, 0.13, 0.046, 0.028, 0.042],
+	[-0.4, 0.1, -0.7, 0.13, 0.046, 0.028, 0.042],
+	[0.9, 0.07, 1.3, 0.115, 0.04, 0.024, 0.03],
+	[-0.9, 0.07, -1.3, 0.115, 0.04, 0.024, 0.03],
+	# the crown, swept back, the tips curling up off the back of the head
+	[0.25, 0.128, 2.95, 0.1, 0.048, 0.028, 0.034],
+	[-0.3, 0.127, -2.8, 0.095, 0.048, 0.028, 0.032],
+	[1.05, 0.115, 2.3, 0.07, 0.044, 0.025, 0.03],
+	[-1.05, 0.115, -2.3, 0.07, 0.044, 0.025, 0.03],
+	# the sides: back over the temples, above the ears
+	[1.12, 0.074, 1.98, 0.042, 0.034, 0.02, 0.016],
+	[-1.12, 0.074, -1.98, 0.042, 0.034, 0.02, 0.016],
+	# the sideburns
+	[1.29, 0.012, 1.31, -0.046, 0.021, 0.011, 0.004],
+	[-1.29, 0.012, -1.31, -0.046, 0.021, 0.011, 0.004],
+	# the back: down to the nape, shorter there, the tips flicking out
+	[2.05, 0.08, 2.3, -0.015, 0.038, 0.022, 0.018],
+	[-2.05, 0.08, -2.3, -0.015, 0.038, 0.022, 0.018],
+	[2.62, 0.105, 2.7, -0.068, 0.044, 0.025, 0.03],
+	[-2.62, 0.105, -2.7, -0.068, 0.044, 0.025, 0.03],
+	[PI, 0.11, PI, -0.083, 0.044, 0.025, 0.03],
+	[1.75, 0.06, 2.02, 0.0, 0.03, 0.019, 0.014],
+	[-1.75, 0.06, -2.02, 0.0, 0.03, 0.019, 0.014],
+]
+
+
+## One lock of hair: a chunky, pointed wedge lying on the scalp from (a0, y0) to (a1, y1), its tip standing off by `lift`.
+## The faces turned up are the lighter brown.
+static func _lock(mb: MeshBuilder, a0: float, y0: float, a1: float, y1: float, w0: float, h0: float, lift: float) -> void:
+	var n := 5
+	var cen: Array[Vector3] = []
+	var nrm: Array[Vector3] = []
+	for k in n:
+		var s := float(k) / float(n - 1)
+		var a := lerpf(a0, a1, s)
+		var y := minf(lerpf(y0, y1, s), 0.13)
+		var base := _head_raw(a, y)
+		var nn := _hair_n(base)
+		var shell := _hair_shell(a, y)
+		# (the root starts inside the hair's mass, so the lock grows out of it)
+		cen.append(SKULL_C + base + nn * (shell * lerpf(0.45, 0.85, smoothstep(0.0, 0.35, s)) + lift * pow(s, 1.4) + h0 * 0.3 * (1.0 - s)))
+		nrm.append(nn)
+	var ring: Array = []
+	for k in n:
+		var s := float(k) / float(n - 1)
+		var t: Vector3 = (cen[mini(k + 1, n - 1)] - cen[maxi(k - 1, 0)]).normalized()
+		var nn: Vector3 = perp(nrm[k], t).normalized()
+		var b := t.cross(nn).normalized()
+		var w := w0 * (1.0 - pow(s, 1.7)) * (0.6 + 0.65 * sin(minf(s * 1.6, 1.0) * PI * 0.5))
+		var h := h0 * (1.0 - s * 0.85)
+		var c: Vector3 = cen[k]
+		if k == n - 1:
+			ring.append([c, c, c, c])
 		else:
-			soft.quad(pin - ox, pin + ox, pout + ox, pout - ox, CREST_DARK)
-		prev_in = pin
-		prev_out = pout
-	var oxe := Vector3(hw * 0.8, 0, 0)
-	soft.quad(prev_in + oxe, prev_in - oxe, prev_out - oxe, prev_out + oxe, CREST_DARK)
-	soft.pop()
-	sm.rigid(CREST_B)
-	return sm.commit()
+			ring.append([c + b * w, c + nn * h * 0.55, c - b * w, c - nn * h * 0.45])
+	for k in n - 1:
+		var r0: Array = ring[k]
+		var r1: Array = ring[k + 1]
+		for i in 4:
+			var j := (i + 1) % 4
+			var mid: Vector3 = (r0[i] + r0[j] + r1[i] + r1[j]) * 0.25
+			var inside: Vector3 = cen[k] if k < n - 2 else cen[n - 2]
+			var fn: Vector3 = (r1[i] - r0[i]).cross(r0[j] - r0[i]) + (r1[j] - r0[i]).cross(r0[j] - r0[i])
+			if fn.dot(mid - inside) < 0.0:
+				fn = -fn
+			var up := fn.normalized().y if fn.length_squared() > 1e-14 else 0.0
+			var col := HAIR
+			if i < 2:
+				col = HAIR_LIGHT if up > 0.25 else HAIR
+			elif up < 0.2:
+				col = HAIR_DARK
+			_quad_out(mb, r0[i], r1[i], r1[j], r0[j], inside, col)
+	# the root end, closed
+	var r0e: Array = ring[0]
+	_quad_out(mb, r0e[0], r0e[1], r0e[2], r0e[3], cen[1], HAIR)
+
+
+## A quad a, b, c, d turned to face away from `inside`.
+static func _quad_out(mb: MeshBuilder, a: Vector3, b: Vector3, c: Vector3, d: Vector3, inside: Vector3, col: Color) -> void:
+	var n := (b - a).cross(c - a) + (c - a).cross(d - a)
+	if n.dot((a + b + c + d) * 0.25 - inside) < 0.0:
+		mb.quad(a, d, c, b, col)
+	else:
+		mb.quad(a, b, c, d, col)
 
 
 # --- lion outfit -----------------------------------------------------------------------------------------------
 
-## Skull cap of the lion hood, over the helmet (head-centre relative; same layout as HELM_PROF).
+## Skull cap of the lion hood (head-centre relative, as cut for the old helmet; HOOD_K and HOOD_OFF set it on the bare head).
 const HOOD_PROF := [
 	[0.236, 0.05, 0.05, 0.05, 0.0],
 	[0.226, 0.1, 0.106, 0.112, 0.0],
@@ -947,6 +1343,12 @@ const HOOD_SQ := 2.2
 ## The nape hinge the hood swings about when it is pulled up (rest rig space) and its angle when down.
 const HOOD_HINGE := Vector3(0.0, 1.6, 0.2)
 const HOOD_DOWN := 3.0
+## LOOK: the hair hides once the hood is this far over the head (pose channel `hood`), the face's tint under it.
+const HOOD_HAIR_OFF := 0.85
+## LOOK: the hood's scale and offset (from HEAD_C) on the bare head.
+const HOOD_K := Vector3(0.74, 0.76, 0.7)
+const HOOD_OFF := Vector3(0.0, 0.006, 0.03)
+const HOOD_SHADE := 0.62
 
 
 ## Point on the hood cap (head-centre relative), a = 0 front, PI/2 right side.
@@ -1007,7 +1409,8 @@ static func hood_meshes() -> Array:
 
 static func _build_hood() -> ArrayMesh:
 	var mb := MeshBuilder.new(47)
-	mb.push(Transform3D(Basis.IDENTITY, HEAD_C))
+	# LOOK: the hood was cut to go over the helmet: scaled down and set back onto the bare head (the hair hides under it)
+	mb.push(Transform3D(Basis.from_scale(HOOD_K), HEAD_C + HOOD_OFF))
 	# skull cap: golden forehead, mane everywhere else
 	var cap_col := func(p: Vector3, k: int, _i: int) -> Color:
 		var front := -p.z / maxf(Vector2(p.x, p.z).length(), 1e-4)
@@ -1124,10 +1527,11 @@ static func _build_hood() -> ArrayMesh:
 static func paws_mesh() -> ArrayMesh:
 	if not _cache.has("paws"):
 		var mb := MeshBuilder.new(49)
-		var knot := Vector3(0.0, 1.425, -0.236)
+		# LOOK: the knot sits on the bare chest (the cuirass was 3 cm deeper)
+		var knot := Vector3(0.0, 1.42, -0.2)
 		for sx in [-1.0, 1.0]:
-			var leg := [Vector3(0.118 * sx, 1.595, 0.07), Vector3(0.124 * sx, 1.578, -0.05), Vector3(0.108 * sx, 1.528, -0.13),
-				Vector3(0.066 * sx, 1.47, -0.206), Vector3(0.022 * sx, 1.435, -0.236)]
+			var leg := [Vector3(0.115 * sx, 1.585, 0.065), Vector3(0.122 * sx, 1.568, -0.045), Vector3(0.106 * sx, 1.516, -0.112),
+				Vector3(0.066 * sx, 1.462, -0.17), Vector3(0.022 * sx, 1.43, -0.198)]
 			mb.tube(leg, 0.036, 0.032, 9, FUR, false)
 			# a darker stripe of mane where the leg leaves the pelt
 			mb.tube([leg[0] + Vector3(0, 0.01, 0), leg[1] + Vector3(0, 0.01, 0)], 0.039, 0.037, 9, MANE, false)
@@ -1143,54 +1547,306 @@ static func paws_mesh() -> ArrayMesh:
 	return _cache["paws"]
 
 
-## The red cape's collar: a rolled edge across the upper back, straps over the shoulders to bronze fibulae
-## (rest rig space, rigid on the chest; hidden under the lion pelt). [soft, metal]
+## LOOK2: the mantle, the top of the cloak: a thick fold of the deep red cloth lying over both shoulders and the base of the
+## neck, over the deltoids and down their outsides, across the upper back (over the cloak's pinned row, hiding it) and in a
+## band from each shoulder down to the upper chest, where a round gold brooch pins the two sides together; its lower edge is a
+## full rolled hem, gathered thicker on his left shoulder (rest rig space, skinned like the skin under it: the chest, the
+## clavicles, the base of the neck, the deltoids and the upper arms; hidden under the lion pelt). [soft (cloth), metal (brooch)]
+## It is laid on the body with rays from MANTLE_O: per angle round the neck an elevation range (MANTLE_PHI), along each ray
+## the body's outer surface (_body_ray) plus the cloth's thickness.
 static func collar_meshes() -> Array:
 	if not _cache.has("collar"):
-		var soft := MeshBuilder.new(33)
-		var metal := MeshBuilder.new(34)
-		var roll := []
-		for i in 9:
-			var u := lerpf(-1.0, 1.0, float(i) / 8.0)
-			var x := u * 0.205
-			roll.append(Vector3(x, 1.478, 0.178 - 0.55 * x * x + 0.006))
-		soft.tube(roll, 0.024, 0.024, 8, RED_DARK, true)
-		for sxv in [-1.0, 1.0]:
-			var sx: float = sxv
-			var strap := [Vector3(0.2 * sx, 1.478, 0.14), Vector3(0.215 * sx, 1.535, 0.06), Vector3(0.2 * sx, 1.54, -0.04), Vector3(0.158 * sx, 1.49, -0.115)]
-			soft.tube(strap, 0.018, 0.016, 6, RED, true)
-			metal.push(Transform3D(Basis(Vector3.RIGHT, PI * 0.5 - 0.35), Vector3(0.155 * sx, 1.47, -0.12)))
-			metal.cyl(Vector3.ZERO, 0.02, 0.034, 0.03, 10, BRONZE_LIGHT)
-			metal.cyl(Vector3(0, 0.02, 0), 0.008, 0.02, 0.012, 8, BRONZE)
-			metal.pop()
-		_cache["collar"] = [soft.commit(), metal.commit()]
+		var sm := SkinMesh.new(33)
+		var soft := sm.soft
+		var metal := sm.metal
+		# the cross-section, from the inner edge (the base of the neck, or the front band's upper edge) over the top to the rolled
+		# outer edge and tucked under it: [fraction of the way from the top elevation to the bottom one, arc (m) past the bottom
+		# one, height over the body (m), colour: 2 the underside, else the top]
+		var sec := [[0.0, -0.006, 0.002, 2], [0.0, -0.002, 0.011, 0], [0.14, 0.0, 0.016, 0], [0.38, 0.0, 0.018, 0],
+			[0.62, 0.0, 0.019, 0], [0.82, 0.0, 0.022, 0], [0.95, 0.0, 0.03, 1], [1.0, 0.009, 0.029, 1], [1.0, 0.017, 0.016, 2],
+			[1.0, 0.015, 0.003, 2]]
+		var na := 56
+		var ns := sec.size()
+		var grid: Array = []
+		var cols: Array = []
+		# the rays and the body's surface along them, then the cloth's height over it
+		var dirs: Array = []
+		var tb: Array = []
+		var hs: Array = []
+		for i in na:
+			var a := TAU * float(i) / float(na)
+			var ph := _mantle_phi(a)
+			var x := absf(wrapf(a, -PI, PI))
+			# the hem's fullness: slimmer in the front band, fuller over the shoulders, gathered on his left shoulder
+			var rs := lerpf(0.62, 1.0, smoothstep(0.35, 1.1, x))
+			rs += 0.55 * exp(-pow((wrapf(a, -PI, PI) + 1.62) / 0.42, 2.0))
+			# (the arcs past the bottom edge, as angles at the distance of that edge)
+			var t_bot := maxf(_body_ray(_mantle_dir(a, ph.y)).x, 0.08)
+			var dr: Array[Vector3] = []
+			var tr := PackedFloat32Array()
+			var hr := PackedFloat32Array()
+			for j in ns:
+				var e: Array = sec[j]
+				var d := _mantle_dir(a, lerpf(ph.x, ph.y, float(e[0])) - float(e[1]) * rs / t_bot)
+				dr.append(d)
+				tr.append(_body_ray(d).x)
+				hr.append(float(e[2]) * (rs if j >= 5 else lerpf(1.0, rs, 0.4)))
+			dirs.append(dr)
+			tb.append(tr)
+			hs.append(hr)
+		# the cloth bridges the hollows between the trapezius and the deltoid (a few passes of its neighbours' mean, never under
+		# the body): no creases in its top for the toon light to break up on
+		var tt: Array = []
+		for i in na:
+			tt.append((tb[i] as PackedFloat32Array).duplicate())
+		for pass_i in 6:
+			var nt: Array = []
+			for i in na:
+				var row: PackedFloat32Array = (tt[i] as PackedFloat32Array).duplicate()
+				for j in range(1, 8):
+					var m: float = (tt[(i + na - 1) % na][j] + tt[(i + 1) % na][j] + tt[i][j - 1] + tt[i][j + 1] + 2.0 * tt[i][j]) / 6.0
+					row[j] = maxf(tb[i][j], m)
+				nt.append(row)
+			tt = nt
+		for i in na:
+			var ring: Array[Vector3] = []
+			var rc: Array[Color] = []
+			for j in ns:
+				var d: Vector3 = dirs[i][j]
+				ring.append(MANTLE_O + d * (float(tt[i][j]) + float(hs[i][j])))
+				rc.append(CAPE_DARK if int(sec[j][3]) == 2 else CAPE)
+			grid.append(ring)
+			cols.append(rc)
+		for i in na:
+			var i2 := (i + 1) % na
+			for j in ns - 1:
+				var p00: Vector3 = grid[i][j]
+				var p01: Vector3 = grid[i][j + 1]
+				var p11: Vector3 = grid[i2][j + 1]
+				var p10: Vector3 = grid[i2][j]
+				var c: Color = cols[i][j] if j < 6 else cols[i][j + 1]
+				# (outwards: away from the body under it, MANTLE_O)
+				_quad_out(soft, p00, p01, p11, p10, MANTLE_O, c)
+		# the brooch: a gold disc with a raised rim and a boss, pinning the two sides of the cloth at the front
+		var phb := _mantle_phi(0.0)
+		var db := _mantle_dir(0.0, lerpf(phb.x, phb.y, 0.55))
+		var bp := MANTLE_O + db * (_body_ray(db).x + 0.019)
+		var bn := Vector3(0.0, 0.25, -1.0).normalized()
+		var bx := Vector3.RIGHT
+		var bz := bx.cross(bn).normalized()
+		metal.push(Transform3D(Basis(bx, bn, bz), bp + bn * 0.004))
+		metal.cyl(Vector3(0, -0.004, 0), 0.009, 0.041, 0.039, 16, GOLD_DARK)
+		metal.ring(Vector3(0, 0.005, 0), 0.039, 0.029, 0.008, 16, GOLD_LIGHT)
+		metal.cyl(Vector3(0, 0.003, 0), 0.004, 0.03, 0.028, 16, GOLD, true)
+		metal.ico(Vector3(0, 0.009, 0), 0.014, GOLD_LIGHT, 1, 0.0, Vector3(1.0, 0.6, 1.0))
+		metal.pop()
+		sm.bind(func(p: Vector3) -> PackedFloat32Array: return _mantle_w(p))
+		_cache["collar"] = sm.commit()
 	return _cache["collar"]
+
+
+## Rays for the mantle and the cloak's pins start here (inside the upper chest).
+const MANTLE_O := Vector3(0.0, 1.43, 0.02)
+## [|angle| round the neck (deg, 0 the front, 90 his side, 180 the back), the mantle's top elevation (its inner edge: the front
+## band's upper edge, then the base of the neck), its bottom elevation (the rolled hem)] seen from MANTLE_O (deg).
+const MANTLE_PHI := [[0.0, 20.0, 5.0], [25.0, 24.0, 3.0], [50.0, 32.0, -1.0], [72.0, 41.0, -7.0], [92.0, 46.0, -10.0],
+	[110.0, 47.0, -8.0], [135.0, 46.0, -13.0], [160.0, 45.0, -17.0], [180.0, 45.0, -18.0]]
+
+
+static func _mantle_dir(a: float, phi: float) -> Vector3:
+	return Vector3(sin(a) * cos(phi), sin(phi), -cos(a) * cos(phi))
+
+
+## The mantle's (top, bottom) elevation (rad) at angle a round the neck (a smooth curve through MANTLE_PHI).
+static func _mantle_phi(a: float) -> Vector2:
+	var x := rad_to_deg(absf(wrapf(a, -PI, PI)))
+	var t := MANTLE_PHI
+	var n := t.size()
+	var k := 0
+	while k < n - 2 and x > float(t[k + 1][0]):
+		k += 1
+	var f := clampf((x - float(t[k][0])) / (float(t[k + 1][0]) - float(t[k][0])), 0.0, 1.0)
+	var out := Vector2.ZERO
+	for c in 2:
+		var p0: float = t[maxi(k - 1, 0)][c + 1]
+		var p1: float = t[k][c + 1]
+		var p2: float = t[k + 1][c + 1]
+		var p3: float = t[mini(k + 2, n - 1)][c + 1]
+		var f2 := f * f
+		var v := 0.5 * (2.0 * p1 + (p2 - p0) * f + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * f2 + (3.0 * p1 - p0 - 3.0 * p2 + p3) * f2 * f)
+		out[c] = deg_to_rad(v)
+	return out
+
+
+## The distance from MANTLE_O along the unit direction d to the upper body's outer surface (rest rig space): the torso, the
+## neck, the deltoids and the upper arms. y: 1 where that surface is an arm's.
+static func _body_ray(d: Vector3) -> Vector2:
+	var o := MANTLE_O
+	# the torso (its rings, star-shaped round MANTLE_O): halving the way out
+	var lo := 0.0
+	var hi := 0.45
+	for it in 12:
+		var mid := (lo + hi) * 0.5
+		if _torso_inside(o + d * mid):
+			lo = mid
+		else:
+			hi = mid
+	# (the muscles, a centimetre or two over the rings, added where the ray leaves them)
+	var best := lo + maxf(_torso_push(o + d * lo).dot(d), 0.0)
+	var arm := 0.0
+	var tn := _ray_vcyl_exit(o, d, Vector2(0.0, 0.018), 0.083)
+	if tn > best and (o + d * tn).y < 1.7:
+		best = tn
+	for s in [-1.0, 1.0]:
+		var t := maxf(_ray_sphere_exit(o, d, Vector3(0.262 * s, 1.455, 0.022), 0.106), _ray_capsule_exit(o, d, Vector3(0.27 * s, 1.4, 0.024), mx(P_ELBOW, s), 0.1))
+		if t > best:
+			best = t
+			arm = 1.0
+	return Vector2(best, arm)
+
+
+## Is p (rest rig space) inside the torso's rings (without the muscles)?
+static func _torso_inside(p: Vector3) -> bool:
+	var prof := TORSO_PROF
+	var n := prof.size()
+	if p.y < float(prof[0][0]) or p.y > float(prof[n - 1][0]):
+		return false
+	var k := 0
+	while k < n - 2 and p.y > float(prof[k + 1][0]):
+		k += 1
+	var e0: Array = prof[k]
+	var e1: Array = prof[k + 1]
+	var f := (p.y - float(e0[0])) / (float(e1[0]) - float(e0[0]))
+	var dz := p.z - lerpf(e0[4], e1[4], f)
+	var rz := lerpf(e0[2], e1[2], f) if dz < 0.0 else lerpf(e0[3], e1[3], f)
+	var sq := lerpf(e0[5], e1[5], f)
+	return pow(absf(p.x) / lerpf(e0[1], e1[1], f), sq) + pow(absf(dz) / rz, sq) < 1.0
+
+
+## Where a ray o + t d (d unit) leaves a sphere, a vertical cylinder (axis through (c.x, ., c.y)) or a capsule a-b (0: it misses).
+static func _ray_sphere_exit(o: Vector3, d: Vector3, c: Vector3, r: float) -> float:
+	var oc := o - c
+	var b := oc.dot(d)
+	var disc := b * b - (oc.dot(oc) - r * r)
+	if disc < 0.0:
+		return 0.0
+	return maxf(-b + sqrt(disc), 0.0)
+
+
+static func _ray_vcyl_exit(o: Vector3, d: Vector3, c: Vector2, r: float) -> float:
+	var ox := o.x - c.x
+	var oz := o.z - c.y
+	var qa := d.x * d.x + d.z * d.z
+	if qa < 1e-8:
+		return 0.0
+	var qb := ox * d.x + oz * d.z
+	var disc := qb * qb - qa * (ox * ox + oz * oz - r * r)
+	if disc < 0.0:
+		return 0.0
+	return maxf((-qb + sqrt(disc)) / qa, 0.0)
+
+
+static func _ray_capsule_exit(o: Vector3, d: Vector3, a: Vector3, b: Vector3, r: float) -> float:
+	var best := maxf(_ray_sphere_exit(o, d, a, r), _ray_sphere_exit(o, d, b, r))
+	var ab := b - a
+	var l := ab.length()
+	var u := ab / l
+	var oc := o - a
+	var dp := d - u * d.dot(u)
+	var op := oc - u * oc.dot(u)
+	var qa := dp.dot(dp)
+	if qa > 1e-8:
+		var qb := op.dot(dp)
+		var disc := qb * qb - qa * (op.dot(op) - r * r)
+		if disc >= 0.0:
+			var t := (-qb + sqrt(disc)) / qa
+			var hh := (oc + d * t).dot(u)
+			if t > best and hh >= 0.0 and hh <= l:
+				best = t
+	return best
+
+
+## Skin weights [bone, weight, ...] of a point of the mantle (or of the cloak's pinned row): those of the skin under it. Over
+## the trapezius the chest and the clavicle (the torso's binding), at the base of the neck a little of the neck, over the
+## deltoid the clavicle, PAUL and the upper arm (the arm's binding), blended across the top of the shoulder.
+static func _mantle_w(p: Vector3) -> PackedFloat32Array:
+	var ax := absf(p.x)
+	var s := 1.0 if p.x >= 0.0 else -1.0
+	var wc := smoothstep(0.12, 0.2, ax) * smoothstep(1.42, 1.48, p.y) * 0.7
+	var wn := smoothstep(1.5, 1.56, p.y) * (1.0 - smoothstep(0.05, 0.11, ax)) * 0.5
+	var sh := mx(P_SHOULDER, s)
+	var top := (p - sh).dot((mx(P_ELBOW, s) - sh).normalized())
+	var w_ua := smoothstep(0.03, 0.13, top)
+	var w_cl := 1.0 - smoothstep(-0.075, -0.015, top)
+	var w_pa := maxf(0.0, 1.0 - w_ua - w_cl)
+	var k := smoothstep(0.17, 0.25, ax)
+	var cl := CLAV_R if p.x >= 0.0 else CLAV_L
+	var pa := PAUL_R if p.x >= 0.0 else PAUL_L
+	var ua := UARM_R if p.x >= 0.0 else UARM_L
+	var ws := [[CHEST, (1.0 - wc - wn) * (1.0 - k)], [cl, wc * (1.0 - k) + w_cl * k], [NECK, wn * (1.0 - k)], [pa, w_pa * k], [ua, w_ua * k]]
+	var out := PackedFloat32Array()
+	for e in ws:
+		if float(e[1]) > 0.002 and out.size() < 8:
+			out.append(float(e[0]))
+			out.append(float(e[1]))
+	return out
+
+
+## A point on the torso's surface at angle a (0 front, PI/2 his right) and height y (rest rig space).
+static func _torso_surf(a: float, y: float) -> Vector3:
+	var prof := TORSO_PROF
+	var e0: Array = prof[0]
+	var e1: Array = prof[0]
+	var f := 0.0
+	if y >= float(prof[prof.size() - 1][0]):
+		e0 = prof[prof.size() - 1]
+		e1 = e0
+	elif y > float(prof[0][0]):
+		for k in prof.size() - 1:
+			if y >= float(prof[k][0]) and y <= float(prof[k + 1][0]):
+				e0 = prof[k]
+				e1 = prof[k + 1]
+				f = (y - float(e0[0])) / (float(e1[0]) - float(e0[0]))
+				break
+	var e := []
+	for q in 6:
+		e.append(lerpf(e0[q], e1[q], f))
+	return _torso_pt(a, e)
 
 
 # --- hands -------------------------------------------------------------------------------------------------
 
 ## Fist in hand space (rest frame of the hand bone of side s; origin at the wrist): fingers wrap the grip axis
-## (Z) through GRIP; back of the hand towards +X*s, thumb on the -Z side.
+## (Z) through GRIP; back of the hand towards +X*s, thumb on the -Z side. LOOK: the bracer's leather cuff round the
+## wrist (it slides inside the bracer as the wrist bends).
 static func fist_mesh(s: float) -> ArrayMesh:
 	var key := "fist_%d" % int(s)
 	if not _cache.has(key):
 		var mb := MeshBuilder.new(51)
 		var w := mx(P_WRIST, s)
 		mb.push(Transform3D(Basis.IDENTITY, w))
-		# wrist into the bracer cuff
-		loft(mb, [[Vector3(0, 0.03, 0), 0.042, 0.038], [Vector3(0, -0.02, 0), 0.044, 0.04]], 10, SKIN, FWD, false, false)
+		_cuff(mb)
+		# (LOOK2: bigger, grown round the grip so the sword's hilt stays where it was)
+		mb.push(Transform3D(Basis.from_scale(Vector3.ONE * HAND_GROW), GRIP * (1.0 - HAND_GROW)))
 		mb.push(Transform3D(Basis.from_scale(Vector3.ONE * HAND_K), Vector3.ZERO))
 		# palm + curled fingers: a rounded block around the grip
 		mb.ico(Vector3(0.006 * s, -0.062, 0.0), 0.062, SKIN, 1, 0.0, Vector3(0.78, 0.92, 1.0))
 		# knuckles ridge (the curled fingers), wrapping the grip on the palm side
 		loft(mb, [[Vector3(-0.004 * s, -0.096, 0.055), 0.03, 0.034], [Vector3(-0.006 * s, -0.1, 0.0), 0.036, 0.038], [Vector3(-0.004 * s, -0.096, -0.052), 0.03, 0.034]], 10, SKIN, Vector3(s, 0, 0), true, true)
 		# thumb over the index finger
-		mb.limb(Vector3(-0.03 * s, -0.035, -0.04), Vector3(-0.034 * s, -0.08, -0.058), 0.021, 0.017, 6, SKIN_DARK)
-		mb.ico(Vector3(-0.034 * s, -0.082, -0.058), 0.018, SKIN_DARK, 0)
+		mb.limb(Vector3(-0.03 * s, -0.035, -0.04), Vector3(-0.034 * s, -0.08, -0.058), 0.021, 0.017, 6, SKIN_SHADE)
+		mb.ico(Vector3(-0.034 * s, -0.082, -0.058), 0.018, SKIN_SHADE, 0)
+		mb.pop()
 		mb.pop()
 		mb.pop()
 		_cache[key] = mb.commit()
 	return _cache[key]
+
+
+## The leather cuff at the wrist (hand space, origin at the wrist).
+static func _cuff(mb: MeshBuilder) -> void:
+	loft(mb, [[Vector3(0, 0.04, 0), 0.06, 0.054], [Vector3(0, 0.0, 0), 0.062, 0.056], [Vector3(0, -0.014, 0), 0.061, 0.055], [Vector3(0, -0.02, 0), 0.052, 0.047]], 12,
+		func(_p: Vector3, k: int, _i: int) -> Color: return LEATHER_DARK if k >= 1 else LEATHER, FWD, false, false)
 
 
 ## Open hand (left side, petting / reaching), in hand space at rest: palm facing -X*s... fingers down.
@@ -1200,13 +1856,15 @@ static func open_hand_mesh(s: float) -> ArrayMesh:
 		var mb := MeshBuilder.new(53)
 		var w := mx(P_WRIST, s)
 		mb.push(Transform3D(Basis.IDENTITY, w))
-		loft(mb, [[Vector3(0, 0.03, 0), 0.042, 0.038], [Vector3(0, -0.02, 0), 0.044, 0.04]], 10, SKIN, FWD, false, false)
+		_cuff(mb)
+		mb.push(Transform3D(Basis.from_scale(Vector3.ONE * HAND_GROW), GRIP * (1.0 - HAND_GROW)))
 		mb.push(Transform3D(Basis.from_scale(Vector3.ONE * HAND_K), Vector3.ZERO))
 		mb.ico(Vector3(0.0, -0.06, 0.0), 0.058, SKIN, 1, 0.0, Vector3(0.5, 0.95, 1.0))
 		for k in 4:
 			var z := -0.036 + 0.024 * float(k)
 			mb.limb(Vector3(0.0, -0.1, z), Vector3(-0.012 * s, -0.165 + absf(z) * 0.4, z * 1.1), 0.0135, 0.011, 5, SKIN)
-		mb.limb(Vector3(-0.012 * s, -0.04, -0.045), Vector3(-0.03 * s, -0.09, -0.075), 0.017, 0.014, 5, SKIN_DARK)
+		mb.limb(Vector3(-0.012 * s, -0.04, -0.045), Vector3(-0.03 * s, -0.09, -0.075), 0.017, 0.014, 5, SKIN_SHADE)
+		mb.pop()
 		mb.pop()
 		mb.pop()
 		_cache[key] = mb.commit()
@@ -1274,7 +1932,10 @@ static func sword_meshes() -> Array:
 	return _cache["sword"]
 
 
-## The aspis in rest rig space, mounted on the left forearm (faces -X at rest). [soft, metal]
+## The round shield in rest rig space, mounted on the left forearm (faces -X at rest). [soft, metal]
+## LOOK: a gently domed leather face in two browns (a lighter ring band), a darker rolled rim, a small bronze boss, a
+## faint darker club (Heracles' own) on the face; behind, the wooden bowl, the bronze arm band and the grip as before,
+## and a leather carrying strap across the back (from local (-0.2, 0, -0.27) to (-0.2, 0, 0.27), on the wood).
 static func shield_meshes() -> Array:
 	if not _cache.has("shield"):
 		var soft := MeshBuilder.new(71)
@@ -1289,20 +1950,26 @@ static func shield_meshes() -> Array:
 		var nz := nx.cross(ny)
 		var xf := Transform3D(Basis(nx, ny, nz), cen)
 		var R := SHIELD_R
-		# painted face: cream field, red band, black club emblem
-		var face_col := func(p: Vector3, _k: int, _i: int) -> Color:
-			var r := Vector2(p.x, p.z).length()
-			if r > R * 0.82:
-				return RED
-			if r > R * 0.76:
-				return INK
-			return CREAM
 		metal.push(xf)
 		soft.push(xf)
-		var face := [Vector2(R * 0.93, 0.012), Vector2(R * 0.8, 0.03), Vector2(R * 0.6, 0.052), Vector2(R * 0.38, 0.066), Vector2(R * 0.18, 0.073), Vector2(0.0, 0.075)]
-		soft.lathe(face, 28, face_col, 0.0, false, true)
-		# bronze rim (rolled) and a bronze inner lip
-		metal.lathe([Vector2(R * 0.9, -0.03), Vector2(R * 0.97, -0.034), Vector2(R * 1.03, -0.02), Vector2(R * 1.04, 0.0), Vector2(R * 0.99, 0.018), Vector2(R * 0.92, 0.014)], 28, BRONZE, 0.0)
+		# the face: an inner field, a lighter band, the outer field, a darker ring at the rim
+		var face_col := func(p: Vector3, _k: int, _i: int) -> Color:
+			var r := Vector2(p.x, p.z).length() / R
+			if r > 0.85:
+				return SHIELD_FACE_DARK
+			if r > 0.6 and r < 0.69:
+				return SHIELD_FACE_LIGHT
+			return SHIELD_FACE
+		var face := [Vector2(R * 0.93, 0.012), Vector2(R * 0.85, 0.022), Vector2(R * 0.77, 0.031), Vector2(R * 0.69, 0.04),
+			Vector2(R * 0.6, 0.048), Vector2(R * 0.42, 0.06), Vector2(R * 0.24, 0.068), Vector2(R * 0.13, 0.071), Vector2(0.0, 0.072)]
+		soft.lathe(face, 32, face_col, 0.0, false, true)
+		# the rim: dark bronze, rolled over the edge of the face
+		metal.lathe([Vector2(R * 0.9, -0.03), Vector2(R * 0.97, -0.034), Vector2(R * 1.03, -0.02), Vector2(R * 1.045, 0.0), Vector2(R * 1.0, 0.019), Vector2(R * 0.92, 0.016)], 32,
+			func(p: Vector3, k: int, _i: int) -> Color: return SHIELD_RIM_LIGHT if k == 3 else SHIELD_RIM, 0.0)
+		# the boss: a small bronze dome in the centre
+		metal.lathe([Vector2(R * 0.16, 0.068), Vector2(R * 0.15, 0.078), Vector2(R * 0.11, 0.092), Vector2(R * 0.05, 0.1), Vector2(0.0, 0.102)], 16,
+			func(p: Vector3, k: int, _i: int) -> Color: return BRONZE_LIGHT if k >= 2 else BRONZE, 0.0, false, true)
+		metal.lathe([Vector2(R * 0.185, 0.066), Vector2(R * 0.17, 0.073), Vector2(R * 0.15, 0.076)], 16, BRONZE_DARK, 0.0)
 		# back of the bowl (wood, darker) and its rim
 		soft.lathe([Vector2(0.0, 0.05), Vector2(R * 0.3, 0.043), Vector2(R * 0.6, 0.025), Vector2(R * 0.8, 0.004), Vector2(R * 0.9, -0.028)], 28, WOOD, 0.0, true, false)
 		# porpax (arm band, bronze) and antilabe (grip cord)
@@ -1312,30 +1979,51 @@ static func shield_meshes() -> Array:
 		soft.limb(Vector3(0.2, 0.03, -0.05), Vector3(0.2, -0.05, -0.05), 0.012, 0.012, 5, LEATHER)
 		soft.limb(Vector3(0.2, 0.03, 0.05), Vector3(0.2, -0.05, 0.05), 0.012, 0.012, 5, LEATHER)
 		soft.limb(Vector3(0.2, -0.05, -0.06), Vector3(0.2, -0.05, 0.06), 0.012, 0.012, 5, LEATHER)
-		# emblem: a black club (Heracles' own), laid on the face along local x
-		var club := []
-		for i in 9:
-			var u := lerpf(-0.21, 0.2, float(i) / 8.0)
-			var wd := lerpf(0.022, 0.06, float(i) / 8.0) + (0.012 if i % 3 == 1 else 0.0)
-			club.append([u, wd])
-		for i in club.size() - 1:
-			var u0: float = club[i][0]
-			var u1: float = club[i + 1][0]
-			var w0: float = club[i][1]
-			var w1: float = club[i + 1][1]
-			var rot := Basis(Vector3.UP, 0.6)
+		# the carrying strap across the back (the shield hangs on his back by it): a leather band on the wood, riveted
+		var back_y := func(r: float) -> float:
+			# the wooden back's height at radius r (the lathe above, linear between its rings)
+			var prof := [[0.0, 0.05], [R * 0.3, 0.043], [R * 0.6, 0.025], [R * 0.8, 0.004], [R * 0.9, -0.028]]
+			for k in prof.size() - 1:
+				if r <= float(prof[k + 1][0]):
+					return lerpf(prof[k][1], prof[k + 1][1], (r - float(prof[k][0])) / (float(prof[k + 1][0]) - float(prof[k][0])))
+			return -0.028
+		var sx := -0.2
+		var segs := 8
+		var prev_a := Vector3.ZERO
+		var prev_b := Vector3.ZERO
+		for k in segs + 1:
+			var z := lerpf(-0.27, 0.27, float(k) / float(segs))
+			var y: float = back_y.call(Vector2(sx, z).length()) - 0.007
+			var a := Vector3(sx - 0.019, y, z)
+			var b := Vector3(sx + 0.019, y, z)
+			if k > 0:
+				soft.quad(prev_a, prev_b, b, a, LEATHER_DARK)
+				soft.quad(prev_a + Vector3(0, 0.004, 0), a + Vector3(0, 0.004, 0), b + Vector3(0, 0.004, 0), prev_b + Vector3(0, 0.004, 0), LEATHER_DARK)
+			prev_a = a
+			prev_b = b
+		for zz in [-0.25, 0.25]:
+			var yy: float = back_y.call(Vector2(sx, zz).length()) - 0.01
+			metal.ico(Vector3(sx, yy, zz), 0.011, BRONZE, 0, 0.0, Vector3(1.0, 0.6, 1.0))
+		# the emblem: Heracles' club, a shade darker than the leather, laid on the face along local x
+		var lift := func(v: Vector3) -> Vector3:
+			var r := Vector2(v.x, v.z).length() / R
+			return Vector3(v.x, 0.072 - 0.066 * r * r + 0.0025, v.z)
+		var rot := Basis(Vector3.UP, 0.6)
+		for i in 8:
+			var u0 := lerpf(-0.24, 0.17, float(i) / 8.0)
+			var u1 := lerpf(-0.24, 0.17, float(i + 1) / 8.0)
+			var w0 := lerpf(0.016, 0.042, float(i) / 8.0) + (0.007 if i % 3 == 1 else 0.0)
+			var w1 := lerpf(0.016, 0.042, float(i + 1) / 8.0) + (0.007 if (i + 1) % 3 == 1 else 0.0)
+			# (skip the boss: the club passes under it)
+			if absf(u0) < R * 0.17 and absf(u1) < R * 0.17:
+				continue
 			var a := rot * Vector3(u0, 0, -w0)
 			var b := rot * Vector3(u1, 0, -w1)
 			var cc := rot * Vector3(u1, 0, w1)
 			var d := rot * Vector3(u0, 0, w0)
-			for p in [a, b, cc, d]:
-				pass
-			var lift := func(v: Vector3) -> Vector3:
-				var r := Vector2(v.x, v.z).length() / R
-				return Vector3(v.x, 0.075 - 0.07 * r * r + 0.004, v.z)
-			soft.quad(lift.call(a), lift.call(d), lift.call(cc), lift.call(b), INK)
-		var knob := Basis(Vector3.UP, 0.6) * Vector3(0.215, 0, 0)
-		soft.ico(Vector3(knob.x, 0.075 - 0.07 * pow(knob.length() / R, 2.0) + 0.002, knob.z), 0.065, INK, 0, 0.0, Vector3(1.0, 0.08, 1.0))
+			soft.quad(lift.call(a), lift.call(d), lift.call(cc), lift.call(b), SHIELD_FACE_DARK)
+		var knob := rot * Vector3(0.2, 0, 0)
+		soft.ico(lift.call(knob) - Vector3(0, 0.001, 0), 0.05, SHIELD_FACE_DARK, 0, 0.0, Vector3(1.0, 0.06, 1.0))
 		metal.pop()
 		soft.pop()
 		_cache["shield"] = [soft.commit(), metal.commit()]
@@ -1469,11 +2157,17 @@ func _build() -> void:
 	var body := body_meshes()
 	_skinned_mi(skel, body[0], skin, _mat_soft, "BodySoft")
 	_skinned_mi(skel, body[1], skin, _mat_metal, "BodyMetal")
-	var hel := helmet_meshes()
-	_crest_mi = _skinned_mi(skel, hel[0], skin, _mat_soft, "Crest")
-	_helm_mi = _skinned_mi(skel, hel[1], skin, _mat_helm, "Helmet")
-	_helmet_mi.append(_crest_mi)
+	_skinned_mi(skel, body[2], skin, _mat_kilt, "Kilt")
+	# LOOK: the head and the hair (their own material: see _apply_outfit)
+	var hd := head_meshes()
+	_helm_mi = _skinned_mi(skel, hd[0], skin, _mat_helm, "Head")
+	_hair_mi = _skinned_mi(skel, hd[1], skin, _mat_helm, "Hair")
 	_helmet_mi.append(_helm_mi)
+	_helmet_mi.append(_hair_mi)
+	_crest_mi = MeshInstance3D.new()
+	_crest_mi.name = "Crest"
+	_crest_mi.visible = false
+	skel.add_child(_crest_mi)
 	# skinning pivots for rigid props (children are modelled in rest rig space)
 	for nm in ["hand_r_s", "hand_l_s", "farm_l_s", "chest_s", "spear_s", "hood_s", "pelvis_s", "thigh_r_s", "thigh_l_s"]:
 		_piv[nm] = _pivot(nm)
@@ -1537,16 +2231,25 @@ func _build() -> void:
 	parts["leg_l"] = _piv["thigh_l_s"]
 	for nm in act_names():
 		ACTIONS[nm] = action_length(nm)
+	# LOOK: the mantle and its gold brooch (skinned: the shoulders rise with the clavicles)
 	var col := collar_meshes()
-	_collar_mi.append(_rigid_mi(_piv["chest_s"], col[0], _mat_soft, "CapeCollar"))
-	_collar_mi.append(_rigid_mi(_piv["chest_s"], col[1], _mat_metal, "Fibulae"))
+	_collar_mi.append(_skinned_mi(skel, col[0], skin, _mat_soft, "CapeCollar"))
+	_collar_mi.append(_skinned_mi(skel, col[1], skin, _mat_metal, "Brooch"))
+	_build_stow() # STOW: the scabbard and the carried weapons
 
 
+## Where the spear sits on the back (rest rig space): head up over the left shoulder, butt at the right hip (the head's end and a point
+## on the line to the butt). Under the lion pelt it lies lower and flatter, clear of the mane. (INTEGRATE: tilted out further, its head
+## lower and wider of the head: from the front the old placement put the spearhead right beside his head, like a horn.)
+const SPEAR_BACK_TIP := Vector3(-0.47, 1.8, 0.24)
+const SPEAR_BACK_BUTT := Vector3(0.26, 0.72, 0.31)
+const SPEAR_BACK_TIP_LION := Vector3(-0.45, 1.79, 0.24)
+const SPEAR_BACK_BUTT_LION := Vector3(0.25, 0.89, 0.3)
 ## Where the spear sits on the back (rest rig space): head up over the left shoulder, butt at the right hip.
 ## Under the lion pelt it lies lower and flatter, clear of the mane.
 static func spear_back_xf(lion: bool = false) -> Transform3D:
-	var tip := Vector3(-0.29, 1.99, 0.215) if not lion else Vector3(-0.45, 1.79, 0.24)
-	var butt := Vector3(0.24, 0.85, 0.3) if not lion else Vector3(0.25, 0.89, 0.3)
+	var tip := SPEAR_BACK_TIP if not lion else SPEAR_BACK_TIP_LION
+	var butt := SPEAR_BACK_BUTT if not lion else SPEAR_BACK_BUTT_LION
 	var d := (tip - butt).normalized()
 	var z := -d
 	# (the spear's roll about its shaft is the one the left fist has when it closes on it, THROW_GRAB, so that the spear in the hand and
@@ -2045,6 +2748,7 @@ func _apply_bones() -> void:
 	var hd := _bx[HEAD]
 	_head.transform = Transform3D(hd.basis, hd.origin + hd.basis * (HEAD_C - P_HEAD))
 	_sword.transform = Transform3D(Basis(Vector3.RIGHT, _pose[C_GRIP]), Vector3.ZERO)
+	_place_weapons() # STOW: the sword, the scabbard, the shield and the spear on the back where they are
 
 
 ## What the outfit shows this frame: don_skin swaps the cape for the pelt at DON_SWAP, swings the hood from the
@@ -2069,17 +2773,14 @@ func _apply_outfit() -> void:
 		m.visible = not _show_lion
 	if _show_lion:
 		(_piv["hood_s"] as Node3D).transform = hood_xf(_bx[HEAD], _rest[HEAD], _show_hood)
-	# the crest folds down into the hood as it comes over, the helmet sinks into its shadow
-	var crest_k := 1.0 if not _show_lion else 1.0 - smoothstep(0.1, 0.5, _show_hood)
-	_crest_mi.visible = crest_k > 0.02
-	if crest_k < 0.999:
-		var cb := _bx[CREST_B]
-		_bx[CREST_B] = Transform3D(cb.basis * Basis.from_scale(Vector3.ONE * maxf(crest_k, 0.02)), cb.origin)
+	# LOOK: the hood comes down over the hair (hidden once it is on, so no lock pokes through the mane) and the face sinks
+	# into its shade
+	_hair_mi.visible = not (_show_lion and _show_hood > HOOD_HAIR_OFF)
 	var shade := smoothstep(0.55, 1.0, _show_hood) if _show_lion else 0.0
 	if absf(shade - _helm_shade) > 0.01:
 		_helm_shade = shade
-		var k := lerpf(1.0, 0.22, shade)
-		_mat_helm.set_shader_parameter("tint", Vector3(k, k * 0.94, k * 1.04))
+		var k := lerpf(1.0, HOOD_SHADE, shade)
+		_mat_helm.set_shader_parameter("tint", Vector3(k, k * 0.95, k * 1.02))
 	if _spear_lion != _show_lion:
 		_spear_lion = _show_lion
 		_spear_back.transform = spear_back_xf(_show_lion)
@@ -2400,7 +3101,9 @@ func _land_impact(v: float) -> void:
 
 ## The authored seconds from which a blow's recovery may be cancelled into the guard (HeroMelee `cancel`): the hero is already
 ## guarding then (his state is MOVE) and the shield comes up at once, instead of waiting for the end of a recovery he has left.
-const GUARD_CUT := {"attack1": 0.30, "attack2": 0.29, "attack3": 0.50, "heavy": 0.80}
+## (attack1..3 are the old names: they play a1, a2, a4.)
+const GUARD_CUT := {"a1": 0.30, "a2": 0.24, "a3": 0.28, "a4": 0.50, "b1": 0.27, "b2": 0.24, "b3": 0.46, "dash": 0.56, "heavy": 0.80,
+	"attack1": 0.30, "attack2": 0.24, "attack3": 0.50}
 
 
 func set_guard(on: bool) -> void:
@@ -2433,8 +3136,14 @@ func brush_amount() -> float:
 
 ## Definition actually played for action `a` (the lion outfit draws the spear from its own place on the back).
 func _variant(a: String) -> String:
-	if (a == "throw" or a == "catch") and _show_lion:
-		return a + "_lion"
+	if a == "throw" or a == "catch":
+		# (STOW: with the shield on his back the spear lies over it: the hand finds it there)
+		var v := a + ("_over" if _spear_over > 0.5 else "")
+		return v + "_lion" if _show_lion else v
+	if a == "draw_shield" and guard:
+		return "draw_shield_guard" # (STOW: drawn for the guard it ends up in front)
+	if a == "draw_sword" and DRAW_INTO.has(draw_into):
+		return "draw_sword_" + draw_into # (INTEGRATE: the quick draw that leads into the blow pressed)
 	return a
 
 
@@ -2452,6 +3161,7 @@ func play(a: String) -> float:
 	_akey = _variant(a)
 	action_t = 0.0
 	action_len = float(def["len"])
+	_io_from_strike = false
 	_fired.clear()
 	if (a == "don_skin") != _don_hide:
 		_don_hide = a == "don_skin"
@@ -2470,7 +3180,7 @@ func play(a: String) -> float:
 		_hit_set = false
 		_hit_ang = 0.0
 	_sk_init = true
-	_sk_run = def.has("strike") and _spd > SK_RUN_V and not (def["strike"] as Dictionary).has("rot")
+	_sk_run = def.has("strike") and _spd > SK_RUN_V and not _strike_own_legs(def["strike"])
 	return action_len
 
 
@@ -2487,6 +3197,7 @@ func play_at(a: String, spd: float = 1.0, upper: bool = false) -> float:
 func stop_action(blend: float = 0.15) -> void:
 	if action == "":
 		return
+	_io_from_strike = act_def(_akey).has("strike") or action == "throw" # INTEGRATE (see IO_STRIKE_V)
 	if action == "don_skin" and _don_hide:
 		_don_hide = false
 		_update_weapons()
@@ -2550,6 +3261,7 @@ func advance(delta: float) -> void:
 			else:
 				var done := action
 				action = ""
+				_io_from_strike = def.has("strike") or done == "throw" # INTEGRATE (see IO_STRIKE_V)
 				_start_blend(float(def["out"]))
 				_on_action_done(done)
 	if _flash > 0.0:
@@ -2602,6 +3314,7 @@ func _animate(delta: float) -> void:
 		if _airl > 0.001 and _upper == 0.0 and not (sk or skl or skc):
 			_layer_lower(_src, loco, smooth(_airl))
 		_hit_dir_apply(_src)
+		_stow_layer(_src, loco) # STOW: a draw or a sheathe plays on the upper body over the locomotion
 		# the action hands over to the locomotion before its end (the trunk, the head and the arms follow the gait that is running
 		# underneath: a roll ends in a run, a flinch in the idle, with no stand-to-attention in between)
 		var ho_t: float = act_def(_akey).get("ho", -1.0)
@@ -2612,6 +3325,7 @@ func _animate(delta: float) -> void:
 		_src = loco
 	_io_rt = sk or skl or skc
 	_pose = _blend_out(_src, delta)
+	_stow_pose(delta) # STOW: the fists exactly on the grip and the rim they take
 	_loco_prev = loco
 	_solve_dt = delta
 	_update_ground(delta)
@@ -2624,6 +3338,7 @@ func _animate(delta: float) -> void:
 		_pose[C_CHS + 2] += sin(t * 47.0 + 1.3) * q
 		_pose[C_HR + 1] += sin(t * 53.0 + 0.4) * q * 0.8
 	_solve(_pose)
+	_stow_frame(delta) # STOW: who holds the sword and the shield, where they are
 	_update_outfit_state()
 	_secondary(delta)
 	_apply_outfit()
@@ -2716,6 +3431,10 @@ var _io_src_new := false
 ## The new source's legs and hips are driven at run time (a blow's footwork, the layers over the gait): the sampled action
 ## has no velocity for them.
 var _io_rt := false
+## INTEGRATE: the transition being started leaves a blow (its end or its cut) or the throw (its sword hand swings back to the
+## carry the same way); the sword hand's carried speed limit then (m/s).
+var _io_from_strike := false
+const IO_STRIKE_V := 1.2
 ## Channels that are weights (kept in 0..1 when an offset is added).
 const IO_FLAGS := [C_OHL, C_SPR, C_HOOD, C_HLX, C_HLS, C_HRS, C_HLR, C_HRR]
 ## Channels that are directions (the blade, the back of the hand, the elbow poles, the shield's facing, the left hand's blade and
@@ -2789,6 +3508,12 @@ func _blend_out(src: PackedFloat32Array, delta: float) -> PackedFloat32Array:
 				var sv := (src[i] - sp[i]) / delta
 				_io_x[i] = _out_p1[i] + ov * delta - src[i]
 				_io_v[i] = ov - sv
+			if _io_from_strike:
+				# INTEGRATE: out of a blow (its end, or its recovery cut short by the stick) the sword hand's speed is carried on no faster
+				# than IO_STRIKE_V: a recovery sweeps back to the carry fast, and carried on at full speed the fist overshot into the hip
+				for j in 3:
+					_io_v[C_HR + j] = clampf(_io_v[C_HR + j], -IO_STRIKE_V, IO_STRIKE_V)
+				_io_from_strike = false
 			var dmax := 0.0
 			for k in IO_DIRS.size():
 				var o: int = IO_DIRS[k]
@@ -2915,9 +3640,11 @@ static func _compile_actions() -> void:
 	var defs := _action_defs()
 	for nm in defs:
 		_acts[nm] = compile_action(defs[nm])
-	# the blows built from joint angles replace the keyed ones (_strike_raw)
+	# the blows built from joint angles replace the keyed ones (_strike_raw); the old names play the new blows (STRIKE_ALIAS)
 	for nm in STRIKE_NAMES:
 		_acts[nm] = _bake_strike(_strike_raw(nm))
+	for al in STRIKE_ALIAS:
+		_acts[al] = _acts[STRIKE_ALIAS[al]]
 
 
 ## Compiles one raw action definition (see _action_defs) into sampled poses and Hermite tangents.
@@ -3127,7 +3854,21 @@ const T_TH0 := [2.2, 0.26, 3.2, 0.18, 4.5, 0.1, 6.2, 0.05, 9.0, -0.2] # foot pit
 const T_THTO := [2.2, 0.75, 6.2, 0.82, 9.0, 0.9] # foot pitch at toe-off (the heel up)
 const T_UH := [2.2, 0.55, 4.5, 0.48, 6.2, 0.42, 9.0, 0.36] # where in the stance the heel starts to rise
 const T_APEX := [0.55, 0.02, 2.2, 0.035, 4.5, 0.11, 6.2, 0.16, 9.0, 0.24] # swing foot height over the straight line
-const T_LEAN := [0.0, 0.0, 2.2, 4.0, 4.5, 8.0, 6.2, 11.0, 9.0, 21.5] # hip -> neck lean, degrees
+const T_LEAN := [0.0, 0.0, 2.2, 4.0, 4.5, 8.5, 6.2, 13.5, 9.0, 27.0] # hip -> neck lean, degrees (STOW: P2, the run leans in hard)
+## STOW: the relaxed arms (empty fists): swing centre (deg, + forward: the swing pumps forward more than back), amplitude, elbow
+## flexion and its swing (more bent in front), abduction.
+const T_RX_C := [0.3, 0.0, 2.2, 3.0, 4.5, 6.0, 6.2, 9.0, 9.0, 12.0]
+const T_RX_A := [0.3, 0.0, 2.2, 24.0, 4.5, 42.0, 6.2, 50.0, 9.0, 58.0]
+const T_RX_EL := [0.0, 16.0, 2.2, 24.0, 4.5, 74.0, 6.2, 88.0, 9.0, 98.0]
+const T_RX_ELV := [0.0, 0.0, 2.2, 10.0, 4.5, 14.0, 6.2, 16.0, 9.0, 16.0]
+const T_RX_AB := [0.0, 9.0, 2.2, 10.0, 4.5, 12.0, 6.2, 13.0, 9.0, 14.0]
+## STOW: the armed carry (ref_sword_pose): the sword arm's swing centre and amplitude (less: it carries the sword), elbow, abduction
+## (the blade clear of the leg) and the blade's elevation (deg, trailing back and down; it rises a little with speed).
+const T_AC_C := [0.3, 4.0, 2.2, 4.0, 4.5, 8.0, 6.2, 10.0, 9.0, 12.0]
+const T_AC_A := [0.3, 0.0, 2.2, 12.0, 4.5, 18.0, 6.2, 22.0, 9.0, 26.0]
+const T_AC_EL := [0.0, 14.0, 2.2, 20.0, 4.5, 32.0, 6.2, 40.0, 9.0, 52.0]
+const T_AC_AB := [0.0, 12.0, 2.2, 13.0, 6.2, 16.0, 9.0, 18.0]
+const T_AC_EV := [0.0, -36.0, 2.2, -34.0, 6.2, -28.0, 9.0, -24.0]
 const T_PYAW := [0.0, 0.0, 2.2, 4.0, 4.5, 5.5, 6.2, 6.5, 9.0, 8.5] # pelvis yaw amplitude, degrees
 const T_CRATIO := [0.0, 1.2, 2.2, 1.2, 4.5, 1.4, 6.2, 1.5, 9.0, 1.6] # chest counter-rotation / pelvis yaw
 const T_PROLL := [0.0, 0.0, 2.2, 3.0, 4.5, 3.5, 6.2, 3.5, 9.0, 4.0] # pelvis list amplitude, degrees
@@ -3143,7 +3884,7 @@ const T_AB_R := [0.3, 10.0, 2.2, 18.0, 4.5, 16.0, 6.2, 15.0, 9.0, 15.0] # abduct
 const T_ARM_LC := [0.3, 8.0, 2.2, 9.0, 4.5, 20.0, 6.2, 27.0, 9.0, 26.0] # shield arm: centre
 const T_ARM_LA := [0.3, 0.0, 2.2, 7.0, 4.5, 9.0, 6.2, 10.0, 9.0, 13.0] # amplitude
 const T_EL_L := [0.3, 56.0, 2.2, 68.0, 4.5, 96.0, 6.2, 102.0, 9.0, 100.0] # elbow flexion
-const T_AB_L := [0.3, 16.0, 2.2, 20.0, 4.5, 20.0, 6.2, 20.0, 9.0, 20.0] # abduction
+const T_AB_L := [0.3, 16.0, 2.2, 20.0, 4.5, 21.0, 6.2, 24.0, 9.0, 28.0] # abduction (INTEGRATE: wider at speed: the shield met the left thigh)
 const T_ARM_PH := [2.2, 0.41, 4.5, 0.3, 6.2, 0.23, 9.0, 0.2] # phase at which the sword arm is furthest forward (the opposite thigh peaks)
 const T_ULN := [0.3, 40.0, 2.2, 48.0, 4.5, 54.0, 6.2, 58.0, 9.0, 58.0] # sword hand: the blade turned towards the forearm's line (ulnar deviation), deg
 const T_TW := [0.3, 0.0, 2.2, 8.0, 6.2, 26.0, 9.0, 30.0] # sword hand: forearm twist (deg, + turns the blade tip out)
@@ -3688,6 +4429,9 @@ func _ground_pose(c: PackedFloat32Array, dt: float) -> void:
 	var sway := _pl(vu, T_SWAY) * gw
 	var mid := p - duty * 0.5
 	pel.x += sway * cos(TAU * mid) + 0.012 * sin(t * 0.45) * idle
+	# STOW (P1): standing, his weight rests on one leg (the other hip drops, the shoulders tilt against it), and shifts now and then
+	var wsh := _idle_shift(dt, idle)
+	pel.x += 0.03 * wsh
 	pel.z += _pl(vu, T_PELZ) + _lean_acc * 0.25
 	# --- the feet
 	if not _sk_on:
@@ -3708,7 +4452,7 @@ func _ground_pose(c: PackedFloat32Array, dt: float) -> void:
 	var list_a := deg_to_rad(_pl(vu, T_PROLL)) * gw
 	var pelr := Vector3(c[C_PELR] * idle - LEAN_SHARE_PELVIS * lean_c, yaw_a * cos(th),
 		c[C_PELR + 2] + list_a * cos(TAU * (p - duty * 0.5)) + 0.012 * sin(t * 0.45) * idle)
-	pelr.z += _roll_turn * 0.2
+	pelr.z += _roll_turn * 0.2 + 0.055 * wsh
 	pel.y = _softmin(pel.y, _pelvis_limit(pel, pelr), 0.03)
 	# the pelvis drops at once where the leg would over-reach, but rises again no faster than a body can
 	if _adv_n - _gp_prev > 1 or not _pel_ok:
@@ -3730,6 +4474,7 @@ func _ground_pose(c: PackedFloat32Array, dt: float) -> void:
 	chs.y += 0.6 * (chest_yaw - pelr.y)
 	chs.z += 0.6 * (chest_roll - pelr.z)
 	chs.x += lerpf(0.018, 0.05, tired) * br * idle - 0.12 * tired * idle
+	chs.z -= 0.035 * wsh
 	_setv(c, C_CHS, chs)
 	if tired > 0.0:
 		# winded: the head drops, the shoulders heave
@@ -3746,59 +4491,30 @@ func _ground_pose(c: PackedFloat32Array, dt: float) -> void:
 	var chest_roll_w := c[C_PELR + 2] + c[C_SPN + 2] + c[C_CHS + 2]
 	_setv(c, C_NEK, Vector3(nek_x, lerpf(c[C_NEK + 1], 0.5 * head_yaw, move), lerpf(c[C_NEK + 2], -0.5 * chest_roll_w, move)))
 	_setv(c, C_HED, Vector3(hed_x + 0.008 * br * idle, lerpf(0.08 * sin(t * 0.31) * idle, 0.5 * head_yaw, move), lerpf(0.0, -0.4 * chest_roll_w, move)))
-	# --- arms: forward kinematics, the sword arm swings against the legs, the shield arm is carried and bobs
+	# --- arms (STOW): each relaxed (an empty fist swinging against the opposite leg) or armed (the sword carried low and trailing, the
+	# shield at the side), by what is in its hand; standing, the idles (_ground_arms)
 	var armk := lerpf(1.0, 0.6, maxf(side_k, back_k * 0.6))
-	var ph_a := TAU * _pl(vu, T_ARM_PH)
-	var psi_r := deg_to_rad(_pl(vu, T_ARM_C) + _pl(vu, T_ARM_A) * armk * gw * cos(th - ph_a))
-	var el_r := deg_to_rad(_pl(vu, T_EL_R) + _pl(vu, T_EL_RV) * gw * cos(th - ph_a + 0.35))
 	# (and the arms fly out to the sides for balance as the ground is met, then come back with the spring)
 	var land_arm := clampf(-_land_x / 0.1, -0.5, 2.0) * _land_k
-	var ab_r := deg_to_rad(_pl(vu, T_AB_R) + 22.0 * land_arm)
-	var fk := _arm_fk(1.0, psi_r, ab_r, el_r, 0.18 * run)
-	# the wrist keeps the blade up and out of the legs: the back swing opens the hand, the forward swing closes it
-	var uln_d := clampf(_pl(vu, T_ULN) + _pl(vu, T_ULN_K) * rad_to_deg(psi_r - deg_to_rad(_pl(vu, T_ARM_C))), 30.0, 60.0)
-	var sh_hand := _sword_hand(fk[2], deg_to_rad(uln_d), deg_to_rad(8.0), deg_to_rad(_pl(vu, T_TW)))
-	var hrb: Vector3 = sh_hand[0]
-	var hrk: Vector3 = sh_hand[1]
-	var grip: Vector3 = (fk[0] as Vector3) + hand_basis(hrb, hrk, 1.0) * GRIP
-	var hr := v3(c, C_HR)
-	hr += Vector3(0.0, -0.012 * br * idle, 0.0)
-	_setv(c, C_HR, hr.lerp(grip, mva))
-	_lerpv(c, C_HRB, hrb, mva)
-	_lerpv(c, C_HRK, hrk, mva)
-	_lerpv(c, C_HRP, fk[1], mva)
-	var psi_l := deg_to_rad(_pl(vu, T_ARM_LC) - _pl(vu, T_ARM_LA) * armk * gw * cos(th - ph_a))
-	var el_l := deg_to_rad(_pl(vu, T_EL_L) - 6.0 * gw * cos(th - ph_a + 0.35))
-	var ab_l := deg_to_rad(_pl(vu, T_AB_L) + 22.0 * land_arm)
-	# the free hand out over the wheat (set_brush): the arm opens by its joints to where the brush pose holds it (out
-	# to the side, the forearm hanging), so the shield does not sweep through the chest on its way there
-	var bw := smooth(_brush)
-	if bw > 0.0:
-		psi_l = lerpf(psi_l, deg_to_rad(-26.0), bw)
-		ab_l = lerpf(ab_l, deg_to_rad(58.0), smoothstep(0.0, 0.3, bw))
-		el_l = lerpf(el_l, deg_to_rad(64.0), bw)
-	var fkl := _arm_fk(-1.0, psi_l, ab_l, el_l, 0.1 * run * (1.0 - bw))
-	var hl := v3(c, C_HL)
-	hl += Vector3(0.0, -0.01 * br * idle, 0.0)
-	_setv(c, C_HL, hl.lerp(fkl[0], mva))
-	_lerpv(c, C_HLF, Vector3(-1.0, 0.05, -0.5), mva)
-	_lerpv(c, C_HLP, fkl[1], mva)
-	# --- guard: shield up in front, sword ready at the hip
+	_ground_arms(c, vu, gw, th, run, mva, br, armk, land_arm, idle)
+	# --- guard (P7): crouched behind the shield held up in front of him (he looks over its rim), the shield side forward, the sword arm
+	# drawn back low with the blade trailing
 	if absf(_guard_k) > 0.001:
 		var g := _guard_shape()
-		# the shield forward-left of the chest (a hoplite's stance): its rim shows past his left side even from
-		# behind him, so a raised guard reads from the gameplay camera
-		_lerpv(c, C_HL, Vector3(-0.14, 0.02, -0.46), g)
-		_lerpv(c, C_HLF, Vector3(-0.06, 0.06, -1.0), g)
+		_lerpv(c, C_HL, Vector3(-0.1, 0.04, -0.42), g)
+		_lerpv(c, C_HLF, Vector3(-0.12, 0.1, -1.0), g)
 		_lerpv(c, C_HLP, Vector3(-1.0, -0.7, 0.3), g)
-		_lerpv(c, C_HR, Vector3(0.3, -0.2, -0.24), g)
-		_lerpv(c, C_HRB, Vector3(0.05, 0.22, -1.0), g)
-		_lerpv(c, C_HRK, Vector3(1.0, 0.3, 0.2), g)
-		_lerpv(c, C_HRP, Vector3(0.6, -0.3, 1.0), g)
-		c[C_CHS + 1] += 0.14 * g
-		c[C_SPN] -= 0.05 * g
-		c[C_PEL + 1] -= 0.04 * g * idle
-		c[C_NEK + 1] -= 0.1 * g
+		_lerpv(c, C_HR, Vector3(0.35, -0.36, 0.1), g)
+		_lerpv(c, C_HRB, Vector3(0.32, -0.5, 0.8), g)
+		_lerpv(c, C_HRK, Vector3(0.7, 0.1, -0.7), g)
+		_lerpv(c, C_HRP, Vector3(0.6, -0.2, 1.0), g)
+		c[C_CHS + 1] -= 0.16 * g
+		c[C_SPN] -= 0.1 * g
+		c[C_CHS] -= 0.04 * g
+		c[C_PEL + 1] -= lerpf(0.09, 0.05, move) * g
+		c[C_NEK + 1] += 0.13 * g
+		c[C_NEK] += 0.06 * g
+		c[C_HED] += 0.03 * g
 		# a blow on the shield: the shield arm is driven back towards the chest, the chest leans back with it
 		if absf(_jolt) > 0.001:
 			var j := clampf(_jolt, -0.4, 1.0) * g
@@ -3947,12 +4663,16 @@ func _air_pose(c: PackedFloat32Array) -> void:
 	_setv(c, C_FRR, Vector3(lerpf(-0.2, 0.2, k), -0.1, 0.0))
 	_setv(c, C_FL, Vector3(-0.14, lerpf(lerpf(0.26, 0.34, run), lerpf(0.17, 0.16, run), k) - fl, lerpf(lerpf(0.22, 0.4, run), lerpf(0.08, 0.2, run), k)))
 	_setv(c, C_FLR, Vector3(lerpf(-0.8, -0.2, k), 0.1, 0.0))
-	# the arms: up and forward for the lift, out for the way down
-	_setv(c, C_HR, Vector3(lerpf(0.44, 0.52, k), lerpf(0.0, 0.02, k), lerpf(-0.18, -0.02, k)))
-	_setv(c, C_HRB, Vector3(lerpf(0.1, 0.5, k), lerpf(0.25, 0.4, k), -1.0))
+	# the arms (P6): spread out to his sides for balance, up and out on the rise, lower on the way down; armed, the sword arm out to his
+	# side with the blade out and back (clear of his legs), the shield out in front of his left side
+	var ksw := smoothstep(0.0, 1.0, _carry_sw)
+	var ksh := smoothstep(0.0, 1.0, _carry_sh)
+	_setv(c, C_HR, Vector3(lerpf(0.62, 0.6, k), lerpf(0.1, -0.04, k), lerpf(-0.2, -0.06, k)))
+	_setv(c, C_HRB, Vector3(0.1, 0.05, -1.0).slerp(Vector3(0.7, -0.2, 0.68).normalized(), ksw))
+	_setv(c, C_HRK, Vector3(0.05, 1.0, 0.1).slerp(Vector3(0.2, 1.0, -0.3), ksw))
 	_setv(c, C_HRP, Vector3(0.6, -0.5, 0.8))
-	_setv(c, C_HL, Vector3(lerpf(-0.44, -0.5, k), lerpf(-0.04, 0.0, k), lerpf(-0.14, 0.0, k)))
-	_setv(c, C_HLF, Vector3(-1.0, -0.2, -0.3))
+	_setv(c, C_HL, Vector3(lerpf(-0.62, -0.6, k), lerpf(0.1, -0.04, k), lerpf(-0.2, -0.06, k)).lerp(Vector3(lerpf(-0.46, -0.5, k), lerpf(-0.02, -0.08, k), lerpf(-0.32, -0.22, k)), ksh))
+	_setv(c, C_HLF, Vector3(-0.1, 1.0, 0.0).lerp(Vector3(-0.6, -0.1, -0.8), ksh))
 	_setv(c, C_HLP, Vector3(-0.6, -0.6, 0.8))
 
 
@@ -4092,22 +4812,9 @@ func _secondary(dt: float) -> void:
 	_cape_step(dt, gx)
 
 
-func _crest_spring(dt: float, gx: Transform3D) -> void:
-	if dt > 0.0:
-		var wp := gx * _bx[HEAD].origin
-		var hv := (wp - _prev_head_p) / dt + velocity_hint
-		var ha := (hv - _prev_head_v) / dt
-		if _prev_head_p == Vector3.ZERO:
-			ha = Vector3.ZERO
-		_prev_head_p = wp
-		_prev_head_v = hv
-		var la := (gx.basis * _bx[HEAD].basis).inverse() * ha
-		var force := Vector2(la.z, -la.x) * 0.012
-		_crest_v += (force - _crest * 90.0 - _crest_v * 9.0) * dt
-		_crest += _crest_v * dt
-		_crest = _crest.clamp(Vector2(-0.22, -0.18), Vector2(0.22, 0.18))
-	var cb := _bx[CREST_B]
-	_bx[CREST_B] = Transform3D(cb.basis * Basis(Vector3.RIGHT, _crest.x) * Basis(Vector3.BACK, _crest.y), cb.origin)
+## LOOK: the crest is gone (no helmet): nothing is skinned to CREST_B any more and its spring is off.
+func _crest_spring(_dt: float, _gx: Transform3D) -> void:
+	pass
 
 
 ## CORE: forget the secondary motion (cape, skirt, crest, tracked velocity): they restart from the rest drape
@@ -4211,8 +4918,8 @@ func _air_velocity() -> Vector3:
 
 # --- cape: a verlet grid pinned along the upper back, drawn as a skinned mesh (one bone per particle) ----------
 
-const CAPE_NC := 9
-const CAPE_NR := 9
+const CAPE_NC := 13
+const CAPE_NR := 10
 var cape_skel: Skeleton3D
 var _cape_pos := PackedVector3Array()
 var _cape_prev := PackedVector3Array()
@@ -4221,27 +4928,121 @@ var _cape_ca := PackedInt32Array()
 var _cape_cb := PackedInt32Array()
 var _cape_cl := PackedFloat32Array()
 var _cape_ck := PackedFloat32Array()
+var _cape_wa := PackedFloat32Array()
+var _cape_wb := PackedFloat32Array()
 var _cape_meshes: Array[MeshInstance3D] = []
 var _cape_outfit := &""
 ## Tools: names of cloth constraints to skip (debugging): caps, chest, spine, cone, shield, spear, drape, air.
 var dbg_off: PackedStringArray = []
 
 
-## Rest grid of the cape (or the lion pelt) in rest rig space: row 0 along the upper back, hanging down.
+## Rest grid of the cape (or the lion pelt) in rest rig space: row 0 pinned, hanging down. LOOK2: the cloak's row 0 lies under
+## the mantle's rolled hem, from the back of one deltoid round the upper back to the other (_cloak_pin); its rows fall wide and
+## long (CLOAK_ROWS: wider than his back, wrapping a little round his sides, down to CLOAK_HEM above the ground) in a few big
+## folds, clear of the body, the arms and the legs at rest (_cloak_rest_push). The pelt hangs from the upper back as before.
 static func cape_rest(lion: bool) -> PackedVector3Array:
 	var out := PackedVector3Array()
-	var length := 1.0 if lion else 0.95
+	if lion:
+		for j in CAPE_NR:
+			var v := float(j) / float(CAPE_NR - 1)
+			var y := 1.475 - v * 1.0
+			var hw := lerpf(0.24, 0.36, pow(v, 0.7))
+			for i in CAPE_NC:
+				var u := float(i) / float(CAPE_NC - 1) * 2.0 - 1.0
+				var x := u * hw
+				# over the shoulder blades, then out over the skirt, then straight down
+				var z := 0.175 + 0.075 * smoothstep(0.0, 0.55, v) - 0.55 * x * x * (1.0 - v * 0.6)
+				out.append(Vector3(x, y, z))
+		return out
+	# the pins evenly spaced along the pinned row (rays from MANTLE_O crowd them on the back and leave the shoulders bare)
+	var pins := PackedVector3Array()
+	var dense := PackedVector3Array()
+	var m := 64
+	for q in m + 1:
+		dense.append(_cloak_pin(float(q) / float(m) * 2.0 - 1.0))
+	var cum := PackedFloat32Array([0.0])
+	for q in m:
+		cum.append(cum[q] + dense[q].distance_to(dense[q + 1]))
+	for i in CAPE_NC:
+		var want := cum[m] * float(i) / float(CAPE_NC - 1)
+		var q := 0
+		while q < m - 1 and cum[q + 1] < want:
+			q += 1
+		pins.append(dense[q].lerp(dense[q + 1], clampf((want - cum[q]) / maxf(cum[q + 1] - cum[q], 1e-6), 0.0, 1.0)))
 	for j in CAPE_NR:
 		var v := float(j) / float(CAPE_NR - 1)
-		var y := 1.475 - v * length
-		var hw := lerpf(0.2, 0.31, pow(v, 0.8)) if not lion else lerpf(0.24, 0.36, pow(v, 0.7))
+		var row := _cloak_row(v)
 		for i in CAPE_NC:
+			if j == 0:
+				out.append(pins[i])
+				continue
 			var u := float(i) / float(CAPE_NC - 1) * 2.0 - 1.0
-			var x := u * hw
-			# over the shoulder blades, then out over the skirt, then straight down
-			var z := 0.175 + 0.075 * smoothstep(0.0, 0.55, v) - 0.55 * x * x * (1.0 - v * 0.6)
-			out.append(Vector3(x, y, z))
+			var al := u * PI * 0.5
+			var arc := Vector2(row.x * sin(al), row.y + (row.z - row.y) * cos(al))
+			# the big folds stand off the arc along its outward normal
+			var nrm := Vector2((row.z - row.y) * sin(al), row.x * cos(al)).normalized()
+			arc += nrm * CLOAK_FOLD * smoothstep(0.2, 0.75, v) * cos(u * TAU)
+			var pin := pins[i]
+			var xz := Vector2(pin.x, pin.z).lerp(arc, smoothstep(0.0, 0.24, v))
+			out.append(_cloak_rest_push(Vector3(xz.x, lerpf(pin.y, CLOAK_HEM, v), xz.y)))
 	return out
+
+
+## LOOK2: the cloak's measures: [v (0 the pinned row .. 1 the hem), half-width, z of its side edges, z in the middle] of its
+## rows (rest rig space), the hem's height over the ground, the depth of its big folds, the strength of the pull back to the
+## rest drape (the pelt keeps 3), the pinned row's reach round the back from its middle (rad) and the colliders' radii (the
+## upper arms capping the deltoids, the forearms to the fists, the thighs, the shins).
+const CLOAK_ROWS := [[0.0, 0.33, 0.12, 0.17], [0.11, 0.34, 0.17, 0.19], [0.3, 0.44, 0.13, 0.225], [0.5, 0.54, 0.07, 0.29],
+	[0.7, 0.63, 0.03, 0.335], [1.0, 0.72, 0.0, 0.37]]
+const CLOAK_HEM := 0.4
+const CLOAK_FOLD := 0.055
+const CLOAK_SHAPE_K := 10.0
+const CLOAK_PIN_A := 1.38
+const CLOAK_UARM_R := 0.135
+const CLOAK_FARM_R := 0.125
+const CLOAK_THIGH_R := 0.14
+const CLOAK_SHIN_R := 0.125
+## LOOK2: cloth up to this far outside the face of the shield on his arm (m, along its normal) is put back on his side of it.
+const CLOAK_SHIELD_OUT := 0.2
+## LOOK2: the chest's turn rates (rad/s) over which the cloak goes from swinging free to being carried round with him.
+const CLOAK_SPIN := Vector2(4.0, 11.0)
+
+
+## One of the cloak's rows: (half-width, z of the side edges, z in the middle).
+static func _cloak_row(v: float) -> Vector3:
+	var t := CLOAK_ROWS
+	var k := 0
+	while k < t.size() - 2 and v > float(t[k + 1][0]):
+		k += 1
+	var f := clampf((v - float(t[k][0])) / (float(t[k + 1][0]) - float(t[k][0])), 0.0, 1.0)
+	return Vector3(lerpf(t[k][1], t[k + 1][1], f), lerpf(t[k][2], t[k + 1][2], f), lerpf(t[k][3], t[k + 1][3], f))
+
+
+## A point of the cloak's pinned row (u -1 his left .. 1 his right): a little above the mantle's lower edge, under it.
+static func _cloak_pin(u: float) -> Vector3:
+	var a := PI - u * CLOAK_PIN_A
+	var d := _mantle_dir(a, _mantle_phi(a).y + deg_to_rad(5.0))
+	return MANTLE_O + d * (_body_ray(d).x + 0.006)
+
+
+## A rest position of the cloak pushed clear of the colliders of _cape_colliders and _cape_step (the rest skeleton, a margin more).
+static func _cloak_rest_push(p: Vector3) -> Vector3:
+	for s in [-1.0, 1.0]:
+		p = _push_capsule(p, mx(P_SHOULDER, s), mx(P_ELBOW, s), CLOAK_UARM_R + 0.015)
+		p = _push_capsule(p, mx(P_ELBOW, s), mx(P_WRIST, s) + GRIP, CLOAK_FARM_R + 0.015)
+		p = _push_capsule(p, mx(P_HIP, s), mx(P_KNEE, s), CLOAK_THIGH_R + 0.015)
+		p = _push_capsule(p, mx(P_KNEE, s), mx(P_ANKLE, s), CLOAK_SHIN_R + 0.015)
+	var lc := p - P_CHEST
+	if lc.y > -0.25 and lc.y < 0.3 and absf(lc.x) < 0.24:
+		p.z = maxf(p.z, P_CHEST.z + 0.172 - 0.6 * lc.x * lc.x + 0.012)
+	var lq := p - P_PELVIS
+	if lq.y > -0.34 and lq.y < 0.07:
+		var rmin := lerpf(0.235, 0.31, clampf((0.05 - lq.y) / 0.25, 0.0, 1.0)) + 0.015
+		var r2 := Vector2(lq.x, lq.z)
+		if r2.length() < rmin:
+			r2 = r2.normalized() * rmin if r2.length() > 1e-4 else Vector2(0.0, rmin)
+			p = P_PELVIS + Vector3(r2.x, lq.y, r2.y)
+	return p
 
 
 func _cape_setup(lion: bool) -> void:
@@ -4250,6 +5051,8 @@ func _cape_setup(lion: bool) -> void:
 	_cape_cb.clear()
 	_cape_cl.clear()
 	_cape_ck.clear()
+	_cape_wa.clear()
+	_cape_wb.clear()
 	var nc := CAPE_NC
 	for j in CAPE_NR:
 		for i in nc:
@@ -4266,14 +5069,58 @@ func _cape_setup(lion: bool) -> void:
 				_cape_con(k, k + 2, 0.25)
 			if j + 2 < CAPE_NR:
 				_cape_con(k, k + 2 * nc, 0.3)
+	# LOOK2: the pinned row rides on the bones under it, skinned like the mantle over it (the pelt's on the chest)
+	_cape_pb.resize(CAPE_NC * 4)
+	_cape_pw.resize(CAPE_NC * 4)
+	for i in CAPE_NC:
+		var w := PackedFloat32Array([float(CHEST), 1.0]) if lion else _mantle_w(_cape_rest[i])
+		var tot := 0.0
+		for m in range(1, w.size(), 2):
+			tot += w[m]
+		for m in 4:
+			var on := m * 2 + 1 < w.size()
+			_cape_pb[i * 4 + m] = int(w[m * 2]) if on else CHEST
+			_cape_pw[i * 4 + m] = w[m * 2 + 1] / tot if on else 0.0
 	_cape_pos.resize(0)
 
 
+## LOOK2: the pinned row's bones and weights (4 a particle) and where it is this frame (world space).
+var _cape_pb := PackedInt32Array()
+var _cape_pw := PackedFloat32Array()
+var _cape_pin := PackedVector3Array()
+## LOOK2: the chest last frame (its yaw, its frame) and its turn rate (rad/s, peak held), for the carry in _cape_step.
+var _cape_yaw := 0.0
+var _cape_yaw_ok := false
+var _cape_spin := 0.0
+var _cape_chest := Transform3D()
+
+
+func _cape_pins(gx: Transform3D) -> void:
+	if _cape_pin.size() != CAPE_NC:
+		_cape_pin.resize(CAPE_NC)
+	for i in CAPE_NC:
+		var q := Vector3.ZERO
+		for m in 4:
+			var w := _cape_pw[i * 4 + m]
+			if w > 0.0:
+				var b := _cape_pb[i * 4 + m]
+				q += (_bx[b] * (_cape_rest[i] - _rest[b])) * w
+		_cape_pin[i] = gx * q
+
+
 func _cape_con(a: int, b: int, k: float) -> void:
+	# (LOOK2: two pinned ends: nothing to keep; the share of each correction its two ends take, the stiffness folded in: a pinned
+	# end takes none, its partner all of it)
+	if a < CAPE_NC and b < CAPE_NC:
+		return
 	_cape_ca.append(a)
 	_cape_cb.append(b)
 	_cape_cl.append(_cape_rest[a].distance_to(_cape_rest[b]))
 	_cape_ck.append(k)
+	var fa := 0.0 if a < CAPE_NC else 1.0
+	var fb := 0.0 if b < CAPE_NC else 1.0
+	_cape_wa.append(k * fa / (fa + fb))
+	_cape_wb.append(k * fb / (fa + fb))
 
 
 ## Colliders for the cape, world space: capsules [a, b, r].
@@ -4299,7 +5146,7 @@ func _cap_add(a: Vector3, b: Vector3, r: float) -> void:
 
 
 func _cape_colliders(gx: Transform3D) -> void:
-	var need := 13 + SKIRT_N
+	var need := 14 + SKIRT_N
 	if _cap_a.size() < need:
 		_cap_a.resize(need)
 		_cap_b.resize(need)
@@ -4310,28 +5157,31 @@ func _cape_colliders(gx: Transform3D) -> void:
 	# legs (inflated by about half the particle spacing, so a leg cannot slip between two particles)
 	for o in 2:
 		var k := o * 3
-		_cap_add(gx * _bx[THIGH_R + k].origin, gx * _bx[SHIN_R + k].origin, 0.135)
-		_cap_add(gx * _bx[SHIN_R + k].origin, gx * _bx[FOOT_R + k].origin, 0.115)
-	# arms
+		_cap_add(gx * _bx[THIGH_R + k].origin, gx * _bx[SHIN_R + k].origin, CLOAK_THIGH_R)
+		_cap_add(gx * _bx[SHIN_R + k].origin, gx * _bx[FOOT_R + k].origin, CLOAK_SHIN_R)
+	# arms (LOOK2: the upper arm's capsule caps the deltoid, the forearm's reaches the fist)
 	for o in 2:
 		var k := o * 4
-		_cap_add(gx * _bx[UARM_R + k].origin, gx * _bx[FARM_R + k].origin, 0.11)
-		_cap_add(gx * _bx[FARM_R + k].origin, gx * _bx[HAND_R + k].origin, 0.105)
+		var hb := _bx[HAND_R + k]
+		_cap_add(gx * _bx[UARM_R + k].origin, gx * _bx[FARM_R + k].origin, CLOAK_UARM_R)
+		_cap_add(gx * _bx[FARM_R + k].origin, gx * (hb.origin + hb.basis * GRIP), CLOAK_FARM_R)
 	# hips and the skirt: a core plus a cage of hinge -> hem capsules
 	_cap_add(gx * _carry(PELVIS, Vector3(-0.08, 0.95, 0.0)), gx * _carry(PELVIS, Vector3(0.08, 0.95, 0.0)), 0.215)
 	_cap_add(gx * _carry(PELVIS, Vector3(-0.08, 0.8, 0.0)), gx * _carry(PELVIS, Vector3(0.08, 0.8, 0.0)), 0.2)
 	for i in SKIRT_N:
 		_cap_add(gx * _carry(PELVIS, _rest[SKIRT0 + i]), _sk_tip[i], 0.06)
 	# helmet (and its flared neck guard) or the lion hood
+	# (LOOK2: the bare head and its hair, the bare neck)
 	var hc := gx * _carry(HEAD, HEAD_C + Vector3(0, 0.0, 0.02))
-	_cap_add(hc, hc, 0.23 if not _show_lion else 0.27)
+	_cap_add(hc, hc, 0.17 if not _show_lion else 0.27)
 	var hn := gx * _carry(HEAD, HEAD_C + Vector3(0, -0.12, 0.07))
-	_cap_add(hn, hn, 0.17 if not _show_lion else 0.21)
-	# the blade
-	if not _weapons_hidden():
-		var hb := _bx[HAND_R]
-		var sw := gx * Transform3D(hb.basis * Basis(Vector3.RIGHT, _pose[C_GRIP]), hb.origin + hb.basis * GRIP)
-		_cap_add(sw * Vector3(0, 0, -0.1), sw * Vector3(0, 0, -0.62), 0.04)
+	_cap_add(hn, hn, 0.12 if not _show_lion else 0.21)
+	# the blade (STOW: the whole of it, while it is in his hand) and the scabbard at his left hip (the cape drapes over it)
+	if not _weapons_hidden() and _sw_at == AT_HAND:
+		var sw := gx * _sw_xf
+		_cap_add(sw * Vector3(0, 0, -0.1), sw * Vector3(0, 0, SWORD_TIP + 0.06), 0.04)
+	if _scab_node != null:
+		_cap_add(gx * (_scab_xf * Vector3(0.0, 0.0, SCAB_THROAT)), gx * (_scab_xf * Vector3(0.0, 0.0, SCAB_END + 0.03)), 0.05)
 
 
 func _cape_step(dt: float, gx: Transform3D) -> void:
@@ -4343,11 +5193,13 @@ func _cape_step(dt: float, gx: Transform3D) -> void:
 	var n := _cape_rest.size()
 	var chest := gx * _bx[CHEST]
 	var chest_rest := _rest[CHEST]
+	# LOOK2: the pinned row this frame (skinned: its ends ride on the shoulders)
+	_cape_pins(gx)
 	if _cape_pos.size() != n:
 		_cape_pos.resize(n)
 		_cape_prev.resize(n)
 		for k in n:
-			_cape_pos[k] = chest * (_cape_rest[k] - chest_rest)
+			_cape_pos[k] = _cape_pin[k] if k < CAPE_NC else chest * (_cape_rest[k] - chest_rest)
 			_cape_prev[k] = _cape_pos[k]
 	_cape_colliders(gx)
 	var ncap := _cap_n
@@ -4367,12 +5219,10 @@ func _cape_step(dt: float, gx: Transform3D) -> void:
 	var spine := gx * _bx[SPINE]
 	var spine_inv := spine.affine_inverse()
 	var sp_on := spear_on_back and _spear_back.visible
-	# the shield's disc (a slab in the shield frame)
-	var sh_xf := gx * _slack_xf() * shield_xf(_bx[FARM_L], _rest[FARM_L])
-	if _brush > 0.0005 and action == "":
-		# FINAL: the shield rides up the arm while the hand brushes the wheat (_brush_shield)
-		var sk := Transform3D(_bx[FARM_L].basis, _bx[FARM_L].origin - _bx[FARM_L].basis * _rest[FARM_L])
-		sh_xf = gx * sk.interpolate_with(_brush_shield_skin(), _brush_shield_k()) * shield_xf(Transform3D(Basis.IDENTITY, _rest[FARM_L]), _rest[FARM_L])
+	# the shield's disc (a slab in the shield frame), where the shield is (STOW: on the arm (the brush's ride up the arm included), in the
+	# left fist, or hung on his back over the cape)
+	var sh_xf := gx * _sh_xf
+	var sh_back := _sh_at == AT_BACK
 	var sh_inv := sh_xf.affine_inverse()
 	var sp_xf := gx * blend_skin(SPINE, CHEST, 0.6, Vector3(0.0, 1.3, 0.25)) * _spear_back.transform
 	var sp_inv := sp_xf.affine_inverse()
@@ -4392,19 +5242,49 @@ func _cape_step(dt: float, gx: Transform3D) -> void:
 	var back_dir := (gx.basis * Vector3(0, 0, 1)).normalized()
 	var origin := gx.origin
 	# the spin of the heavy attack and the roll would wrap the cloak round an arm: it follows the body stiffly then
-	var shape_k := 3.0
+	# (LOOK2: the cloak holds its wide drape standing, and lets go of it to fly out behind him at a run)
+	var shape_k := 3.0 if lion else CLOAK_SHAPE_K * lerpf(1.0, 0.3, smoothstep(1.5, 6.0, air.length()))
 	if action != "" and _akey == "heavy":
 		shape_k = 70.0 if action_t > 0.3 and action_t < 0.8 else 25.0
 	elif action != "" and _akey == "dodge":
 		shape_k = 25.0
+	elif action != "" and _akey == "b3" and action_t > 0.12 and action_t < 0.6:
+		# (INTEGRATE: the long lunge of b3: the cloak keeps its drape behind the shoulders instead of falling forward over the
+		# outstretched sword arm)
+		shape_k = 30.0
+	# (LOOK2: and whenever his chest turns fast, whatever the action (a spinning blow, a quick turn), the big cloak is carried
+	# round with it (its points and their last positions, so it keeps its own motion) instead of swinging round into a bell about
+	# his legs: the chest's yaw rate, its peak held a moment)
+	var yaw_c := atan2(chest.basis.z.x, chest.basis.z.z)
+	if dt > 0.0 and _cape_yaw_ok:
+		_cape_spin = maxf(absf(wrapf(yaw_c - _cape_yaw, -PI, PI)) / dt, _cape_spin - dt * 25.0)
+		var carry := smoothstep(CLOAK_SPIN.x, CLOAK_SPIN.y, _cape_spin)
+		if carry > 0.0:
+			var dx := chest * _cape_chest.affine_inverse()
+			for k in range(CAPE_NC, n):
+				_cape_pos[k] = _cape_pos[k].lerp(dx * _cape_pos[k], carry)
+				_cape_prev[k] = _cape_prev[k].lerp(dx * _cape_prev[k], carry)
+	_cape_yaw = yaw_c
+	_cape_chest = chest
+	_cape_yaw_ok = true
 	var swimming := motion_state == &"swim"
 	var water_y := gx.origin.y + swim_waterline - 0.02
+	# (INTEGRATE) the sword arm reaching ahead of the chest (b3's lunge, the thrusts, the cuts' follow-through): the cloth lying
+	# on the upper arm slides off it to the back, so the cloak hangs behind the arm instead of over it like a sleeve
+	var ua := gx * _bx[UARM_R].origin
+	var uu := gx * _bx[FARM_R].origin - ua
+	var ulen := uu.length()
+	uu = uu / maxf(ulen, 1e-4)
+	var cbk := chest.basis.z.normalized()
+	var ub := cbk - uu * uu.dot(cbk)
+	ub = ub.normalized() if ub.length_squared() > 1e-6 else cbk
+	var arm_fwd := smoothstep(0.25, 0.65, -uu.dot(cbk)) if use_caps else 0.0
 	for st in steps:
 		for k in n:
 			var j := k / CAPE_NC
 			if j == 0:
 				_cape_prev[k] = _cape_pos[k]
-				_cape_pos[k] = chest * (_cape_rest[k] - chest_rest)
+				_cape_pos[k] = _cape_pin[k]
 				continue
 			var p := _cape_pos[k]
 			var vel := (p - _cape_prev[k]) / h
@@ -4423,8 +5303,10 @@ func _cape_step(dt: float, gx: Transform3D) -> void:
 				acc.y += (water_y - p.y) * 60.0 - vel.y * 6.0
 			_cape_prev[k] = p
 			_cape_pos[k] = p + vel * h * 0.985 + acc * h2
-		for it in 5:
-			for c in _cape_ca.size():
+		# (LOOK2: four passes, each correction shared out as _cape_con set it: the bigger cloak costs about what the old one did)
+		var ncon := _cape_ca.size()
+		for it in 4:
+			for c in ncon:
 				var a := _cape_ca[c]
 				var b := _cape_cb[c]
 				var pa := _cape_pos[a]
@@ -4433,17 +5315,12 @@ func _cape_step(dt: float, gx: Transform3D) -> void:
 				var dl := dv.length()
 				if dl < 1e-6:
 					continue
-				var diff := (dl - _cape_cl[c]) / dl * _cape_ck[c]
-				var fa := 0.0 if a < CAPE_NC else 0.5
-				var fb := 0.0 if b < CAPE_NC else 0.5
-				if fa + fb <= 0.0:
-					continue
-				var s := diff / (fa + fb)
-				_cape_pos[a] = pa + dv * (s * fa)
-				_cape_pos[b] = pb - dv * (s * fb)
-			# the collisions: after the 3rd and the last pass of the constraints (cheaper than after every pass,
+				var f := (dl - _cape_cl[c]) / dl
+				_cape_pos[a] = pa + dv * (f * _cape_wa[c])
+				_cape_pos[b] = pb - dv * (f * _cape_wb[c])
+			# the collisions: after the 2nd and the last pass of the constraints (cheaper than after every pass,
 			# and the cloth always ends the step outside the body)
-			if it != 2 and it != 4:
+			if it != 1 and it != 3:
 				continue
 			for k in range(CAPE_NC, n):
 				var p := _cape_pos[k]
@@ -4451,6 +5328,15 @@ func _cape_step(dt: float, gx: Transform3D) -> void:
 					for ci in ncap:
 						if p.distance_squared_to(_cap_c[ci]) < _cap_rr[ci]:
 							p = _push_capsule(p, _cap_a[ci], _cap_b[ci], _cap_r[ci])
+				# (INTEGRATE) off the forward sword arm, round its top to its back (a quarter of the way each pass)
+				if arm_fwd > 0.0:
+					var sa := (p - ua).dot(uu)
+					if sa > 0.3 * ulen and sa < ulen + 0.06:
+						var ax := ua + uu * sa
+						var off := p - ax
+						var dl := off.length()
+						if dl > 1e-4 and dl < CLOAK_UARM_R + 0.04 and off.dot(ub) < 0.8 * dl:
+							p = ax + (off / dl).slerp(ub, 0.25 * arm_fwd) * maxf(dl, CLOAK_UARM_R)
 				# never inside the torso: stay behind the back surface of the cuirass
 				var lc := chest_inv * p
 				if lc.y > -0.25 and lc.y < 0.3 and absf(lc.x) < 0.24 and use_chest:
@@ -4472,11 +5358,18 @@ func _cape_step(dt: float, gx: Transform3D) -> void:
 					if ls.z < bz2:
 						ls.z = bz2
 						p = spine * ls
-				# out of the shield's slab
+				# out of the shield's slab (STOW: the shield on his back is over the cape: the cloth stays between his back and the shield.
+				# LOOK2: the cloak hangs inside the shield on his arm: cloth in its slab, or up to CLOAK_SHIELD_OUT outside its face,
+				# goes back to the body's side of it; the pelt goes to the nearer side)
 				var qs := sh_inv * p
-				if Vector2(qs.x, qs.z).length() < SHIELD_R * 1.04 and qs.y > -0.06 and qs.y < 0.1 and use_shield:
-					qs.y = -0.06 if qs.y < 0.02 else 0.1
-					p = sh_xf * qs
+				if use_shield and Vector2(qs.x, qs.z).length() < SHIELD_R * 1.04:
+					if sh_back:
+						if qs.y > -0.05 and qs.y < 0.25:
+							qs.y = -0.05
+							p = sh_xf * qs
+					elif qs.y > -0.06 and qs.y < (0.1 if lion else CLOAK_SHIELD_OUT):
+						qs.y = 0.1 if (lion and qs.y >= 0.02) else -0.06
+						p = sh_xf * qs
 				# under the spear (it is strapped over the cape)
 				if sp_on and use_spear:
 					var q := sp_inv * p
@@ -4631,15 +5524,14 @@ static func cape_mesh(lion: bool) -> Array:
 			if cu > 0.84:
 				return FUR_LIGHT
 			return FUR
-		if v > 0.94:
-			return CREAM
-		if v > 0.9:
-			return RED_DARK
-		return RED
+		# LOOK: deep red, a darker hem
+		if v > 0.95:
+			return CAPE_DARK
+		return CAPE
 	var col_back := func(u: float, v: float) -> Color:
 		if lion:
 			return LEATHER_LIGHT if v > 0.12 else MANE_DARK
-		return RED_DARK.darkened(0.15) if v < 0.9 else CREAM.darkened(0.25)
+		return CAPE_DARK
 	var tri := func(layer: int, i0: int, i1: int, i2: int, c: Color) -> void:
 		var base := layer * gu_n * gv_n
 		for idx in [base + i0, base + i2, base + i1]:
@@ -4672,7 +5564,7 @@ static func cape_mesh(lion: bool) -> Array:
 	for gu in gu_n - 1:
 		edge_pairs.append([(gv_n - 1) * gu_n + gu, (gv_n - 1) * gu_n + gu + 1, true])
 	var nv := gu_n * gv_n
-	var rim_col := RED_DARK if not lion else MANE_DARK
+	var rim_col := CAPE_DARK if not lion else MANE_DARK
 	for e in edge_pairs:
 		var i0: int = e[0]
 		var i1: int = e[1]
@@ -4731,8 +5623,14 @@ func _cape_pose(gx: Transform3D) -> void:
 
 ## Tools: pose the rig deterministically (pre-simulated with a fixed step from a settled idle) and freeze it.
 ## act = "" shows locomotion at `spd` (cycle position `phase`); otherwise the action at t_norm of its length.
-func preview_pose(act: String, t_norm: float, spd: float, state: StringName, outfit_name: StringName, guard_on: bool, vy: float, phase: float, heading: float = 0.0, lunge: float = 0.0) -> void:
+func preview_pose(act: String, t_norm: float, spd: float, state: StringName, outfit_name: StringName, guard_on: bool, vy: float, phase: float, heading: float = 0.0, lunge: float = 0.0, armed: int = -1, ready_k: float = -1.0) -> void:
 	process_mode = Node.PROCESS_MODE_DISABLED
+	# STOW: armed 1 / 0 puts the sword and the shield in the hands / away first (-1 leaves them as they are); ready_k the foe's nearness
+	if armed >= 0:
+		set_armed(armed == 1, true)
+	if ready_k >= 0.0:
+		alert = ready_k
+		_alert = ready_k
 	set_outfit(outfit_name)
 	set_guard(guard_on)
 	set_motion_state(state)
@@ -4779,6 +5677,7 @@ func preview_pose(act: String, t_norm: float, spd: float, state: StringName, out
 
 
 ## &"helmet" or &"lion". Shown from the next frame; play("don_skin") makes the change itself, part-way through.
+## (LOOK: &"helmet" is the default outfit's old name: bare-headed now, the cape and its mantle.)
 func set_outfit(o: StringName) -> void:
 	outfit = o
 
@@ -4812,7 +5711,6 @@ func _weapons_hidden() -> bool:
 ## Anime metal highlights on the bronze (Rig.set_metal in the live base class works on add_part materials).
 func set_metal(k: float) -> void:
 	_mat_metal.set_shader_parameter("metal", k)
-	_mat_helm.set_shader_parameter("metal", k)
 
 
 ## Every action play() accepts and its length in seconds (filled at construction from the definitions).
@@ -4841,14 +5739,15 @@ func clip_pairs() -> Array:
 	return out
 
 
-## tools/clip_check.gd: part-local ellipsoids [centre, radii] inscribed in the real armour (the checker shrinks
-## them by its tolerance): cuirass, helmet, hips under the skirt, thighs. Body pivots live in rest rig space.
+## tools/clip_check.gd: part-local ellipsoids [centre, radii] inscribed in the real body (the checker shrinks
+## them by its tolerance): torso, head, hips under the kilt, thighs. Body pivots live in rest rig space.
 func clip_volume(part: String) -> Array:
 	match part:
 		"torso":
-			return [Vector3(0.0, 1.27, 0.0), Vector3(0.19, 0.25, 0.15)]
+			return [Vector3(0.0, 1.27, 0.0), Vector3(0.2, 0.25, 0.135)]
 		"head":
-			return [Vector3(0.0, -0.01, 0.0), Vector3(0.165, 0.18, 0.185)]
+			# LOOK: the bare head and its hair (HEAD_C relative)
+			return [Vector3(0.0, -0.005, 0.012), Vector3(0.092, 0.14, 0.1)]
 		"hips":
 			return [Vector3(0.0, 0.9, 0.0), Vector3(0.19, 0.12, 0.16)]
 		"leg_r":
@@ -4883,16 +5782,16 @@ static func _action_defs() -> Dictionary:
 		[0.0, {}],
 		[0.06, {"ease": true, "hl": Vector3(-0.22, -0.05, -0.27), "hlf": Vector3(-0.35, 0.05, -1.0), "hlp": Vector3(-1.0, -0.5, 0.4),
 			"chs": Vector3(0.05, -0.17, 0.0), "spn": Vector3(0.03, -0.09, 0.0), "nek": Vector3(-0.05, 0.16, 0.0), "hed": Vector3(0.0, 0.04, 0.0),
-			"pel": Vector3(0.0, -0.07, 0.04), "hr": Vector3(0.40, -0.30, 0.04), "hrb": Vector3(0.2, 0.25, -1.0), "hrk": Vector3(1.0, 0.0, 0.2),
+			"pel": Vector3(0.0, -0.07, 0.04), "hr": Vector3(0.46, -0.26, 0.06), "hrb": Vector3(0.55, 0.1, 0.83), "hrk": Vector3(0.75, 0.0, -0.65),
 			"fl": Vector3(-0.15, 0.093, -0.06)}],
 		[0.15, {"hl": Vector3(0.05, -0.03, -0.55), "hlf": Vector3(0.05, 0.05, -1.0), "hlp": Vector3(-1.0, -0.45, 0.35),
 			"chs": Vector3(-0.05, 0.21, 0.0), "spn": Vector3(-0.13, 0.11, 0.0), "nek": Vector3(0.03, -0.20, 0.0), "hed": Vector3(0.0, -0.04, 0.0),
-			"pel": Vector3(0.0, -0.10, -0.13), "hr": Vector3(0.40, -0.30, 0.12), "hrb": Vector3(0.2, 0.35, -1.0),
+			"pel": Vector3(0.0, -0.10, -0.13), "hr": Vector3(0.5, -0.18, 0.08), "hrb": Vector3(0.6, 0.42, 0.68),
 			"fl": Vector3(-0.16, 0.093, -0.3), "flr": Vector3(0.0, 0.12, 0.0)}],
 		[0.22, {"hl": Vector3(0.07, -0.02, -0.58), "chs": Vector3(-0.06, 0.24, 0.0), "spn": Vector3(-0.14, 0.12, 0.0), "nek": Vector3(0.03, -0.22, 0.0)}],
 		[0.34, {"ease": true, "hl": Vector3(-0.14, 0.02, -0.46), "hlf": Vector3(-0.06, 0.06, -1.0), "hlp": Vector3(-1.0, -0.7, 0.3),
 			"chs": Vector3(-0.03, 0.14, 0.0), "spn": Vector3(-0.05, 0.0, 0.0), "nek": Vector3(-0.05, -0.10, 0.0), "hed": Vector3(0.0, 0.06, 0.0),
-			"pel": Vector3(0.0, -0.08, 0.0), "hr": Vector3(0.30, -0.20, -0.24), "hrb": Vector3(0.05, 0.22, -1.0), "hrk": Vector3(1.0, 0.3, 0.2),
+			"pel": Vector3(0.0, -0.08, 0.0), "hr": Vector3(0.42, -0.28, 0.06), "hrb": Vector3(0.48, -0.2, 0.85), "hrk": Vector3(0.75, 0.05, -0.65),
 			"fl": Vector3(-0.17, 0.093, -0.12), "flr": Vector3(0.0, 0.18, 0.0)}],
 		[0.5, {}],
 	]}
@@ -4914,19 +5813,19 @@ static func _action_defs() -> Dictionary:
 		[0.15, {"rot": Vector3(-1.0, 0.0, 0.0), "pel": Vector3(0.0, -0.4, -0.05), "pelr": Vector3(0.0, 0.5, 0.0), "spn": Vector3(-0.75, 0.0, 0.0),
 			"chs": Vector3(-0.55, 0.0, 0.0), "nek": Vector3(-0.55, 0.0, 0.0), "fr": Vector3(0.13, 0.4, 0.05), "fl": Vector3(-0.13, 0.38, 0.08),
 			"frr": Vector3(-0.7, 0.0, 0.0), "flr": Vector3(-0.7, 0.0, 0.0), "hl": Vector3(-0.34, -0.20, -0.40), "hlf": Vector3(-1.0, 0.0, 0.0),
-			"hlp": Vector3(-1.0, 0.0, 0.0), "hr": Vector3(0.32, -0.24, -0.40), "hrp": Vector3(0.2, 0.7, 0.7)}],
-		[0.25, {"rot": Vector3(-2.6, 0.0, 0.0), "hrb": Vector3(0.7, 0.1, 0.7)}],
-		[0.35, {"rot": Vector3(-4.3, 0.0, 0.0), "hrb": Vector3(0.95, -0.2, 0.1)}],
+			"hlp": Vector3(-1.0, 0.0, 0.0), "hr": Vector3(0.42, -0.2, -0.36), "hrp": Vector3(0.2, 0.7, 0.7)}],
+		[0.25, {"rot": Vector3(-2.6, 0.0, 0.0), "hrb": Vector3(0.97, 0.2, 0.12)}],
+		[0.35, {"rot": Vector3(-4.3, 0.0, 0.0), "hrb": Vector3(0.95, 0.0, -0.3)}],
 		# the landing: a deep crouch, the arms out to the sides for balance, the blade forward again
 		[0.45, {"rot": Vector3(-TAU, 0.0, 0.0), "pel": Vector3(0.0, -0.3, -0.02), "pelr": Vector3(0.0, 0.0, 0.0), "spn": Vector3(-0.38, 0.0, 0.0),
 			"chs": Vector3(-0.2, 0.0, 0.0), "nek": Vector3(-0.1, 0.0, 0.0), "fr": Vector3(0.15, 0.093, 0.06), "fl": Vector3(-0.15, 0.093, -0.1),
 			"frr": Vector3(0.0, -0.18, 0.0), "flr": Vector3(0.0, 0.18, 0.0), "hl": Vector3(-0.42, -0.26, -0.20), "hlf": Vector3(-1.0, 0.0, -0.3),
-			"hlp": Vector3(-0.5, -0.2, 1.0), "hr": Vector3(0.42, -0.26, -0.20), "hrb": Vector3(0.5, -0.35, -0.8), "hrk": Vector3(1.0, 0.1, 0.1),
+			"hlp": Vector3(-0.5, -0.2, 1.0), "hr": Vector3(0.42, -0.26, -0.20), "hrb": Vector3(0.62, -0.2, 0.76), "hrk": Vector3(0.6, 0.3, -0.7),
 			"hrp": Vector3(0.5, 0.2, 0.9)}],
 		# the rise: the trunk comes up leaning into the next stride, the hands settle at the sides
 		[0.56, {"rot": Vector3(-TAU, 0.0, 0.0), "pel": Vector3(0.0, -0.16, -0.04), "spn": Vector3(-0.22, 0.0, 0.0), "chs": Vector3(-0.10, 0.0, 0.0),
 			"nek": Vector3(-0.05, 0.0, 0.0), "hl": Vector3(-0.44, -0.30, -0.14), "hlf": Vector3(-1.0, 0.0, -0.35),
-			"hlp": Vector3(-0.5, -0.2, 1.0), "hr": Vector3(0.44, -0.30, -0.14), "hrb": Vector3(0.25, -0.30, -1.0), "hrk": Vector3(1.0, 0.1, 0.15),
+			"hlp": Vector3(-0.5, -0.2, 1.0), "hr": Vector3(0.4, -0.34, -0.1), "hrb": Vector3(0.38, -0.45, 0.8), "hrk": Vector3(0.7, 0.1, -0.7),
 			"hrp": Vector3(0.5, 0.0, 1.0)}],
 		[0.62, _merge(neutral, {"rot": Vector3(-TAU, 0.0, 0.0), "piv": rp, "pel": Vector3(0.0, -0.08, -0.02), "spn": Vector3(-0.08, 0.0, 0.0)})],
 	]}
@@ -4938,7 +5837,7 @@ static func _action_defs() -> Dictionary:
 		[0.04, {"spn": Vector3(0.07, 0.03, 0.0), "chs": Vector3(0.05, 0.04, 0.0), "nek": Vector3(0.08, 0.0, 0.0), "pel": Vector3(0.0, -0.05, 0.03),
 			"pelr": Vector3(0.04, 0.0, 0.0), "hr": Vector3(0.38, -0.33, -0.03), "hl": Vector3(-0.32, -0.30, -0.14), "hlf": Vector3(-0.8, 0.1, -0.6)}],
 		[0.09, {"spn": Vector3(0.15, 0.05, 0.03), "chs": Vector3(0.12, 0.08, 0.0), "nek": Vector3(0.24, 0.0, 0.0), "hed": Vector3(0.05, 0.0, 0.0),
-			"pel": Vector3(0.0, -0.075, 0.065), "pelr": Vector3(0.07, 0.0, 0.0), "hr": Vector3(0.42, -0.27, 0.05), "hrb": Vector3(0.25, -0.2, -1.0),
+			"pel": Vector3(0.0, -0.075, 0.065), "pelr": Vector3(0.07, 0.0, 0.0), "hr": Vector3(0.42, -0.27, 0.05), "hrb": Vector3(0.6, -0.25, 0.75),
 			"hl": Vector3(-0.30, -0.18, -0.2), "hlf": Vector3(-0.6, 0.2, -0.8)}],
 		[0.17, {"spn": Vector3(-0.05, 0.0, 0.0), "chs": Vector3(-0.04, 0.0, 0.0), "nek": Vector3(-0.10, 0.0, 0.0), "hed": Vector3(-0.02, 0.0, 0.0),
 			"pel": Vector3(0.0, -0.05, 0.01), "pelr": Vector3(0.02, 0.0, 0.0), "hr": Vector3(0.36, -0.38, -0.08), "hl": Vector3(-0.34, -0.34, -0.1),
@@ -4962,7 +5861,7 @@ static func _action_defs() -> Dictionary:
 			"hed": Vector3.ZERO, "hr": Vector3(0.50, -0.12, 0.12), "hl": Vector3(-0.50, -0.10, 0.06)}],
 		[0.36, {"pel": Vector3(0.0, -0.20, 0.19), "pelr": Vector3(0.0, 0.0, 0.0), "spn": Vector3(-0.20, 0.0, 0.0), "chs": Vector3(-0.12, 0.0, 0.0),
 			"nek": Vector3(0.12, 0.0, 0.0), "hed": Vector3(0.04, 0.0, 0.0), "hl": Vector3(-0.38, -0.33, -0.1), "hlf": Vector3(-1.0, 0.0, -0.3),
-			"hr": Vector3(0.3, -0.36, -0.2), "hrb": Vector3(0.0, -0.3, -1.0), "hrk": Vector3(1.0, 0.2, 0.0), "hrp": Vector3(0.5, 0.0, 1.0)}],
+			"hr": Vector3(0.34, -0.36, -0.04), "hrb": Vector3(0.35, -0.45, 0.82), "hrk": Vector3(0.7, 0.1, -0.7), "hrp": Vector3(0.5, 0.0, 1.0)}],
 		[0.54, {"pel": Vector3(0.0, -0.10, 0.10), "spn": Vector3(-0.05, 0.0, 0.0), "chs": Vector3(-0.02, 0.0, 0.0), "nek": Vector3(0.0, 0.0, 0.0),
 			"fl": Vector3(-0.15, 0.13, 0.05), "fr": Vector3(0.15, 0.093, 0.1)}],
 		[0.7, {"ease": true, "pel": Vector3(0.0, -0.05, 0.02), "fl": Vector3(-0.15, 0.093, 0.04), "fr": Vector3(0.15, 0.093, 0.04)}],
@@ -4975,52 +5874,55 @@ static func _action_defs() -> Dictionary:
 	d["death"] = {"len": 1.8, "in": 0.06, "out": 0.3, "hold": true, "ev": {"step": [0.48], "thud": 1.28}, "keys": [
 		[0.0, {"piv": dp}],
 		[0.08, {"spn": Vector3(0.22, 0.0, 0.0), "chs": Vector3(0.14, 0.0, 0.0), "nek": Vector3(0.22, 0.0, 0.0), "pel": Vector3(0.0, -0.06, 0.08),
-			"hr": Vector3(0.45, -0.25, 0.1), "hl": Vector3(-0.45, -0.25, 0.05)}],
+			"hr": Vector3(0.45, -0.25, 0.1), "hrb": Vector3(0.75, -0.12, 0.6), "hl": Vector3(-0.45, -0.25, 0.05)}],
 		[0.24, {"spn": Vector3(0.10, 0.0, 0.0), "chs": Vector3(0.06, 0.0, 0.0), "nek": Vector3(0.30, 0.0, 0.0), "pel": Vector3(0.0, -0.20, 0.06),
-			"fl": Vector3(-0.14, 0.12, 0.10), "hr": Vector3(0.36, -0.40, 0.0), "hrb": Vector3(0.2, -0.5, -0.85)}],
+			"fl": Vector3(-0.14, 0.12, 0.10), "hr": Vector3(0.38, -0.40, 0.0), "hrb": Vector3(0.45, -0.25, -0.85)}],
 		[0.5, {"pel": Vector3(0.0, -0.405, 0.04), "pelr": Vector3(0.1, 0.0, 0.0), "spn": Vector3(-0.05, 0.0, 0.0), "chs": Vector3(-0.08, 0.0, 0.0),
 			"nek": Vector3(0.15, 0.0, 0.0), "fr": Vector3(0.14, 0.2, 0.42), "frr": Vector3(-1.25, -0.05, 0.0), "fl": Vector3(-0.14, 0.2, 0.42),
-			"flr": Vector3(-1.25, 0.05, 0.0), "hr": Vector3(0.33, -0.4, -0.16), "hrb": Vector3(0.25, -0.5, -0.82), "hl": Vector3(-0.33, -0.4, -0.1),
+			"flr": Vector3(-1.25, 0.05, 0.0), "hr": Vector3(0.33, -0.4, -0.16), "hrb": Vector3(0.34, -0.16, -0.92), "hl": Vector3(-0.33, -0.4, -0.1),
 			"hlf": Vector3(-1.0, -0.2, -0.2)}],
 		[0.85, {"spn": Vector3(-0.3, 0.0, 0.05), "chs": Vector3(-0.25, 0.0, 0.0), "nek": Vector3(0.38, 0.0, 0.1), "hr": Vector3(0.3, -0.42, -0.26),
-			"hrb": Vector3(0.25, -0.35, -0.9)}],
+			"hrb": Vector3(0.3, 0.1, -0.95)}],
 		[1.3, {"rot": Vector3(0.0, 0.0, -1.3), "piv": Vector3(0.14, 0.26, 0.04), "spn": Vector3(-0.15, 0.0, -0.1), "chs": Vector3(0.0, 0.0, 0.1),
 			"nek": Vector3(0.15, 0.0, 0.1), "hr": Vector3(0.3, 0.1, -0.45), "hrb": Vector3(0.2, 0.2, -1.0), "hrk": Vector3(1.0, 0.3, 0.0),
 			"hrp": Vector3(0.3, -0.2, 1.0), "hl": Vector3(-0.4, -0.22, -0.12), "hlf": Vector3(-1.0, 0.2, 0.0), "hlp": Vector3(-0.6, -0.5, 0.6)}],
-		[1.45, {"rot": Vector3(0.0, 0.0, -1.43), "hl": Vector3(-0.46, -0.18, -0.2), "hr": Vector3(0.34, 0.06, -0.5)}],
-		[1.8, {"rot": Vector3(0.0, 0.0, -1.37), "hl": Vector3(-0.42, -0.24, -0.14), "hr": Vector3(0.3, 0.08, -0.46)}],
+		[1.45, {"rot": Vector3(0.0, 0.0, -1.43), "hl": Vector3(-0.46, -0.18, -0.2), "hr": Vector3(0.34, 0.06, -0.5), "hrb": Vector3(0.11, 0.2, -1.0)}],
+		[1.8, {"rot": Vector3(0.0, 0.0, -1.37), "hl": Vector3(-0.42, -0.24, -0.14), "hr": Vector3(0.3, 0.08, -0.46), "hrb": Vector3(0.2, 0.2, -1.0)}],
 	]}
 	# jump: leaves the ground with the push of the toes (pointed, trailing), the arms swing up and forward for the lift, the lead knee
 	# comes up and the other leg trails: the rising air pose (_air_pose, k = 0), which this ends in
 	var air_up := {"pel": Vector3(0.0, 0.03, 0.0), "pelr": Vector3(0.10, 0.0, 0.0), "spn": Vector3(-0.10, 0.0, 0.0), "chs": Vector3(0.02, 0.0, 0.0),
-		"nek": Vector3(0.05, 0.0, 0.0), "hr": Vector3(0.44, 0.0, -0.18), "hrb": Vector3(0.1, 0.25, -1.0), "hrp": Vector3(0.6, -0.5, 0.8),
-		"hl": Vector3(-0.44, -0.04, -0.14), "hlf": Vector3(-1.0, -0.2, -0.3), "hlp": Vector3(-0.6, -0.6, 0.8),
+		"nek": Vector3(0.05, 0.0, 0.0), "hr": Vector3(0.62, 0.1, -0.2), "hrb": Vector3(0.55, -0.2, 0.8), "hrk": Vector3(0.2, 1.0, -0.3), "hrp": Vector3(0.6, -0.5, 0.8),
+		"hl": Vector3(-0.62, 0.1, -0.2), "hlf": Vector3(-0.1, 1.0, 0.0), "hlp": Vector3(-0.6, -0.6, 0.8),
 		"fr": Vector3(0.13, 0.42, -0.26), "frr": Vector3(-0.2, -0.1, 0.0), "fl": Vector3(-0.14, 0.26, 0.22), "flr": Vector3(-0.8, 0.1, 0.0)}
-	d["jump"] = {"len": 0.28, "in": 0.05, "out": 0.12, "ev": {"step": 0.0}, "keys": [
-		[0.0, {"pel": Vector3(0.0, -0.10, 0.0), "spn": Vector3(-0.10, 0.0, 0.0), "hr": Vector3(0.36, -0.40, 0.0), "hl": Vector3(-0.36, -0.36, 0.02)}],
+	d["jump"] = {"len": 0.28, "in": 0.05, "out": 0.12, "ho": 0.16, "ev": {"step": 0.0}, "keys": [
+		[0.0, {"pel": Vector3(0.0, -0.10, 0.0), "spn": Vector3(-0.10, 0.0, 0.0), "hr": Vector3(0.36, -0.40, 0.0), "hrb": Vector3(0.3, -0.55, 0.78), "hrk": Vector3(0.7, 0.0, -0.7),
+			"hl": Vector3(-0.36, -0.36, 0.02)}],
 		[0.09, {"pel": Vector3(0.0, 0.04, 0.02), "spn": Vector3(0.02, 0.0, 0.0), "chs": Vector3(0.06, 0.0, 0.0), "nek": Vector3(0.0, 0.0, 0.0),
 			"fr": Vector3(0.14, 0.14, 0.06), "frr": Vector3(-0.9, -0.1, 0.0), "fl": Vector3(-0.15, 0.12, 0.10), "flr": Vector3(-0.95, 0.1, 0.0),
-			"hr": Vector3(0.40, 0.06, -0.30), "hrb": Vector3(0.1, 0.2, -1.0), "hl": Vector3(-0.40, 0.04, -0.26), "hlf": Vector3(-1.0, -0.1, -0.2)}],
+			"hr": Vector3(0.46, 0.06, -0.26), "hrb": Vector3(0.5, -0.05, 0.86), "hrk": Vector3(0.3, 1.0, -0.2), "hl": Vector3(-0.44, 0.04, -0.24), "hlf": Vector3(-1.0, -0.1, -0.2)}],
 		[0.28, air_up],
 	]}
 	# land: the ground met hard (the spring of _land_impact has the first give: this is the crouch he stays in a moment and the rise):
 	# arms out for balance, the head bows then lifts, the rise overshoots upright a little
 	d["land"] = {"len": 0.36, "in": 0.05, "out": 0.1, "ho": 0.22, "ev": {"step": 0.0}, "keys": [
-		[0.0, {"fr": Vector3(0.15, 0.12, -0.06), "fl": Vector3(-0.15, 0.16, 0.08), "pel": Vector3(0.0, -0.10, 0.0)}],
+		[0.0, {"fr": Vector3(0.15, 0.12, -0.06), "fl": Vector3(-0.15, 0.16, 0.08), "pel": Vector3(0.0, -0.10, 0.0), "hr": Vector3(0.5, -0.1, -0.1),
+			"hrb": Vector3(0.55, -0.3, 0.78), "hrk": Vector3(0.6, 0.6, -0.5)}],
 		[0.07, {"ease": true, "pel": Vector3(0.0, -0.26, 0.02), "pelr": Vector3(0.05, 0.0, 0.0), "spn": Vector3(-0.28, 0.0, 0.0), "chs": Vector3(-0.10, 0.0, 0.0),
 			"nek": Vector3(0.18, 0.0, 0.0), "fr": Vector3(0.18, 0.093, 0.03), "frr": Vector3(0.0, -0.25, 0.0), "fl": Vector3(-0.17, 0.093, -0.08),
-			"flr": Vector3(0.0, 0.25, 0.0), "hr": Vector3(0.50, -0.30, -0.10), "hrb": Vector3(0.3, -0.5, -1.0), "hl": Vector3(-0.50, -0.26, -0.06)}],
+			"flr": Vector3(0.0, 0.25, 0.0), "hr": Vector3(0.52, -0.28, -0.06), "hrb": Vector3(0.55, -0.45, 0.7), "hrk": Vector3(0.6, 0.6, -0.5), "hl": Vector3(-0.50, -0.26, -0.06)}],
 		[0.2, {"pel": Vector3(0.0, -0.10, 0.0), "spn": Vector3(-0.08, 0.0, 0.0), "chs": Vector3(0.02, 0.0, 0.0), "nek": Vector3.ZERO,
 			"hr": Vector3(0.38, -0.38, -0.1), "hl": Vector3(-0.38, -0.34, -0.08)}],
 		[0.36, neutral],
 	]}
 	_more_actions(d)
+	_stow_actions(d) # STOW: draw, sheathe, draw_sword, draw_shield, sheathe_sword, sheathe_shield (and the throw over the shield)
 	return d
 
 
 ## The spear throw (left hand): reach over the left shoulder for the shaft, raise it, whip it forward.
-static func _throw_def(lion: bool, neutral: Dictionary) -> Dictionary:
-	var sp := spear_back_xf(lion)
+static func _throw_def(lion: bool, neutral: Dictionary, over: bool = false) -> Dictionary:
+	var sp := spear_over_xf(lion) if over else spear_back_xf(lion)
 	var sdir := -sp.basis.z
 	var grab_cs := sp.origin + sdir * SPEAR_HOLD - P_CHEST
 	var g_back := Vector3(-0.35, 0.45, -0.82)
@@ -5036,6 +5938,7 @@ static func _throw_def(lion: bool, neutral: Dictionary) -> Dictionary:
 		[0.0, {}],
 		[0.10, {"hl": Vector3(-0.45, -0.22, -0.11), "hlf": Vector3(-1.0, 0.0, 0.0), "hlp": Vector3(-0.8, 0.0, -0.6), "nek": Vector3(-0.04, 0.1, 0.0),
 			"hlb": mid_b, "hlk": mid_k, "hlx": 0.5}],
+		[0.12, {"partial": true, "hr": Vector3(0.4, -0.3, -0.08), "hrb": Vector3(0.85, -0.12, -0.5)}],
 		[THROW_GRAB, {"pel": Vector3(0.0, -0.05, 0.01), "pelr": Vector3(0.02, -0.06, 0.0), "spn": Vector3(0.0, 0.0, 0.0),
 			"chs": Vector3(0.05, 0.0, 0.0), "nek": Vector3(-0.04, 0.16, 0.0), "hed": Vector3(0.0, 0.06, 0.0),
 			"hl": _lw(grab_cs, sdir, g_back), "hlb": sdir, "hlk": g_back, "hlx": 1.0, "hlp": Vector3(-0.75, 0.25, -0.35),
@@ -5065,6 +5968,7 @@ static func _throw_def(lion: bool, neutral: Dictionary) -> Dictionary:
 			"hl": Vector3(0.04, 1.05, -0.56), "hlx": 0.0, "hlf": Vector3(-0.3, 0.2, -1.0), "hlp": Vector3(-0.6, -0.8, 0.2),
 			"fl": Vector3(-0.15, 0.12, -0.02), "flr": Vector3(-0.3, 0.15, 0.0), "hr": Vector3(0.4, 1.0, 0.02)}],
 		[0.72, {"ease": true, "pel": Vector3(0.0, -0.09, -0.1), "hl": Vector3(-0.04, 1.0, -0.46)}],
+		[0.8, {"partial": true, "hrb": Vector3(0.85, -0.15, 0.5)}],
 		[0.95, neutral],
 	]}
 
@@ -5073,10 +5977,10 @@ static func _throw_def(lion: bool, neutral: Dictionary) -> Dictionary:
 ## (the spear pointing out along its flight), swings it up over the shoulder (the throw's cocked pose) and straps it
 ## on the back (the throw's grab pose, where the spear in the fist and the one on the back coincide: CATCH_STOW).
 ## Played on the upper body (Hero / ChainSpear), so the legs keep running.
-static func _catch_def(lion: bool, neutral: Dictionary) -> Dictionary:
+static func _catch_def(lion: bool, neutral: Dictionary, over: bool = false) -> Dictionary:
 	# (the fist meets the spear in the roll the guard hand already has: the reach does not turn the wrist over)
 	var catch_k := Vector3(-1.0, -0.25, 0.0)
-	var sp := spear_back_xf(lion)
+	var sp := spear_over_xf(lion) if over else spear_back_xf(lion)
 	var sdir := -sp.basis.z
 	var grab_cs := sp.origin + sdir * SPEAR_HOLD - P_CHEST
 	var g_back := Vector3(-0.35, 0.45, -0.82)
@@ -5118,11 +6022,11 @@ static func _more_actions(d: Dictionary) -> void:
 		[0.12, {"ease": true, "pel": Vector3(0.0, -0.08, -0.06), "pelr": Vector3(-0.04, 0.0, 0.0), "spn": Vector3(-0.15, 0.06, 0.0),
 			"chs": Vector3(-0.06, 0.1, 0.0), "nek": Vector3(0.1, -0.1, 0.0), "hl": _lw(Vector3(-0.05, -0.04, -0.54), ch_b, ch_k),
 			"hlb": ch_b, "hlk": ch_k, "hlx": 1.0, "hlp": Vector3(-1.0, -0.6, 0.2), "hlf": Vector3(-1.0, 0.1, 0.0),
-			"hr": Vector3(0.06, -0.1, -0.36), "hrb": Vector3(0.45, -0.75, 0.5), "hrk": Vector3(1.0, 0.3, 0.0), "hrp": Vector3(1.0, -0.4, 0.3),
+			"hr": Vector3(0.34, -0.1, -0.36), "hrb": Vector3(0.62, -0.4, 0.68), "hrk": Vector3(0.8, 0.5, -0.2), "hrp": Vector3(1.0, -0.4, 0.3),
 			"fl": Vector3(-0.16, 0.093, -0.24), "flr": Vector3(0.0, 0.15, 0.0), "fr": Vector3(0.16, 0.093, 0.12), "frr": Vector3(0.0, -0.25, 0.0)}],
 		[0.3, {"pel": Vector3(0.0, -0.17, 0.17), "pelr": Vector3(0.16, 0.0, 0.0), "spn": Vector3(0.2, -0.05, 0.0), "chs": Vector3(0.12, -0.1, 0.0),
-			"nek": Vector3(-0.18, 0.06, 0.0), "hl": _lw(Vector3(-0.08, -0.14, -0.34), ch_b, ch_k), "hr": Vector3(0.14, -0.24, -0.12),
-			"hrb": Vector3(0.6, -0.6, 0.5), "fl": Vector3(-0.17, 0.093, -0.32), "fr": Vector3(0.18, 0.093, 0.3), "frr": Vector3(0.0, -0.3, 0.0)}],
+			"nek": Vector3(-0.18, 0.06, 0.0), "hl": _lw(Vector3(-0.08, -0.14, -0.34), ch_b, ch_k), "hr": Vector3(0.36, -0.24, -0.06),
+			"hrb": Vector3(0.6, -0.15, 0.78), "fl": Vector3(-0.17, 0.093, -0.32), "fr": Vector3(0.18, 0.093, 0.3), "frr": Vector3(0.0, -0.3, 0.0)}],
 		[0.5, {"ease": true, "pel": Vector3(0.0, -0.18, 0.19), "pelr": Vector3(0.19, 0.0, 0.0), "spn": Vector3(0.22, -0.03, 0.0)}],
 		[0.8, neutral],
 	]}
@@ -5217,8 +6121,9 @@ static func _more_actions(d: Dictionary) -> void:
 	# --- victory: anticipation, the sword thrust to the sky, chest out, hold, settle ---
 	d["victory"] = {"len": 2.2, "in": 0.1, "out": 0.3, "ev": {"raise": 0.62, "step": [0.6]}, "keys": [
 		[0.0, {"hrr": 0.0}],
+		[0.14, {"partial": true, "hr": Vector3(0.38, -0.34, -0.12), "hrb": Vector3(0.85, -0.22, -0.2)}],
 		[0.3, {"ease": true, "pel": Vector3(0.0, -0.12, 0.0), "spn": Vector3(-0.12, 0.05, 0.0), "chs": Vector3(-0.02, 0.2, 0.0),
-			"nek": Vector3(0.1, -0.15, 0.0), "hr": Vector3(0.3, -0.4, -0.22), "hrb": Vector3(0.25, -0.6, -0.75), "hrk": Vector3(0.3, 0.9, 0.0),
+			"nek": Vector3(0.1, -0.15, 0.0), "hr": Vector3(0.3, -0.4, -0.22), "hrb": Vector3(0.25, -0.33, -0.91), "hrk": Vector3(0.3, 0.9, 0.0),
 			"hrp": Vector3(1.0, -0.2, 0.3), "hl": Vector3(-0.38, -0.22, -0.14), "hlf": Vector3(-0.9, 0.0, -0.4)}],
 		[0.62, {"pel": Vector3(0.0, 0.0, 0.0), "pelr": Vector3(0.04, 0.0, 0.0), "spn": Vector3(0.1, 0.0, 0.0), "chs": Vector3(0.16, -0.05, 0.0),
 			"nek": Vector3(-0.16, 0.05, 0.0), "hed": Vector3(-0.14, 0.0, 0.0), "hr": Vector3(0.32, 0.6, -0.2), "hrb": Vector3(0.12, 1.0, -0.2),
@@ -5237,7 +6142,9 @@ static func _more_actions(d: Dictionary) -> void:
 ##             flung up and back, a step back, the guard comes back
 ##   backstep  the dodge without a direction: a quick hop back with the shield up
 static func _combat_actions(d: Dictionary, neutral: Dictionary) -> void:
-	var ready := {"hr": Vector3(0.3, -0.36, -0.2), "hrb": Vector3(0.0, -0.3, -1.0), "hrk": Vector3(1.0, 0.2, 0.0), "hrp": Vector3(0.5, 0.0, 1.0)}
+	# (INTEGRATE: the low trailing carry the actions end in, not the old fencer's point forward: a blade held forward at the end of a
+	# key swung down through the ground into the carry, NEUTRAL)
+	var ready := {"hr": Vector3(0.33, -0.42, -0.04), "hrb": Vector3(0.3, -0.6, 0.74), "hrk": Vector3(0.7, 0.05, -0.7), "hrp": Vector3(0.5, 0.0, 1.0)}
 	d["recoil"] = {"len": 0.52, "in": 0.03, "out": 0.18, "ev": {"step": [0.08]}, "keys": [
 		[0.0, {}],
 		[0.1, {"hr": Vector3(0.52, 0.08, 0.02), "hrb": Vector3(0.7, 0.7, -0.15), "hrk": Vector3(0.6, -0.2, 0.75), "hrp": Vector3(0.8, -0.4, 0.4),
@@ -5291,7 +6198,12 @@ static func _combat_actions(d: Dictionary, neutral: Dictionary) -> void:
 		[0.5, _merge({"pel": Vector3(0.0, -0.06, 0.0), "pelr": Vector3(0.0, 0.0, 0.0), "spn": Vector3(-0.04, 0.0, 0.0), "chs": Vector3(0.02, 0.0, 0.0),
 			"nek": Vector3(0.0, 0.0, 0.0), "hed": Vector3.ZERO, "fr": Vector3(0.15, 0.093, -0.06), "frr": Vector3(0.0, -0.18, 0.0),
 			"frp": Vector3(0.25, 0.0, -1.0), "fl": Vector3(-0.15, 0.093, 0.04), "flr": Vector3(0.0, 0.18, 0.0), "flp": Vector3(-0.25, 0.0, -1.0),
-			"hl": Vector3(-0.36, -0.3, -0.1), "hlf": Vector3(-1.0, 0.0, -0.3), "hlp": Vector3(-0.5, -0.2, 1.0), "hls": 0.0, "hrs": 0.0}, ready)],
+			"hl": Vector3(-0.36, -0.3, -0.1), "hlf": Vector3(-1.0, 0.0, -0.3), "hlp": Vector3(-0.5, -0.2, 1.0), "hls": 0.0, "hrs": 0.0},
+			_merge(ready, {"hr": Vector3(0.39, -0.4, -0.08)}))],
+		# (INTEGRATE: as he rises off the ledge the blade comes up and over at his right side into the trailing carry, high and clear
+		# of his thigh while the fist passes it, instead of swinging down through his leg)
+		[0.44, {"partial": true, "hrb": Vector3(0.45, 0.85, 0.25)}],
+		[0.52, {"partial": true, "hrb": Vector3(0.6, -0.05, 0.8)}],
 		[0.58, neutral],
 	]}
 
@@ -5472,145 +6384,308 @@ static func _bake_strike(S: Dictionary) -> Dictionary:
 ## set so the joints peak in the order of the kinetic chain.
 static func _strike_raw(nm: String) -> Dictionary:
 	match nm:
-		"attack1":
-			return {"len": 0.56, "in": 0.07, "out": 0.22, "ev": {"swing": 0.13, "impact": 0.205, "step": [0.2, 0.53]},
-				"py": [0.0, -15.0, 0.04, -15.0, 0.155, 24.0, 0.25, 31.0, 0.34, 25.0, 0.45, 8.0, 0.56, 0.0],
-				"pp": [0.0, 4.0, 0.05, 6.0, 0.13, 0.0, 0.205, -7.0, 0.3, -5.0, 0.45, -1.0, 0.56, 1.1],
-				"pr": [0.0, 3.0, 0.05, 4.0, 0.13, 0.0, 0.205, -5.0, 0.3, -4.0, 0.45, -1.0, 0.56, 0.0],
-				"px": [0.0, 0.03, 0.05, 0.04, 0.13, 0.0, 0.205, -0.05, 0.3, -0.04, 0.45, -0.01, 0.56, 0.0],
-				"pz": [0.0, 0.04, 0.05, 0.06, 0.1, 0.0, 0.205, -0.17, 0.3, -0.16, 0.45, -0.06, 0.56, 0.0],
-				"pdy": [0.0, -0.04, 0.05, -0.05, 0.13, -0.08, 0.205, -0.14, 0.3, -0.13, 0.45, -0.05, 0.56, 0.0],
-				"cy": [0.0, -36.0, 0.06, -36.0, 0.19, 41.0, 0.26, 52.0, 0.34, 44.0, 0.45, 14.0, 0.56, 0.0],
-				"cp": [0.0, 8.0, 0.05, 9.0, 0.13, 0.0, 0.205, -16.0, 0.3, -12.0, 0.45, -2.0, 0.56, 4.0],
-				"cr": [0.0, -3.0, 0.05, -4.0, 0.13, 0.0, 0.205, 6.0, 0.3, 5.0, 0.45, 1.0, 0.56, 0.0],
-				"hy": [0.0, -10.0, 0.05, -13.0, 0.1, -10.0, 0.15, 0.0, 0.19, 10.0, 0.23, 17.0, 0.3, 15.0, 0.4, 8.0, 0.5, 2.0, 0.56, 0.0],
-				"hp": [0.0, 2.0, 0.1, 2.0, 0.205, -5.0, 0.3, -4.0, 0.45, -1.0, 0.56, 0.0],
-				"hlx": [0.0, -0.335, 0.05, -0.34, 0.12, -0.38, 0.205, -0.42, 0.29, -0.42, 0.47, -0.35, 0.56, -0.335],
-				"hly": [0.0, -0.366, 0.05, -0.22, 0.12, -0.2, 0.205, -0.14, 0.29, -0.06, 0.47, -0.33, 0.56, -0.366],
-				"hlz": [0.0, -0.08, 0.05, -0.18, 0.12, -0.2, 0.205, -0.12, 0.29, -0.08, 0.47, -0.08, 0.56, -0.08],
-				"hpx": [0.0, -0.5, 0.05, -0.55, 0.12, -0.6, 0.205, -0.6, 0.29, -0.6, 0.47, -0.5, 0.56, -0.5],
-				"hpy": [0.0, -0.2, 0.05, -0.3, 0.12, -0.4, 0.205, -0.7, 0.29, -0.7, 0.47, -0.2, 0.56, -0.2],
-				"hpz": [0.0, 1.0, 0.05, 0.9, 0.12, 0.8, 0.205, 0.5, 0.29, 0.5, 0.47, 1.0, 0.56, 1.0],
-				"hfx": [0.0, -1.0, 0.05, -0.8, 0.12, -0.75, 0.205, -0.75, 0.29, -0.8, 0.47, -1.0, 0.56, -1.0],
-				"hfy": [0.0, 0.0, 0.05, 0.1, 0.12, 0.15, 0.205, 0.12, 0.29, 0.1, 0.47, 0.0, 0.56, 0.0],
-				"hfz": [0.0, -0.35, 0.05, -0.6, 0.12, -0.65, 0.205, -0.6, 0.29, -0.5, 0.47, -0.2, 0.56, -0.35],
-				"az": [0.0, -64.6, 0.1, -64.6, 0.2, -54.7, 0.3, -17.7, 0.42, -15.7, 0.56, -30.0],
-				"e": [0.0, 70.2, 0.1, 70.2, 0.2, 83.3, 0.3, 71.5, 0.42, 37.6, 0.56, 45.0],
-				"r": [0.0, 38.7, 0.1, 38.7, 0.2, 79.6, 0.3, 94.2, 0.42, 67.8, 0.56, 40.0],
-				"el": [0.0, 107.2, 0.115, 107.2, 0.215, 52.2, 0.3, 43.3, 0.42, 39.5, 0.56, 70.0],
-				"uln": [0.0, 27.9, 0.145, 27.9, 0.23, 59.9, 0.3, 59.9, 0.42, 54.3, 0.56, 45.0],
-				"ext": [0.0, 29.6, 0.145, 29.6, 0.23, -45.1, 0.3, -45.1, 0.42, -22.4, 0.56, 10.0],
-				"tw": [0.0, 120.1, 0.145, 120.1, 0.23, 120.5, 0.3, 120.1, 0.42, 121.2, 0.56, 120.0],
-				"feet": {"moves": [{"f": 1, "t0": 0.03, "t1": 0.2, "x": -0.18, "z": -0.42, "yaw": 8.0, "apex": 0.1, "th": 12.0}, {"f": 1, "t0": 0.38, "t1": 0.53, "x": -0.15, "z": -0.08, "yaw": 4.0, "apex": 0.07, "th": 6.0}], "pitch0": [0.0, 0.0, 0.12, 0.0, 0.26, -32.0, 0.36, -32.0, 0.5, -4.0], "follow0": [0.0, 0.0, 0.1, 0.0, 0.25, 0.7, 0.4, 0.7]}}
-		"attack2":
-			return {"len": 0.56, "in": 0.06, "out": 0.22, "ev": {"swing": 0.12, "impact": 0.2, "step": [0.2, 0.52]},
-				"py": [0.0, 22.0, 0.03, 22.0, 0.14, -21.0, 0.25, -27.0, 0.34, -21.0, 0.45, -6.0, 0.56, 0.0],
-				"pp": [0.0, 1.0, 0.05, 3.0, 0.13, 0.0, 0.2, -6.0, 0.3, -4.0, 0.45, -1.0, 0.56, 1.1],
-				"pr": [0.0, -4.0, 0.05, -4.0, 0.14, 1.0, 0.2, 4.0, 0.3, 3.0, 0.45, 1.0, 0.56, 0.0],
-				"px": [0.0, -0.05, 0.05, -0.05, 0.14, 0.02, 0.2, 0.05, 0.3, 0.04, 0.45, 0.01, 0.56, 0.0],
-				"pz": [0.0, -0.12, 0.05, -0.1, 0.1, -0.12, 0.2, -0.17, 0.3, -0.14, 0.45, -0.05, 0.56, 0.0],
-				"pdy": [0.0, -0.09, 0.05, -0.1, 0.14, -0.1, 0.2, -0.11, 0.3, -0.1, 0.45, -0.04, 0.56, 0.0],
-				"cy": [0.0, 40.0, 0.05, 40.0, 0.175, -36.0, 0.26, -54.0, 0.34, -44.0, 0.45, -12.0, 0.56, 0.0],
-				"cp": [0.0, 3.0, 0.05, 5.0, 0.13, 0.0, 0.2, -12.0, 0.3, -9.0, 0.45, -1.0, 0.56, 4.0],
-				"cr": [0.0, 4.0, 0.05, 5.0, 0.14, 0.0, 0.2, -6.0, 0.3, -5.0, 0.45, -1.0, 0.56, 0.0],
-				"hy": [0.0, 12.0, 0.05, 14.0, 0.1, 10.0, 0.14, 0.0, 0.18, -9.0, 0.22, -14.0, 0.3, -12.0, 0.4, -6.0, 0.5, -1.0, 0.56, 0.0],
-				"hp": [0.0, -3.0, 0.1, -3.0, 0.2, -5.0, 0.3, -4.0, 0.45, -1.0, 0.56, 0.0],
-				"hlx": [0.0, -0.45, 0.11, -0.46, 0.2, -0.41, 0.31, -0.4, 0.47, -0.35, 0.56, -0.335],
-				"hly": [0.0, -0.1, 0.11, -0.08, 0.2, -0.25, 0.31, -0.3, 0.47, -0.33, 0.56, -0.366],
-				"hlz": [0.0, -0.15, 0.11, -0.14, 0.2, -0.1, 0.31, -0.08, 0.47, -0.08, 0.56, -0.08],
-				"hpx": [0.0, -0.8, 0.11, -0.8, 0.2, -0.8, 0.31, -0.6, 0.47, -0.5, 0.56, -0.5],
-				"hpy": [0.0, -0.5, 0.11, -0.5, 0.2, -0.5, 0.31, -0.4, 0.47, -0.2, 0.56, -0.2],
-				"hpz": [0.0, 0.4, 0.11, 0.4, 0.2, 0.4, 0.31, 0.7, 0.47, 1.0, 0.56, 1.0],
-				"hfx": [0.0, -0.7, 0.11, -0.7, 0.2, -0.85, 0.31, -0.95, 0.47, -1.0, 0.56, -1.0],
-				"hfy": [0.0, 0.0, 0.11, 0.0, 0.2, 0.0, 0.31, 0.0, 0.47, 0.0, 0.56, 0.0],
-				"hfz": [0.0, -0.7, 0.11, -0.7, 0.2, -0.35, 0.31, -0.3, 0.47, -0.2, 0.56, -0.35],
-				"az": [0.0, -7.5, 0.085, -7.5, 0.2, 1.6, 0.3, -25.8, 0.42, -21.1, 0.56, -30.0],
-				"e": [0.0, 83.6, 0.085, 83.6, 0.2, 73.1, 0.3, 67.8, 0.42, 42.8, 0.56, 45.0],
-				"r": [0.0, 100.3, 0.085, 100.3, 0.2, 56.2, 0.3, 53.0, 0.42, 47.4, 0.56, 40.0],
-				"el": [0.0, 59.8, 0.1, 59.8, 0.21, 31.0, 0.3, 16.8, 0.42, 58.4, 0.56, 70.0],
-				"uln": [0.0, 60.0, 0.13, 60.0, 0.22, 44.0, 0.3, 47.4, 0.42, 41.4, 0.56, 45.0],
-				"ext": [0.0, -35.0, 0.13, -35.0, 0.22, 0.1, 0.3, 1.2, 0.42, 7.4, 0.56, 10.0],
-				"tw": [0.0, 98.3, 0.13, 98.3, 0.22, 120.7, 0.3, 120.0, 0.42, 118.6, 0.56, 120.0],
-				"feet": {"moves": [{"f": 1, "t0": 0.0, "t1": 0.13, "x": -0.15, "z": 0.0, "yaw": 6.0, "apex": 0.06, "th": 4.0, "near": 0.14}, {"f": 0, "t0": 0.04, "t1": 0.2, "x": 0.18, "z": -0.3, "yaw": -8.0, "apex": 0.09, "th": 12.0}, {"f": 0, "t0": 0.38, "t1": 0.53, "x": 0.15, "z": 0.0, "yaw": -4.0, "apex": 0.07, "th": 6.0}], "pitch1": [0.0, 0.0, 0.14, 0.0, 0.28, -30.0, 0.36, -30.0, 0.5, -4.0], "follow1": [0.0, 0.0, 0.1, 0.0, 0.25, 0.7, 0.4, 0.7]}}
-		"attack3":
-			return {"len": 0.8, "in": 0.07, "out": 0.25, "ev": {"swing": 0.27, "impact": 0.345, "step": [0.345, 0.72]},
-				"py": [0.0, -18.0, 0.085, -24.0, 0.265, 26.0, 0.45, 28.0, 0.55, 14.0, 0.68, 4.0, 0.8, 0.0],
-				"pp": [0.0, 2.0, 0.12, 6.0, 0.2, 7.0, 0.345, -10.0, 0.45, -9.0, 0.6, -3.0, 0.8, 1.1],
-				"pr": [0.0, 3.0, 0.2, 4.0, 0.345, -6.0, 0.5, -5.0, 0.8, 0.0],
-				"px": [0.0, 0.05, 0.2, 0.05, 0.345, -0.05, 0.5, -0.05, 0.62, -0.02, 0.8, 0.0],
-				"pz": [0.0, 0.0, 0.2, 0.1, 0.28, 0.03, 0.345, -0.24, 0.5, -0.22, 0.65, -0.1, 0.8, 0.0],
-				"pdy": [0.0, -0.06, 0.12, 0.0, 0.2, 0.01, 0.345, -0.24, 0.5, -0.22, 0.65, -0.12, 0.8, 0.0],
-				"cy": [0.0, -42.0, 0.105, -46.0, 0.29, 18.0, 0.45, 24.0, 0.55, 14.0, 0.68, 4.0, 0.8, 0.0],
-				"cp": [0.0, 6.0, 0.12, 14.0, 0.2, 18.0, 0.345, -30.0, 0.45, -28.0, 0.6, -8.0, 0.8, 4.0],
-				"cr": [0.0, -4.0, 0.2, -6.0, 0.345, 6.0, 0.5, 5.0, 0.8, 0.0],
-				"hy": [0.0, -8.0, 0.2, -14.0, 0.3, -4.0, 0.345, 4.0, 0.5, 4.0, 0.8, 0.0],
-				"hp": [0.0, 0.0, 0.2, 8.0, 0.3, 4.0, 0.345, -14.0, 0.5, -14.0, 0.65, -4.0, 0.8, 0.0],
-				"hlx": [0.0, -0.41, 0.12, -0.3, 0.24, -0.25, 0.345, -0.42, 0.5, -0.4, 0.62, -0.35, 0.8, -0.335],
-				"hly": [0.0, -0.25, 0.12, -0.06, 0.24, 0.0, 0.345, -0.38, 0.5, -0.36, 0.62, -0.33, 0.8, -0.366],
-				"hlz": [0.0, -0.1, 0.12, -0.24, 0.24, -0.3, 0.345, -0.12, 0.5, -0.1, 0.62, -0.08, 0.8, -0.08],
-				"hpx": [0.0, -0.8, 0.12, -0.8, 0.24, -0.8, 0.345, -0.8, 0.5, -0.6, 0.62, -0.5, 0.8, -0.5],
-				"hpy": [0.0, -0.5, 0.12, -0.5, 0.24, -0.5, 0.345, -0.5, 0.5, -0.4, 0.62, -0.2, 0.8, -0.2],
-				"hpz": [0.0, 0.4, 0.12, 0.5, 0.24, 0.5, 0.345, 0.5, 0.5, 0.7, 0.62, 1.0, 0.8, 1.0],
-				"hfx": [0.0, -0.85, 0.12, -0.55, 0.24, -0.5, 0.345, -0.8, 0.5, -0.9, 0.62, -1.0, 0.8, -1.0],
-				"hfy": [0.0, 0.0, 0.12, 0.15, 0.24, 0.2, 0.345, -0.2, 0.5, 0.0, 0.62, 0.0, 0.8, 0.0],
-				"hfz": [0.0, -0.35, 0.12, -0.8, 0.24, -0.85, 0.345, -0.5, 0.5, -0.4, 0.62, -0.25, 0.8, -0.35],
-				"az": [0.0, -15.0, 0.11, -18.0, 0.125, -18.0, 0.355, 10.9, 0.45, 8.3, 0.6, -13.4, 0.8, -30.0],
-				"e": [0.0, 68.0, 0.11, 97.1, 0.125, 97.1, 0.355, 82.7, 0.45, 75.7, 0.6, 51.1, 0.8, 45.0],
-				"r": [0.0, 54.0, 0.11, 5.1, 0.125, 5.1, 0.355, -44.3, 0.45, -24.6, 0.6, 47.0, 0.8, 40.0],
-				"el": [0.0, 14.0, 0.13, 73.7, 0.19, 73.7, 0.37, 11.0, 0.45, 11.6, 0.6, 46.2, 0.8, 70.0],
-				"uln": [0.0, 46.0, 0.14, 59.8, 0.265, 59.8, 0.378, 59.7, 0.45, 59.8, 0.6, 49.8, 0.8, 45.0],
-				"ext": [0.0, 0.0, 0.14, -21.9, 0.265, -21.9, 0.378, 45.4, 0.45, 45.4, 0.6, -28.2, 0.8, 10.0],
-				"tw": [0.0, 120.0, 0.14, 100.9, 0.265, 100.9, 0.378, 120.4, 0.45, 120.6, 0.6, 120.3, 0.8, 120.0],
-				"feet": {"moves": [{"f": 0, "t0": 0.0, "t1": 0.16, "x": 0.15, "z": 0.06, "yaw": -6.0, "apex": 0.06, "th": 4.0, "near": 0.14}, {"f": 1, "t0": 0.1, "t1": 0.345, "x": -0.19, "z": -0.58, "yaw": 8.0, "apex": 0.16, "th": 4.0}, {"f": 1, "t0": 0.58, "t1": 0.77, "x": -0.14, "z": -0.14, "yaw": 3.0, "apex": 0.08, "th": 5.0}], "pitch0": [0.0, 0.0, 0.25, 0.0, 0.4, -28.0, 0.6, -28.0, 0.77, -6.0], "follow0": [0.0, 0.0, 0.2, 0.0, 0.32, 0.6, 0.5, 0.6]}}
+		"a1":
+			return {"len": 0.6, "in": 0.07, "out": 0.22, "ev": {"swing": 0.13, "impact": 0.175, "step": [0.17, 0.56]},
+				"py": [0.0, 0.0, 0.11, -16.0, 0.13, -17.0, 0.165, 10.0, 0.2, 24.0, 0.3, 32.0, 0.42, 20.0, 0.6, 0.0],
+				"cy": [0.0, 0.0, 0.11, -40.0, 0.135, -42.0, 0.18, 22.0, 0.21, 42.0, 0.3, 58.0, 0.42, 34.0, 0.6, 0.0],
+				"pp": [0.0, 1.1, 0.12, 4.0, 0.18, -6.0, 0.3, -6.0, 0.45, -1.0, 0.6, 1.1],
+				"cp": [0.0, 4.0, 0.11, 10.0, 0.135, 10.0, 0.19, -14.0, 0.3, -20.0, 0.42, -10.0, 0.6, 4.0],
+				"cr": [0.0, 0.0, 0.11, 7.0, 0.135, 7.0, 0.19, -6.0, 0.32, -9.0, 0.45, -3.0, 0.6, 0.0],
+				"pr": [0.0, 0.0, 0.12, 3.0, 0.19, -4.0, 0.32, -4.0, 0.6, 0.0],
+				"px": [0.0, 0.0, 0.12, 0.04, 0.19, -0.04, 0.32, -0.06, 0.46, -0.02, 0.6, 0.0],
+				"pz": [0.0, 0.0, 0.12, 0.05, 0.135, 0.05, 0.19, -0.14, 0.32, -0.18, 0.46, -0.07, 0.6, 0.0],
+				"pdy": [0.0, 0.0, 0.12, -0.04, 0.135, -0.05, 0.19, -0.12, 0.32, -0.15, 0.46, -0.05, 0.6, 0.0],
+				"hy": [0.0, 0.0, 0.12, -6.0, 0.17, -2.0, 0.21, 6.0, 0.32, 14.0, 0.46, 6.0, 0.6, 0.0],
+				"hp": [0.0, 0.0, 0.12, 2.0, 0.21, -6.0, 0.32, -8.0, 0.6, 0.0],
+				"hlx": [0.0, -0.335, 0.12, -0.42, 0.14, -0.42, 0.21, -0.2, 0.34, -0.2, 0.5, -0.335, 0.6, -0.335],
+				"hly": [0.0, -0.366, 0.12, -0.14, 0.14, -0.14, 0.21, -0.2, 0.34, -0.2, 0.5, -0.366, 0.6, -0.366],
+				"hlz": [0.0, -0.08, 0.12, -0.1, 0.14, -0.1, 0.21, -0.3, 0.34, -0.3, 0.5, -0.08, 0.6, -0.08],
+				"hpx": [0.0, -0.5, 0.12, -0.6, 0.14, -0.6, 0.21, -0.8, 0.34, -0.8, 0.5, -0.5, 0.6, -0.5],
+				"hpy": [0.0, -0.2, 0.12, -0.6, 0.14, -0.6, 0.21, -0.5, 0.34, -0.5, 0.5, -0.2, 0.6, -0.2],
+				"hpz": [0.0, 1.0, 0.12, 0.5, 0.14, 0.5, 0.21, 0.5, 0.34, 0.5, 0.5, 1.0, 0.6, 1.0],
+				"hfx": [0.0, -1.0, 0.12, -0.85, 0.14, -0.85, 0.21, -0.45, 0.34, -0.45, 0.5, -1.0, 0.6, -1.0],
+				"hfy": [0.0, 0.0, 0.12, 0.1, 0.14, 0.1, 0.21, 0.1, 0.34, 0.1, 0.5, 0.0, 0.6, 0.0],
+				"hfz": [0.0, -0.35, 0.12, -0.5, 0.14, -0.5, 0.21, -0.9, 0.34, -0.9, 0.5, -0.35, 0.6, -0.35],
+				"az": [0.0, -83.19, 0.017, -85.79, 0.033, -91.23, 0.05, -95.95, 0.06, -96.97, 0.067, -89.24, 0.083, -73.59, 0.1, -63.14, 0.117, -57.92, 0.125, -57.27, 0.133, -54.24, 0.14, -55.19, 0.15, -55.72, 0.167, -49.43, 0.18, -17.08, 0.183, -16.25, 0.2, -17.46, 0.21, -17.36, 0.217, -17.76, 0.233, -18.16, 0.235, -18.09, 0.25, -21.1, 0.267, -32.19, 0.283, -46.87, 0.3, -58.36, 0.31, -61.56, 0.317, -61.81, 0.333, -64.26, 0.35, -68.55, 0.367, -73.73, 0.383, -78.8, 0.4, -82.81, 0.417, -84.77, 0.42, -84.84, 0.433, -82.61, 0.45, -75.1, 0.467, -65.01, 0.483, -55.21, 0.5, -48.55, 0.51, -47.27, 0.517, -47.81, 0.533, -53.06, 0.55, -61.75, 0.567, -71.24, 0.583, -78.87, 0.6, -86.29],
+				"e": [0.0, 18.66, 0.017, 18.54, 0.033, 18.27, 0.05, 18.04, 0.06, 17.99, 0.067, 28.66, 0.083, 50.28, 0.1, 64.71, 0.117, 71.92, 0.125, 72.82, 0.133, 72.66, 0.14, 73.18, 0.15, 75.37, 0.167, 71.98, 0.18, 45.79, 0.183, 44.89, 0.2, 38.48, 0.21, 38.67, 0.217, 37.92, 0.233, 37.91, 0.235, 38.05, 0.25, 35.75, 0.267, 29.9, 0.283, 25.24, 0.3, 23.09, 0.31, 22.62, 0.317, 22.55, 0.333, 21.81, 0.35, 20.51, 0.367, 18.95, 0.383, 17.41, 0.4, 16.2, 0.417, 15.61, 0.42, 15.59, 0.433, 15.99, 0.45, 17.34, 0.467, 19.16, 0.483, 20.92, 0.5, 22.12, 0.51, 22.35, 0.517, 22.28, 0.533, 21.62, 0.55, 20.54, 0.567, 19.35, 0.583, 18.39, 0.6, 18.9],
+				"r": [0.0, -95.07, 0.017, -70.11, 0.033, -17.95, 0.05, 27.44, 0.06, 37.24, 0.067, 32.7, 0.083, 23.5, 0.1, 17.37, 0.117, 14.3, 0.125, 13.92, 0.133, 16.24, 0.14, 16.87, 0.15, 15.22, 0.167, 28.44, 0.18, 34.69, 0.183, 37.18, 0.2, 49.19, 0.21, 48.62, 0.217, 49.63, 0.233, 48.22, 0.235, 47.63, 0.25, 46.96, 0.267, 59.62, 0.283, 78.08, 0.3, 93.61, 0.31, 98.19, 0.317, 98.22, 0.333, 98.49, 0.35, 98.97, 0.367, 99.54, 0.383, 100.11, 0.4, 100.55, 0.417, 100.77, 0.42, 100.78, 0.433, 89.35, 0.45, 50.82, 0.467, -0.92, 0.483, -51.17, 0.5, -85.29, 0.51, -91.9, 0.517, -91.95, 0.533, -92.42, 0.55, -93.19, 0.567, -94.04, 0.583, -94.72, 0.6, -95.09],
+				"el": [0.0, 21.68, 0.017, 29.4, 0.033, 45.53, 0.05, 59.56, 0.06, 62.59, 0.067, 73.3, 0.083, 94.97, 0.1, 109.44, 0.117, 116.67, 0.125, 117.57, 0.133, 117.68, 0.14, 117.69, 0.15, 115.22, 0.167, 97.58, 0.18, 58.97, 0.183, 55.03, 0.2, 50.3, 0.21, 48.34, 0.217, 48.88, 0.233, 48.83, 0.235, 48.69, 0.25, 53.29, 0.267, 65.42, 0.283, 78.64, 0.3, 88.18, 0.31, 90.82, 0.317, 90.69, 0.333, 89.33, 0.35, 86.95, 0.367, 84.09, 0.383, 81.28, 0.4, 79.07, 0.417, 77.98, 0.42, 77.94, 0.433, 73.77, 0.45, 59.69, 0.467, 40.79, 0.483, 22.43, 0.5, 9.96, 0.51, 7.55, 0.517, 7.78, 0.533, 9.96, 0.55, 13.58, 0.567, 17.52, 0.583, 20.7, 0.6, 19.67],
+				"uln": [0.0, 59.52, 0.017, 50.69, 0.033, 32.25, 0.05, 16.21, 0.06, 12.74, 0.067, 10.61, 0.083, 6.3, 0.1, 3.42, 0.117, 1.98, 0.125, 1.8, 0.133, 1.8, 0.14, 1.83, 0.15, 9.68, 0.167, 30.53, 0.18, 55.32, 0.183, 57.02, 0.2, 58.94, 0.21, 59.57, 0.217, 59.66, 0.233, 59.8, 0.235, 59.81, 0.25, 59.93, 0.267, 60.05, 0.283, 60.19, 0.3, 60.25, 0.31, 60.2, 0.317, 60.09, 0.333, 59.04, 0.35, 57.19, 0.367, 54.96, 0.383, 52.78, 0.4, 51.05, 0.417, 50.2, 0.42, 50.18, 0.433, 50.28, 0.45, 50.62, 0.467, 51.09, 0.483, 51.54, 0.5, 51.84, 0.51, 51.9, 0.517, 52.02, 0.533, 53.17, 0.55, 55.07, 0.567, 57.14, 0.583, 58.81, 0.6, 58.43],
+				"ext": [0.0, 60.03, 0.017, 37.09, 0.033, -10.84, 0.05, -52.55, 0.06, -61.56, 0.067, -37.88, 0.083, 10.08, 0.1, 42.07, 0.117, 58.06, 0.125, 60.06, 0.133, 60.19, 0.14, 60.2, 0.15, 60.24, 0.167, 60.15, 0.18, 48.39, 0.183, 43.3, 0.2, 25.33, 0.21, 22.2, 0.217, 20.42, 0.233, 19.02, 0.235, 19.25, 0.25, 23.8, 0.267, 29.84, 0.283, 39.94, 0.3, 50.88, 0.31, 55.68, 0.317, 55.73, 0.333, 56.22, 0.35, 57.08, 0.367, 58.12, 0.383, 59.14, 0.4, 59.94, 0.417, 60.34, 0.42, 60.35, 0.433, 60.37, 0.45, 60.43, 0.467, 60.52, 0.483, 60.6, 0.5, 60.66, 0.51, 60.67, 0.517, 60.66, 0.533, 60.56, 0.55, 60.39, 0.567, 60.21, 0.583, 60.06, 0.6, 59.92],
+				"tw": [0.0, -20.62, 0.017, 2.75, 0.033, 51.58, 0.05, 94.07, 0.06, 103.24, 0.067, 103.76, 0.083, 104.8, 0.1, 105.5, 0.117, 105.85, 0.125, 105.89, 0.133, 105.79, 0.14, 105.5, 0.15, 103.39, 0.167, 110.13, 0.18, 110.74, 0.183, 110.8, 0.2, 111.38, 0.21, 111.38, 0.217, 111.5, 0.233, 111.58, 0.235, 111.57, 0.25, 111.57, 0.267, 111.68, 0.283, 111.67, 0.3, 111.63, 0.31, 111.64, 0.317, 111.64, 0.333, 111.69, 0.35, 111.77, 0.367, 111.87, 0.383, 111.96, 0.4, 112.04, 0.417, 112.07, 0.42, 112.07, 0.433, 104.52, 0.45, 79.07, 0.467, 44.88, 0.483, 11.68, 0.5, -10.86, 0.51, -15.23, 0.517, -15.3, 0.533, -16.02, 0.55, -17.22, 0.567, -18.52, 0.583, -19.57, 0.6, -23.92],
+				"feet": {"moves": [{"f": 1, "t0": 0.04, "t1": 0.17, "x": -0.18, "z": -0.44, "yaw": 8.0, "apex": 0.1, "th": 12.0}, {"f": 1, "t0": 0.44, "t1": 0.58, "x": -0.15, "z": -0.08, "yaw": 4.0, "apex": 0.07, "th": 6.0}], "pitch0": [0.0, 0.0, 0.13, 0.0, 0.24, -32.0, 0.36, -32.0, 0.52, -4.0], "follow0": [0.0, 0.0, 0.12, 0.0, 0.25, 0.7, 0.4, 0.7]}}
+		"a2":
+			return {"len": 0.52, "in": 0.06, "out": 0.22, "ev": {"swing": 0.075, "impact": 0.115, "step": [0.12, 0.5]},
+				"py": [0.0, 31.646, 0.06, 36.0, 0.085, 30.0, 0.13, -14.0, 0.18, -24.0, 0.28, -18.0, 0.4, -6.0, 0.52, 0.0],
+				"cy": [0.0, 57.055, 0.06, 66.0, 0.09, 60.0, 0.14, -30.0, 0.19, -50.0, 0.28, -40.0, 0.4, -12.0, 0.52, 0.0],
+				"pp": [0.0, -6.0, 0.07, -4.0, 0.14, -6.0, 0.28, -3.0, 0.52, 1.1],
+				"cp": [0.0, -19.793, 0.07, -12.0, 0.14, -14.0, 0.22, -10.0, 0.36, -2.0, 0.52, 4.0],
+				"cr": [0.0, -8.726, 0.07, -10.0, 0.14, 6.0, 0.24, 8.0, 0.4, 2.0, 0.52, 0.0],
+				"pr": [0.0, -4.0, 0.08, -4.0, 0.14, 4.0, 0.3, 3.0, 0.52, 0.0],
+				"px": [0.0, -0.058, 0.08, -0.06, 0.14, 0.04, 0.3, 0.05, 0.44, 0.01, 0.52, 0.0],
+				"pz": [0.0, -0.176, 0.08, -0.17, 0.14, -0.2, 0.3, -0.16, 0.44, -0.05, 0.52, 0.0],
+				"pdy": [0.0, -0.147, 0.08, -0.14, 0.14, -0.12, 0.3, -0.11, 0.44, -0.04, 0.52, 0.0],
+				"hy": [0.0, 12.66, 0.06, 16.0, 0.1, 4.0, 0.14, -8.0, 0.24, -14.0, 0.4, -4.0, 0.52, 0.0],
+				"hp": [0.0, -7.685, 0.1, -6.0, 0.2, -2.0, 0.4, 0.0, 0.52, 0.0],
+				"hlx": [0.0, -0.2, 0.07, -0.3, 0.14, -0.42, 0.26, -0.42, 0.42, -0.335, 0.52, -0.335],
+				"hly": [0.0, -0.2, 0.07, -0.3, 0.14, -0.14, 0.26, -0.14, 0.42, -0.366, 0.52, -0.366],
+				"hlz": [0.0, -0.3, 0.07, -0.24, 0.14, -0.1, 0.26, -0.1, 0.42, -0.08, 0.52, -0.08],
+				"hpx": [0.0, -0.8, 0.07, -0.8, 0.14, -0.6, 0.26, -0.6, 0.42, -0.5, 0.52, -0.5],
+				"hpy": [0.0, -0.5, 0.07, -0.5, 0.14, -0.6, 0.26, -0.6, 0.42, -0.2, 0.52, -0.2],
+				"hpz": [0.0, 0.5, 0.07, 0.4, 0.14, 0.5, 0.26, 0.5, 0.42, 1.0, 0.52, 1.0],
+				"hfx": [0.0, -0.45, 0.07, -0.6, 0.14, -0.85, 0.26, -0.85, 0.42, -1.0, 0.52, -1.0],
+				"hfy": [0.0, 0.1, 0.07, 0.0, 0.14, 0.1, 0.26, 0.1, 0.42, 0.0, 0.52, 0.0],
+				"hfz": [0.0, -0.9, 0.07, -0.8, 0.14, -0.5, 0.26, -0.5, 0.42, -0.35, 0.52, -0.35],
+				"az": [0.0, -44.51, 0.017, -43.78, 0.033, -40.19, 0.05, -36.35, 0.067, -35.18, 0.07, -35.54, 0.078, -34.62, 0.083, -33.37, 0.1, -20.67, 0.115, -10.69, 0.117, -9.48, 0.133, -0.63, 0.145, 2.12, 0.15, 2.8, 0.167, 4.57, 0.18, 5.6, 0.183, 4.43, 0.2, -6.11, 0.217, -25.33, 0.233, -44.52, 0.25, -60.97, 0.267, -72.2, 0.27, -73.94, 0.283, -74.01, 0.3, -74.26, 0.317, -74.68, 0.333, -75.23, 0.35, -75.89, 0.367, -76.62, 0.383, -77.41, 0.4, -78.21, 0.417, -79.01, 0.433, -79.77, 0.45, -80.46, 0.467, -81.06, 0.483, -81.53, 0.5, -81.85, 0.517, -82.0, 0.52, -86.23],
+				"e": [0.0, 26.81, 0.017, 27.29, 0.033, 27.0, 0.05, 25.78, 0.067, 23.78, 0.07, 23.48, 0.078, 24.31, 0.083, 24.92, 0.1, 37.64, 0.115, 66.1, 0.117, 69.06, 0.133, 90.5, 0.145, 96.46, 0.15, 97.6, 0.167, 99.64, 0.18, 100.34, 0.183, 99.55, 0.2, 93.79, 0.217, 86.08, 0.233, 76.71, 0.25, 69.61, 0.267, 66.8, 0.27, 66.8, 0.283, 66.4, 0.3, 64.86, 0.317, 62.33, 0.333, 58.99, 0.35, 55.0, 0.367, 50.55, 0.383, 45.81, 0.4, 40.94, 0.417, 36.12, 0.433, 31.53, 0.45, 27.33, 0.467, 23.71, 0.483, 20.84, 0.5, 18.89, 0.517, 18.03, 0.52, 18.9],
+				"r": [0.0, 75.96, 0.017, 76.23, 0.033, 72.11, 0.05, 66.51, 0.067, 65.28, 0.07, 66.11, 0.078, 63.51, 0.083, 62.43, 0.1, 35.05, 0.115, 6.27, 0.117, 4.68, 0.133, 3.87, 0.145, 7.25, 0.15, 7.56, 0.167, 11.4, 0.18, 15.05, 0.183, 9.03, 0.2, -6.15, 0.217, -7.34, 0.233, -2.74, 0.25, 4.2, 0.267, 10.67, 0.27, 12.08, 0.283, 11.2, 0.3, 7.82, 0.317, 2.27, 0.333, -5.06, 0.35, -13.8, 0.367, -23.57, 0.383, -33.99, 0.4, -44.67, 0.417, -55.24, 0.433, -65.32, 0.45, -74.52, 0.467, -82.46, 0.483, -88.76, 0.5, -93.05, 0.517, -94.94, 0.52, -95.11],
+				"el": [0.0, 75.97, 0.017, 74.64, 0.033, 73.05, 0.05, 73.7, 0.067, 77.58, 0.07, 78.39, 0.078, 78.02, 0.083, 77.51, 0.1, 64.98, 0.115, 58.3, 0.117, 58.56, 0.133, 56.84, 0.145, 53.32, 0.15, 53.48, 0.167, 54.33, 0.18, 53.47, 0.183, 58.51, 0.2, 80.84, 0.217, 94.52, 0.233, 106.03, 0.25, 113.57, 0.267, 116.9, 0.27, 117.16, 0.283, 116.38, 0.3, 113.38, 0.317, 108.45, 0.333, 101.94, 0.35, 94.16, 0.367, 85.48, 0.383, 76.22, 0.4, 66.73, 0.417, 57.33, 0.433, 48.38, 0.45, 40.2, 0.467, 33.14, 0.483, 27.54, 0.5, 23.73, 0.517, 22.05, 0.52, 19.88],
+				"uln": [0.0, 59.52, 0.017, 56.82, 0.033, 52.61, 0.05, 47.35, 0.067, 41.03, 0.07, 40.22, 0.078, 40.65, 0.083, 40.91, 0.1, 50.43, 0.115, 59.76, 0.117, 59.85, 0.133, 59.74, 0.145, 59.61, 0.15, 59.53, 0.167, 56.9, 0.18, 55.64, 0.183, 57.39, 0.2, 59.7, 0.217, 58.21, 0.233, 52.27, 0.25, 46.67, 0.267, 43.18, 0.27, 42.48, 0.283, 42.62, 0.3, 43.15, 0.317, 44.03, 0.333, 45.2, 0.35, 46.59, 0.367, 48.14, 0.383, 49.8, 0.4, 51.5, 0.417, 53.18, 0.433, 54.78, 0.45, 56.24, 0.467, 57.51, 0.483, 58.51, 0.5, 59.19, 0.517, 59.49, 0.52, 58.71],
+				"ext": [0.0, 36.06, 0.017, 27.64, 0.033, 19.23, 0.05, 18.15, 0.067, 22.83, 0.07, 23.53, 0.078, 25.03, 0.083, 24.81, 0.1, 33.85, 0.115, 58.13, 0.117, 60.01, 0.133, 56.42, 0.145, 50.13, 0.15, 48.87, 0.167, 43.28, 0.18, 38.39, 0.183, 45.07, 0.2, 60.44, 0.217, 60.56, 0.233, 60.62, 0.25, 60.67, 0.267, 60.72, 0.27, 60.72, 0.283, 60.71, 0.3, 60.69, 0.317, 60.65, 0.333, 60.6, 0.35, 60.54, 0.367, 60.48, 0.383, 60.41, 0.4, 60.34, 0.417, 60.27, 0.433, 60.2, 0.45, 60.14, 0.467, 60.08, 0.483, 60.04, 0.5, 60.01, 0.517, 60.0, 0.52, 59.61],
+				"tw": [0.0, 110.22, 0.017, 110.33, 0.033, 111.08, 0.05, 112.24, 0.067, 113.29, 0.07, 113.36, 0.078, 113.25, 0.083, 113.24, 0.1, 111.86, 0.115, 110.35, 0.117, 110.34, 0.133, 110.44, 0.145, 110.54, 0.15, 110.57, 0.167, 110.82, 0.18, 111.0, 0.183, 110.98, 0.2, 111.07, 0.217, 111.54, 0.233, 112.07, 0.25, 112.44, 0.267, 112.62, 0.27, 112.67, 0.283, 111.58, 0.3, 107.39, 0.317, 100.52, 0.333, 91.44, 0.35, 80.61, 0.367, 68.5, 0.383, 55.6, 0.4, 42.36, 0.417, 29.26, 0.433, 16.78, 0.45, 5.38, 0.467, -4.46, 0.483, -12.27, 0.5, -17.59, 0.517, -19.93, 0.52, -24.09],
+				"feet": {"moves": [{"f": 0, "t0": 0.03, "t1": 0.12, "x": 0.2, "z": -0.3, "yaw": -8.0, "apex": 0.09, "th": 10.0}, {"f": 1, "t0": 0.3, "t1": 0.44, "x": -0.15, "z": -0.06, "yaw": 4.0, "apex": 0.07, "th": 6.0, "near": 0.12}, {"f": 0, "t0": 0.36, "t1": 0.5, "x": 0.15, "z": 0.04, "yaw": -4.0, "apex": 0.07, "th": 6.0}], "pitch1": [0.0, 0.0, 0.1, 0.0, 0.18, -26.0, 0.28, -26.0, 0.34, 0.0], "follow1": [0.0, 0.0, 0.08, 0.0, 0.2, 0.6, 0.3, 0.6]}}
+		"a3":
+			return {"len": 0.6, "in": 0.06, "out": 0.22, "ev": {"swing": 0.1, "impact": 0.14, "step": [0.15, 0.58]},
+				"py": [0.0, -23.899, 0.08, -28.0, 0.1, -30.0, 0.14, 8.0, 0.18, 32.0, 0.28, 40.0, 0.42, 22.0, 0.6, 0.0],
+				"cy": [0.0, -50.0, 0.08, -58.0, 0.105, -62.0, 0.15, 20.0, 0.19, 58.0, 0.28, 72.0, 0.42, 36.0, 0.6, 0.0],
+				"pp": [0.0, -5.346, 0.09, 2.0, 0.15, -6.0, 0.3, -5.0, 0.6, 1.1],
+				"cp": [0.0, -11.887, 0.09, 2.0, 0.15, -10.0, 0.3, -12.0, 0.45, -4.0, 0.6, 4.0],
+				"cr": [0.0, 7.484, 0.09, 4.0, 0.15, -4.0, 0.3, -6.0, 0.6, 0.0],
+				"pr": [0.0, 3.858, 0.09, 3.0, 0.15, -3.0, 0.3, -3.0, 0.6, 0.0],
+				"px": [0.0, 0.046, 0.09, 0.06, 0.15, -0.02, 0.3, -0.06, 0.46, -0.02, 0.6, 0.0],
+				"pz": [0.0, -0.195, 0.09, -0.1, 0.15, -0.16, 0.3, -0.18, 0.46, -0.06, 0.6, 0.0],
+				"pdy": [0.0, -0.116, 0.09, -0.12, 0.15, -0.15, 0.3, -0.14, 0.46, -0.05, 0.6, 0.0],
+				"hy": [0.0, -12.382, 0.08, -12.0, 0.12, -4.0, 0.16, 8.0, 0.28, 16.0, 0.46, 6.0, 0.6, 0.0],
+				"hp": [0.0, -2.229, 0.1, -2.0, 0.2, -4.0, 0.45, 0.0, 0.6, 0.0],
+				"hlx": [0.0, -0.42, 0.09, -0.2, 0.16, -0.42, 0.3, -0.42, 0.48, -0.335, 0.6, -0.335],
+				"hly": [0.0, -0.14, 0.09, -0.2, 0.16, -0.14, 0.3, -0.14, 0.48, -0.366, 0.6, -0.366],
+				"hlz": [0.0, -0.1, 0.09, -0.3, 0.16, -0.1, 0.3, -0.1, 0.48, -0.08, 0.6, -0.08],
+				"hpx": [0.0, -0.6, 0.09, -0.8, 0.16, -0.6, 0.3, -0.6, 0.48, -0.5, 0.6, -0.5],
+				"hpy": [0.0, -0.6, 0.09, -0.5, 0.16, -0.6, 0.3, -0.6, 0.48, -0.2, 0.6, -0.2],
+				"hpz": [0.0, 0.5, 0.09, 0.5, 0.16, 0.5, 0.3, 0.5, 0.48, 1.0, 0.6, 1.0],
+				"hfx": [0.0, -0.85, 0.09, -0.45, 0.16, -0.85, 0.3, -0.85, 0.48, -1.0, 0.6, -1.0],
+				"hfy": [0.0, 0.1, 0.09, 0.1, 0.16, 0.1, 0.3, 0.1, 0.48, 0.0, 0.6, 0.0],
+				"hfz": [0.0, -0.5, 0.09, -0.9, 0.16, -0.5, 0.3, -0.5, 0.48, -0.35, 0.6, -0.35],
+				"az": [0.0, 1.41, 0.017, -7.95, 0.033, -30.75, 0.05, -59.09, 0.067, -85.06, 0.083, -100.74, 0.09, -102.37, 0.097, -98.95, 0.1, -97.9, 0.117, -87.8, 0.133, -73.79, 0.14, -60.3, 0.15, -47.81, 0.167, -42.4, 0.172, -46.05, 0.183, -52.0, 0.2, -55.24, 0.21, -57.18, 0.217, -46.83, 0.233, -26.05, 0.25, -32.41, 0.267, -40.75, 0.283, -49.95, 0.3, -56.88, 0.317, -53.82, 0.333, -46.17, 0.35, -36.22, 0.367, -26.27, 0.383, -18.62, 0.4, -15.56, 0.417, -16.86, 0.433, -20.1, 0.45, -24.32, 0.467, -28.54, 0.483, -31.78, 0.5, -33.08, 0.517, -36.7, 0.533, -45.76, 0.55, -57.54, 0.567, -69.32, 0.583, -78.37, 0.6, -85.91],
+				"e": [0.0, 97.87, 0.017, 95.61, 0.033, 90.1, 0.05, 83.26, 0.067, 76.98, 0.083, 73.2, 0.09, 72.8, 0.097, 72.95, 0.1, 73.16, 0.117, 73.0, 0.133, 71.06, 0.14, 71.83, 0.15, 74.16, 0.167, 76.85, 0.172, 76.88, 0.183, 75.46, 0.2, 74.4, 0.21, 74.15, 0.217, 62.34, 0.233, 38.93, 0.25, 29.66, 0.267, 23.96, 0.283, 20.04, 0.3, 18.01, 0.317, 19.89, 0.333, 24.6, 0.35, 30.72, 0.367, 36.83, 0.383, 41.54, 0.4, 43.42, 0.417, 42.36, 0.433, 39.69, 0.45, 36.22, 0.467, 32.76, 0.483, 30.09, 0.5, 29.03, 0.517, 28.21, 0.533, 26.17, 0.55, 23.51, 0.567, 20.86, 0.583, 18.82, 0.6, 18.87],
+				"r": [0.0, 0.28, 0.017, 5.26, 0.033, 17.39, 0.05, 32.47, 0.067, 46.28, 0.083, 54.62, 0.09, 55.49, 0.097, 55.0, 0.1, 54.46, 0.117, 51.01, 0.133, 44.79, 0.14, 41.46, 0.15, 37.89, 0.167, 34.9, 0.172, 33.74, 0.183, 32.09, 0.2, 31.07, 0.21, 30.52, 0.217, 27.08, 0.233, 22.74, 0.25, 49.15, 0.267, 70.16, 0.283, 86.27, 0.3, 96.39, 0.317, 96.19, 0.333, 95.68, 0.35, 95.01, 0.367, 94.35, 0.383, 93.84, 0.4, 93.63, 0.417, 89.49, 0.433, 79.13, 0.45, 65.66, 0.467, 52.18, 0.483, 41.83, 0.5, 37.68, 0.517, 27.85, 0.533, 3.29, 0.55, -28.66, 0.567, -60.61, 0.583, -85.17, 0.6, -95.03],
+				"el": [0.0, 68.08, 0.017, 66.51, 0.033, 62.71, 0.05, 57.97, 0.067, 53.64, 0.083, 51.02, 0.09, 50.75, 0.097, 50.84, 0.1, 50.8, 0.117, 50.93, 0.133, 51.08, 0.14, 51.22, 0.15, 51.09, 0.167, 50.78, 0.172, 50.67, 0.183, 54.63, 0.2, 58.44, 0.21, 59.23, 0.217, 67.23, 0.233, 79.12, 0.25, 91.45, 0.267, 100.1, 0.283, 105.15, 0.3, 107.29, 0.317, 102.27, 0.333, 89.75, 0.35, 73.45, 0.367, 57.16, 0.383, 44.63, 0.4, 39.62, 0.417, 37.23, 0.433, 31.25, 0.45, 23.48, 0.467, 15.71, 0.483, 9.73, 0.5, 7.34, 0.517, 8.43, 0.533, 11.14, 0.55, 14.67, 0.567, 18.2, 0.583, 20.91, 0.6, 19.91],
+				"uln": [0.0, 59.12, 0.017, 59.15, 0.033, 59.23, 0.05, 59.34, 0.067, 59.44, 0.083, 59.49, 0.09, 59.5, 0.097, 59.51, 0.1, 59.51, 0.117, 59.53, 0.133, 59.55, 0.14, 59.56, 0.15, 59.54, 0.167, 59.51, 0.172, 59.5, 0.183, 59.52, 0.2, 59.51, 0.21, 59.5, 0.217, 59.62, 0.233, 60.05, 0.25, 61.1, 0.267, 61.38, 0.283, 61.4, 0.3, 61.38, 0.317, 61.34, 0.333, 61.22, 0.35, 61.08, 0.367, 60.93, 0.383, 60.81, 0.4, 60.77, 0.417, 60.38, 0.433, 59.41, 0.45, 58.15, 0.467, 56.9, 0.483, 55.93, 0.5, 55.54, 0.517, 55.83, 0.533, 56.57, 0.55, 57.52, 0.567, 58.47, 0.583, 59.21, 0.6, 58.57],
+				"ext": [0.0, 55.42, 0.017, 46.67, 0.033, 25.36, 0.05, -1.14, 0.067, -25.43, 0.083, -40.09, 0.09, -41.61, 0.097, -41.63, 0.1, -41.62, 0.117, -41.63, 0.133, -41.63, 0.14, -41.65, 0.15, -41.65, 0.167, -41.57, 0.172, -41.55, 0.183, -45.49, 0.2, -49.86, 0.21, -50.98, 0.217, -53.43, 0.233, -40.62, 0.25, -45.86, 0.267, -44.54, 0.283, -40.2, 0.3, -36.73, 0.317, -29.49, 0.333, -11.39, 0.35, 12.14, 0.367, 35.68, 0.383, 53.77, 0.4, 61.02, 0.417, 61.0, 0.433, 60.97, 0.45, 60.92, 0.467, 60.88, 0.483, 60.84, 0.5, 60.83, 0.517, 60.77, 0.533, 60.61, 0.55, 60.41, 0.567, 60.22, 0.583, 60.06, 0.6, 60.03],
+				"tw": [0.0, 110.15, 0.017, 92.82, 0.033, 50.62, 0.05, -1.85, 0.067, -49.92, 0.083, -78.95, 0.09, -81.96, 0.097, -81.84, 0.1, -81.86, 0.117, -81.52, 0.133, -81.04, 0.14, -80.87, 0.15, -81.27, 0.167, -81.76, 0.172, -81.96, 0.183, -85.82, 0.2, -89.94, 0.21, -91.0, 0.217, -104.37, 0.233, -110.76, 0.25, -111.21, 0.267, -111.64, 0.283, -111.84, 0.3, -111.85, 0.317, -95.31, 0.333, -53.99, 0.35, -0.24, 0.367, 53.5, 0.383, 94.82, 0.4, 111.37, 0.417, 111.28, 0.433, 111.06, 0.45, 110.78, 0.467, 110.5, 0.483, 110.28, 0.5, 110.2, 0.517, 100.55, 0.533, 76.45, 0.55, 45.1, 0.567, 13.75, 0.583, -10.35, 0.6, -23.39],
+				"feet": {"moves": [{"f": 0, "t0": 0.07, "t1": 0.16, "x": 0.02, "z": -0.3, "yaw": -30.0, "apex": 0.08, "th": 6.0}, {"f": 1, "t0": 0.4, "t1": 0.52, "x": -0.15, "z": -0.06, "yaw": 4.0, "apex": 0.07, "th": 6.0, "near": 0.12}, {"f": 0, "t0": 0.44, "t1": 0.58, "x": 0.15, "z": 0.04, "yaw": -4.0, "apex": 0.07, "th": 6.0}], "pitch1": [0.0, 0.0, 0.1, 0.0, 0.17, -28.0, 0.36, -28.0, 0.42, 0.0], "follow1": [0.0, 0.0, 0.08, 0.0, 0.2, 0.8, 0.36, 0.8]}}
+		"a4":
+			return {"len": 0.82, "in": 0.07, "out": 0.25, "ev": {"swing": 0.21, "impact": 0.28, "step": [0.26, 0.78]},
+				"py": [0.0, 37.098, 0.1, 10.0, 0.19, -8.0, 0.24, 6.0, 0.3, 12.0, 0.44, 10.0, 0.62, 4.0, 0.82, 0.0],
+				"cy": [0.0, 65.556, 0.1, 20.0, 0.19, -18.0, 0.25, 4.0, 0.3, 10.0, 0.44, 8.0, 0.62, 2.0, 0.82, 0.0],
+				"pp": [0.0, -5.716, 0.1, 4.0, 0.19, 8.0, 0.27, -14.0, 0.44, -14.0, 0.62, -4.0, 0.82, 1.1],
+				"cp": [0.0, -11.469, 0.1, 10.0, 0.19, 22.0, 0.24, 0.0, 0.28, -32.0, 0.44, -30.0, 0.62, -8.0, 0.82, 4.0],
+				"cr": [0.0, -5.447, 0.1, 4.0, 0.19, -4.0, 0.28, 3.0, 0.44, 3.0, 0.82, 0.0],
+				"pr": [0.0, -3.0, 0.1, 2.0, 0.19, -3.0, 0.28, 2.0, 0.82, 0.0],
+				"px": [0.0, -0.048, 0.1, 0.02, 0.19, 0.04, 0.28, -0.02, 0.44, -0.02, 0.62, -0.01, 0.82, 0.0],
+				"pz": [0.0, -0.174, 0.1, -0.06, 0.19, -0.04, 0.27, -0.3, 0.44, -0.28, 0.62, -0.1, 0.82, 0.0],
+				"pdy": [0.0, -0.148, 0.1, -0.08, 0.19, 0.0, 0.24, -0.06, 0.28, -0.3, 0.44, -0.28, 0.62, -0.12, 0.82, 0.0],
+				"hy": [0.0, 13.831, 0.1, 4.0, 0.19, 0.0, 0.28, 2.0, 0.44, 2.0, 0.82, 0.0],
+				"hp": [0.0, -3.927, 0.1, 4.0, 0.19, 10.0, 0.27, -12.0, 0.44, -16.0, 0.62, -4.0, 0.82, 0.0],
+				"hlx": [0.0, -0.42, 0.1, -0.2, 0.19, -0.36, 0.27, -0.46, 0.44, -0.46, 0.64, -0.335, 0.82, -0.335],
+				"hly": [0.0, -0.14, 0.1, -0.2, 0.19, 0.02, 0.27, -0.3, 0.44, -0.3, 0.64, -0.366, 0.82, -0.366],
+				"hlz": [0.0, -0.1, 0.1, -0.3, 0.19, -0.3, 0.27, 0.16, 0.44, 0.16, 0.64, -0.08, 0.82, -0.08],
+				"hpx": [0.0, -0.6, 0.1, -0.8, 0.19, -0.8, 0.27, -0.4, 0.44, -0.4, 0.64, -0.5, 0.82, -0.5],
+				"hpy": [0.0, -0.6, 0.1, -0.5, 0.19, -0.4, 0.27, -0.5, 0.44, -0.5, 0.64, -0.2, 0.82, -0.2],
+				"hpz": [0.0, 0.5, 0.1, 0.5, 0.19, 0.4, 0.27, 1.0, 0.44, 1.0, 0.64, 1.0, 0.82, 1.0],
+				"hfx": [0.0, -0.85, 0.1, -0.45, 0.19, -0.6, 0.27, -0.95, 0.44, -0.95, 0.64, -1.0, 0.82, -1.0],
+				"hfy": [0.0, 0.1, 0.1, 0.1, 0.19, 0.2, 0.27, 0.0, 0.44, 0.0, 0.64, 0.0, 0.82, 0.0],
+				"hfz": [0.0, -0.5, 0.1, -0.9, 0.19, -0.8, 0.27, 0.25, 0.44, 0.25, 0.64, -0.35, 0.82, -0.35],
+				"az": [0.0, -41.9, 0.017, -35.85, 0.033, -21.12, 0.05, -2.81, 0.067, 13.98, 0.083, 24.11, 0.09, 25.16, 0.1, 18.02, 0.117, 7.89, 0.133, -0.03, 0.15, -5.76, 0.167, -9.28, 0.183, -10.6, 0.185, -10.62, 0.2, -15.5, 0.205, -17.54, 0.217, -23.44, 0.233, -35.22, 0.25, -44.64, 0.255, -44.21, 0.267, -39.25, 0.283, -35.45, 0.285, -35.45, 0.3, -35.92, 0.317, -36.05, 0.333, -36.19, 0.35, -36.37, 0.367, -36.45, 0.383, -36.56, 0.4, -36.71, 0.417, -36.84, 0.433, -36.97, 0.44, -37.01, 0.45, -38.36, 0.467, -45.77, 0.483, -58.03, 0.5, -73.28, 0.517, -89.65, 0.533, -105.26, 0.55, -118.27, 0.567, -126.8, 0.58, -129.15, 0.583, -129.12, 0.6, -128.22, 0.617, -126.18, 0.633, -123.2, 0.65, -119.46, 0.667, -115.14, 0.683, -110.46, 0.7, -105.58, 0.717, -100.69, 0.733, -96.01, 0.75, -91.69, 0.767, -87.95, 0.783, -84.97, 0.8, -82.93, 0.817, -82.03, 0.82, -85.37],
+				"e": [0.0, 56.95, 0.017, 63.14, 0.033, 78.22, 0.05, 96.96, 0.067, 114.14, 0.083, 124.51, 0.09, 125.59, 0.1, 120.67, 0.117, 113.7, 0.133, 108.24, 0.15, 104.29, 0.167, 101.87, 0.183, 100.96, 0.185, 100.95, 0.2, 101.85, 0.205, 103.78, 0.217, 104.62, 0.233, 91.11, 0.25, 62.47, 0.255, 53.17, 0.267, 47.27, 0.283, 43.93, 0.285, 43.81, 0.3, 42.99, 0.317, 42.28, 0.333, 41.67, 0.35, 41.16, 0.367, 40.64, 0.383, 40.21, 0.4, 39.88, 0.417, 39.6, 0.433, 39.36, 0.44, 39.27, 0.45, 38.94, 0.467, 37.13, 0.483, 34.14, 0.5, 30.41, 0.517, 26.41, 0.533, 22.6, 0.55, 19.42, 0.567, 17.34, 0.58, 16.76, 0.583, 16.76, 0.6, 16.79, 0.617, 16.84, 0.633, 16.92, 0.65, 17.02, 0.667, 17.13, 0.683, 17.25, 0.7, 17.38, 0.717, 17.51, 0.733, 17.63, 0.75, 17.75, 0.767, 17.84, 0.783, 17.92, 0.8, 17.98, 0.817, 18.0, 0.82, 18.87],
+				"r": [0.0, 26.11, 0.017, 24.11, 0.033, 19.23, 0.05, 13.17, 0.067, 7.61, 0.083, 4.26, 0.09, 3.91, 0.1, 5.5, 0.117, 7.75, 0.133, 9.52, 0.15, 10.79, 0.167, 11.58, 0.183, 11.87, 0.185, 11.88, 0.2, 13.96, 0.205, 14.08, 0.217, 15.32, 0.233, 24.79, 0.25, 51.05, 0.255, 64.61, 0.267, 61.73, 0.283, 59.64, 0.285, 59.52, 0.3, 59.2, 0.317, 59.17, 0.333, 59.31, 0.35, 59.65, 0.367, 59.84, 0.383, 60.19, 0.4, 60.7, 0.417, 61.22, 0.433, 61.76, 0.44, 61.95, 0.45, 62.52, 0.467, 65.66, 0.483, 70.85, 0.5, 77.3, 0.517, 84.23, 0.533, 90.84, 0.55, 96.35, 0.567, 99.96, 0.58, 100.96, 0.583, 100.84, 0.6, 97.1, 0.617, 88.63, 0.633, 76.23, 0.65, 60.67, 0.667, 42.75, 0.683, 23.26, 0.7, 2.98, 0.717, -17.31, 0.733, -36.79, 0.75, -54.71, 0.767, -70.27, 0.783, -82.67, 0.8, -91.14, 0.817, -94.89, 0.82, -95.11],
+				"el": [0.0, 70.18, 0.017, 64.54, 0.033, 50.8, 0.05, 33.72, 0.067, 18.07, 0.083, 8.62, 0.09, 7.64, 0.1, 28.7, 0.117, 58.61, 0.133, 81.99, 0.15, 98.9, 0.167, 109.3, 0.183, 113.2, 0.185, 113.23, 0.2, 113.92, 0.205, 114.05, 0.217, 112.06, 0.233, 101.13, 0.25, 74.01, 0.255, 61.34, 0.267, 56.07, 0.283, 52.02, 0.285, 51.93, 0.3, 52.23, 0.317, 52.65, 0.333, 53.0, 0.35, 53.28, 0.367, 53.55, 0.383, 53.75, 0.4, 53.89, 0.417, 53.98, 0.433, 54.03, 0.44, 54.04, 0.45, 54.04, 0.467, 54.05, 0.483, 54.06, 0.5, 54.07, 0.517, 54.09, 0.533, 54.1, 0.55, 54.11, 0.567, 54.12, 0.58, 54.12, 0.583, 54.11, 0.6, 53.49, 0.617, 52.1, 0.633, 50.07, 0.65, 47.52, 0.667, 44.58, 0.683, 41.39, 0.7, 38.06, 0.717, 34.74, 0.733, 31.54, 0.75, 28.6, 0.767, 26.05, 0.783, 24.02, 0.8, 22.63, 0.817, 22.02, 0.82, 20.41],
+				"uln": [0.0, 59.54, 0.017, 59.73, 0.033, 60.19, 0.05, 60.76, 0.067, 61.28, 0.083, 61.6, 0.09, 61.63, 0.1, 61.24, 0.117, 60.68, 0.133, 60.24, 0.15, 59.92, 0.167, 59.72, 0.183, 59.65, 0.185, 59.65, 0.2, 59.57, 0.205, 59.54, 0.217, 59.55, 0.233, 59.58, 0.25, 59.54, 0.255, 59.57, 0.267, 60.11, 0.283, 60.48, 0.285, 60.49, 0.3, 60.52, 0.317, 60.55, 0.333, 60.58, 0.35, 60.6, 0.367, 60.62, 0.383, 60.63, 0.4, 60.64, 0.417, 60.65, 0.433, 60.65, 0.44, 60.65, 0.45, 60.64, 0.467, 60.62, 0.483, 60.59, 0.5, 60.54, 0.517, 60.49, 0.533, 60.45, 0.55, 60.41, 0.567, 60.39, 0.58, 60.38, 0.583, 60.38, 0.6, 60.36, 0.617, 60.32, 0.633, 60.27, 0.65, 60.2, 0.667, 60.12, 0.683, 60.03, 0.7, 59.94, 0.717, 59.85, 0.733, 59.76, 0.75, 59.68, 0.767, 59.61, 0.783, 59.56, 0.8, 59.52, 0.817, 59.5, 0.82, 59.06],
+				"ext": [0.0, -52.13, 0.017, -41.83, 0.033, -16.74, 0.05, 14.46, 0.067, 43.05, 0.083, 60.31, 0.09, 62.1, 0.1, 56.63, 0.117, 48.87, 0.133, 42.79, 0.15, 38.4, 0.167, 35.7, 0.183, 34.69, 0.185, 34.68, 0.2, 43.45, 0.205, 45.43, 0.217, 48.73, 0.233, 59.8, 0.25, 60.21, 0.255, 60.11, 0.267, 58.66, 0.283, 55.97, 0.285, 55.97, 0.3, 56.18, 0.317, 56.7, 0.333, 57.07, 0.35, 57.28, 0.367, 57.67, 0.383, 57.92, 0.4, 58.03, 0.417, 58.1, 0.433, 58.14, 0.44, 58.17, 0.45, 58.2, 0.467, 58.38, 0.483, 58.67, 0.5, 59.03, 0.517, 59.42, 0.533, 59.8, 0.55, 60.11, 0.567, 60.31, 0.58, 60.36, 0.583, 60.36, 0.6, 60.36, 0.617, 60.34, 0.633, 60.32, 0.65, 60.29, 0.667, 60.26, 0.683, 60.22, 0.7, 60.18, 0.717, 60.14, 0.733, 60.11, 0.75, 60.08, 0.767, 60.05, 0.783, 60.02, 0.8, 60.01, 0.817, 60.0, 0.82, 60.02],
+				"tw": [0.0, -106.43, 0.017, -98.8, 0.033, -80.23, 0.05, -57.14, 0.067, -35.98, 0.083, -23.21, 0.09, -21.89, 0.1, -9.68, 0.117, 7.66, 0.133, 21.22, 0.15, 31.02, 0.167, 37.05, 0.183, 39.31, 0.185, 39.33, 0.2, 50.74, 0.205, 52.97, 0.217, 57.65, 0.233, 76.43, 0.25, 99.1, 0.255, 110.04, 0.267, 110.54, 0.283, 110.74, 0.285, 110.74, 0.3, 110.77, 0.317, 110.8, 0.333, 110.83, 0.35, 110.86, 0.367, 110.88, 0.383, 110.9, 0.4, 110.91, 0.417, 110.92, 0.433, 110.92, 0.44, 110.92, 0.45, 110.94, 0.467, 111.01, 0.483, 111.13, 0.5, 111.29, 0.517, 111.45, 0.533, 111.61, 0.55, 111.74, 0.567, 111.82, 0.58, 111.85, 0.583, 111.77, 0.6, 109.25, 0.617, 103.55, 0.633, 95.21, 0.65, 84.74, 0.667, 72.68, 0.683, 59.57, 0.7, 45.92, 0.717, 32.28, 0.733, 19.16, 0.75, 7.11, 0.767, -3.36, 0.783, -11.71, 0.8, -17.41, 0.817, -19.92, 0.82, -22.97],
+				"feet": {"moves": [{"f": 0, "t0": 0.02, "t1": 0.12, "x": 0.16, "z": 0.06, "yaw": -6.0, "apex": 0.06, "th": 4.0, "near": 0.14}, {"f": 1, "t0": 0.12, "t1": 0.27, "x": -0.22, "z": -0.62, "yaw": 10.0, "apex": 0.16, "th": 8.0}, {"f": 1, "t0": 0.6, "t1": 0.78, "x": -0.15, "z": -0.1, "yaw": 4.0, "apex": 0.08, "th": 5.0}], "pitch0": [0.0, 0.0, 0.2, 0.0, 0.3, -30.0, 0.56, -30.0, 0.74, -4.0], "follow0": [0.0, 0.0, 0.2, 0.0, 0.32, 0.6, 0.5, 0.6]}}
+		"b1":
+			return {"len": 0.58, "in": 0.07, "out": 0.22, "ev": {"swing": 0.11, "impact": 0.155, "step": [0.145, 0.56]},
+				"py": [0.0, 0.0, 0.105, -14.0, 0.115, -15.0, 0.155, 12.0, 0.195, 26.0, 0.29, 30.0, 0.43, 14.0, 0.58, 0.0],
+				"cy": [0.0, 0.0, 0.105, -30.0, 0.12, -32.0, 0.165, 30.0, 0.205, 50.0, 0.29, 56.0, 0.43, 26.0, 0.58, 0.0],
+				"pp": [0.0, 1.1, 0.115, 6.0, 0.175, -2.0, 0.31, -3.0, 0.58, 1.1],
+				"cp": [0.0, 4.0, 0.105, 12.0, 0.12, 12.0, 0.175, -8.0, 0.25, -12.0, 0.41, -4.0, 0.58, 4.0],
+				"cr": [0.0, 0.0, 0.105, -6.0, 0.175, 10.0, 0.29, 12.0, 0.43, 4.0, 0.58, 0.0],
+				"pr": [0.0, 0.0, 0.115, -3.0, 0.175, 4.0, 0.31, 4.0, 0.58, 0.0],
+				"px": [0.0, 0.0, 0.115, 0.04, 0.175, -0.04, 0.31, -0.05, 0.47, -0.02, 0.58, 0.0],
+				"pz": [0.0, 0.0, 0.115, 0.04, 0.175, -0.12, 0.31, -0.14, 0.47, -0.05, 0.58, 0.0],
+				"pdy": [0.0, 0.0, 0.115, -0.1, 0.175, -0.06, 0.31, -0.08, 0.47, -0.03, 0.58, 0.0],
+				"hy": [0.0, 0.0, 0.105, -8.0, 0.145, 0.0, 0.195, 10.0, 0.31, 14.0, 0.47, 4.0, 0.58, 0.0],
+				"hp": [0.0, 0.0, 0.115, -4.0, 0.195, 4.0, 0.31, 2.0, 0.58, 0.0],
+				"hlx": [0.0, -0.335, 0.105, -0.2, 0.175, -0.42, 0.31, -0.42, 0.47, -0.335, 0.58, -0.335],
+				"hly": [0.0, -0.366, 0.105, -0.2, 0.175, -0.14, 0.31, -0.14, 0.47, -0.366, 0.58, -0.366],
+				"hlz": [0.0, -0.08, 0.105, -0.3, 0.175, -0.1, 0.31, -0.1, 0.47, -0.08, 0.58, -0.08],
+				"hpx": [0.0, -0.5, 0.105, -0.8, 0.175, -0.6, 0.31, -0.6, 0.47, -0.5, 0.58, -0.5],
+				"hpy": [0.0, -0.2, 0.105, -0.5, 0.175, -0.6, 0.31, -0.6, 0.47, -0.2, 0.58, -0.2],
+				"hpz": [0.0, 1.0, 0.105, 0.5, 0.175, 0.5, 0.31, 0.5, 0.47, 1.0, 0.58, 1.0],
+				"hfx": [0.0, -1.0, 0.105, -0.45, 0.175, -0.85, 0.31, -0.85, 0.47, -1.0, 0.58, -1.0],
+				"hfy": [0.0, 0.0, 0.105, 0.1, 0.175, 0.1, 0.31, 0.1, 0.47, 0.0, 0.58, 0.0],
+				"hfz": [0.0, -0.35, 0.105, -0.9, 0.175, -0.5, 0.31, -0.5, 0.47, -0.35, 0.58, -0.35],
+				"az": [0.0, -83.19, 0.017, -83.97, 0.033, -85.93, 0.05, -88.53, 0.067, -91.21, 0.083, -93.42, 0.1, -94.61, 0.105, -94.69, 0.115, -93.31, 0.117, -93.26, 0.133, -65.22, 0.15, -21.65, 0.155, -1.4, 0.167, 3.54, 0.183, 5.28, 0.185, 5.21, 0.2, 6.58, 0.215, 7.33, 0.217, 7.56, 0.233, 8.42, 0.24, 8.51, 0.25, 6.36, 0.267, -4.41, 0.283, -19.5, 0.3, -33.52, 0.317, -41.05, 0.32, -41.3, 0.333, -42.55, 0.35, -46.86, 0.367, -52.89, 0.383, -59.2, 0.4, -64.37, 0.417, -66.97, 0.42, -67.05, 0.433, -66.66, 0.45, -65.33, 0.467, -63.55, 0.483, -61.82, 0.5, -60.65, 0.51, -60.42, 0.517, -60.97, 0.533, -66.02, 0.55, -73.51, 0.567, -79.95, 0.58, -86.08],
+				"e": [0.0, 18.66, 0.017, 18.7, 0.033, 18.8, 0.05, 18.92, 0.067, 19.05, 0.083, 19.16, 0.1, 19.22, 0.105, 19.22, 0.115, 18.76, 0.117, 18.67, 0.133, 17.26, 0.15, 40.05, 0.155, 60.7, 0.167, 94.11, 0.183, 104.35, 0.185, 104.33, 0.2, 108.83, 0.215, 111.14, 0.217, 111.57, 0.233, 113.42, 0.24, 113.76, 0.25, 110.43, 0.267, 93.64, 0.283, 70.14, 0.3, 48.31, 0.317, 36.58, 0.32, 36.19, 0.333, 35.43, 0.35, 32.82, 0.367, 29.16, 0.383, 25.33, 0.4, 22.2, 0.417, 20.62, 0.42, 20.57, 0.433, 20.46, 0.45, 20.07, 0.467, 19.55, 0.483, 19.05, 0.5, 18.7, 0.51, 18.64, 0.517, 18.62, 0.533, 18.47, 0.55, 18.25, 0.567, 18.06, 0.58, 18.89],
+				"r": [0.0, -95.07, 0.017, -85.07, 0.033, -59.8, 0.05, -26.35, 0.067, 8.17, 0.083, 36.63, 0.1, 51.96, 0.105, 52.94, 0.115, 57.33, 0.117, 58.06, 0.133, 37.93, 0.15, 15.18, 0.155, -1.08, 0.167, -36.75, 0.183, -48.51, 0.185, -51.45, 0.2, -56.09, 0.215, -59.35, 0.217, -60.37, 0.233, -63.51, 0.24, -64.86, 0.25, -57.72, 0.267, -21.79, 0.283, 28.53, 0.3, 75.28, 0.317, 100.39, 0.32, 101.23, 0.333, 100.95, 0.35, 100.01, 0.367, 98.7, 0.383, 97.32, 0.4, 96.19, 0.417, 95.62, 0.42, 95.61, 0.433, 92.49, 0.45, 81.97, 0.467, 67.85, 0.483, 54.14, 0.5, 44.82, 0.51, 43.02, 0.517, 39.5, 0.533, 7.25, 0.55, -40.68, 0.567, -81.89, 0.58, -95.05],
+				"el": [0.0, 21.68, 0.017, 25.02, 0.033, 33.45, 0.05, 44.6, 0.067, 56.12, 0.083, 65.61, 0.1, 70.72, 0.105, 71.05, 0.115, 69.51, 0.117, 69.16, 0.133, 50.79, 0.15, 32.36, 0.155, 19.66, 0.167, 7.81, 0.183, 16.61, 0.185, 18.39, 0.2, 24.63, 0.215, 27.77, 0.217, 28.3, 0.233, 31.45, 0.24, 32.57, 0.25, 33.72, 0.267, 39.48, 0.283, 47.56, 0.3, 55.06, 0.317, 59.09, 0.32, 59.22, 0.333, 58.85, 0.35, 57.57, 0.367, 55.79, 0.383, 53.91, 0.4, 52.38, 0.417, 51.61, 0.42, 51.58, 0.433, 48.98, 0.45, 40.19, 0.467, 28.39, 0.483, 16.94, 0.5, 9.16, 0.51, 7.65, 0.517, 8.02, 0.533, 11.37, 0.55, 16.35, 0.567, 20.64, 0.58, 19.79],
+				"uln": [0.0, 59.52, 0.017, 57.76, 0.033, 53.32, 0.05, 47.44, 0.067, 41.37, 0.083, 36.36, 0.1, 33.67, 0.105, 33.5, 0.115, 32.45, 0.117, 32.21, 0.133, 42.74, 0.15, 62.59, 0.155, 63.68, 0.167, 62.96, 0.183, 62.53, 0.185, 62.48, 0.2, 62.41, 0.215, 62.35, 0.217, 62.35, 0.233, 62.3, 0.24, 62.27, 0.25, 62.23, 0.267, 62.04, 0.283, 61.78, 0.3, 61.53, 0.317, 61.4, 0.32, 61.39, 0.333, 61.33, 0.35, 61.11, 0.367, 60.8, 0.383, 60.47, 0.4, 60.21, 0.417, 60.08, 0.42, 60.07, 0.433, 59.44, 0.45, 57.31, 0.467, 54.45, 0.483, 51.68, 0.5, 49.79, 0.51, 49.43, 0.517, 49.69, 0.533, 52.04, 0.55, 55.54, 0.567, 58.54, 0.58, 58.5],
+				"ext": [0.0, 60.03, 0.017, 59.13, 0.033, 56.86, 0.05, 53.84, 0.067, 50.73, 0.083, 48.17, 0.1, 46.79, 0.105, 46.7, 0.115, 45.24, 0.117, 44.69, 0.133, 24.6, 0.15, -6.49, 0.155, -21.58, 0.167, 8.31, 0.183, 22.51, 0.185, 26.02, 0.2, 33.39, 0.215, 38.2, 0.217, 39.66, 0.233, 44.46, 0.24, 46.2, 0.25, 41.62, 0.267, 18.6, 0.283, -13.64, 0.3, -43.6, 0.317, -59.69, 0.32, -60.23, 0.333, -56.96, 0.35, -45.68, 0.367, -29.91, 0.383, -13.41, 0.4, 0.12, 0.417, 6.9, 0.42, 7.12, 0.433, 10.28, 0.45, 20.92, 0.467, 35.21, 0.483, 49.09, 0.5, 58.51, 0.51, 60.34, 0.517, 60.33, 0.533, 60.25, 0.55, 60.13, 0.567, 60.03, 0.58, 60.03],
+				"tw": [0.0, -20.62, 0.017, -11.93, 0.033, 10.0, 0.05, 39.03, 0.067, 68.99, 0.083, 93.69, 0.1, 107.01, 0.105, 107.85, 0.115, 110.16, 0.117, 110.22, 0.133, 111.88, 0.15, 114.12, 0.155, 111.65, 0.167, 110.38, 0.183, 110.57, 0.185, 110.61, 0.2, 110.82, 0.215, 110.91, 0.217, 110.92, 0.233, 111.03, 0.24, 111.06, 0.25, 110.78, 0.267, 109.38, 0.283, 107.41, 0.3, 105.58, 0.317, 104.6, 0.32, 104.57, 0.333, 104.87, 0.35, 105.91, 0.367, 107.35, 0.383, 108.87, 0.4, 110.11, 0.417, 110.73, 0.42, 110.75, 0.433, 110.72, 0.45, 110.62, 0.467, 110.49, 0.483, 110.36, 0.5, 110.28, 0.51, 110.26, 0.517, 106.94, 0.533, 76.5, 0.55, 31.27, 0.567, -7.63, 0.58, -23.59],
+				"feet": {"moves": [{"f": 1, "t0": 0.04, "t1": 0.145, "x": -0.17, "z": -0.36, "yaw": 6.0, "apex": 0.09, "th": 10.0}, {"f": 1, "t0": 0.42, "t1": 0.56, "x": -0.15, "z": -0.08, "yaw": 4.0, "apex": 0.07, "th": 6.0}], "pitch0": [0.0, 0.0, 0.125, 0.0, 0.215, -28.0, 0.35, -28.0, 0.5, -4.0], "follow0": [0.0, 0.0, 0.115, 0.0, 0.235, 0.7, 0.41, 0.7]}}
+		"b2":
+			return {"len": 0.5, "in": 0.06, "out": 0.22, "ev": {"swing": 0.07, "impact": 0.11, "step": [0.11, 0.48]},
+				"py": [0.0, 27.506, 0.06, 32.0, 0.075, 30.0, 0.12, -10.0, 0.16, -22.0, 0.26, -24.0, 0.4, -8.0, 0.5, 0.0],
+				"cy": [0.0, 51.288, 0.06, 60.0, 0.08, 56.0, 0.13, -24.0, 0.17, -46.0, 0.26, -48.0, 0.4, -14.0, 0.5, 0.0],
+				"pp": [0.0, -2.525, 0.07, -2.0, 0.13, -6.0, 0.26, -4.0, 0.5, 1.1],
+				"cp": [0.0, -11.042, 0.07, -8.0, 0.13, -14.0, 0.24, -14.0, 0.4, -4.0, 0.5, 4.0],
+				"cr": [0.0, 11.149, 0.07, 8.0, 0.13, -6.0, 0.26, -8.0, 0.4, -2.0, 0.5, 0.0],
+				"pr": [0.0, 4.0, 0.07, 3.0, 0.13, -4.0, 0.26, -4.0, 0.5, 0.0],
+				"px": [0.0, -0.045, 0.07, -0.05, 0.13, 0.04, 0.26, 0.05, 0.42, 0.01, 0.5, 0.0],
+				"pz": [0.0, -0.131, 0.07, -0.14, 0.13, -0.18, 0.26, -0.16, 0.42, -0.05, 0.5, 0.0],
+				"pdy": [0.0, -0.064, 0.07, -0.08, 0.13, -0.14, 0.26, -0.13, 0.42, -0.04, 0.5, 0.0],
+				"hy": [0.0, 11.212, 0.06, 12.0, 0.1, 2.0, 0.14, -8.0, 0.26, -12.0, 0.42, -4.0, 0.5, 0.0],
+				"hp": [0.0, 3.871, 0.1, -6.0, 0.2, -6.0, 0.4, -1.0, 0.5, 0.0],
+				"hlx": [0.0, -0.42, 0.07, -0.2, 0.14, -0.42, 0.26, -0.42, 0.42, -0.335, 0.5, -0.335],
+				"hly": [0.0, -0.14, 0.07, -0.2, 0.14, -0.14, 0.26, -0.14, 0.42, -0.366, 0.5, -0.366],
+				"hlz": [0.0, -0.1, 0.07, -0.3, 0.14, -0.1, 0.26, -0.1, 0.42, -0.08, 0.5, -0.08],
+				"hpx": [0.0, -0.6, 0.07, -0.8, 0.14, -0.6, 0.26, -0.6, 0.42, -0.5, 0.5, -0.5],
+				"hpy": [0.0, -0.6, 0.07, -0.5, 0.14, -0.6, 0.26, -0.6, 0.42, -0.2, 0.5, -0.2],
+				"hpz": [0.0, 0.5, 0.07, 0.5, 0.14, 0.5, 0.26, 0.5, 0.42, 1.0, 0.5, 1.0],
+				"hfx": [0.0, -0.85, 0.07, -0.45, 0.14, -0.85, 0.26, -0.85, 0.42, -1.0, 0.5, -1.0],
+				"hfy": [0.0, 0.1, 0.07, 0.1, 0.14, 0.1, 0.26, 0.1, 0.42, 0.0, 0.5, 0.0],
+				"hfz": [0.0, -0.5, 0.07, -0.9, 0.14, -0.5, 0.26, -0.5, 0.42, -0.35, 0.5, -0.35],
+				"az": [0.0, 6.37, 0.017, 9.74, 0.033, 17.72, 0.05, 29.44, 0.062, 34.68, 0.067, 33.43, 0.07, 33.71, 0.083, 29.39, 0.1, 20.89, 0.11, 12.89, 0.117, 11.63, 0.133, 9.35, 0.14, 10.84, 0.15, 12.47, 0.167, 7.0, 0.18, -1.4, 0.183, -4.99, 0.2, -41.82, 0.217, -75.35, 0.233, -80.66, 0.25, -82.73, 0.26, -84.85, 0.267, -84.84, 0.283, -84.77, 0.3, -84.63, 0.317, -84.44, 0.333, -84.21, 0.35, -83.95, 0.367, -83.66, 0.383, -83.36, 0.4, -83.07, 0.417, -82.79, 0.433, -82.54, 0.45, -82.32, 0.467, -82.15, 0.483, -82.04, 0.5, -86.2],
+				"e": [0.0, 111.94, 0.017, 118.97, 0.033, 133.58, 0.05, 144.79, 0.062, 146.36, 0.067, 145.46, 0.07, 145.29, 0.083, 140.95, 0.1, 120.95, 0.11, 95.86, 0.117, 85.21, 0.133, 69.56, 0.14, 67.66, 0.15, 65.13, 0.167, 49.85, 0.18, 44.06, 0.183, 40.26, 0.2, 15.15, 0.217, 12.35, 0.233, 12.43, 0.25, 12.71, 0.26, 12.69, 0.267, 12.7, 0.283, 12.83, 0.3, 13.08, 0.317, 13.44, 0.333, 13.87, 0.35, 14.37, 0.367, 14.9, 0.383, 15.45, 0.4, 16.0, 0.417, 16.52, 0.433, 17.0, 0.45, 17.4, 0.467, 17.72, 0.483, 17.93, 0.5, 18.9],
+				"r": [0.0, -58.24, 0.017, -54.08, 0.033, -45.26, 0.05, -51.15, 0.062, -50.72, 0.067, -51.71, 0.07, -51.82, 0.083, -55.14, 0.1, -58.43, 0.11, -43.43, 0.117, -34.13, 0.133, -9.61, 0.14, -4.34, 0.15, 2.3, 0.167, 29.3, 0.18, 47.42, 0.183, 48.32, 0.2, 72.71, 0.217, 100.67, 0.233, 101.16, 0.25, 101.38, 0.26, 101.3, 0.267, 100.85, 0.283, 96.1, 0.3, 86.76, 0.317, 73.64, 0.333, 57.52, 0.35, 39.19, 0.367, 19.44, 0.383, -0.93, 0.4, -21.16, 0.417, -40.44, 0.433, -57.97, 0.45, -72.99, 0.467, -84.69, 0.483, -92.29, 0.5, -95.06],
+				"el": [0.0, 26.5, 0.017, 23.61, 0.033, 13.64, 0.05, 6.88, 0.062, 6.09, 0.067, 6.21, 0.07, 6.12, 0.083, 6.52, 0.1, 6.59, 0.11, 6.27, 0.117, 6.14, 0.133, 7.13, 0.14, 7.2, 0.15, 7.45, 0.167, 27.78, 0.18, 37.87, 0.183, 40.74, 0.2, 76.03, 0.217, 84.67, 0.233, 85.84, 0.25, 97.76, 0.26, 101.52, 0.267, 101.34, 0.283, 99.41, 0.3, 95.63, 0.317, 90.31, 0.333, 83.78, 0.35, 76.36, 0.367, 68.36, 0.383, 60.1, 0.4, 51.91, 0.417, 44.1, 0.433, 37.0, 0.45, 30.92, 0.467, 26.17, 0.483, 23.1, 0.5, 19.7],
+				"uln": [0.0, 59.95, 0.017, 60.4, 0.033, 61.99, 0.05, 63.78, 0.062, 64.23, 0.067, 64.22, 0.07, 64.22, 0.083, 63.97, 0.1, 62.66, 0.11, 61.77, 0.117, 61.51, 0.133, 61.26, 0.14, 61.4, 0.15, 61.51, 0.167, 60.72, 0.18, 60.03, 0.183, 59.57, 0.2, 29.6, 0.217, 18.61, 0.233, 14.36, 0.25, 1.6, 0.26, 1.27, 0.267, 1.41, 0.283, 2.82, 0.3, 5.59, 0.317, 9.48, 0.333, 14.26, 0.35, 19.7, 0.367, 25.56, 0.383, 31.6, 0.4, 37.6, 0.417, 43.32, 0.433, 48.52, 0.45, 52.97, 0.467, 56.44, 0.483, 58.7, 0.5, 58.45],
+				"ext": [0.0, 38.23, 0.017, 42.15, 0.033, 47.1, 0.05, 60.07, 0.062, 60.31, 0.067, 60.28, 0.07, 60.3, 0.083, 60.16, 0.1, 54.66, 0.11, 39.5, 0.117, 35.66, 0.133, 20.28, 0.14, 17.13, 0.15, 13.56, 0.167, -5.45, 0.18, -22.21, 0.183, -23.85, 0.2, -12.2, 0.217, -10.67, 0.233, -7.71, 0.25, 18.14, 0.26, 30.68, 0.267, 30.74, 0.283, 31.45, 0.3, 32.85, 0.317, 34.81, 0.333, 37.22, 0.35, 39.95, 0.367, 42.9, 0.383, 45.95, 0.4, 48.97, 0.417, 51.85, 0.433, 54.47, 0.45, 56.71, 0.467, 58.46, 0.483, 59.6, 0.5, 60.02],
+				"tw": [0.0, 110.1, 0.017, 110.24, 0.033, 110.49, 0.05, 110.5, 0.062, 110.46, 0.067, 110.47, 0.07, 110.46, 0.083, 110.45, 0.1, 110.24, 0.11, 110.23, 0.117, 110.28, 0.133, 110.45, 0.14, 110.56, 0.15, 110.67, 0.167, 112.47, 0.18, 112.72, 0.183, 112.62, 0.2, 114.12, 0.217, 113.87, 0.233, 113.59, 0.25, 113.73, 0.26, 113.65, 0.267, 113.35, 0.283, 110.11, 0.3, 103.75, 0.317, 94.82, 0.333, 83.85, 0.35, 71.36, 0.367, 57.92, 0.383, 44.05, 0.4, 30.27, 0.417, 17.15, 0.433, 5.21, 0.45, -5.01, 0.467, -12.98, 0.483, -18.16, 0.5, -23.82],
+				"feet": {"moves": [{"f": 0, "t0": 0.02, "t1": 0.11, "x": 0.2, "z": -0.26, "yaw": -8.0, "apex": 0.08, "th": 10.0}, {"f": 1, "t0": 0.3, "t1": 0.42, "x": -0.15, "z": -0.06, "yaw": 4.0, "apex": 0.07, "th": 6.0, "near": 0.12}, {"f": 0, "t0": 0.34, "t1": 0.48, "x": 0.15, "z": 0.04, "yaw": -4.0, "apex": 0.07, "th": 6.0}], "pitch1": [0.0, 0.0, 0.08, 0.0, 0.16, -24.0, 0.28, -24.0, 0.34, 0.0], "follow1": [0.0, 0.0, 0.07, 0.0, 0.18, 0.6, 0.3, 0.6]}}
+		"b3":
+			return {"len": 0.74, "in": 0.07, "out": 0.25, "ev": {"swing": 0.17, "impact": 0.215, "step": [0.215, 0.7]},
+				"py": [0.0, -23.062, 0.1, -26.0, 0.165, -28.0, 0.21, 10.0, 0.26, 18.0, 0.4, 16.0, 0.56, 6.0, 0.74, 0.0],
+				"cy": [0.0, -46.839, 0.1, -46.0, 0.165, -48.0, 0.215, 18.0, 0.26, 26.0, 0.4, 22.0, 0.56, 8.0, 0.74, 0.0],
+				"pp": [0.0, -5.377, 0.1, 4.0, 0.165, 6.0, 0.215, -10.0, 0.4, -10.0, 0.56, -3.0, 0.74, 1.1],
+				"cp": [0.0, -14.0, 0.1, 6.0, 0.165, 8.0, 0.215, -18.0, 0.4, -18.0, 0.56, -6.0, 0.74, 4.0],
+				"cr": [0.0, -7.448, 0.1, -4.0, 0.165, -4.0, 0.215, 4.0, 0.4, 4.0, 0.74, 0.0],
+				"pr": [0.0, -4.0, 0.1, 2.0, 0.215, -3.0, 0.4, -3.0, 0.74, 0.0],
+				"px": [0.0, 0.047, 0.1, 0.04, 0.165, 0.05, 0.215, -0.02, 0.4, -0.02, 0.74, 0.0],
+				"pz": [0.0, -0.175, 0.1, 0.06, 0.165, 0.08, 0.215, -0.32, 0.4, -0.3, 0.56, -0.1, 0.74, 0.0],
+				"pdy": [0.0, -0.138, 0.1, -0.12, 0.165, -0.14, 0.215, -0.22, 0.4, -0.21, 0.56, -0.08, 0.74, 0.0],
+				"hy": [0.0, -10.652, 0.1, 4.0, 0.165, 6.0, 0.215, 2.0, 0.4, 2.0, 0.74, 0.0],
+				"hp": [0.0, -6.0, 0.1, -2.0, 0.215, -8.0, 0.4, -8.0, 0.74, 0.0],
+				"hlx": [0.0, -0.42, 0.1, -0.1, 0.165, -0.1, 0.19, -0.4, 0.215, -0.52, 0.4, -0.52, 0.58, -0.335, 0.74, -0.335],
+				"hly": [0.0, -0.14, 0.1, -0.12, 0.165, -0.12, 0.19, -0.08, 0.215, -0.22, 0.4, -0.22, 0.58, -0.366, 0.74, -0.366],
+				"hlz": [0.0, -0.1, 0.1, -0.42, 0.165, -0.42, 0.19, -0.12, 0.215, 0.14, 0.4, 0.14, 0.58, -0.08, 0.74, -0.08],
+				"hpx": [0.0, -0.6, 0.1, -1.0, 0.165, -1.0, 0.19, -0.7, 0.215, -0.4, 0.4, -0.4, 0.58, -0.5, 0.74, -0.5],
+				"hpy": [0.0, -0.6, 0.1, -0.5, 0.165, -0.5, 0.19, -0.5, 0.215, -0.5, 0.4, -0.5, 0.58, -0.2, 0.74, -0.2],
+				"hpz": [0.0, 0.5, 0.1, 0.3, 0.165, 0.3, 0.19, 0.6, 0.215, 1.0, 0.4, 1.0, 0.58, 1.0, 0.74, 1.0],
+				"hfx": [0.0, -0.85, 0.1, -0.2, 0.165, -0.2, 0.19, -0.7, 0.215, -0.95, 0.4, -0.95, 0.58, -1.0, 0.74, -1.0],
+				"hfy": [0.0, 0.1, 0.1, 0.05, 0.165, 0.05, 0.19, 0.05, 0.215, 0.0, 0.4, 0.0, 0.58, 0.0, 0.74, 0.0],
+				"hfz": [0.0, -0.5, 0.1, -1.0, 0.165, -1.0, 0.19, -0.35, 0.215, 0.25, 0.4, 0.25, 0.58, -0.35, 0.74, -0.35],
+				"az": [0.0, -23.95, 0.017, -29.29, 0.033, -42.64, 0.05, -60.0, 0.067, -77.36, 0.083, -90.71, 0.1, -96.06, 0.117, -99.75, 0.133, -99.18, 0.15, -98.43, 0.165, -98.19, 0.167, -98.1, 0.183, -88.02, 0.2, -61.13, 0.215, -22.56, 0.217, -23.33, 0.233, -27.53, 0.25, -30.18, 0.267, -36.15, 0.283, -41.3, 0.3, -41.73, 0.317, -41.56, 0.333, -41.23, 0.35, -40.78, 0.367, -40.24, 0.383, -39.64, 0.4, -39.01, 0.417, -41.8, 0.433, -49.34, 0.45, -60.39, 0.467, -73.69, 0.483, -87.98, 0.5, -102.02, 0.517, -114.57, 0.533, -124.36, 0.55, -130.16, 0.56, -131.19, 0.567, -130.99, 0.583, -128.93, 0.6, -124.98, 0.617, -119.63, 0.633, -113.35, 0.65, -106.6, 0.667, -99.84, 0.683, -93.56, 0.7, -88.21, 0.717, -84.26, 0.733, -82.2, 0.74, -86.14],
+				"e": [0.0, 31.86, 0.017, 32.9, 0.033, 35.49, 0.05, 38.85, 0.067, 42.22, 0.083, 44.81, 0.1, 45.84, 0.117, 41.84, 0.133, 42.36, 0.15, 42.92, 0.165, 43.16, 0.167, 43.21, 0.183, 49.54, 0.2, 66.43, 0.215, 90.65, 0.217, 90.73, 0.233, 89.74, 0.25, 89.22, 0.267, 87.56, 0.283, 86.88, 0.3, 86.35, 0.317, 85.98, 0.333, 85.77, 0.35, 85.66, 0.367, 85.64, 0.383, 85.7, 0.4, 85.82, 0.417, 83.7, 0.433, 77.98, 0.45, 69.6, 0.467, 59.5, 0.483, 48.66, 0.5, 38.0, 0.517, 28.47, 0.533, 21.04, 0.55, 16.65, 0.56, 15.86, 0.567, 15.87, 0.583, 15.96, 0.6, 16.13, 0.617, 16.36, 0.633, 16.64, 0.65, 16.93, 0.667, 17.22, 0.683, 17.5, 0.7, 17.73, 0.717, 17.9, 0.733, 17.99, 0.74, 18.89],
+				"r": [0.0, 64.24, 0.017, 66.93, 0.033, 73.66, 0.05, 82.42, 0.067, 91.17, 0.083, 97.9, 0.1, 100.6, 0.117, 100.52, 0.133, 100.69, 0.15, 100.8, 0.165, 100.83, 0.167, 100.77, 0.183, 93.49, 0.2, 74.07, 0.215, 46.23, 0.217, 50.13, 0.233, 52.16, 0.25, 56.7, 0.267, 68.03, 0.283, 72.22, 0.3, 71.63, 0.317, 71.07, 0.333, 70.77, 0.35, 70.6, 0.367, 70.52, 0.383, 70.53, 0.4, 70.6, 0.417, 71.5, 0.433, 73.93, 0.45, 77.49, 0.467, 81.77, 0.483, 86.37, 0.5, 90.9, 0.517, 94.94, 0.533, 98.1, 0.55, 99.96, 0.56, 100.3, 0.567, 99.51, 0.583, 91.31, 0.6, 75.65, 0.617, 54.41, 0.633, 29.47, 0.65, 2.65, 0.667, -24.17, 0.683, -49.12, 0.7, -70.35, 0.717, -86.01, 0.733, -94.22, 0.74, -95.07],
+				"el": [0.0, 55.25, 0.017, 59.39, 0.033, 69.72, 0.05, 83.16, 0.067, 96.61, 0.083, 106.94, 0.1, 111.08, 0.117, 112.02, 0.133, 111.51, 0.15, 111.12, 0.165, 111.03, 0.167, 110.92, 0.183, 97.17, 0.2, 60.49, 0.215, 7.88, 0.217, 7.92, 0.233, 7.93, 0.25, 7.91, 0.267, 19.63, 0.283, 31.07, 0.3, 32.94, 0.317, 33.66, 0.333, 34.13, 0.35, 34.49, 0.367, 34.74, 0.383, 34.9, 0.4, 34.97, 0.417, 35.22, 0.433, 35.88, 0.45, 36.86, 0.467, 38.04, 0.483, 39.3, 0.5, 40.54, 0.517, 41.65, 0.533, 42.52, 0.55, 43.03, 0.56, 43.12, 0.567, 43.04, 0.583, 42.15, 0.6, 40.45, 0.617, 38.16, 0.633, 35.46, 0.65, 32.56, 0.667, 29.66, 0.683, 26.96, 0.7, 24.67, 0.717, 22.97, 0.733, 22.08, 0.74, 19.75],
+				"uln": [0.0, 50.1, 0.017, 50.84, 0.033, 52.69, 0.05, 55.09, 0.067, 57.5, 0.083, 59.35, 0.1, 60.09, 0.117, 60.06, 0.133, 60.07, 0.15, 60.09, 0.165, 60.09, 0.167, 60.09, 0.183, 60.09, 0.2, 60.1, 0.215, 60.1, 0.217, 60.07, 0.233, 60.09, 0.25, 60.08, 0.267, 59.94, 0.283, 59.55, 0.3, 59.53, 0.317, 59.55, 0.333, 59.57, 0.35, 59.58, 0.367, 59.59, 0.383, 59.59, 0.4, 59.59, 0.417, 59.59, 0.433, 59.58, 0.45, 59.57, 0.467, 59.56, 0.483, 59.55, 0.5, 59.54, 0.517, 59.53, 0.533, 59.52, 0.55, 59.51, 0.56, 59.51, 0.567, 59.51, 0.583, 59.51, 0.6, 59.51, 0.617, 59.51, 0.633, 59.51, 0.65, 59.51, 0.667, 59.51, 0.683, 59.5, 0.7, 59.5, 0.717, 59.5, 0.733, 59.5, 0.74, 58.48],
+				"ext": [0.0, -22.52, 0.017, -24.65, 0.033, -29.97, 0.05, -36.9, 0.067, -43.82, 0.083, -49.14, 0.1, -51.27, 0.117, -60.16, 0.133, -60.25, 0.15, -60.26, 0.165, -60.24, 0.167, -60.17, 0.183, -51.71, 0.2, -29.16, 0.215, 3.19, 0.217, 3.0, 0.233, 3.36, 0.25, 3.57, 0.267, 15.33, 0.283, 28.8, 0.3, 31.21, 0.317, 32.06, 0.333, 32.6, 0.35, 33.0, 0.367, 33.28, 0.383, 33.46, 0.4, 33.55, 0.417, 34.36, 0.433, 36.55, 0.45, 39.76, 0.467, 43.62, 0.483, 47.77, 0.5, 51.85, 0.517, 55.49, 0.533, 58.33, 0.55, 60.01, 0.56, 60.31, 0.567, 60.31, 0.583, 60.3, 0.6, 60.27, 0.617, 60.24, 0.633, 60.2, 0.65, 60.16, 0.667, 60.11, 0.683, 60.07, 0.7, 60.04, 0.717, 60.01, 0.733, 60.0, 0.74, 60.02],
+				"tw": [0.0, 110.79, 0.017, 103.24, 0.033, 84.38, 0.05, 59.85, 0.067, 35.32, 0.083, 16.47, 0.1, 8.92, 0.117, -3.13, 0.133, -2.78, 0.15, -2.09, 0.165, -1.73, 0.167, -1.66, 0.183, 6.37, 0.2, 27.78, 0.215, 58.48, 0.217, 62.47, 0.233, 65.87, 0.25, 71.24, 0.267, 92.98, 0.283, 108.71, 0.3, 110.01, 0.317, 110.02, 0.333, 110.03, 0.35, 110.03, 0.367, 110.03, 0.383, 110.04, 0.4, 110.04, 0.417, 110.08, 0.433, 110.2, 0.45, 110.37, 0.467, 110.58, 0.483, 110.8, 0.5, 111.02, 0.517, 111.22, 0.533, 111.37, 0.55, 111.46, 0.56, 111.48, 0.567, 110.95, 0.583, 105.42, 0.6, 94.88, 0.617, 80.59, 0.633, 63.79, 0.65, 45.74, 0.667, 27.68, 0.683, 10.89, 0.7, -3.41, 0.717, -13.95, 0.733, -19.47, 0.74, -23.76],
+				"feet": {"moves": [{"f": 1, "t0": 0.02, "t1": 0.1, "x": -0.2, "z": -0.1, "yaw": 6.0, "apex": 0.06, "th": 4.0, "near": 0.14}, {"f": 1, "t0": 0.12, "t1": 0.215, "x": -0.2, "z": -0.72, "yaw": 8.0, "apex": 0.12, "th": 10.0}, {"f": 1, "t0": 0.52, "t1": 0.7, "x": -0.15, "z": -0.1, "yaw": 4.0, "apex": 0.08, "th": 5.0}], "pitch0": [0.0, 0.0, 0.18, 0.0, 0.26, -34.0, 0.48, -34.0, 0.66, -4.0], "follow0": [0.0, 0.0, 0.16, 0.0, 0.26, 0.5, 0.4, 0.5]}}
+		"dash":
+			return {"len": 0.86, "in": 0.05, "out": 0.25, "ev": {"swing": 0.235, "impact": 0.3, "step": [0.3, 0.8]},
+				"py": [0.0, 0.0, 0.12, -10.0, 0.22, -14.0, 0.3, 12.0, 0.45, 10.0, 0.65, 3.0, 0.86, 0.0],
+				"cy": [0.0, 0.0, 0.12, -24.0, 0.22, -30.0, 0.3, 16.0, 0.45, 12.0, 0.65, 3.0, 0.86, 0.0],
+				"pp": [0.0, 4.0, 0.08, 8.0, 0.16, 6.0, 0.22, 10.0, 0.31, -14.0, 0.46, -14.0, 0.65, -4.0, 0.86, 1.1],
+				"cp": [0.0, 8.0, 0.1, 14.0, 0.22, 22.0, 0.25, 12.0, 0.31, -30.0, 0.46, -32.0, 0.65, -8.0, 0.86, 4.0],
+				"cr": [0.0, 0.0, 0.12, -4.0, 0.22, -6.0, 0.31, 4.0, 0.46, 4.0, 0.86, 0.0],
+				"pr": [0.0, 0.0, 0.12, -2.0, 0.31, 3.0, 0.46, 3.0, 0.86, 0.0],
+				"px": [0.0, 0.0, 0.12, 0.02, 0.31, -0.03, 0.46, -0.03, 0.7, 0.0, 0.86, 0.0],
+				"pz": [0.0, 0.0, 0.06, 0.04, 0.22, -0.04, 0.31, -0.24, 0.46, -0.22, 0.66, -0.06, 0.86, 0.0],
+				"pdy": [0.0, -0.06, 0.06, -0.1, 0.14, 0.14, 0.22, 0.22, 0.27, 0.12, 0.315, -0.3, 0.46, -0.29, 0.64, -0.12, 0.86, 0.0],
+				"hy": [0.0, 0.0, 0.12, -4.0, 0.31, 2.0, 0.86, 0.0],
+				"hp": [0.0, 0.0, 0.14, -4.0, 0.22, -8.0, 0.31, -14.0, 0.46, -16.0, 0.66, -4.0, 0.86, 0.0],
+				"hlx": [0.0, -0.335, 0.1, -0.44, 0.22, -0.52, 0.31, -0.46, 0.46, -0.46, 0.66, -0.335, 0.86, -0.335],
+				"hly": [0.0, -0.366, 0.1, -0.1, 0.22, 0.02, 0.31, -0.3, 0.46, -0.3, 0.66, -0.366, 0.86, -0.366],
+				"hlz": [0.0, -0.08, 0.1, -0.02, 0.22, 0.06, 0.31, 0.16, 0.46, 0.16, 0.66, -0.08, 0.86, -0.08],
+				"hpx": [0.0, -0.5, 0.1, -0.5, 0.22, -0.4, 0.31, -0.4, 0.46, -0.4, 0.66, -0.5, 0.86, -0.5],
+				"hpy": [0.0, -0.2, 0.1, -0.6, 0.22, -0.6, 0.31, -0.5, 0.46, -0.5, 0.66, -0.2, 0.86, -0.2],
+				"hpz": [0.0, 1.0, 0.1, 0.6, 0.22, 0.7, 0.31, 1.0, 0.46, 1.0, 0.66, 1.0, 0.86, 1.0],
+				"hfx": [0.0, -1.0, 0.1, -0.9, 0.22, -0.95, 0.31, -0.95, 0.46, -0.95, 0.66, -1.0, 0.86, -1.0],
+				"hfy": [0.0, 0.0, 0.1, 0.2, 0.22, 0.3, 0.31, 0.0, 0.46, 0.0, 0.66, 0.0, 0.86, 0.0],
+				"hfz": [0.0, -0.35, 0.1, -0.3, 0.22, -0.1, 0.31, 0.25, 0.46, 0.25, 0.66, -0.35, 0.86, -0.35],
+				"f0x": [0.0, 0.15, 0.08, 0.15, 0.2, 0.14, 0.3, 0.22, 0.64, 0.22, 0.78, 0.15, 0.86, 0.15],
+				"f0y": [0.0, 0.093, 0.04, 0.1, 0.1, 0.2, 0.2, 0.42, 0.27, 0.22, 0.31, 0.093, 0.64, 0.093, 0.71, 0.16, 0.78, 0.093, 0.86, 0.093],
+				"f0z": [0.0, 0.04, 0.08, 0.1, 0.2, -0.22, 0.3, 0.26, 0.64, 0.26, 0.78, 0.04, 0.86, 0.04],
+				"f0p": [0.0, 0.0, 0.06, -30.0, 0.12, -40.0, 0.22, 10.0, 0.3, 0.0, 0.31, -10.0, 0.64, -10.0, 0.7, -20.0, 0.78, 6.0, 0.86, 0.0],
+				"f0w": [0.0, -10.0, 0.3, -14.0, 0.64, -14.0, 0.86, -10.0],
+				"f1x": [0.0, -0.15, 0.2, -0.14, 0.3, -0.24, 0.64, -0.24, 0.78, -0.15, 0.86, -0.15],
+				"f1y": [0.0, 0.093, 0.06, 0.12, 0.14, 0.3, 0.22, 0.34, 0.27, 0.2, 0.3, 0.093, 0.64, 0.093, 0.71, 0.15, 0.78, 0.093, 0.86, 0.093],
+				"f1z": [0.0, -0.06, 0.14, 0.18, 0.22, 0.2, 0.3, -0.56, 0.64, -0.56, 0.78, -0.08, 0.86, -0.06],
+				"f1p": [0.0, 0.0, 0.1, -20.0, 0.22, -30.0, 0.28, 10.0, 0.31, 0.0, 0.64, 0.0, 0.7, -10.0, 0.78, 4.0, 0.86, 0.0],
+				"f1w": [0.0, 10.0, 0.3, 12.0, 0.64, 12.0, 0.86, 10.0],
+				"az": [0.0, -81.36, 0.017, -82.92, 0.033, -86.82, 0.05, -91.9, 0.067, -96.97, 0.083, -100.87, 0.1, -102.43, 0.117, -87.82, 0.133, -75.87, 0.15, -66.57, 0.167, -59.93, 0.183, -55.95, 0.2, -54.62, 0.217, -55.82, 0.225, -56.53, 0.233, -59.04, 0.25, -60.32, 0.267, -56.86, 0.283, -51.26, 0.285, -48.29, 0.3, -41.58, 0.31, -38.17, 0.317, -38.0, 0.333, -37.68, 0.35, -37.32, 0.367, -37.02, 0.383, -36.67, 0.4, -36.38, 0.417, -36.07, 0.433, -35.82, 0.45, -35.61, 0.467, -35.43, 0.48, -35.59, 0.483, -35.7, 0.5, -39.27, 0.517, -47.03, 0.533, -57.81, 0.55, -70.46, 0.567, -83.8, 0.583, -96.67, 0.6, -107.91, 0.617, -116.37, 0.633, -120.87, 0.64, -121.31, 0.65, -121.07, 0.667, -119.71, 0.683, -117.33, 0.7, -114.13, 0.717, -110.31, 0.733, -106.09, 0.75, -101.65, 0.767, -97.22, 0.783, -92.99, 0.8, -89.18, 0.817, -85.97, 0.833, -83.59, 0.85, -82.24, 0.86, -86.5],
+				"e": [0.0, 19.38, 0.017, 19.32, 0.033, 19.19, 0.05, 19.01, 0.067, 18.84, 0.083, 18.7, 0.1, 18.65, 0.117, 49.91, 0.133, 75.47, 0.15, 95.36, 0.167, 109.57, 0.183, 118.09, 0.2, 120.93, 0.217, 122.18, 0.225, 122.61, 0.233, 124.23, 0.25, 123.51, 0.267, 102.88, 0.283, 62.62, 0.285, 53.62, 0.3, 40.45, 0.31, 39.1, 0.317, 39.05, 0.333, 38.86, 0.35, 38.74, 0.367, 38.68, 0.383, 38.63, 0.4, 38.65, 0.417, 38.6, 0.433, 38.65, 0.45, 38.75, 0.467, 38.85, 0.48, 38.64, 0.483, 38.61, 0.5, 37.59, 0.517, 35.38, 0.533, 32.31, 0.55, 28.71, 0.567, 24.91, 0.583, 21.24, 0.6, 18.04, 0.617, 15.63, 0.633, 14.34, 0.64, 14.22, 0.65, 14.24, 0.667, 14.37, 0.683, 14.6, 0.7, 14.91, 0.717, 15.28, 0.733, 15.68, 0.75, 16.11, 0.767, 16.54, 0.783, 16.94, 0.8, 17.31, 0.817, 17.62, 0.833, 17.85, 0.85, 17.98, 0.86, 18.92],
+				"r": [0.0, -95.36, 0.017, -84.83, 0.033, -58.53, 0.05, -24.32, 0.067, 9.89, 0.083, 36.19, 0.1, 46.72, 0.117, 42.98, 0.133, 39.92, 0.15, 37.54, 0.167, 35.84, 0.183, 34.82, 0.2, 34.48, 0.217, 37.09, 0.225, 36.88, 0.233, 37.31, 0.25, 49.15, 0.267, 63.83, 0.283, 68.93, 0.285, 60.32, 0.3, 57.01, 0.31, 55.49, 0.317, 55.29, 0.333, 54.91, 0.35, 54.65, 0.367, 54.64, 0.383, 54.6, 0.4, 54.76, 0.417, 54.8, 0.433, 55.03, 0.45, 55.35, 0.467, 55.79, 0.48, 56.7, 0.483, 56.75, 0.5, 58.57, 0.517, 62.51, 0.533, 67.99, 0.55, 74.42, 0.567, 81.2, 0.583, 87.74, 0.6, 93.45, 0.617, 97.75, 0.633, 100.04, 0.64, 100.26, 0.65, 99.09, 0.667, 92.35, 0.683, 80.52, 0.7, 64.61, 0.717, 45.64, 0.733, 24.65, 0.75, 2.63, 0.767, -19.39, 0.783, -40.38, 0.8, -59.35, 0.817, -75.26, 0.833, -87.09, 0.85, -93.83, 0.86, -95.1],
+				"el": [0.0, 26.74, 0.017, 30.12, 0.033, 38.55, 0.05, 49.53, 0.067, 60.51, 0.083, 68.95, 0.1, 72.32, 0.117, 85.04, 0.133, 95.43, 0.15, 103.53, 0.167, 109.3, 0.183, 112.77, 0.2, 113.93, 0.217, 113.78, 0.225, 113.76, 0.233, 113.16, 0.25, 107.74, 0.267, 94.14, 0.283, 63.53, 0.285, 61.19, 0.3, 53.88, 0.31, 51.95, 0.317, 52.04, 0.333, 52.45, 0.35, 52.77, 0.367, 53.07, 0.383, 53.34, 0.4, 53.54, 0.417, 53.8, 0.433, 53.96, 0.45, 54.05, 0.467, 54.07, 0.48, 54.05, 0.483, 54.05, 0.5, 54.15, 0.517, 54.37, 0.533, 54.68, 0.55, 55.04, 0.567, 55.42, 0.583, 55.78, 0.6, 56.1, 0.617, 56.34, 0.633, 56.47, 0.64, 56.48, 0.65, 56.27, 0.667, 55.08, 0.683, 52.99, 0.7, 50.18, 0.717, 46.84, 0.733, 43.13, 0.75, 39.24, 0.767, 35.35, 0.783, 31.64, 0.8, 28.29, 0.817, 25.49, 0.833, 23.4, 0.85, 22.21, 0.86, 19.49],
+				"uln": [0.0, 59.97, 0.017, 56.01, 0.033, 46.1, 0.05, 33.22, 0.067, 20.33, 0.083, 10.43, 0.1, 6.46, 0.117, 5.68, 0.133, 5.04, 0.15, 4.55, 0.167, 4.19, 0.183, 3.98, 0.2, 3.91, 0.217, 2.0, 0.225, 2.0, 0.233, 2.0, 0.25, 7.84, 0.267, 27.06, 0.283, 52.86, 0.285, 59.3, 0.3, 60.31, 0.31, 60.49, 0.317, 60.5, 0.333, 60.53, 0.35, 60.56, 0.367, 60.58, 0.383, 60.6, 0.4, 60.62, 0.417, 60.63, 0.433, 60.64, 0.45, 60.64, 0.467, 60.65, 0.48, 60.65, 0.483, 60.64, 0.5, 60.3, 0.517, 59.56, 0.533, 58.52, 0.55, 57.31, 0.567, 56.03, 0.583, 54.8, 0.6, 53.72, 0.617, 52.9, 0.633, 52.47, 0.64, 52.43, 0.65, 52.47, 0.667, 52.72, 0.683, 53.15, 0.7, 53.72, 0.717, 54.41, 0.733, 55.17, 0.75, 55.97, 0.767, 56.76, 0.783, 57.52, 0.8, 58.21, 0.817, 58.79, 0.833, 59.21, 0.85, 59.46, 0.86, 58.3],
+				"ext": [0.0, 60.51, 0.017, 51.46, 0.033, 28.84, 0.05, -0.57, 0.067, -29.99, 0.083, -52.6, 0.1, -61.65, 0.117, -24.48, 0.133, 5.92, 0.15, 29.58, 0.167, 46.47, 0.183, 56.6, 0.2, 59.98, 0.217, 60.12, 0.225, 60.12, 0.233, 60.1, 0.25, 59.53, 0.267, 58.62, 0.283, 53.54, 0.285, 60.02, 0.3, 57.1, 0.31, 55.9, 0.317, 56.03, 0.333, 56.44, 0.35, 56.81, 0.367, 57.05, 0.383, 57.4, 0.4, 57.59, 0.417, 57.96, 0.433, 58.15, 0.45, 58.23, 0.467, 58.28, 0.48, 58.26, 0.483, 58.26, 0.5, 58.35, 0.517, 58.54, 0.533, 58.79, 0.55, 59.1, 0.567, 59.42, 0.583, 59.73, 0.6, 60.0, 0.617, 60.2, 0.633, 60.31, 0.64, 60.32, 0.65, 60.31, 0.667, 60.3, 0.683, 60.28, 0.7, 60.26, 0.717, 60.23, 0.733, 60.19, 0.75, 60.16, 0.767, 60.12, 0.783, 60.09, 0.8, 60.06, 0.817, 60.03, 0.833, 60.01, 0.85, 60.0, 0.86, 60.02],
+				"tw": [0.0, -21.26, 0.017, -12.49, 0.033, 9.42, 0.05, 37.91, 0.067, 66.41, 0.083, 88.32, 0.1, 97.09, 0.117, 96.09, 0.133, 95.27, 0.15, 94.63, 0.167, 94.18, 0.183, 93.9, 0.2, 93.81, 0.217, 97.56, 0.225, 97.98, 0.233, 99.07, 0.25, 105.41, 0.267, 110.12, 0.283, 110.5, 0.285, 110.15, 0.3, 110.67, 0.31, 110.74, 0.317, 110.75, 0.333, 110.78, 0.35, 110.81, 0.367, 110.84, 0.383, 110.86, 0.4, 110.88, 0.417, 110.89, 0.433, 110.9, 0.45, 110.91, 0.467, 110.92, 0.48, 110.92, 0.483, 110.92, 0.5, 110.99, 0.517, 111.13, 0.533, 111.32, 0.55, 111.55, 0.567, 111.79, 0.583, 112.02, 0.6, 112.23, 0.617, 112.38, 0.633, 112.46, 0.64, 112.47, 0.65, 111.67, 0.667, 107.1, 0.683, 99.08, 0.7, 88.28, 0.717, 75.42, 0.733, 61.17, 0.75, 46.23, 0.767, 31.29, 0.783, 17.05, 0.8, 4.18, 0.817, -6.61, 0.833, -14.63, 0.85, -19.2, 0.86, -24.19],
+				"feet": {"mode": "baked"}}
 		"heavy":
-			return {"len": 1.0, "in": 0.06, "out": 0.25, "ev": {"swing": 0.36, "impact": 0.47, "step": [0.4, 0.72]},
-				"pivx": -0.075,
-				"pivz": 0.026,
-				"rot": [0.0, 0.0, 0.3, 0.0, 0.31, 0.97, 0.32, 3.87, 0.33, 8.71, 0.34, 15.48, 0.35, 24.19, 0.36, 34.84, 0.37, 46.45, 0.38, 58.06, 0.39, 69.68, 0.4, 81.29, 0.41, 92.9, 0.42, 104.52, 0.43, 116.13, 0.44, 127.74, 0.45, 139.35, 0.46, 150.97, 0.47, 162.58, 0.48, 174.19, 0.49, 185.81, 0.5, 197.42, 0.51, 209.03, 0.52, 220.65, 0.53, 232.26, 0.54, 243.87, 0.55, 255.48, 0.56, 267.1, 0.57, 278.35, 0.58, 288.87, 0.59, 298.67, 0.6, 307.74, 0.61, 316.09, 0.62, 323.71, 0.63, 330.6, 0.64, 336.77, 0.65, 342.22, 0.66, 346.94, 0.67, 350.93, 0.68, 354.19, 0.69, 356.73, 0.7, 358.55, 0.71, 359.64, 0.72, 360.0, 1.0, 360.0],
-				"py": [0.0, 0.0, 0.15, -20.0, 0.3, -35.0, 0.42, -18.0, 0.54, 0.0, 0.66, 8.0, 0.72, 17.0, 0.8, 14.0, 0.9, 6.0, 1.0, 0.0],
-				"cy": [0.0, 0.0, 0.15, -34.0, 0.3, -62.0, 0.42, -32.0, 0.56, -2.0, 0.66, 14.0, 0.72, 28.0, 0.8, 24.0, 0.9, 10.0, 1.0, 0.0],
-				"pp": [0.0, 1.1, 0.3, 6.0, 0.4, -4.0, 0.5, -8.0, 0.66, -8.0, 0.72, -14.0, 0.9, -4.0, 1.0, 1.1],
-				"cp": [0.0, 4.0, 0.3, 8.0, 0.4, -4.0, 0.5, -10.0, 0.66, -10.0, 0.72, -26.0, 0.82, -22.0, 1.0, 4.0],
-				"pr": [0.0, 0.0, 0.3, 4.0, 0.5, -4.0, 0.72, -6.0, 1.0, 0.0],
-				"cr": [0.0, 0.0, 0.3, -4.0, 0.5, 4.0, 0.72, 6.0, 1.0, 0.0],
-				"pdy": [0.0, 0.0, 0.3, -0.1, 0.4, -0.12, 0.66, -0.1, 0.72, -0.26, 0.82, -0.24, 0.9, -0.16, 0.97, -0.03, 1.0, 0.0],
-				"px": [0.0, 0.0, 0.3, 0.05, 0.38, 0.04, 0.66, 0.04, 0.72, 0.02, 0.8, 0.0, 1.0, 0.0],
-				"pz": [0.0, 0.0, 0.3, 0.05, 0.38, 0.06, 0.66, 0.04, 0.72, -0.24, 0.82, -0.22, 0.97, -0.02, 1.0, 0.0],
-				"hlx": [0.0, -0.335, 0.3, -0.08, 0.4, -0.3, 0.56, -0.36, 0.72, -0.42, 0.85, -0.4, 1.0, -0.335],
-				"hly": [0.0, -0.366, 0.3, -0.05, 0.4, -0.18, 0.56, -0.1, 0.72, -0.2, 0.85, -0.26, 1.0, -0.366],
-				"hlz": [0.0, -0.08, 0.3, -0.46, 0.4, 0.05, 0.56, 0.1, 0.72, -0.1, 0.85, -0.1, 1.0, -0.08],
-				"hpx": [0.0, -0.5, 0.3, -1.0, 0.4, -0.4, 0.56, -0.4, 0.72, -0.8, 0.85, -0.7, 1.0, -0.5],
-				"hpy": [0.0, -0.2, 0.3, -0.6, 0.4, -0.5, 0.56, -0.5, 0.72, -0.5, 0.85, -0.4, 1.0, -0.2],
-				"hpz": [0.0, 1.0, 0.3, 0.3, 0.4, 1.0, 0.56, 1.0, 0.72, 0.4, 0.85, 0.6, 1.0, 1.0],
-				"hfx": [0.0, -1.0, 0.3, 0.2, 0.4, -1.0, 0.56, -1.0, 0.72, -0.85, 0.85, -0.9, 1.0, -1.0],
-				"hfy": [0.0, 0.0, 0.3, 0.0, 0.4, 0.0, 0.56, 0.1, 0.72, 0.0, 0.85, 0.0, 1.0, 0.0],
-				"hfz": [0.0, -0.35, 0.3, -1.0, 0.4, 0.3, 0.56, 0.3, 0.72, -0.4, 0.85, -0.35, 1.0, -0.35],
-				"hy": [0.0, 0.0, 0.3, -30.0, 0.4, -10.0, 0.5, 0.0, 0.72, 10.0, 1.0, 0.0],
-				"hp": [0.0, 0.0, 0.5, -4.0, 0.72, -14.0, 0.85, -12.0, 1.0, 0.0],
-				"f0x": [0.0, 0.15, 0.34, 0.15, 0.4, 0.2, 0.62, 0.2, 0.72, 0.2, 0.81, 0.2, 0.833, 0.194, 0.855, 0.188, 0.9, 0.17, 0.955, 0.149, 0.995, 0.15],
-				"f0y": [0.0, 0.093, 0.34, 0.093, 0.4, 0.28, 0.62, 0.28, 0.72, 0.105, 0.78, 0.093, 0.81, 0.093, 0.833, 0.138, 0.855, 0.177, 0.9, 0.2, 0.955, 0.103, 0.995, 0.093],
-				"f0z": [0.0, 0.04, 0.34, 0.04, 0.4, 0.22, 0.62, 0.22, 0.72, -0.48, 0.81, -0.48, 0.833, -0.505, 0.855, -0.539, 0.9, -0.243, 0.955, 0.054, 0.995, 0.04],
-				"f0p": [0.0, 0.0, 0.34, 0.0, 0.4, -50.0, 0.62, -50.0, 0.7, 10.0, 0.78, 0.0, 0.81, 0.0, 0.833, -12.5, 0.855, -25.0, 0.9, -10.0, 0.955, 8.0, 0.995, 0.0],
-				"f0w": [0.0, -10.0, 0.3, -10.0, 0.4, -20.0, 0.62, -20.0, 0.72, 8.0, 0.81, 8.0, 0.833, 7.4, 0.855, 6.8, 0.9, 2.0, 0.955, -4.0, 0.995, -4.0],
-				"f1x": [0.0, -0.15, 0.3, -0.15, 0.36, -0.075, 0.72, -0.075, 0.9, -0.1, 1.0, -0.1],
-				"f1y": [0.0, 0.093, 0.3, 0.093, 0.36, 0.191, 0.72, 0.191, 0.78, 0.137, 0.9, 0.093, 1.0, 0.093],
-				"f1z": [0.0, -0.06, 0.3, -0.06, 0.36, 0.17, 0.72, 0.17, 0.78, 0.14, 0.9, 0.12, 1.0, 0.12],
-				"f1p": [0.0, 0.0, 0.3, 0.0, 0.36, -30.0, 0.72, -30.0, 0.78, -12.0, 0.9, 0.0, 1.0, 0.0],
-				"f1w": [0.0, 10.0, 0.3, 10.0, 0.36, 0.0, 0.72, 0.0, 1.0, 0.0],
-				"az": [0.0, -30.0, 0.2, -83.5, 0.3, -83.5, 0.38, -83.5, 0.47, -124.0, 0.56, -124.0, 0.72, -40.0, 0.85, 11.8, 1.0, -30.0],
-				"e": [0.0, 45.0, 0.2, 16.8, 0.3, 16.8, 0.38, 16.8, 0.47, 61.0, 0.56, 61.0, 0.72, 27.2, 0.85, 72.0, 1.0, 45.0],
-				"r": [0.0, 40.0, 0.2, 54.9, 0.3, 54.9, 0.38, 54.9, 0.47, 100.0, 0.56, 100.0, 0.72, 69.2, 0.85, -8.5, 1.0, 40.0],
-				"el": [0.0, 70.0, 0.2, 91.2, 0.3, 91.2, 0.4, 91.2, 0.49, 89.0, 0.6, 89.0, 0.74, 98.9, 0.85, 12.0, 1.0, 70.0],
-				"uln": [0.0, 45.0, 0.2, 27.4, 0.3, 27.4, 0.43, 27.4, 0.51, 53.0, 0.64, 53.0, 0.78, 38.1, 0.85, 59.7, 1.0, 45.0],
-				"ext": [0.0, 10.0, 0.2, 40.9, 0.3, 40.9, 0.43, 40.9, 0.51, -34.0, 0.64, -34.0, 0.78, -45.4, 0.85, 45.3, 1.0, 10.0],
-				"tw": [0.0, 120.0, 0.2, 107.2, 0.3, 107.2, 0.43, 107.2, 0.51, 120.0, 0.64, 120.0, 0.78, 121.5, 0.85, 120.9, 1.0, 120.0],
+			return {"len": 1.0, "in": 0.06, "out": 0.25, "ev": {"swing": 0.34, "impact": 0.47, "step": [0.4, 0.72]},
+				"pivx": 0.26,
+				"pivz": -0.02,
+				"rot": [0.0, 0.0, 0.3, 0.0, 0.31, -0.97, 0.32, -3.87, 0.33, -8.71, 0.34, -15.48, 0.35, -24.19, 0.36, -34.84, 0.37, -46.45, 0.38, -58.06, 0.39, -69.68, 0.4, -81.29, 0.41, -92.9, 0.42, -104.52, 0.43, -116.13, 0.44, -127.74, 0.45, -139.35, 0.46, -150.97, 0.47, -162.58, 0.48, -174.19, 0.49, -185.81, 0.5, -197.42, 0.51, -209.03, 0.52, -220.65, 0.53, -232.26, 0.54, -243.87, 0.55, -255.48, 0.56, -267.1, 0.57, -278.35, 0.58, -288.87, 0.59, -298.67, 0.6, -307.74, 0.61, -316.09, 0.62, -323.71, 0.63, -330.6, 0.64, -336.77, 0.65, -342.22, 0.66, -346.94, 0.67, -350.93, 0.68, -354.19, 0.69, -356.73, 0.7, -358.55, 0.71, -359.64, 0.72, -360.0, 1.0, -360.0],
+				"py": [0.0, 0.0, 0.16, 16.0, 0.3, 24.0, 0.36, 18.0, 0.46, -6.0, 0.6, -10.0, 0.72, -14.0, 0.85, -10.0, 1.0, 0.0],
+				"cy": [0.0, 0.0, 0.16, 40.0, 0.3, 62.0, 0.36, 50.0, 0.46, -2.0, 0.6, -20.0, 0.72, -28.0, 0.85, -20.0, 1.0, 0.0],
+				"pp": [0.0, 1.1, 0.3, 6.0, 0.4, -4.0, 0.72, -8.0, 0.85, -6.0, 1.0, 1.1],
+				"cp": [0.0, 4.0, 0.3, 14.0, 0.4, 6.0, 0.6, 0.0, 0.72, -10.0, 0.85, -8.0, 1.0, 4.0],
+				"cr": [0.0, 0.0, 0.3, 8.0, 0.45, -6.0, 0.72, -8.0, 1.0, 0.0],
+				"pr": [0.0, 0.0, 0.3, 4.0, 0.45, -4.0, 0.72, -4.0, 1.0, 0.0],
+				"px": [0.0, 0.0, 0.2, 0.02, 0.3, 0.04, 0.38, 0.1, 0.66, 0.1, 0.74, 0.04, 0.9, 0.01, 1.0, 0.0],
+				"pz": [0.0, 0.0, 0.2, 0.02, 0.3, 0.0, 0.38, -0.02, 0.66, -0.02, 0.74, -0.06, 0.9, -0.02, 1.0, 0.0],
+				"pdy": [0.0, 0.0, 0.16, -0.12, 0.3, -0.17, 0.38, -0.12, 0.66, -0.12, 0.74, -0.19, 0.85, -0.18, 0.95, -0.05, 1.0, 0.0],
+				"hy": [0.0, 0.0, 0.16, 8.0, 0.3, 12.0, 0.4, -10.0, 0.72, -16.0, 0.85, -10.0, 1.0, 0.0],
+				"hp": [0.0, 0.0, 0.3, -6.0, 0.5, -4.0, 0.72, -8.0, 1.0, 0.0],
+				"hlx": [0.0, -0.335, 0.16, -0.12, 0.3, -0.08, 0.4, -0.42, 0.66, -0.46, 0.85, -0.42, 1.0, -0.335],
+				"hly": [0.0, -0.366, 0.16, -0.16, 0.3, -0.17, 0.4, -0.14, 0.66, -0.3, 0.85, -0.14, 1.0, -0.366],
+				"hlz": [0.0, -0.08, 0.16, -0.52, 0.3, -0.55, 0.4, -0.1, 0.66, 0.16, 0.85, -0.1, 1.0, -0.08],
+				"hpx": [0.0, -0.5, 0.16, -1.0, 0.3, -1.0, 0.4, -0.6, 0.66, -0.4, 0.85, -0.6, 1.0, -0.5],
+				"hpy": [0.0, -0.2, 0.16, -0.5, 0.3, -0.5, 0.4, -0.6, 0.66, -0.5, 0.85, -0.6, 1.0, -0.2],
+				"hpz": [0.0, 1.0, 0.16, 0.3, 0.3, 0.3, 0.4, 0.5, 0.66, 1.0, 0.85, 0.5, 1.0, 1.0],
+				"hfx": [0.0, -1.0, 0.16, -0.1, 0.3, 0.05, 0.4, -0.85, 0.66, -0.95, 0.85, -0.85, 1.0, -1.0],
+				"hfy": [0.0, 0.0, 0.16, 0.0, 0.3, 0.0, 0.4, 0.1, 0.66, 0.0, 0.85, 0.1, 1.0, 0.0],
+				"hfz": [0.0, -0.35, 0.16, -1.0, 0.3, -1.0, 0.4, -0.5, 0.66, 0.25, 0.85, -0.5, 1.0, -0.35],
+				"f0x": [0.0, 0.15, 0.16, 0.26, 0.3, 0.26, 0.34, 0.26, 0.72, 0.26, 0.78, 0.26, 0.92, 0.26, 1.0, 0.15],
+				"f0y": [0.0, 0.093, 0.08, 0.16, 0.16, 0.093, 0.3, 0.093, 0.34, 0.195, 0.72, 0.195, 0.78, 0.093, 0.92, 0.093, 0.96, 0.13, 1.0, 0.093],
+				"f0z": [0.0, 0.04, 0.16, 0.2, 0.3, 0.2, 0.34, 0.117, 0.72, 0.117, 0.78, 0.2, 0.92, 0.2, 1.0, 0.04],
+				"f0p": [0.0, 0.0, 0.16, 0.0, 0.3, 0.0, 0.34, -32.0, 0.72, -32.0, 0.78, 0.0, 1.0, 0.0],
+				"f0w": [0.0, -10.0, 0.16, -14.0, 0.72, -14.0, 1.0, -10.0],
+				"f1x": [0.0, -0.15, 0.16, -0.26, 0.3, -0.26, 0.4, -0.12, 0.64, -0.12, 0.72, -0.26, 0.9, -0.26, 1.0, -0.15],
+				"f1y": [0.0, 0.093, 0.08, 0.17, 0.16, 0.093, 0.3, 0.093, 0.4, 0.26, 0.64, 0.26, 0.72, 0.093, 0.9, 0.093, 0.95, 0.14, 1.0, 0.093],
+				"f1z": [0.0, -0.06, 0.16, -0.36, 0.3, -0.36, 0.4, -0.1, 0.64, -0.1, 0.72, -0.36, 0.9, -0.36, 1.0, -0.06],
+				"f1p": [0.0, 0.0, 0.3, 0.0, 0.4, -40.0, 0.64, -40.0, 0.7, 8.0, 0.74, 0.0, 1.0, 0.0],
+				"f1w": [0.0, 10.0, 0.16, 16.0, 0.72, 16.0, 1.0, 10.0],
+				"az": [0.0, -83.19, 0.017, -81.6, 0.033, -77.29, 0.05, -70.99, 0.067, -63.39, 0.083, -55.23, 0.1, -47.21, 0.117, -40.05, 0.133, -34.46, 0.15, -31.15, 0.16, -30.56, 0.167, -28.87, 0.183, -25.0, 0.2, -21.64, 0.217, -18.8, 0.233, -16.48, 0.25, -14.68, 0.267, -13.38, 0.283, -12.61, 0.3, -12.35, 0.317, -13.3, 0.333, -17.08, 0.35, -28.68, 0.36, -36.06, 0.367, -41.15, 0.383, -51.63, 0.4, -59.43, 0.417, -65.77, 0.433, -71.8, 0.45, -78.99, 0.46, -84.36, 0.467, -84.81, 0.483, -86.28, 0.5, -87.89, 0.517, -89.52, 0.533, -91.13, 0.55, -92.64, 0.567, -94.0, 0.583, -95.12, 0.6, -95.97, 0.617, -96.4, 0.633, -96.37, 0.65, -96.02, 0.667, -95.48, 0.683, -94.89, 0.7, -94.39, 0.717, -94.11, 0.72, -94.11, 0.733, -94.93, 0.75, -96.24, 0.767, -97.73, 0.783, -99.36, 0.8, -101.05, 0.817, -102.75, 0.833, -104.33, 0.85, -105.76, 0.867, -104.95, 0.883, -102.77, 0.9, -99.6, 0.917, -95.85, 0.933, -91.91, 0.95, -88.16, 0.967, -85.0, 0.983, -82.82, 1.0, -84.68],
+				"e": [0.0, 18.66, 0.017, 19.0, 0.033, 19.92, 0.05, 21.26, 0.067, 22.87, 0.083, 24.6, 0.1, 26.3, 0.117, 27.82, 0.133, 29.01, 0.15, 29.71, 0.16, 29.84, 0.167, 31.53, 0.183, 35.4, 0.2, 38.75, 0.217, 41.59, 0.233, 43.91, 0.25, 45.72, 0.267, 47.01, 0.283, 47.78, 0.3, 48.04, 0.317, 49.04, 0.333, 48.1, 0.35, 50.4, 0.36, 54.85, 0.367, 54.61, 0.383, 55.28, 0.4, 57.3, 0.417, 60.54, 0.433, 64.71, 0.45, 69.29, 0.46, 72.04, 0.467, 72.67, 0.483, 74.34, 0.5, 75.93, 0.517, 77.4, 0.533, 78.73, 0.55, 79.92, 0.567, 80.95, 0.583, 81.83, 0.6, 82.56, 0.617, 83.12, 0.633, 83.51, 0.65, 83.79, 0.667, 83.98, 0.683, 84.12, 0.7, 84.22, 0.717, 84.26, 0.72, 84.26, 0.733, 84.24, 0.75, 84.0, 0.767, 83.57, 0.783, 82.99, 0.8, 82.3, 0.817, 81.52, 0.833, 80.67, 0.85, 79.8, 0.867, 77.68, 0.883, 72.0, 0.9, 63.78, 0.917, 54.03, 0.933, 43.77, 0.95, 34.02, 0.967, 25.8, 0.983, 20.12, 1.0, 18.82],
+				"r": [0.0, -95.07, 0.017, -89.15, 0.033, -73.15, 0.05, -49.72, 0.067, -21.51, 0.083, 8.81, 0.1, 38.61, 0.117, 65.23, 0.133, 85.99, 0.15, 98.29, 0.16, 100.48, 0.167, 100.46, 0.183, 100.39, 0.2, 100.34, 0.217, 100.29, 0.233, 100.25, 0.25, 100.22, 0.267, 100.2, 0.283, 100.19, 0.3, 100.19, 0.317, 100.02, 0.333, 90.34, 0.35, 75.08, 0.36, 62.24, 0.367, 62.13, 0.383, 61.78, 0.4, 60.83, 0.417, 59.09, 0.433, 55.65, 0.45, 49.94, 0.46, 44.71, 0.467, 44.25, 0.483, 43.72, 0.5, 43.23, 0.517, 42.66, 0.533, 42.02, 0.55, 41.27, 0.567, 40.44, 0.583, 39.5, 0.6, 38.47, 0.617, 37.16, 0.633, 35.41, 0.65, 33.43, 0.667, 31.44, 0.683, 29.67, 0.7, 28.32, 0.717, 27.64, 0.72, 27.62, 0.733, 27.35, 0.75, 27.19, 0.767, 27.06, 0.783, 27.04, 0.8, 27.11, 0.817, 27.23, 0.833, 27.27, 0.85, 27.3, 0.867, 23.1, 0.883, 11.87, 0.9, -4.41, 0.917, -23.71, 0.933, -44.0, 0.95, -63.29, 0.967, -79.57, 0.983, -90.8, 1.0, -95.1],
+				"el": [0.0, 21.68, 0.017, 22.68, 0.033, 25.38, 0.05, 29.34, 0.067, 34.09, 0.083, 39.21, 0.1, 44.23, 0.117, 48.72, 0.133, 52.23, 0.15, 54.3, 0.16, 54.67, 0.167, 55.88, 0.183, 58.63, 0.2, 61.02, 0.217, 63.04, 0.233, 64.69, 0.25, 65.97, 0.267, 66.89, 0.283, 67.44, 0.3, 67.62, 0.317, 64.74, 0.333, 57.62, 0.35, 56.17, 0.36, 55.62, 0.367, 54.71, 0.383, 53.05, 0.4, 51.42, 0.417, 49.56, 0.433, 47.47, 0.45, 45.18, 0.46, 43.66, 0.467, 43.61, 0.483, 43.57, 0.5, 43.57, 0.517, 43.57, 0.533, 43.57, 0.55, 43.58, 0.567, 43.6, 0.583, 43.6, 0.6, 43.61, 0.617, 43.63, 0.633, 43.66, 0.65, 43.68, 0.667, 43.68, 0.683, 43.67, 0.7, 43.65, 0.717, 43.61, 0.72, 43.61, 0.733, 43.55, 0.75, 43.54, 0.767, 43.54, 0.783, 43.53, 0.8, 43.52, 0.817, 43.52, 0.833, 43.53, 0.85, 43.53, 0.867, 42.79, 0.883, 40.81, 0.9, 37.95, 0.917, 34.55, 0.933, 30.98, 0.95, 27.58, 0.967, 24.72, 0.983, 22.74, 1.0, 20.93],
+				"uln": [0.0, 59.52, 0.017, 58.82, 0.033, 56.93, 0.05, 54.17, 0.067, 50.84, 0.083, 47.26, 0.1, 43.75, 0.117, 40.61, 0.133, 38.16, 0.15, 36.71, 0.16, 36.45, 0.167, 38.61, 0.183, 43.55, 0.2, 47.84, 0.217, 51.46, 0.233, 54.43, 0.25, 56.73, 0.267, 58.38, 0.283, 59.37, 0.3, 59.7, 0.317, 59.88, 0.333, 59.81, 0.35, 59.6, 0.36, 59.57, 0.367, 59.57, 0.383, 59.56, 0.4, 59.55, 0.417, 59.54, 0.433, 59.54, 0.45, 59.54, 0.46, 59.52, 0.467, 59.5, 0.483, 59.49, 0.5, 59.48, 0.517, 59.48, 0.533, 59.49, 0.55, 59.5, 0.567, 59.5, 0.583, 59.5, 0.6, 59.5, 0.617, 59.51, 0.633, 59.51, 0.65, 59.51, 0.667, 59.51, 0.683, 59.51, 0.7, 59.51, 0.717, 59.5, 0.72, 59.5, 0.733, 59.5, 0.75, 59.49, 0.767, 59.45, 0.783, 59.42, 0.8, 59.38, 0.817, 59.31, 0.833, 59.15, 0.85, 58.97, 0.867, 58.98, 0.883, 59.03, 0.9, 59.1, 0.917, 59.19, 0.933, 59.28, 0.95, 59.36, 0.967, 59.43, 0.983, 59.48, 1.0, 59.4],
+				"ext": [0.0, 60.03, 0.017, 57.81, 0.033, 51.82, 0.05, 43.03, 0.067, 32.46, 0.083, 21.09, 0.1, 9.92, 0.117, -0.06, 0.133, -7.84, 0.15, -12.45, 0.16, -13.28, 0.167, -14.22, 0.183, -16.37, 0.2, -18.24, 0.217, -19.82, 0.233, -21.12, 0.25, -22.12, 0.267, -22.84, 0.283, -23.27, 0.3, -23.42, 0.317, -19.82, 0.333, -19.43, 0.35, -23.21, 0.36, -26.13, 0.367, -28.4, 0.383, -33.83, 0.4, -38.38, 0.417, -41.74, 0.433, -44.08, 0.45, -45.49, 0.46, -45.94, 0.467, -45.92, 0.483, -45.88, 0.5, -45.88, 0.517, -45.88, 0.533, -45.89, 0.55, -45.91, 0.567, -45.94, 0.583, -45.94, 0.6, -45.94, 0.617, -45.98, 0.633, -46.01, 0.65, -46.03, 0.667, -46.03, 0.683, -46.02, 0.7, -45.99, 0.717, -45.95, 0.72, -45.95, 0.733, -45.89, 0.75, -45.87, 0.767, -45.84, 0.783, -45.81, 0.8, -45.77, 0.817, -45.72, 0.833, -45.64, 0.85, -45.52, 0.867, -41.9, 0.883, -32.21, 0.9, -18.16, 0.917, -1.51, 0.933, 15.99, 0.95, 32.64, 0.967, 46.69, 0.983, 56.38, 1.0, 59.91],
+				"tw": [0.0, -20.62, 0.017, -21.46, 0.033, -23.71, 0.05, -27.02, 0.067, -31.0, 0.083, -35.27, 0.1, -39.47, 0.117, -43.23, 0.133, -46.16, 0.15, -47.89, 0.16, -48.2, 0.167, -47.38, 0.183, -45.51, 0.2, -43.88, 0.217, -42.51, 0.233, -41.39, 0.25, -40.51, 0.267, -39.89, 0.283, -39.51, 0.3, -39.39, 0.317, -34.75, 0.333, -36.81, 0.35, -43.14, 0.36, -46.7, 0.367, -51.68, 0.383, -63.52, 0.4, -74.44, 0.417, -84.11, 0.433, -92.99, 0.45, -101.52, 0.46, -107.22, 0.467, -107.58, 0.483, -107.72, 0.5, -107.73, 0.517, -107.73, 0.533, -107.7, 0.55, -107.68, 0.567, -107.65, 0.583, -107.64, 0.6, -107.63, 0.617, -107.59, 0.633, -107.55, 0.65, -107.53, 0.667, -107.53, 0.683, -107.54, 0.7, -107.57, 0.717, -107.62, 0.72, -107.62, 0.733, -107.68, 0.75, -107.7, 0.767, -107.77, 0.783, -107.84, 0.8, -107.92, 0.817, -108.05, 0.833, -108.33, 0.85, -108.68, 0.867, -105.63, 0.883, -97.49, 0.9, -85.69, 0.917, -71.69, 0.933, -56.98, 0.95, -42.99, 0.967, -31.19, 0.983, -23.04, 1.0, -22.23],
 				"feet": {"mode": "baked"}}
 	return {}
 
 
 ## The strikes that are built from joint angles (the others still play their keys).
-const STRIKE_NAMES := ["attack1", "attack2", "attack3", "heavy"]
+const STRIKE_NAMES := ["a1", "a2", "a3", "a4", "b1", "b2", "b3", "dash", "heavy"]
 
+
+## The old blow names still play (tools, older callers): attack1/attack2/attack3 are combo A's first, second and last blow.
+const STRIKE_ALIAS := {"attack1": "a1", "attack2": "a2", "attack3": "a4"}
 
 
 # --- a blow that starts on the run ---------------------------------------------------------------------------------------------
@@ -5629,20 +6704,29 @@ var _skl_on := false
 
 ## HeroMelee, right after it has aimed the blow it started: whether the run is carried on (the legs stay on the gait) or not.
 func set_strike_run(on: bool) -> void:
-	if action != "" and act_def(_akey).has("strike") and not (act_def(_akey)["strike"] as Dictionary).has("rot"):
+	if action != "" and act_def(_akey).has("strike") and not _strike_own_legs(act_def(_akey)["strike"]):
 		_sk_run = on
+
+
+## A blow whose legs are its own (the heavy's spin, the dash's leap: the feet are baked into it) never runs on the gait.
+static func _strike_own_legs(S: Dictionary) -> bool:
+	return S.has("rot") or String((S.get("feet", {}) as Dictionary).get("mode", "")) == "baked"
 
 
 func _strike_layer(c: PackedFloat32Array, loco: PackedFloat32Array) -> void:
 	var pb_s := eul(v3(c, C_PELR))
 	var tb := pb_s * eul(v3(c, C_SPN)) * eul(v3(c, C_CHS))
+	# the heavy's held coil keeps its own wide, low stance (P5) while he stands; walking, the legs are the gait's
+	var own := 0.0
+	if _upper > 0.0 and _strike_own_legs(act_def(_akey)["strike"]):
+		own = 1.0 - smoothstep(0.25, 0.9, _spd)
 	for o in LOWER_CH:
-		c[o] = loco[o]
-		c[o + 1] = loco[o + 1]
-		c[o + 2] = loco[o + 2]
+		c[o] = lerpf(loco[o], c[o], own)
+		c[o + 1] = lerpf(loco[o + 1], c[o + 1], own)
+		c[o + 2] = lerpf(loco[o + 2], c[o + 2], own)
 	var ps := v3(c, C_PELR)
 	var pl := v3(loco, C_PELR)
-	var pe := Vector3(lerpf(ps.x, pl.x, 0.5), lerpf(ps.y, pl.y, 0.1), lerpf(ps.z, pl.z, 0.5))
+	var pe := Vector3(lerpf(ps.x, pl.x, 0.5 * (1.0 - own)), lerpf(ps.y, pl.y, 0.1 * (1.0 - own)), lerpf(ps.z, pl.z, 0.5 * (1.0 - own)))
 	_setv(c, C_PELR, pe)
 	# the chest keeps the orientation the blow gave it in the world: the spine and the chest bone take up what the pelvis gave away
 	var q_rel := (eul(pe).inverse() * tb).get_rotation_quaternion()
@@ -5956,3 +7040,1160 @@ func t_offset(dt: float) -> void:
 	t += dt
 	_animate(0.0)
 
+
+# >>> STOW BEGIN (lane STOW: carrying the weapons; docs/ANIMATION.md section 9)
+# --- the weapons carried: ARMED (the sword in the right fist, the shield on the left forearm) or STOWED (the sword in its scabbard
+# at the left hip, the shield on his back with the chain spear strapped over it). No node changes parent: every frame _stow_frame
+# works out where each prop is (rig space) and _place_weapons puts it there, so a prop that changes hands leaves from exactly where
+# it was (what the hand missed by is an offset that dies away in a few frames: never a pop).
+
+## Where a prop is: the sword in its scabbard or in the right fist; the shield on the back, held by its rim in the left fist (on its
+## way between the back and the arm) or on the forearm.
+enum { AT_SHEATH, AT_HAND, AT_BACK, AT_RIM, AT_ARM }
+## The scabbard in the sword's own grip space (the blade along -Z; sheathed, the sword's frame is the scabbard's turned half a turn
+## about the blade, SHEATH_ROLL, so that the right fist meets the grip palm out, the back of the hand to his belly): the throat's top
+## (under the guard), the throat band's lower edge, where the bronze chape begins and the end.
+const SCAB_TOP := -0.096
+const SCAB_THROAT := -0.15
+const SCAB_CHAPE := -0.99
+const SCAB_END := -1.11
+const SHEATH_ROLL := Basis(Vector3(-1.0, 0.0, 0.0), Vector3(0.0, -1.0, 0.0), Vector3(0.0, 0.0, 1.0))
+## How far the sword slides along the scabbard until its tip leaves the throat (m).
+const SCAB_SLIDE := 1.0
+## The scabbard on the belt (rest rig space): the strap's top on the belt (what it swings about), the throat band's centre, the
+## direction it points (throat -> chape: back, down and a little out) and a hint for its upper edge.
+const SCAB_HINGE := Vector3(-0.2, 0.985, -0.045)
+const SCAB_T := Vector3(-0.29, 0.91, -0.085)
+const SCAB_D := Vector3(-0.2, -0.55, 0.81)
+const SCAB_UP := Vector3(0.0, 1.0, 0.3)
+## The scabbard turned on its strap by a draw (it follows the blade out: where it points when the tip leaves the throat) and by the
+## sheathe (where it waits for the tip).
+const SCAB_D_DRAW := Vector3(-0.6, -0.68, 0.33)
+const SCAB_D_SHEATHE := Vector3(-0.55, -0.72, 0.38)
+## The scabbard's swing on its strap: stiffness, damping, the most it may be turned from rest (rad), the chape's least height.
+const SCAB_K := 140.0
+const SCAB_C := 13.0
+const SCAB_SWING_MAX := 1.3
+const SCAB_GROUND := 0.07
+## The sheath's leather, darker than the belt, and its seams.
+const SHEATH := Color("3B2216")
+const SHEATH_LIGHT := Color("5A3420")
+## The shield on the back (rest rig space, in the frame of the spear on the back): its centre, its face (out: back and a little up,
+## following the upper back) and the forearm's axis on it (down: it hangs from its top). The lion's pelt is thicker.
+const SHB_C := Vector3(0.0, 1.27, 0.305)
+const SHB_C_LION := Vector3(0.0, 1.25, 0.335)
+const SHB_N := Vector3(0.0, 0.15, 1.0)
+const SHB_X := Vector3(0.0, -1.0, 0.0)
+## The chain spear strapped over the shield on the back: how much further out its head end and its butt end lie than on the cape
+## (along the shield's face), so that the shaft clears the shield's boss and the coiled chain its lower rim.
+const SPEAR_OVER_TIP := 0.135
+const SPEAR_OVER_BUTT := 0.19
+## Where on the rim the left fist takes the shield (rad about its face from the forearm's axis: on the back about 65 degrees round
+## from straight down towards his left, the lower left of the rim, clear of the spear).
+const RIM_ANG := 1.13
+## The six actions (upper body: the legs keep the locomotion) and their moments (s). Drawing: the right fist closes on the grip, the
+## tip leaves the throat; the left fist takes the rim, the forearm goes into the shield's band. Sheathing: the tip finds the throat,
+## the sword is home; the left fist takes the rim, the shield is hung on the back.
+const STOW_ACTS := ["draw", "sheathe", "draw_sword", "draw_shield", "sheathe_sword", "sheathe_shield"]
+const STOW_EV := {
+	"draw": {"sw_grab": 0.12, "sw_free": 0.27, "sh_grab": 0.15, "sh_arm": 0.4},
+	"draw_sword": {"sw_grab": 0.06, "sw_free": 0.15},
+	"draw_shield": {"sh_grab": 0.07, "sh_arm": 0.18},
+	"sheathe": {"sw_enter": 0.38, "sw_home": 0.56, "sh_grab": 0.12, "sh_back": 0.5},
+	"sheathe_sword": {"sw_enter": 0.26, "sw_home": 0.42},
+	"sheathe_shield": {"sh_grab": 0.08, "sh_back": 0.36},
+}
+
+## Where the sword and the shield are (AT_*); the last hand-off of each prop: its offset (where it was, in its new holder's frame),
+## how much of it is left (1 -> 0) and how fast it goes (1/s). The scabbard has one too (it leaves the blade or meets it).
+var _sw_at := AT_HAND
+var _sh_at := AT_ARM
+var _sw_off := Transform3D.IDENTITY
+var _sw_off_k := 0.0
+var _sw_off_rate := 12.0
+var _sh_off := Transform3D.IDENTITY
+var _sh_off_k := 0.0
+var _sh_off_rate := 6.0
+var _scab_off := Transform3D.IDENTITY
+var _scab_off_k := 0.0
+var _scab_off_rate := 14.0
+## This frame (rig space): the scabbard's frame (sword grip space -> rig), the sword's grip frame, the shield's frame (the frame
+## shield_meshes() is modelled in).
+var _scab_xf := Transform3D()
+var _sw_xf := Transform3D()
+var _sh_xf := Transform3D()
+var _stow_ok := false
+var _scab_node: Node3D
+## The scabbard's swing on its strap (a rotation vector in the pelvis' rest frame) and how fast it turns; the strap's last world
+## position and velocity (its acceleration swings it); whether the blade is in the scabbard on its way out or in (it lies along it).
+var _scab_a := Vector3.ZERO
+var _scab_av := Vector3.ZERO
+var _scab_hp := Vector3.ZERO
+var _scab_hv := Vector3.ZERO
+var _scab_hok := false
+var _riding := false
+## How much the arms carry the weapons (0 relaxed, empty hands .. 1 armed), each following what is in its hand.
+var _carry_sw := 1.0
+var _carry_sh := 1.0
+## The stow action being followed, the moments of it already passed, its last time.
+var _stow_act := ""
+var _stow_fired := {}
+var _stow_tp := 0.0
+## The chain spear lies over the shield on his back (1) or on the cape (0).
+var _spear_over := 0.0
+## 0..1: a foe close by (Hero sets it): the armed idle is the ready stance, else the sword hangs low in his hand.
+var alert := 0.0
+var _alert := 0.0
+static var _scab_rest_c := Transform3D()
+static var _scab_rest_ok := false
+static var _sh_rest_c := Transform3D()
+static var _sh_rest_ok := false
+
+
+# --- API ---------------------------------------------------------------------------------------------------------------------------
+
+## ARMED (on) or STOWED. Played: the draw or the sheathe of whatever is not where it should be (`draw`, `draw_sword`, `draw_shield`,
+## `sheathe`, `sheathe_sword`, `sheathe_shield`, on the upper body). `instant`: put there now (the start of the game, tools).
+func set_armed(on: bool, instant: bool = false) -> void:
+	if instant:
+		if STOW_EV.has(action):
+			stop_action(0.0)
+		_stow_act = ""
+		_sw_at = AT_HAND if on else AT_SHEATH
+		_sh_at = AT_ARM if on else AT_BACK
+		_sw_off_k = 0.0
+		_sh_off_k = 0.0
+		_scab_off_k = 0.0
+		_scab_a = Vector3.ZERO
+		_scab_av = Vector3.ZERO
+		_riding = false
+		_carry_sw = 1.0 if on else 0.0
+		_carry_sh = _carry_sw
+		_spear_over = 0.0 if on else 1.0
+		_stow_ok = false
+		return
+	var a := stow_action_for(on, on, on)
+	if a != "" and action != a:
+		play_at(a, 1.0, true)
+
+
+## The action that brings the sword (`sword`) and the shield (`shield`) to the hands (on) or puts them away (off), "" if nothing is to
+## be done: only what is not already where it should be.
+func stow_action_for(on: bool, sword: bool, shield: bool) -> String:
+	if on:
+		var sw := sword and _sw_at != AT_HAND
+		var sh := shield and _sh_at == AT_BACK
+		if sw and sh:
+			return "draw"
+		if sw:
+			return "draw_sword"
+		if sh:
+			return "draw_shield"
+		return ""
+	var sw2 := sword and _sw_at == AT_HAND
+	var sh2 := shield and _sh_at != AT_BACK
+	if sw2 and sh2:
+		return "sheathe"
+	if sw2:
+		return "sheathe_sword"
+	if sh2:
+		return "sheathe_shield"
+	return ""
+
+
+## Armed, or on the way to it: the sword in the hand (or a draw playing), and no sheathe playing.
+func is_armed() -> bool:
+	if action.begins_with("sheathe"):
+		return false
+	if action.begins_with("draw"):
+		return true
+	return _sw_at == AT_HAND or _sh_at != AT_BACK
+
+
+func sword_in_hand() -> bool:
+	return _sw_at == AT_HAND
+
+
+## The sword in the hand and clear of its scabbard (a blow can start): in a draw, from the moment its tip leaves the throat.
+func sword_free() -> bool:
+	if _sw_at != AT_HAND:
+		return false
+	if action == "draw" or action == "draw_sword":
+		return action_t >= _stow_t(action, "sw_free")
+	return not _riding
+
+
+func shield_in_hand() -> bool:
+	return _sh_at != AT_BACK
+
+
+## A draw or a sheathe is playing.
+func stow_busy() -> bool:
+	return STOW_EV.has(action)
+
+
+## The scabbard's throat and its end (world space, for tools and the clip check).
+func scabbard_segment() -> PackedVector3Array:
+	var gx := global_transform if is_inside_tree() else transform
+	return PackedVector3Array([gx * (_scab_xf * Vector3(0.0, 0.0, SCAB_THROAT)), gx * (_scab_xf * Vector3(0.0, 0.0, SCAB_END))])
+
+
+# --- the scabbard -----------------------------------------------------------------------------------------------------------------
+
+## The scabbard in the sword's grip space: a leather sheath that follows the leaf of the blade (a lens in section, its seams lighter),
+## a bronze throat (its mouth dark) and chape, a bronze band a third of the way down, a ring on the upper edge of the throat and the
+## short strap from it up to the belt (to SCAB_HINGE, the point it swings about). [soft, metal]
+static func scabbard_meshes() -> Array:
+	if not _cache.has("scabbard"):
+		var soft := MeshBuilder.new(65)
+		var metal := MeshBuilder.new(66)
+		var zs := [SCAB_THROAT + 0.004, -0.3, -0.48, -0.64, -0.78, -0.9, SCAB_CHAPE + 0.012]
+		var ws := [0.047, 0.043, 0.047, 0.057, 0.058, 0.051, 0.04]
+		var ts := [0.024, 0.022, 0.022, 0.024, 0.023, 0.021, 0.018]
+		var rings := []
+		for k in zs.size():
+			rings.append([Vector3(0.0, 0.0, zs[k]), ts[k], ws[k]])
+		var col := func(_p: Vector3, k: int, i: int) -> Color:
+			if k < 0:
+				return INK
+			return SHEATH_LIGHT if (i == 2 or i == 7) else SHEATH
+		loft(soft, rings, 10, col, Vector3.UP, true, false)
+		var band := func(_p: Vector3, k: int, _i: int) -> Color:
+			return INK if k < 0 else BRONZE
+		loft(metal, [[Vector3(0.0, 0.0, SCAB_TOP), 0.03, 0.056], [Vector3(0.0, 0.0, SCAB_TOP - 0.018), 0.028, 0.053], [Vector3(0.0, 0.0, SCAB_THROAT), 0.027, 0.05]], 10, band, Vector3.UP, true, false)
+		loft(metal, [[Vector3(0.0, 0.0, -0.33), 0.026, 0.048], [Vector3(0.0, 0.0, -0.36), 0.026, 0.048]], 10, BRONZE_DARK, Vector3.UP, false, false)
+		loft(metal, [[Vector3(0.0, 0.0, SCAB_CHAPE + 0.02), 0.021, 0.044], [Vector3(0.0, 0.0, SCAB_CHAPE - 0.03), 0.019, 0.036], [Vector3(0.0, 0.0, SCAB_END + 0.03), 0.014, 0.017]], 10, BRONZE, Vector3.UP, false, true)
+		metal.ico(Vector3(0.0, 0.0, SCAB_END + 0.016), 0.019, BRONZE_LIGHT, 0, 0.0, Vector3(1.0, 1.0, 1.2))
+		# the ring on the throat's upper edge and the strap up to the belt
+		metal.push(Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(0.004, 0.066, -0.123)))
+		metal.ring(Vector3.ZERO, 0.017, 0.01, 0.008, 8, BRONZE_DARK)
+		metal.pop()
+		var h := scab_rest_xf().affine_inverse() * SCAB_HINGE
+		soft.limb(Vector3(0.0, 0.07, -0.123), h, 0.011, 0.012, 6, LEATHER_DARK)
+		soft.ico(h, 0.017, LEATHER, 0)
+		_cache["scabbard"] = [soft.commit(), metal.commit()]
+	return _cache["scabbard"]
+
+
+## The scabbard's frame at rest (its grip space -> rest rig space).
+static func scab_rest_xf() -> Transform3D:
+	if not _scab_rest_ok:
+		var d := SCAB_D.normalized()
+		var z := -d
+		var y := perp(SCAB_UP, z).normalized()
+		var b := Basis(y.cross(z), y, z)
+		_scab_rest_c = Transform3D(b, SCAB_T - b * Vector3(0.0, 0.0, (SCAB_TOP + SCAB_THROAT) * 0.5))
+		_scab_rest_ok = true
+	return _scab_rest_c
+
+
+## The scabbard's frame (rig space) for a pelvis skinning transform and a swing `q` about its strap (pelvis rest frame).
+static func _scab_frame(pel_skin: Transform3D, q: Quaternion) -> Transform3D:
+	var r := Basis(q)
+	return pel_skin * Transform3D(r, SCAB_HINGE - r * SCAB_HINGE) * scab_rest_xf()
+
+
+## The turn of the scabbard on its strap that points it along `d` (rest frame) from where it points at rest.
+static func _scab_turn(d: Vector3) -> Quaternion:
+	return Quaternion(SCAB_D.normalized(), d.normalized())
+
+
+## The frame shield_meshes() is modelled in, on the forearm at rest (rest rig space).
+static func _sh_rest_xf() -> Transform3D:
+	if not _sh_rest_ok:
+		var e := mx(P_ELBOW, -1.0)
+		_sh_rest_c = shield_xf(Transform3D(Basis.IDENTITY, e), e)
+		_sh_rest_ok = true
+	return _sh_rest_c
+
+
+## The shield on the back (rest rig space, the spear's pivot).
+static func _shb_rest(lion: bool) -> Transform3D:
+	var n := SHB_N.normalized()
+	var x := perp(SHB_X, n).normalized()
+	return Transform3D(Basis(x, n, x.cross(n)), SHB_C_LION if lion else SHB_C)
+
+
+## The left fist's grip frame on the shield's rim, in the shield's frame: the fist round the rim (its shaft along the rim), the back of
+## the hand out over the edge and a little towards the face.
+static func _rim_grip() -> Transform3D:
+	var rad := Vector3(cos(RIM_ANG), 0.0, sin(RIM_ANG))
+	var tg := Vector3(-sin(RIM_ANG), 0.0, cos(RIM_ANG))
+	return Transform3D(hand_basis(tg, (rad + Vector3(0.0, 0.5, 0.0)).normalized(), -1.0), rad * (SHIELD_R * 0.99) + Vector3(0.0, -0.012, 0.0))
+
+
+## Where the spear lies on the back with the shield under it: as on the cape (spear_back_xf), the head end SPEAR_OVER_TIP and the butt
+## end SPEAR_OVER_BUTT further out along the shield's face.
+static func spear_over_xf(lion: bool = false) -> Transform3D:
+	var n := SHB_N.normalized()
+	var tip := (SPEAR_BACK_TIP if not lion else SPEAR_BACK_TIP_LION) + n * SPEAR_OVER_TIP
+	var butt := (SPEAR_BACK_BUTT if not lion else SPEAR_BACK_BUTT_LION) + n * SPEAR_OVER_BUTT
+	var d := (tip - butt).normalized()
+	var z := -d
+	var x := perp(SPEAR_ROLL if not lion else SPEAR_ROLL_LION, z).normalized()
+	return Transform3D(Basis(x, z.cross(x), z), tip - d * 0.58)
+
+
+# --- the skeleton's frames before the solve (the hands' targets of a draw are where the props are this frame) -----------------------
+
+## [pelvis, spine, chest, root] for a pose, as _solve will have them: the first three before the whole-body rotation `root`.
+func _trunk_xf(c: PackedFloat32Array) -> Array:
+	var pb := eul(v3(c, C_PELR))
+	var po := P_PELVIS + v3(c, C_PEL)
+	var upright := _reduce_rot(v3(c, C_ROT)).length_squared() < 0.01
+	if upright and _gnd_k > 0.001:
+		po.y += minf(0.0, minf(_gnd_dy.x, _gnd_dy.y)) * _gnd_k
+	var sb := pb * eul(v3(c, C_SPN))
+	var so := po + pb * (P_SPINE - P_PELVIS)
+	var cb := sb * eul(v3(c, C_CHS))
+	var co := so + sb * (P_CHEST - P_SPINE)
+	var root := Transform3D.IDENTITY
+	var rv := v3(c, C_ROT)
+	if rv.length_squared() > 1e-8:
+		var rb := Basis(rv.normalized(), rv.length())
+		var pv := v3(c, C_PIV)
+		root = Transform3D(rb, pv - rb * pv)
+	return [Transform3D(pb, po), Transform3D(sb, so), Transform3D(cb, co), root]
+
+
+static func _skin_of(b: Transform3D, rest: Vector3) -> Transform3D:
+	return Transform3D(b.basis, b.origin - b.basis * rest)
+
+
+## The spear's pivot (the spine and the chest blended) for two bone transforms (blend_skin of the solved skeleton).
+static func _spear_pivot_of(sp: Transform3D, ch: Transform3D) -> Transform3D:
+	var q := sp.basis.get_rotation_quaternion().slerp(ch.basis.get_rotation_quaternion(), 0.6)
+	var bs := Basis(q)
+	var ref := Vector3(0.0, 1.3, 0.25)
+	var pa := sp.origin + sp.basis * (ref - P_SPINE)
+	var pb := ch.origin + ch.basis * (ref - P_CHEST)
+	return Transform3D(bs, pa.lerp(pb, 0.6) - bs * ref)
+
+
+func _grip_r() -> Transform3D:
+	var h := _bx[HAND_R]
+	return Transform3D(h.basis, h.origin + h.basis * GRIP)
+
+
+func _grip_l() -> Transform3D:
+	var h := _bx[HAND_L]
+	return Transform3D(h.basis, h.origin + h.basis * GRIP)
+
+
+## The shield's frame on the forearm (rig space): the forearm's, turned by the strap's slip, ridden up the arm while the hand brushes
+## the wheat.
+func _shield_arm_nom() -> Transform3D:
+	var fa := _bx[FARM_L]
+	var skin := _slack_xf() * _skin_of(fa, _rest[FARM_L])
+	if _brush > 0.0005 and action == "":
+		skin = skin.interpolate_with(_brush_shield_skin(), _brush_shield_k())
+	return skin * _sh_rest_xf()
+
+
+# --- the stow actions ------------------------------------------------------------------------------------------------------------
+
+## The time of moment `k` of the stow action `a`, or -1.
+static func _stow_t(a: String, k: String) -> float:
+	var ev: Dictionary = STOW_EV.get(a, {})
+	return float(ev.get(k, -1.0))
+
+
+## The scabbard turned on its strap by the action playing: [turn, weight] (weight 0: it hangs as it swings).
+func _scab_sched() -> Array:
+	var t := action_t
+	match action:
+		"draw", "draw_sword":
+			var tg := _stow_t(action, "sw_grab")
+			var tf := _stow_t(action, "sw_free")
+			if t >= tg - 0.04 and t <= tf + 0.001:
+				var u := clampf((t - tg) / (tf - tg), 0.0, 1.0)
+				var full := SCAB_D_DRAW if action == "draw" else SCAB_D_DRAW.lerp(SCAB_D, 0.35)
+				return [Quaternion.IDENTITY.slerp(_scab_turn(full), smoothstep(0.0, 1.0, u)), smoothstep(tg - 0.04, tg, t)]
+		"sheathe", "sheathe_sword":
+			var te := _stow_t(action, "sw_enter")
+			var th := _stow_t(action, "sw_home")
+			var qs := _scab_turn(SCAB_D_SHEATHE)
+			if t < te:
+				return [qs, smoothstep(te - 0.16, te - 0.03, t)]
+			if t <= th + 0.001:
+				var u2 := clampf((t - te) / (th - te), 0.0, 1.0)
+				return [qs.slerp(Quaternion.IDENTITY, smoothstep(0.0, 1.0, u2)), 1.0]
+	return [Quaternion.IDENTITY, 0.0]
+
+
+## How far out of the scabbard the sword is meant to be now in a draw or a sheathe (-1: not in it).
+func _slide_sched() -> float:
+	var t := action_t
+	match action:
+		"draw", "draw_sword":
+			var tg := _stow_t(action, "sw_grab")
+			var tf := _stow_t(action, "sw_free")
+			if t >= tg and t <= tf:
+				var u := (t - tg) / (tf - tg)
+				return SCAB_SLIDE * 1.04 * u * u * (2.2 - 1.2 * u)
+		"sheathe", "sheathe_sword":
+			var te := _stow_t(action, "sw_enter")
+			var th := _stow_t(action, "sw_home")
+			if t >= te and t <= th:
+				var u2 := (t - te) / (th - te)
+				return SCAB_SLIDE * 1.03 * (1.0 - smoothstep(0.0, 1.0, u2))
+	return -1.0
+
+
+## The swing of the scabbard on its strap now: what it swings to, or what the action turns it to.
+func _scab_q() -> Quaternion:
+	var q := Quaternion(_scab_a.normalized(), _scab_a.length()) if _scab_a.length_squared() > 1e-10 else Quaternion.IDENTITY
+	var s: Array = _scab_sched()
+	if float(s[1]) > 0.0:
+		q = q.slerp(s[0], float(s[1]))
+	return q
+
+
+## After the blend (Hermite keys, inertialized transition): a draw or a sheathe puts the fists exactly on what they take: the grip of
+## the sheathed sword (then along the scabbard while the blade slides out), the rim of the shield where it hangs; and, sheathing, the
+## tip on the throat (then along the scabbard while it slides in) and the shield onto its place on the back.
+func _stow_pose(_delta: float) -> void:
+	if not STOW_EV.has(action):
+		return
+	var t := action_t
+	var tr := _trunk_xf(_pose)
+	var root: Transform3D = tr[3]
+	var pel_skin: Transform3D = root * _skin_of(tr[0], P_PELVIS)
+	var chest_pre: Transform3D = tr[2]
+	var to_cs := chest_pre.affine_inverse() * root.affine_inverse()
+	# the sword hand
+	var w := 0.0
+	var g := Transform3D()
+	match action:
+		"draw", "draw_sword":
+			var tg := _stow_t(action, "sw_grab")
+			var tf := _stow_t(action, "sw_free")
+			var u := clampf((t - tg) / (tf - tg), 0.0, 1.0)
+			w = smoothstep(tg - 0.08, tg, t) if t <= tf else 1.0 - smoothstep(tf, tf + 0.07, t)
+			if w > 0.0:
+				var full := SCAB_D_DRAW if action == "draw" else SCAB_D_DRAW.lerp(SCAB_D, 0.35)
+				var q := Quaternion.IDENTITY.slerp(_scab_turn(full), smoothstep(0.0, 1.0, u))
+				var s := SCAB_SLIDE * 1.04 * u * u * (2.2 - 1.2 * u)
+				g = _scab_frame(pel_skin, q) * Transform3D(SHEATH_ROLL, Vector3(0.0, 0.0, s))
+		"sheathe", "sheathe_sword":
+			var te := _stow_t(action, "sw_enter")
+			var th := _stow_t(action, "sw_home")
+			var u2 := clampf((t - te) / (th - te), 0.0, 1.0)
+			w = smoothstep(te - 0.09, te, t) if t <= th else 1.0 - smoothstep(th, th + 0.06, t)
+			if w > 0.0:
+				var qs := _scab_turn(SCAB_D_SHEATHE).slerp(Quaternion.IDENTITY, smoothstep(0.0, 1.0, u2))
+				var s2 := SCAB_SLIDE * 1.03 * (1.0 - smoothstep(0.0, 1.0, u2))
+				g = _scab_frame(pel_skin, qs) * Transform3D(SHEATH_ROLL, Vector3(0.0, 0.0, s2))
+	if w > 0.0:
+		var gc := to_cs * g
+		_lerpv(_pose, C_HR, gc.origin, w)
+		_lerpv(_pose, C_HRB, (-gc.basis.z).normalized(), w)
+		_lerpv(_pose, C_HRK, gc.basis.x.normalized(), w)
+		_pose[C_HRS] = lerpf(_pose[C_HRS], 0.0, w)
+		_pose[C_HRR] = lerpf(_pose[C_HRR], 1.0, w)
+		_pose[C_GRIP] = lerpf(_pose[C_GRIP], 0.0, w)
+	# the free blade (out of the scabbard, not yet in it) kept a hand's breadth over the ground and outside the right leg, as in the carry:
+	# a draw's sweep on the run leans down with him
+	if _sw_at == AT_HAND and w < 1.0:
+		var b0 := v3(_pose, C_HRB).normalized()
+		_setv(_pose, C_HRB, b0.slerp(_blade_clear(_pose, v3(_pose, C_HR), b0), 1.0 - w))
+	# the shield hand
+	var wl := 0.0
+	var sh := Transform3D()
+	match action:
+		"draw", "draw_shield":
+			var tgs := _stow_t(action, "sh_grab")
+			wl = smoothstep(tgs - 0.08, tgs, t) if t <= tgs else 1.0 - smoothstep(tgs, tgs + 0.05, t)
+			if wl > 0.0:
+				sh = _spear_pivot_of(root * tr[1], root * tr[2]) * _shb_rest(_show_lion)
+		"sheathe", "sheathe_shield":
+			# (the rim is taken where the keys bring the hand: the shield on the forearm moves with the hand, a target on it would
+			# chase itself; the shield slides from the forearm into the fist as it changes hands, _hand_shield. It is hung exactly in
+			# its place on the back.)
+			var tb := _stow_t(action, "sh_back")
+			wl = smoothstep(tb - 0.09, tb, t) if t <= tb else 1.0 - smoothstep(tb, tb + 0.05, t)
+			sh = _spear_pivot_of(root * tr[1], root * tr[2]) * _shb_rest(_show_lion)
+	if wl > 0.0:
+		var hg := to_cs * (sh * _rim_grip())
+		var hb := hg.basis.orthonormalized()
+		_lerpv(_pose, C_HL, hg.origin - hb * GRIP, wl)
+		_lerpv(_pose, C_HLB, (-hb.z).normalized(), wl)
+		_lerpv(_pose, C_HLK, (-hb.x).normalized(), wl)
+		_pose[C_HLX] = lerpf(_pose[C_HLX], 1.0, wl)
+		_pose[C_HLR] = lerpf(_pose[C_HLR], 1.0, wl)
+		_pose[C_HLS] = lerpf(_pose[C_HLS], 0.0, wl)
+
+
+## Under a stow action (upper body): the legs and the hips stay the locomotion's, the trunk keeps the locomotion's posture (a draw on
+## the run keeps the run's lean) and adds the action's own turn, and the arm a partial draw does not use stays the locomotion's.
+func _stow_layer(src: PackedFloat32Array, loco: PackedFloat32Array) -> void:
+	if not STOW_EV.has(action) or loco.size() != C_N:
+		return
+	_layer_lower(src, loco)
+	var neu := default_pose()
+	for o in [C_PELR, C_SPN, C_CHS, C_NEK, C_HED]:
+		for j in 3:
+			src[o + j] = loco[o + j] + (src[o + j] - neu[o + j])
+	if action == "draw_sword" or action == "sheathe_sword":
+		for o in [C_HL, C_HLF, C_HLP, C_HLW, C_HLB, C_HLK]:
+			for j in 3:
+				src[o + j] = loco[o + j]
+		for o in [C_HLX, C_HLS, C_HLR, C_OHL]:
+			src[o] = loco[o]
+	elif action == "draw_shield" or action == "sheathe_shield":
+		for o in [C_HR, C_HRB, C_HRK, C_HRP]:
+			for j in 3:
+				src[o + j] = loco[o + j]
+		for o in [C_HRS, C_HRR, C_GRIP]:
+			src[o] = loco[o]
+
+
+# --- every frame: where the props are -----------------------------------------------------------------------------------------------
+
+## After the solve: the moments of a draw or a sheathe (who holds what), the scabbard's swing, where the sword, the scabbard and the
+## shield are this frame (rig space), how much the arms carry, where the spear lies on the back.
+func _stow_frame(delta: float) -> void:
+	if _scab_node == null:
+		return
+	var gx := global_transform if is_inside_tree() else transform
+	var pel_skin := _skin_of(_bx[PELVIS], _rest[PELVIS])
+	_empty_fist(delta)
+	_scab_swing(delta, gx, pel_skin)
+	if not _stow_ok:
+		_stow_compute(pel_skin)
+		_stow_ok = true
+	# a stow action that started, ended or was cut
+	var cur := action if STOW_EV.has(action) else ""
+	if cur != _stow_act or (cur != "" and action_t < _stow_tp - 1e-4):
+		if _stow_act != "":
+			_stow_settle(_stow_act, pel_skin)
+		_stow_act = cur
+		_stow_fired.clear()
+	_stow_tp = action_t
+	# the blade in the scabbard (the scabbard lies along it) or not: when that changes, the scabbard leaves from where it was
+	var ride := _sw_at == AT_HAND and _slide_sched() >= 0.0
+	_stow_compute(pel_skin)
+	if ride != _riding:
+		var was := _scab_xf
+		_riding = ride
+		if not ride:
+			_scab_hold(was, pel_skin)
+		_stow_compute(pel_skin)
+		_scab_off = _scab_xf.affine_inverse() * was
+		_scab_off_k = 1.0
+		_scab_off_rate = 16.0 if ride else 10.0
+		_stow_compute(pel_skin)
+	# the moments passed this frame
+	if cur != "":
+		var ev: Dictionary = STOW_EV[cur]
+		for k in ev:
+			if action_t >= float(ev[k]) and not _stow_fired.has(k):
+				_stow_fired[k] = true
+				_stow_event(k, pel_skin)
+	# what is left of the hand-offs
+	if delta > 0.0:
+		_sw_off_k = maxf(0.0, _sw_off_k - delta * _sw_off_rate)
+		_sh_off_k = maxf(0.0, _sh_off_k - delta * _sh_off_rate)
+		_scab_off_k = maxf(0.0, _scab_off_k - delta * _scab_off_rate)
+	_stow_compute(pel_skin)
+	var r := delta / 0.25
+	_carry_sw = move_toward(_carry_sw, 1.0 if _sw_at == AT_HAND else 0.0, r)
+	_carry_sh = move_toward(_carry_sh, 1.0 if _sh_at == AT_ARM else 0.0, r)
+	_alert = move_toward(_alert, clampf(alert, 0.0, 1.0), delta * 2.5)
+	# the spear lies over the shield while the shield is on the back, and settles onto the cape as it is taken away
+	var ov := 0.0
+	if _sh_at == AT_BACK:
+		ov = 1.0
+	elif _sh_at == AT_RIM:
+		var nb := _spear_pivot_of(_bx[SPINE], _bx[CHEST]) * _shb_rest(_show_lion)
+		ov = 1.0 - smoothstep(0.04, 0.3, _sh_xf.origin.distance_to(nb.origin))
+	_spear_over = ov if delta <= 0.0 else move_toward(_spear_over, ov, delta * 8.0)
+
+
+static func _off_w(k: float) -> float:
+	return k * k * (3.0 - 2.0 * k)
+
+
+## The props' frames this frame from who holds them (and what is left of each hand-off).
+func _stow_compute(pel_skin: Transform3D) -> void:
+	var strap := _scab_frame(pel_skin, _scab_q())
+	if _sw_at == AT_HAND:
+		_sw_xf = _grip_r() * Transform3D(Basis(Vector3.RIGHT, _pose[C_GRIP]), Vector3.ZERO)
+		if _sw_off_k > 0.0:
+			_sw_xf = _sw_xf * Transform3D.IDENTITY.interpolate_with(_sw_off, _off_w(_sw_off_k))
+		if _riding:
+			# the scabbard on the blade: as far along it from the grip as the blade is out, at the point nearest its strap
+			var d := -_sw_xf.basis.z.normalized()
+			var s := clampf((strap.origin - _sw_xf.origin).dot(d), 0.0, SCAB_SLIDE + 0.05)
+			_scab_xf = _sw_xf * Transform3D(SHEATH_ROLL.inverse(), Vector3.ZERO) * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.0, -s))
+		else:
+			_scab_xf = strap
+		if _scab_off_k > 0.0:
+			_scab_xf = _scab_xf * Transform3D.IDENTITY.interpolate_with(_scab_off, _off_w(_scab_off_k))
+	else:
+		_scab_xf = strap
+		if _scab_off_k > 0.0:
+			_scab_xf = _scab_xf * Transform3D.IDENTITY.interpolate_with(_scab_off, _off_w(_scab_off_k))
+		_sw_xf = _scab_xf * Transform3D(SHEATH_ROLL, Vector3.ZERO)
+		if _sw_off_k > 0.0:
+			_sw_xf = _sw_xf * Transform3D.IDENTITY.interpolate_with(_sw_off, _off_w(_sw_off_k))
+	var shn: Transform3D
+	match _sh_at:
+		AT_BACK:
+			shn = _spear_pivot_of(_bx[SPINE], _bx[CHEST]) * _shb_rest(_show_lion)
+		AT_RIM:
+			shn = _grip_l() * _rim_grip().affine_inverse()
+		_:
+			shn = _shield_arm_nom()
+	if _sh_off_k > 0.0:
+		shn = shn * Transform3D.IDENTITY.interpolate_with(_sh_off, _off_w(_sh_off_k))
+	_sh_xf = shn
+
+
+## A moment of a draw or a sheathe: a prop changes hands (from exactly where it is now).
+func _stow_event(k: String, pel_skin: Transform3D) -> void:
+	var at := global_position if is_inside_tree() else Vector3.INF
+	match k:
+		"sw_grab":
+			_hand_sword(AT_HAND, 14.0, pel_skin)
+			_sfx("sword_draw", at, -6.0)
+		"sw_home":
+			_hand_sword(AT_SHEATH, 16.0, pel_skin)
+		"sw_enter":
+			_sfx("sword_sheathe", at, -6.0)
+		"sh_grab":
+			# (off the back the fist closes on the rim where it is; off the forearm the shield slides down the arm into the fist)
+			_hand_shield(AT_RIM, 14.0 if _sh_at == AT_BACK else 5.0, pel_skin)
+		"sh_arm":
+			_hand_shield(AT_ARM, 6.0, pel_skin)
+			_sfx("shield_draw", at, -6.0)
+		"sh_back":
+			_hand_shield(AT_BACK, 6.0, pel_skin)
+			_sfx("shield_stow", at, -6.0)
+
+
+func _sfx(nm: String, at: Vector3, db: float) -> void:
+	if not is_inside_tree():
+		return
+	var s := get_node_or_null(^"/root/Sfx")
+	if s != null and s.has_method("play"):
+		s.call("play", nm, at + Vector3(0.0, 1.0, 0.0) if at.is_finite() else at, db, randf_range(0.95, 1.05))
+
+
+func _hand_sword(to: int, rate: float, pel_skin: Transform3D) -> void:
+	if to == _sw_at:
+		return
+	var was := _sw_xf
+	if to == AT_SHEATH and _riding:
+		# (the scabbard leaves the blade where it is: its swing takes the blade's turn, what the fist missed by dies away)
+		var was_scab := _scab_xf
+		_riding = false
+		_scab_hold(was_scab, pel_skin)
+		_scab_off_k = 0.0
+		_stow_compute(pel_skin)
+		_scab_off = _scab_xf.affine_inverse() * was_scab
+		_scab_off_k = 1.0
+		_scab_off_rate = 10.0
+	_sw_at = to
+	_sw_off_k = 0.0
+	_stow_compute(pel_skin)
+	_sw_off = _sw_xf.affine_inverse() * was
+	_sw_off_k = 1.0
+	_sw_off_rate = rate
+	_stow_compute(pel_skin)
+
+
+func _hand_shield(to: int, rate: float, pel_skin: Transform3D) -> void:
+	if to == _sh_at:
+		return
+	var was := _sh_xf
+	_sh_at = to
+	_sh_off_k = 0.0
+	_stow_compute(pel_skin)
+	_sh_off = _sh_xf.affine_inverse() * was
+	_sh_off_k = 1.0
+	_sh_off_rate = rate
+	_stow_compute(pel_skin)
+
+
+## The scabbard left hanging at the frame `xf` (rig space): its swing takes that turn, and it springs back from there.
+func _scab_hold(xf: Transform3D, pel_skin: Transform3D) -> void:
+	var rest := scab_rest_xf()
+	var r := (pel_skin.basis.inverse() * xf.basis.orthonormalized() * rest.basis.inverse()).get_rotation_quaternion()
+	var a := r.get_axis() * r.get_angle() if r.get_angle() > 1e-5 else Vector3.ZERO
+	_scab_a = a.limit_length(SCAB_SWING_MAX)
+	_scab_av = Vector3.ZERO
+
+
+## A draw or a sheathe ended or was cut: what is still in a fist goes where it was going (a quick settle).
+func _stow_settle(a: String, pel_skin: Transform3D) -> void:
+	if _sh_at == AT_RIM:
+		_hand_shield(AT_ARM if a.begins_with("draw") else AT_BACK, 5.0, pel_skin)
+
+
+## The scabbard swings on its strap: a damped spring back to its rest, driven by how the strap point accelerates and how the pelvis is
+## tilted from upright; the chape never goes into the ground and the scabbard never into the left thigh.
+func _scab_swing(delta: float, gx: Transform3D, pel_skin: Transform3D) -> void:
+	if delta > 0.0:
+		var hw := gx * (pel_skin * SCAB_HINGE)
+		if not _scab_hok:
+			_scab_hp = hw
+			_scab_hv = Vector3.ZERO
+			_scab_hok = true
+		var v := (hw - _scab_hp) / delta + velocity_hint
+		var acc := ((v - _scab_hv) / delta).limit_length(40.0)
+		_scab_hp = hw
+		_scab_hv = v
+		var pw := gx.basis * pel_skin.basis
+		var inv := pw.inverse()
+		var rc := scab_rest_xf().basis * Vector3(0.0, 0.0, -0.45) + (SCAB_T - SCAB_HINGE)
+		var f := -(inv * acc) * 0.6 + (inv * Vector3(0.0, -9.8, 0.0) - Vector3(0.0, -9.8, 0.0))
+		var alpha := rc.cross(f) / rc.length_squared()
+		var n := maxi(1, ceili(delta / (1.0 / 120.0)))
+		var h := delta / float(n)
+		for i in n:
+			_scab_av += (alpha - _scab_a * SCAB_K - _scab_av * SCAB_C) * h
+			_scab_a += _scab_av * h
+		_scab_a = _scab_a.limit_length(SCAB_SWING_MAX)
+	if _riding or float(_scab_sched()[1]) > 0.0:
+		return
+	# the ground and the thigh push it round its strap
+	var hp := pel_skin * SCAB_HINGE
+	for it in 2:
+		var xf := _scab_frame(pel_skin, _scab_q())
+		var e := xf * Vector3(0.0, 0.0, SCAB_END)
+		var floor_y := minf(_gnd_dy.x, _gnd_dy.y) * _gnd_k + SCAB_GROUND
+		var push := Vector3.ZERO
+		var at := e
+		if e.y < floor_y:
+			push = Vector3(0.0, floor_y - e.y, 0.0)
+		else:
+			var a0 := xf * Vector3(0.0, 0.0, SCAB_THROAT)
+			var ks := _seg_closest(a0, e, _bx[THIGH_L].origin, _bx[SHIN_L].origin)
+			var dv: Vector3 = ks[0] - ks[1]
+			var dl := dv.length()
+			if dl < 0.135 and dl > 1e-4:
+				push = dv / dl * (0.135 - dl)
+				at = ks[0]
+		if push == Vector3.ZERO:
+			break
+		var arm := at - hp
+		var ax := arm.cross(push)
+		if ax.length_squared() < 1e-10 or arm.length() < 0.05:
+			break
+		var ang := push.length() / arm.length()
+		var axl := (pel_skin.basis.inverse() * ax).normalized()
+		var q := Quaternion(axl, ang) * _scab_q()
+		_scab_a = q.get_axis() * q.get_angle() if q.get_angle() > 1e-5 else Vector3.ZERO
+		_scab_av *= 0.5
+
+
+## The closest points of the segments a0-a1 and b0-b1: [on a, on b].
+static func _seg_closest(a0: Vector3, a1: Vector3, b0: Vector3, b1: Vector3) -> Array:
+	var d1 := a1 - a0
+	var d2 := b1 - b0
+	var r := a0 - b0
+	var a := d1.dot(d1)
+	var e := d2.dot(d2)
+	var f := d2.dot(r)
+	var s := 0.0
+	var t := 0.0
+	if a > 1e-8 and e > 1e-8:
+		var c := d1.dot(r)
+		var b := d1.dot(d2)
+		var den := a * e - b * b
+		s = clampf((b * f - c * e) / den, 0.0, 1.0) if den > 1e-8 else 0.0
+		t = (b * s + f) / e
+		if t < 0.0:
+			t = 0.0
+			s = clampf(-c / a, 0.0, 1.0)
+		elif t > 1.0:
+			t = 1.0
+			s = clampf((b - c) / a, 0.0, 1.0)
+	return [a0 + d1 * s, b0 + d2 * t]
+
+
+## The nodes where _stow_frame put the props (end of _apply_bones).
+func _place_weapons() -> void:
+	if _scab_node == null:
+		return
+	if not _stow_ok:
+		_stow_compute(_skin_of(_bx[PELVIS], _rest[PELVIS]))
+		_stow_ok = true
+	_scab_node.transform = _scab_xf
+	_sword.transform = _hand_r.transform.affine_inverse() * _sw_xf
+	(_piv["farm_l_s"] as Node3D).transform = _sh_xf * _sh_rest_xf().affine_inverse()
+	var k := smoothstep(0.0, 1.0, _spear_over)
+	_spear_back.transform = spear_back_xf(_show_lion) if k <= 0.0 else spear_back_xf(_show_lion).interpolate_with(spear_over_xf(_show_lion), k)
+
+
+## Builds the scabbard (on the belt; it swings there) and starts ARMED (the tools and the tests see the hero as before; the game
+## stows the weapons at once, Hero._ready).
+func _build_stow() -> void:
+	_scab_node = Node3D.new()
+	_scab_node.name = "Scabbard"
+	add_child(_scab_node)
+	var sm := scabbard_meshes()
+	_rigid_mi(_scab_node, sm[0], _mat_soft, "ScabbardSoft")
+	_rigid_mi(_scab_node, sm[1], _mat_metal, "ScabbardMetal")
+	parts["scabbard"] = _scab_node
+# --- the keyed draws and sheathes ------------------------------------------------------------------------------------------------
+
+## A shield frame in chest space: its centre, its face's normal, the forearm's axis on it.
+static func _shf(c: Vector3, n: Vector3, x: Vector3) -> Transform3D:
+	var nn := n.normalized()
+	var xx := perp(x, nn).normalized()
+	return Transform3D(Basis(xx, nn, xx.cross(nn)), c)
+
+
+## The left hand holding the shield by its rim with the shield at `s` (chest space): the hand's keys.
+static func _rim_keys(s: Transform3D) -> Dictionary:
+	var g := s * _rim_grip()
+	var b := g.basis.orthonormalized()
+	return {"hl": g.origin - b * GRIP, "hlb": -b.z, "hlk": -b.x, "hlx": 1.0, "hlr": 1.0, "hls": 0.0}
+
+
+## Two keys mixed (positions and directions lerped, weights too; anything else taken from the nearer).
+static func _mix(a: Dictionary, b: Dictionary, k: float) -> Dictionary:
+	var out := a.duplicate()
+	for key in b:
+		if a.has(key) and a[key] is Vector3 and b[key] is Vector3:
+			out[key] = (a[key] as Vector3).lerp(b[key], k)
+		elif a.has(key) and a[key] is float and b[key] is float:
+			out[key] = lerpf(a[key], b[key], k)
+		elif k >= 0.5 or not a.has(key):
+			out[key] = b[key]
+	return out
+
+
+## Keys for both arms and the trunk at the same moments: `t` the times, `r` the sword arm's, `l` the shield arm's and `k` the trunk's
+## channels at each (a key inherits every channel it does not list from the key before it, so both arms are given at every moment).
+static func _keys3(t: Array, r: Array, l: Array, k: Array) -> Array:
+	var out: Array = []
+	for i in t.size():
+		out.append([t[i], _merge(_merge(r[i], l[i]), k[i])])
+	return out
+
+
+## draw, sheathe and the quick partial ones (added to the action table). Upper body: the legs keep the locomotion and the trunk keeps
+## its posture, the keys only turn it (_stow_layer). The fists are put exactly on the grip and the rim at the moments they take them
+## (_stow_pose), the props change hands there (_stow_frame); the throw and the catch get the variants that find the spear over the
+## shield on the back.
+static func _stow_actions(d: Dictionary) -> void:
+	var neutral := NEUTRAL.duplicate()
+	neutral.erase("rot")
+	neutral.erase("piv")
+	for lion in [false, true]:
+		d["throw_over_lion" if lion else "throw_over"] = _throw_def(lion, neutral, true)
+		d["catch_over_lion" if lion else "catch_over"] = _catch_def(lion, neutral, true)
+	# the shield's path (chest space): on the back; slid down to the left out from under the spear; out at his left side turning its
+	# face out; forward at his left side as the arm comes round under it
+	var sb := _shb_rest(false)
+	var s0 := Transform3D(sb.basis, sb.origin - P_CHEST)
+	var lo := (sb.basis.x + sb.basis.z).normalized()
+	var s1 := Transform3D(sb.basis, s0.origin + lo * 0.2 + sb.basis.y * 0.035)
+	var s2 := _shf(Vector3(-0.5, -0.2, 0.22), Vector3(-0.8, 0.1, 0.6), Vector3(0.0, -1.0, 0.1))
+	var s3 := _shf(Vector3(-0.47, -0.2, -0.1), Vector3(-0.98, 0.19, -0.06), Vector3(-0.1, -0.73, -0.67))
+	# the sword's way (chest space, the trunk turned to the left as it is drawn): across the belly to the grip at the left hip; the
+	# scabbard leads it out (_stow_pose) to high in front on the right; the blade sweeps down in front of him and trails back
+	var reach := {"hr": Vector3(-0.18, -0.31, -0.26), "hrb": SCAB_D.normalized(), "hrk": Vector3(0.98, -0.06, 0.2), "hrp": Vector3(0.6, -0.6, 0.4), "hrr": 1.0, "hrs": 0.0}
+	var out_end := {"hr": Vector3(0.42, 0.42, -0.48), "hrb": SCAB_D_DRAW.normalized(), "hrk": Vector3(0.75, -0.45, 0.5), "hrp": Vector3(0.9, -0.3, 0.3)}
+	var sweep := {"hr": Vector3(0.37, 0.14, -0.48), "hrb": Vector3(0.18, -0.72, -0.67), "hrk": Vector3(0.95, 0.0, -0.3), "hrp": Vector3(0.8, -0.4, 0.5)}
+	var swing_out := {"hr": Vector3(0.42, 0.08, -0.32), "hrb": Vector3(0.9, -0.42, -0.1), "hrk": Vector3(0.3, 0.6, -0.75), "hrp": Vector3(0.7, -0.4, 0.7)}
+	var swing_back := {"hr": Vector3(0.4, -0.02, -0.12), "hrb": Vector3(0.42, -0.6, 0.68), "hrk": Vector3(0.85, 0.2, 0.5), "hrp": Vector3(0.6, -0.2, 1.0)}
+	var carry := {"hr": Vector3(0.33, -0.45, 0.02), "hrb": Vector3(0.27, -0.57, 0.78), "hrk": Vector3(0.7, 0.0, -0.7), "hrp": Vector3(0.5, 0.0, 1.0)}
+	var cocked := {"hr": Vector3(0.38, 0.12, -0.06), "hrb": Vector3(0.25, 0.55, 0.8), "hrk": Vector3(0.85, -0.3, 0.45), "hrp": Vector3(0.7, -0.6, 0.4)}
+	var arm_carry := {"hl": Vector3(-0.34, -0.3, -0.12), "hlf": Vector3(-1.0, 0.05, -0.5), "hlp": Vector3(-0.5, -0.2, 1.0), "hlx": 0.0}
+	var relax_r := {"hr": Vector3(0.31, -0.46, -0.03), "hrb": Vector3(0.05, -0.15, -1.0), "hrk": Vector3(1.0, 0.0, 0.05), "hrp": Vector3(0.5, 0.0, 1.0)}
+	var relax_l := {"hl": Vector3(-0.31, -0.36, -0.02), "hlf": Vector3(-1.0, 0.0, -0.15), "hlp": Vector3(-0.5, -0.1, 1.0), "hlx": 0.0}
+	var reach_back := _merge(_rim_keys(s0), {"hlp": Vector3(-0.8, 0.2, -0.6), "hlf": Vector3(-1.0, 0.0, 0.3)})
+	var rim := func(a: Transform3D, b: Transform3D, k: float) -> Dictionary: return _rim_keys(a.interpolate_with(b, k))
+	var turn_l := {"chs": Vector3(0.07, 0.17, 0.03), "spn": Vector3(0.02, 0.07, 0.0), "nek": Vector3(-0.05, -0.15, 0.0), "hed": Vector3(0.0, -0.06, 0.0)}
+	var turn_0 := {"chs": Vector3(0.05, 0.0, 0.0), "spn": Vector3.ZERO, "nek": Vector3(-0.05, 0.0, 0.0), "hed": Vector3.ZERO}
+	var turn_r := {"chs": Vector3(0.05, -0.06, 0.0), "spn": Vector3.ZERO, "nek": Vector3(-0.05, 0.03, 0.0), "hed": Vector3.ZERO}
+	# draw (0.55 s): the right fist on the grip at 0.12 while the left reaches back for the rim (0.15); the blade out by 0.27, the shield
+	# pulled out from under the spear and swung round his left side; the forearm into its band at 0.4; the handover to the armed carry
+	d["draw"] = {"len": 0.55, "in": 0.06, "out": 0.15, "ho": 0.44, "dlen": 0.12, "fast": true, "ev": STOW_EV["draw"], "keys": _keys3(
+		[0.0, 0.08, 0.15, 0.22, 0.27, 0.3, 0.34, 0.37, 0.43, 0.55],
+		[{}, reach, reach, _mix(reach, out_end, 0.6), out_end, _mix(out_end, sweep, 0.45), sweep, swing_out, swing_back, carry],
+		[{}, reach_back, _rim_keys(s0), _rim_keys(s1), rim.call(s1, s2, 0.55), _rim_keys(s2), rim.call(s2, s3, 0.55), _merge(_rim_keys(s3), {"hlp": Vector3(-0.8, -0.4, 0.4)}), arm_carry, arm_carry],
+		[{}, turn_l, _mix(turn_l, turn_0, 0.3), _mix(turn_l, turn_0, 0.8), turn_r, turn_r, turn_r, _mix(turn_r, turn_0, 0.5), turn_0, turn_0])}
+	# draw_sword (0.24 s, before a blow): the fist on the grip at 0.06, the blade out by 0.15 (Hero starts the blow then), cocked over
+	# the right shoulder at the end
+	d["draw_sword"] = {"len": 0.24, "in": 0.04, "out": 0.15, "dlen": 0.08, "fast": true, "ev": STOW_EV["draw_sword"], "keys": _keys3(
+		[0.0, 0.05, 0.15, 0.24],
+		[{}, reach, _merge(out_end, {"hr": Vector3(0.38, 0.3, -0.42)}), cocked],
+		[{}, {}, {}, {}],
+		[{}, _mix(turn_l, turn_0, 0.2), turn_r, _mix(turn_r, turn_0, 0.3)])}
+	# draw_shield (0.26 s): the left fist on the rim at 0.07, pulled out and round, the forearm in at 0.18; it ends where the locomotion
+	# takes it (the handover at 0.18 carries its speed on): at his side in the carry, or, as "draw_shield_guard" (_variant: the guard
+	# held), up in front
+	var s3q := _shf(Vector3(-0.42, -0.14, -0.22), Vector3(-0.9, 0.05, -0.45), Vector3(0.1, -0.8, -0.6))
+	var up_front := _merge(arm_carry, {"hl": Vector3(-0.2, -0.1, -0.36), "hlf": Vector3(-0.4, 0.05, -1.0), "hlp": Vector3(-1.0, -0.6, 0.4)})
+	for g in [false, true]:
+		d["draw_shield_guard" if g else "draw_shield"] = {"len": 0.26, "in": 0.04, "out": 0.12, "ho": 0.18, "dlen": 0.08, "fast": true, "ev": STOW_EV["draw_shield"], "keys": _keys3(
+			[0.0, 0.07, 0.11, 0.16, 0.26],
+			[{}, {}, {}, {}, {}],
+			[{}, reach_back, _rim_keys(s1), _merge(_rim_keys(s3q), {"hlp": Vector3(-0.8, -0.4, 0.4)}), up_front if g else arm_carry],
+			[{}, {"chs": Vector3(0.05, 0.06, 0.0)}, {"chs": Vector3(0.05, 0.02, 0.0)}, {"chs": Vector3(0.05, -0.04, 0.0)}, turn_0])}
+	# sheathe (0.8 s): the blade swings up in front and across, its tip finds the throat at 0.38 (the scabbard turned up to meet it) and
+	# it slides home by 0.56; the left fist takes the shield's rim at 0.12, swings it round his left side and slides it in under the
+	# spear (hung at 0.5); both hands come back to his sides
+	var lift := {"hr": Vector3(0.36, 0.02, -0.44), "hrb": Vector3(0.2, -0.6, -0.77), "hrk": Vector3(0.95, 0.2, -0.2), "hrp": Vector3(0.8, -0.4, 0.5), "hrr": 1.0, "hrs": 0.0}
+	var across := {"hr": Vector3(0.36, 0.42, -0.5), "hrb": SCAB_D_SHEATHE.normalized(), "hrk": Vector3(0.7, -0.45, 0.55), "hrp": Vector3(0.9, -0.3, 0.3)}
+	var home := {"hr": Vector3(-0.18, -0.31, -0.26), "hrb": SCAB_D.normalized(), "hrk": Vector3(0.98, -0.06, 0.2), "hrp": Vector3(0.6, -0.6, 0.4)}
+	var off_grip := {"hr": Vector3(0.0, -0.36, -0.3), "hrb": Vector3(0.0, -0.3, -1.0), "hrk": Vector3(1.0, 0.0, 0.1), "hrp": Vector3(0.6, -0.4, 0.6)}
+	var let_go := {"hl": Vector3(-0.36, -0.2, 0.2), "hlf": Vector3(-1.0, 0.0, 0.2), "hlp": Vector3(-0.6, 0.0, -0.8), "hlx": 0.0}
+	d["sheathe"] = {"len": 0.8, "in": 0.08, "out": 0.2, "ho": 0.62, "dlen": 0.12, "fast": true, "ev": STOW_EV["sheathe"], "keys": _keys3(
+		[0.0, 0.12, 0.2, 0.26, 0.3, 0.38, 0.42, 0.5, 0.56, 0.62, 0.68, 0.8],
+		[{}, lift, _mix(lift, across, 0.5), across, across, across, _mix(across, home, 0.4), _mix(across, home, 0.85), home, off_grip, _mix(off_grip, relax_r, 0.5), relax_r],
+		[{}, _rim_keys(s3), _rim_keys(s3), rim.call(s3, s2, 0.6), _rim_keys(s2), rim.call(s2, s1, 0.6), _rim_keys(s1), _merge(_rim_keys(s0), {"hlp": Vector3(-0.8, 0.2, -0.6)}), _merge(_rim_keys(s0), {"hlp": Vector3(-0.8, 0.2, -0.6)}), let_go, _mix(let_go, relax_l, 0.5), relax_l],
+		[{}, turn_0, _mix(turn_0, turn_l, 0.5), turn_l, turn_l, turn_l, turn_l, turn_l, _mix(turn_l, turn_0, 0.3), _mix(turn_l, turn_0, 0.7), turn_0, turn_0])}
+	d["sheathe_sword"] = {"len": 0.62, "in": 0.06, "out": 0.18, "ho": 0.48, "dlen": 0.1, "fast": true, "ev": STOW_EV["sheathe_sword"], "keys": _keys3(
+		[0.0, 0.1, 0.2, 0.26, 0.42, 0.5, 0.62],
+		[{}, lift, across, across, home, off_grip, relax_r],
+		[{}, {}, {}, {}, {}, {}, {}],
+		[{}, turn_0, turn_l, turn_l, _mix(turn_l, turn_0, 0.3), _mix(turn_l, turn_0, 0.8), turn_0])}
+	d["sheathe_shield"] = {"len": 0.55, "in": 0.06, "out": 0.18, "ho": 0.42, "dlen": 0.1, "fast": true, "ev": STOW_EV["sheathe_shield"], "keys": _keys3(
+		[0.0, 0.08, 0.15, 0.22, 0.31, 0.36, 0.44, 0.55],
+		[{}, {}, {}, {}, {}, {}, {}, {}],
+		[{}, _rim_keys(s3), _rim_keys(s3), _rim_keys(s2), _rim_keys(s1), _merge(_rim_keys(s0), {"hlp": Vector3(-0.8, 0.2, -0.6)}), let_go, relax_l],
+		[{}, turn_0, turn_0, {"chs": Vector3(0.05, 0.05, 0.0)}, {"chs": Vector3(0.05, 0.08, 0.0)}, {"chs": Vector3(0.05, 0.06, 0.0)}, turn_0, turn_0])}
+	_draw_into_actions(d, reach, turn_l, turn_0, turn_r) # INTEGRATE: the quick draws that lead into the first blows
+# --- the arms on the ground ----------------------------------------------------------------------------------------------------
+
+## The arms on the ground (_ground_pose). Each arm is relaxed (empty: a loose fist swinging against the opposite leg, forward of the
+## body more than behind it, the elbow bending with speed: the run pumps, P2) or armed (the sword carried low in the right fist, the
+## blade trailing back and down, ref_sword_pose; the shield carried a little forward at his left side), by what is in its hand
+## (_carry_sw / _carry_sh). Standing, the idles: relaxed (P1, hanging loose), armed (P9, the sword hanging low in his hand; with a
+## foe close, `alert`, the ready stance: the shield up in front of his left side, the sword low at his right, the body lower).
+func _ground_arms(c: PackedFloat32Array, vu: float, gw: float, th: float, run: float, mva: float, br: float, armk: float, land_arm: float, idle: float) -> void:
+	var ph_a := TAU * _pl(vu, T_ARM_PH)
+	var cs := cos(th - ph_a)
+	var cs2 := cos(th - ph_a + 0.35)
+	var ksw := smoothstep(0.0, 1.0, _carry_sw)
+	var ksh := smoothstep(0.0, 1.0, _carry_sh)
+	var rdy := smoothstep(0.0, 1.0, _alert)
+	var brv := br * idle
+	# the sword arm's joints (deg: flexion, abduction, elbow), relaxed and armed, moving and standing
+	var r_mv := Vector3(_pl(vu, T_RX_C) + _pl(vu, T_RX_A) * armk * gw * cs, _pl(vu, T_RX_AB), _pl(vu, T_RX_EL) + _pl(vu, T_RX_ELV) * gw * cs2)
+	var a_mv := Vector3(_pl(vu, T_AC_C) + _pl(vu, T_AC_A) * armk * gw * cs, _pl(vu, T_AC_AB), _pl(vu, T_AC_EL) + 7.0 * gw * cs2)
+	var r_id := Vector3(-3.0 + brv, 9.0, 16.0 + 2.0 * brv)
+	var a_id := Vector3(3.0, 11.0, 13.0 + brv).lerp(Vector3(8.0, 14.0, 32.0 + 2.0 * brv), rdy)
+	var ang := r_id.lerp(r_mv, mva).lerp(a_id.lerp(a_mv, mva), ksw)
+	ang.y += 22.0 * land_arm
+	var fk := _arm_fk(1.0, deg_to_rad(ang.x), deg_to_rad(ang.y), deg_to_rad(ang.z), lerpf(lerpf(0.3, 0.36, run), 0.12, ksw))
+	# the hand: relaxed, a loose fist with the wrist straight; armed, the blade trailing back and down (it rises and falls a little with
+	# the swing), or, standing calm, hanging forward and down beside the right foot
+	var rel: Array = _sword_hand(fk[2], deg_to_rad(4.0), deg_to_rad(6.0), 0.0)
+	var ev := deg_to_rad(_pl(vu, T_AC_EV)) + 0.45 * deg_to_rad(ang.x - lerpf(3.0, _pl(vu, T_AC_C), mva))
+	var az := deg_to_rad(16.0)
+	var trail := Vector3(sin(az) * cos(ev), sin(ev), cos(az) * cos(ev))
+	# (standing, the blade hangs steeper and a little more out, its tip near the ground behind his right heel: P9 with the sword)
+	var evs := deg_to_rad(-44.0)
+	var azs := deg_to_rad(24.0)
+	var hang := Vector3(sin(azs) * cos(evs), sin(evs), cos(azs) * cos(evs))
+	var blade := hang.slerp(trail, maxf(mva, rdy * 0.5))
+	var bk := Vector3(0.7, 0.05, -0.7).normalized()
+	var hrb := (rel[0] as Vector3).normalized().slerp(blade, ksw)
+	var hrk := (rel[1] as Vector3).normalized().slerp(bk, ksw)
+	var grip: Vector3 = (fk[0] as Vector3) + hand_basis(hrb, hrk, 1.0) * GRIP
+	if ksw > 0.01:
+		hrb = _blade_clear(c, grip, hrb)
+	_setv(c, C_HR, grip)
+	_setv(c, C_HRB, hrb)
+	_setv(c, C_HRK, hrk)
+	_setv(c, C_HRP, fk[1])
+	# the left arm: relaxed (the right's mirror, swinging the other way) or carrying the shield
+	# (the relaxed left arm swings a little wider than the right: the sword's hilt is at his left hip)
+	var lr_mv := Vector3(_pl(vu, T_RX_C) - _pl(vu, T_RX_A) * armk * gw * cs, _pl(vu, T_RX_AB) + 7.0, _pl(vu, T_RX_EL) - _pl(vu, T_RX_ELV) * gw * cs2)
+	var ls_mv := Vector3(_pl(vu, T_ARM_LC) - _pl(vu, T_ARM_LA) * armk * gw * cs, _pl(vu, T_AB_L), _pl(vu, T_EL_L) - 6.0 * gw * cs2)
+	var lr_id := Vector3(-3.0 + brv, 15.0, 16.0 + 2.0 * brv)
+	var ls_id := Vector3(5.0, 18.0, 38.0 + brv)
+	var angl := lr_id.lerp(lr_mv, mva).lerp(ls_id.lerp(ls_mv, mva), ksh)
+	angl.y += 22.0 * land_arm
+	var psi_l := deg_to_rad(angl.x)
+	var ab_l := deg_to_rad(angl.y)
+	var el_l := deg_to_rad(angl.z)
+	# the free hand out over the wheat (set_brush): the arm opens by its joints to where the brush pose holds it (out to the side, the
+	# forearm hanging), so the shield does not sweep through the chest on its way there
+	var bw := smooth(_brush)
+	if bw > 0.0:
+		psi_l = lerpf(psi_l, deg_to_rad(-26.0), bw)
+		ab_l = lerpf(ab_l, deg_to_rad(58.0), smoothstep(0.0, 0.3, bw))
+		el_l = lerpf(el_l, deg_to_rad(64.0), bw)
+	var fkl := _arm_fk(-1.0, psi_l, ab_l, el_l, lerpf(lerpf(0.3, 0.36, run), 0.1 * run, ksh) * (1.0 - bw))
+	var hl: Vector3 = fkl[0]
+	var hlf := Vector3(-1.0, 0.0, -0.15).lerp(Vector3(-1.0, 0.0, -0.25).lerp(Vector3(-1.0, 0.05, -0.5), mva), ksh)
+	var hlp: Vector3 = fkl[1]
+	# the left hand resting on the sword's pommel at his hip (standing a while, the weapons put away)
+	var pk := _pommel_rest(_solve_dt if _solve_dt > 0.0 else 1.0 / 60.0, idle)
+	if pk > 0.001 and _scab_node != null:
+		var tr := _trunk_xf(c)
+		var top := (tr[2] as Transform3D).affine_inverse() * (_scab_xf * Vector3(0.0, 0.035, 0.15))
+		hl = hl.lerp(top + Vector3(-0.015, 0.075, 0.035), pk)
+		hlf = hlf.lerp(Vector3(-0.6, 0.6, -0.4), pk)
+		hlp = hlp.lerp(Vector3(-1.0, 0.0, 0.5), pk)
+	# the ready stance: the shield up in front of his left side
+	var rk := rdy * ksh * (1.0 - mva)
+	if rk > 0.001:
+		hl = hl.lerp(Vector3(-0.22, -0.14, -0.38), rk)
+		hlf = hlf.lerp(Vector3(-0.5, 0.05, -1.0), rk)
+		hlp = hlp.lerp(Vector3(-1.0, -0.5, 0.4), rk)
+	_setv(c, C_HL, hl)
+	_setv(c, C_HLF, hlf)
+	_setv(c, C_HLP, hlp)
+	# the ready stance's body: lower, leaning in a little, the shield side forward (the head stays on the foe)
+	var rb := rdy * ksw * idle
+	if rb > 0.001:
+		c[C_PEL + 1] -= 0.05 * rb
+		c[C_SPN] -= 0.06 * rb
+		c[C_CHS + 1] -= 0.1 * rb
+		c[C_NEK + 1] += 0.08 * rb
+
+
+## The carried blade `b` (chest space, from the fist at `grip`) turned so that its tip stays a hand's breadth over the ground and the
+## blade passes outside the right leg (judged on the pose being built).
+func _blade_clear(c: PackedFloat32Array, grip: Vector3, b: Vector3) -> Vector3:
+	var tr := _trunk_xf(c)
+	var ch: Transform3D = tr[2]
+	var pel: Transform3D = tr[0]
+	var g := ch * grip
+	var bw := (ch.basis * b).normalized()
+	var ln := -SWORD_TIP
+	var hip := pel.origin + pel.basis * (P_HIP - P_PELVIS)
+	var ank := v3(c, C_FR)
+	for it in 2:
+		var tip := g + bw * ln
+		var low := 0.26 + minf(_gnd_dy.x, _gnd_dy.y) * _gnd_k
+		if tip.y < low:
+			var ax := bw.cross(Vector3.UP)
+			if ax.length_squared() > 1e-6:
+				bw = bw.rotated(ax.normalized(), asin(clampf((low - tip.y) / ln, 0.0, 0.9)))
+		var ks := _seg_closest(g + bw * 0.12, g + bw * ln, hip, ank)
+		var dv: Vector3 = ks[0] - ks[1]
+		var dl := dv.length()
+		if dl < 0.15:
+			var away := dv / dl if dl > 1e-4 else Vector3.RIGHT
+			var arm: Vector3 = (ks[0] as Vector3) - g
+			var ax2 := arm.cross(away)
+			if ax2.length_squared() > 1e-8:
+				bw = bw.rotated(ax2.normalized(), (0.15 - dl) / maxf(arm.length(), 0.2))
+	return (ch.basis.inverse() * bw).normalized()
+
+
+## An empty right fist (the sword in its scabbard): the hand turned to lie along the forearm (a loose fist, the wrist straight), except
+## where a stow action is closing it on the grip. After the solve, before the bones are applied.
+var _fist_free := 0.0
+
+
+func _empty_fist(delta: float) -> void:
+	var want := 1.0 if _sw_at == AT_SHEATH else 0.0
+	if want > 0.0 and STOW_EV.has(action):
+		# (the fist turns to the grip as it reaches for it, and stays a fist round it until the sword is out)
+		var tg := _stow_t(action, "sw_grab")
+		var th := _stow_t(action, "sw_home")
+		if tg >= 0.0:
+			want = 1.0 - smoothstep(tg - 0.12, tg - 0.03, action_t)
+		elif th >= 0.0:
+			want = smoothstep(th, th + 0.08, action_t)
+	_fist_free = want if delta <= 0.0 else move_toward(_fist_free, want, delta * 8.0)
+	if _fist_free <= 0.001:
+		return
+	var h := _bx[HAND_R]
+	var fa := _bx[FARM_R]
+	# (the forearm's frame, the fingers curled a little in towards the palm)
+	var relaxed := (fa.basis * Basis(Vector3.BACK, -0.12)).orthonormalized()
+	var q := h.basis.orthonormalized().get_rotation_quaternion().slerp(relaxed.get_rotation_quaternion(), smoothstep(0.0, 1.0, _fist_free))
+	_bx[HAND_R] = Transform3D(Basis(q), h.origin)
+# --- the idle --------------------------------------------------------------------------------------------------------------------
+
+## The weight of the idle on one leg (-1 the left .. 1 the right), where it is going, the clock of the next shift; the left hand
+## resting on the sword's pommel at his hip (0..1) and its clock.
+var _idle_w := 1.0
+var _idle_goal := 1.0
+var _idle_next := 7.0
+var _pommel := 0.0
+var _pommel_t := 0.0
+
+
+## Standing (P1), the weight on one leg, changing legs every 6-11 s (over a second and a half); none in the ready stance. Returns the
+## shift (-1..1) scaled by how much he stands.
+func _idle_shift(dt: float, idle: float) -> float:
+	if idle > 0.5:
+		_idle_next -= dt
+		if _idle_next <= 0.0:
+			_idle_goal = -_idle_goal
+			_idle_next = 6.0 + 5.0 * fposmod(sin(t * 12.9898) * 43758.5453, 1.0)
+	_idle_w = lerpf(_idle_w, _idle_goal, 1.0 - exp(-dt * 1.8))
+	var calm := 1.0 - smoothstep(0.0, 1.0, _alert) * smoothstep(0.0, 1.0, _carry_sw)
+	return _idle_w * idle * calm
+
+
+## Standing a while with the sword in its scabbard, now and then his left hand comes to rest on its pommel (a few seconds in every
+## eleven). Returns how far it is there (0..1).
+func _pommel_rest(dt: float, idle: float) -> float:
+	var free := idle > 0.95 and _sw_at == AT_SHEATH and _sh_at == AT_BACK and not guard and _brush <= 0.0005 and _alert < 0.05
+	_pommel_t = _pommel_t + dt if free else 0.0
+	var ph := fposmod(_pommel_t, 11.0)
+	var want := 1.0 if (free and _pommel_t > 3.0 and ph > 3.0 and ph < 7.5) else 0.0
+	_pommel = move_toward(_pommel, want, dt / 0.6)
+	return smoothstep(0.0, 1.0, _pommel)
+# <<< STOW END
+
+# >>> INTEGRATE BEGIN (step INTEGRATE: the lanes wired together; docs/ANIMATION.md section 10)
+# --- a blow pressed with the sword in its scabbard ----------------------------------------------------------------------------------
+## The blow the next draw_sword leads into ("" the plain quick draw): Hero sets it right before it plays draw_sword for a pressed blow,
+## and the variant "draw_sword_<blow>" plays (_variant: `action` stays "draw_sword", so all of STOW's scabbard work runs as for it).
+var draw_into := ""
+## Per first blow (the routing rule's A1, B1 and the dash): the moment of the draw at which the blow takes over (`go`, the draw's own
+## seconds) and the moment of the blow it starts at (`skip`, the blow's seconds): the draw ends exactly on the blow's pose there (the
+## sword arm and the trunk), so the blow's own wind-up goes on from it.
+const DRAW_INTO := {
+	"a1": {"go": 0.245, "skip": 0.06},
+	"b1": {"go": 0.245, "skip": 0.05},
+	"dash": {"go": 0.245, "skip": 0.05},
+}
+
+
+## The quick draws that lead into the first blows (added to the action table by _stow_actions). The fist on the grip at 0.06 and the
+## blade free at 0.15 as in draw_sword (STOW_EV: the same scabbard work); then, instead of cocking the sword back over his shoulder
+## (the blade would pass behind his back: through the shield hung there and the cloak), the free blade swings down in front of him
+## under the hand and out round his right side, the tip going back as the hand comes down into the blow's pose at `skip`.
+static func _draw_into_actions(d: Dictionary, reach: Dictionary, turn_l: Dictionary, turn_0: Dictionary, turn_r: Dictionary) -> void:
+	var out := {"hr": Vector3(0.38, 0.3, -0.42), "hrb": SCAB_D_DRAW.normalized(), "hrk": Vector3(0.75, -0.45, 0.5), "hrp": Vector3(0.9, -0.3, 0.3)}
+	var dip := {"hr": Vector3(0.42, 0.1, -0.4), "hrb": Vector3(0.45, -0.5, -0.74).normalized(), "hrk": Vector3(0.95, 0.15, -0.25), "hrp": Vector3(0.8, -0.4, 0.5)}
+	var side := {"hr": Vector3(0.46, -0.08, -0.2), "hrb": Vector3(0.9, -0.38, 0.2).normalized(), "hrk": Vector3(0.4, 0.5, -0.75), "hrp": Vector3(0.7, -0.4, 0.7)}
+	for nm in DRAW_INTO:
+		var e: Dictionary = DRAW_INTO[nm]
+		var go := float(e["go"])
+		var c := _strike_pose(_strike_raw(nm), float(e["skip"]))
+		var tgt := {"hrr": 1.0, "hrs": 0.0, "grip": 0.0}
+		for ch in ["hr", "hrb", "hrk", "hrp", "pelr", "spn", "chs", "nek", "hed"]:
+			tgt[ch] = v3(c, CH[ch])
+		d["draw_sword_" + nm] = {"len": go + 0.08, "in": 0.04, "out": 0.12, "dlen": 0.08, "fast": true, "ev": STOW_EV["draw_sword"], "keys": _keys3(
+			[0.0, 0.05, 0.15, 0.185, 0.215, go, go + 0.08],
+			[{}, reach, out, dip, side, tgt, tgt],
+			[{}, {}, {}, {}, {}, {}, {}],
+			[{}, _mix(turn_l, turn_0, 0.2), turn_r, turn_r, _mix(turn_r, turn_0, 0.5), {}, {}])}
+
+
+## The draw that leads into a blow is playing: the moment (its seconds) at which the blow takes over; -1 when none is.
+func draw_go() -> float:
+	var nm := _draw_into_now()
+	return float(DRAW_INTO[nm]["go"]) if nm != "" else -1.0
+
+
+## ... and the moment of the blow it starts at (0 when none is).
+func draw_skip() -> float:
+	var nm := _draw_into_now()
+	return float(DRAW_INTO[nm]["skip"]) if nm != "" else 0.0
+
+
+func _draw_into_now() -> String:
+	if action == "draw_sword" and _akey.begins_with("draw_sword_"):
+		var nm := _akey.substr(11)
+		if DRAW_INTO.has(nm):
+			return nm
+	return ""
+# <<< INTEGRATE END

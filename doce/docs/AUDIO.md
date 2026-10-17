@@ -4,9 +4,9 @@ All of DOCE's audio is synthesised by code (numpy, no samples): `doce/tools/audi
 Regenerate everything with `python3 doce/tools/audio/render_all.py` (about 1 min; `--only name …` for a few,
 `--png DIR` for spectrograms). Output: `doce/game/assets/audio/{sfx,music,amb}/*.ogg`.
 
-- **78 files, 3.4 MiB in total** (music 1.8 MiB, ambience 1.0 MiB, 68 effects 0.6 MiB). Effects and most ambience are
+- **95 files, 3.5 MiB in total** (music 1.8 MiB, ambience 1.0 MiB, 85 effects 0.7 MiB). Effects and most ambience are
   mono; music, the sea and the day bed are stereo. Vorbis quality: sfx 4, music 3, amb 2.
-- Levels: effects peak at −3 dBFS (footsteps −8/−10, UI −4…−10, distant gull −10); loops RMS ≈ −19…−21 dBFS;
+- Levels: effects peak at −3 dBFS (footsteps −8/−10, UI −4…−10, distant gull −10, drawing and stowing the weapons −4); loops RMS ≈ −19…−21 dBFS;
   ambience RMS ≈ −26…−28 dBFS. Every loop is rendered circularly and joins seamlessly.
 - Played through the `Sfx` autoload (`scripts/core/audio.gd`, owned by UI+AUDIO): `Sfx.play(name, pos, vol_db,
   pitch)` for one-shots (pass the world position: it is attenuated with distance from the hero), `Sfx.music(name)`
@@ -60,6 +60,30 @@ Kept with the same name: `swing_1..3`, `hit_1..3`, `dodge`, `footstep`, `hero_hu
 | `gull` | now and then over the coast (every 8–20 s, far) | WORLD / ambient |
 | `goat_bleat` | now and then from a grazing goat (one look-up in ten) | WORLD / ambient (`ambient_goat.gd`, −8 dB, pitch 0.9–1.05, kids 1.15–1.35); added at integration |
 | `body_fall` | a beast's body hits the ground | |
+
+## HERO round: the long blade, its hits, the ground slam, drawing and stowing (FX lane)
+
+The long one-handed blade (0.98 m) moves more air than the old xiphos: deeper whooshes with a longer tail. The
+move tables in `hero_melee.gd` name them per blow (keys `swing` / `hit`); until a table names them the old
+`swing_1..3`, `swing_heavy`, `hit_1..3`, `hit_heavy` still play (they stay in `assets/audio`). All at −3 dBFS peak
+(the four weapon-handling sounds −4). Play a swing as the blade starts to move (like the old ones: −4 dB, −2 dB for
+the heavy, pitch 0.95–1.06) and a hit at the contact point (−1 dB, pitch 0.92–1.08).
+
+| Sound | s | Play it when | What it is |
+|---|---|---|---|
+| `swing_light_a`, `swing_light_b`, `swing_light_c` | 0.40 / 0.34 / 0.48 | the light cuts of a combo (a different one per blow) | a: the middle cut; b: higher, snappier, a brighter edge; c: lower and longer, the pitch falling away after the pass (Doppler); each with a low "woom" under it |
+| `swing_big` | 0.62 | a finisher's chop (the blade raised and brought down) | a slow pre-swish as it rises, a heavy whoosh and woom, the edge's whistle rising into the pass |
+| `swing_thrust` | 0.28 | a thrust | short and piercing: a narrow fast rush, a thin high whistle, the push of the lunge |
+| `swing_spin` | 0.90 | the charged spin is released | a circling whoosh: pitch and loudness swell and fall as the edge comes round (a Doppler cycle per turn), a deep woom |
+| `swing_dash` | 0.78 | the dash attack starts | the push-off (grit, a low thump), the rush of the leap, then the cut at ~0.44 s |
+| `hit_cut_a`, `hit_cut_b`, `hit_cut_c` | 0.32 | a light cut lands on a beast | a sharp transient, a wet-ish slice, a short body thump; b brighter and shorter, c deeper with a longer slice |
+| `hit_big` | 0.65 | a finisher (or the heavy) lands | the cut on top of a deep falling bass thump and a sub boom |
+| `hit_thrust` | 0.42 | a thrust lands | a stab: a dull thud and a short tearing tail |
+| `slam` | 1.00 | a blow bites the ground (the chop finisher), the dash's landing (quieter, −5 dB) | a deep thump, a crunch of earth and stones, a short rumble, grit falling back |
+| `sword_draw` | 0.80 | the sword is drawn (STOW's `draw` / `draw_sword`) | the scabbard's leather gives, the blade slides out (rising scrape), a short metallic ring at ~0.44 s |
+| `sword_sheathe` | 0.65 | the sword is sheathed | a scrape falling in pitch as it slides in, a soft wooden-leather click at ~0.36 s |
+| `shield_draw` | 0.60 | the shield is taken off the back | the strap creaks as it slips off, the wooden shield thuds into the arm at ~0.25 s (a tick of the rim) |
+| `shield_stow` | 0.60 | the shield is slung onto the back | a muffled wooden thud at ~0.08 s, the strap pulled tight (creak), the buckle's clink |
 
 ## ENCOUNTERS: wolves, boars, the Nemean Lion
 

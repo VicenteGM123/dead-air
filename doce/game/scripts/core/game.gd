@@ -185,6 +185,20 @@ func shake(trauma: float) -> void:
 		camera.call("add_trauma", trauma)
 
 
+## Camera kick (a blow's weight): the view jolts along `dir_world` (amount 1: ~5 cm and ~1 degree) and springs
+## back in ~0.15 s with one small overshoot; adds to the shake (CameraRig.kick; Settings "shake").
+func kick(dir_world: Vector3, amount: float) -> void:
+	if camera and is_instance_valid(camera) and camera.has_method("kick") and bool(Settings.get_v("shake")):
+		camera.call("kick", dir_world, amount)
+
+
+## FOV punch (finishers): a quick zoom-in by `deg` degrees easing back over `dur` s (CameraRig.fov_punch;
+## Settings "shake").
+func fov_punch(deg: float, dur: float) -> void:
+	if camera and is_instance_valid(camera) and camera.has_method("fov_punch") and bool(Settings.get_v("shake")):
+		camera.call("fov_punch", deg, dur)
+
+
 ## Slow motion at `scale` for `seconds` of real time (finishers, the lion's defeat).
 func slowmo(scale: float, seconds: float) -> void:
 	_slowmo_scale = clampf(scale, 0.05, 1.0)

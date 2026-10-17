@@ -4,7 +4,9 @@ extends Node
 ## for aiming the chain spear) and prints one line per test:
 ##   ARENA test <name> PASS|FAIL <details>
 ##   ARENA autotest passed=N/M result=PASS|FAIL
-## Tests: lockon (acquire, flick to switch, release), combo (3 blows, the finisher last), heavy (charge, release:
+## Tests: lockon (acquire, flick to switch, release), combo (combo A: four blows, the finisher last), alternate (right after
+## combo A the next string is combo B: three blows, its thrust last), runb (a blow out of a run is combo B's first), dash (attack
+## while sprinting: the leaping dash attack lands on a post 5 m ahead), heavy (charge, release:
 ## 30 damage, guard break), kill (a locked straw soldier cut down: slow motion, the lock lets go, he dissolves and
 ## a new one stands up), guard (a sparring swing on the shield), parry (guard just before the swing lands: the
 ## post is thrown open), dodge (roll through a swing), hurt (no guard: health lost, the hit reaction, knocked
@@ -18,7 +20,7 @@ extends Node
 ## Run headless faster than real time: godot --headless --path . res://tools/arena.tscn --fixed-fps 60
 ##   --quit-after 6000 -- autotest=1
 
-const ALL := ["lockon", "combo", "heavy", "kill", "guard", "parry", "dodge", "hurt", "light", "ledge", "rings", "beast", "boulder", "ramps", "death"]
+const ALL := ["lockon", "combo", "alternate", "runb", "dash", "heavy", "kill", "guard", "parry", "dodge", "hurt", "light", "ledge", "rings", "beast", "boulder", "ramps", "death"]
 
 var arena: Node = null
 var hero: Hero
@@ -126,6 +128,12 @@ func _run_test(t: String) -> bool:
 			return await _t_lockon()
 		"combo":
 			return await _t_combo()
+		"alternate":
+			return await _t_alternate()
+		"runb":
+			return await _t_runb()
+		"dash":
+			return await _t_dash()
 		"heavy":
 			return await _t_heavy()
 		"kill":
@@ -152,6 +160,8 @@ func _run_test(t: String) -> bool:
 			return await _t_hurt()
 		"death":
 			return await _t_death()
+		"showreel":
+			return await _t_showreel()
 	print("ARENA test %s FAIL unknown test" % t)
 	return false
 
@@ -285,21 +295,95 @@ func _t_lockon() -> bool:
 func _t_combo() -> bool:
 	var post: TrainingDummy = (arena.get("dummies") as Array)[1]
 	await _place(post.global_position + Vector3(0, 0, 2.2), post.global_position)
+	await _wait(HeroMelee.ALTERNATE) # (no string ended lately: a press standing still starts combo A)
 	var h0 := post.hits
 	var attacks: Array = []
 	var cb := func(_t: Node, h: Dictionary) -> void: attacks.append(String(h.get("attack", "")))
 	hero.blow_landed.connect(cb)
 	_mark("combo")
-	await _tap(&"attack")
-	await _wait(0.3)
-	await _tap(&"attack")
-	await _wait(0.3)
-	await _tap(&"attack")
-	await _wait(1.1)
+	for i in 4:
+		await _tap(&"attack")
+		await _wait(0.3)
+	await _wait(1.0)
 	hero.blow_landed.disconnect(cb)
 	var n := post.hits - h0
-	var ok: bool = n >= 3 and attacks.size() >= 3 and attacks[0] == "attack1" and attacks[1] == "attack2" and attacks[2] == "attack3"
+	var ok: bool = n >= 4 and attacks.size() >= 4 and attacks.slice(0, 4) == ["a1", "a2", "a3", "a4"]
 	return _result("combo", ok, "hits=%d blows=%s" % [n, str(attacks)])
+
+
+## Combo A, then (within HeroMelee.ALTERNATE s) three more presses: combo B (fighting on alternates the two strings).
+func _t_alternate() -> bool:
+	var post: TrainingDummy = (arena.get("dummies") as Array)[1]
+	await _place(post.global_position + Vector3(0, 0, 2.2), post.global_position)
+	await _wait(HeroMelee.ALTERNATE)
+	var attacks: Array = []
+	var cb := func(_t: Node, h: Dictionary) -> void: attacks.append(String(h.get("attack", "")))
+	hero.blow_landed.connect(cb)
+	_mark("alternate")
+	for i in 4:
+		await _tap(&"attack")
+		await _wait(0.3)
+	await _wait(1.2)
+	for i in 3:
+		await _tap(&"attack")
+		await _wait(0.3)
+	await _wait(1.0)
+	hero.blow_landed.disconnect(cb)
+	var ok: bool = attacks.size() >= 7 and attacks.slice(0, 4) == ["a1", "a2", "a3", "a4"] and attacks.slice(4, 7) == ["b1", "b2", "b3"]
+	return _result("alternate", ok, "blows=%s" % str(attacks))
+
+
+## Running at a post (not sprinting): the blow out of the run is combo B's first, and it lands.
+func _t_runb() -> bool:
+	var post: TrainingDummy = (arena.get("dummies") as Array)[1]
+	await _place(post.global_position + Vector3(0, 0, 6.0), post.global_position)
+	await _wait(HeroMelee.ALTERNATE)
+	var attacks: Array = []
+	var cb := func(_t: Node, h: Dictionary) -> void: attacks.append(String(h.get("attack", "")))
+	hero.blow_landed.connect(cb)
+	_mark("runb")
+	var near: bool = await _walk_to(post.global_position, 2.9, 3.0)
+	var speed := Vector2(hero.velocity.x, hero.velocity.z).length()
+	await _tap(&"attack")
+	await _wait(1.0)
+	hero.blow_landed.disconnect(cb)
+	var ok: bool = near and speed > HeroMelee.B_SPEED and attacks.size() >= 1 and attacks[0] == "b1"
+	return _result("runb", ok, "speed=%.1f blows=%s" % [speed, str(attacks)])
+
+
+## Sprinting at a post: attack is the dash attack, which leaps the last metres and lands on it.
+func _t_dash() -> bool:
+	var post: TrainingDummy = (arena.get("dummies") as Array)[1]
+	await _place(post.global_position + Vector3(0, 0, 9.0), post.global_position)
+	var h0 := post.hits
+	var attacks: Array = []
+	var cb := func(_t: Node, h: Dictionary) -> void: attacks.append(String(h.get("attack", "")))
+	hero.blow_landed.connect(cb)
+	_mark("dash")
+	hero.inp.bot[&"sprint"] = true
+	var t0 := _time
+	var fast := false
+	while _time - t0 < 3.0:
+		hero.debug_move = _stick_to(post.global_position)
+		var d := Combat.flat(post.global_position - hero.global_position).length()
+		if hero.sprinting and Vector2(hero.velocity.x, hero.velocity.z).length() > HeroMelee.DASH_SPEED and d < 4.6:
+			fast = true
+			break
+		await get_tree().physics_frame
+	var name := ""
+	hero.inp.bot[&"attack"] = true
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	hero.inp.bot[&"attack"] = false
+	hero.inp.bot[&"sprint"] = false
+	hero.debug_move = Vector2.ZERO
+	await get_tree().physics_frame
+	name = String(hero.melee.cur.get("name", ""))
+	await _wait(1.2)
+	hero.blow_landed.disconnect(cb)
+	var gap := Combat.flat(post.global_position - hero.global_position).length() - Combat.body_radius(post)
+	var ok: bool = fast and name == "dash" and post.hits > h0 and attacks.has("dash") and gap > 0.3
+	return _result("dash", ok, "fast=%s blow=%s hits=%d blows=%s gap_after=%.2f" % [str(fast), name, post.hits - h0, str(attacks), gap])
 
 
 func _t_heavy() -> bool:
@@ -320,7 +404,7 @@ func _t_heavy() -> bool:
 		float(last.get("amount", 0.0)), st0, hero.stamina])
 
 
-## Lock on to a straw soldier and cut him down with the combo: he dies on the finisher (36 hp), the killing blow
+## Lock on to a straw soldier and cut him down with combo A: he dies on the finisher (36 hp), the killing blow
 ## brings slow motion, the lock lets go by itself, he leaves the groups, topples, dissolves and is freed; a new one
 ## stands up at the same spot.
 func _t_kill() -> bool:
@@ -346,10 +430,9 @@ func _t_kill() -> bool:
 			slow[0] = true
 	get_tree().process_frame.connect(watch)
 	_mark("kill")
-	await _tap(&"attack")
-	await _wait(0.3)
-	await _tap(&"attack")
-	await _wait(0.3)
+	for i in 3:
+		await _tap(&"attack")
+		await _wait(0.3)
 	await _tap(&"attack")
 	var dead: bool = await _until(func() -> bool: return not man.is_alive(), 1.5)
 	await _wait(0.6)
@@ -659,3 +742,77 @@ func _t_ramps() -> bool:
 	var worst := maxf(maxf(absf(across.x), absf(across.y)), maxf(absf(up.x), absf(up.y)))
 	var ok := worst < 0.07 and climbed
 	return _result("ramps", ok, "across=(%.3f, %.3f) up=(%.3f, %.3f) worst=%.3f climbed_15=%s" % [across.x, across.y, up.x, up.y, worst, str(climbed)])
+
+
+# --- INTEGRATE: a render scenario (bot=showreel; not in ALL, not a test) ------------------------------------------
+
+## The hero's moves in one take, for --write-movie from the gameplay camera (docs/COMBAT.md 8): he walks with his weapons put
+## away; a press draws the sword straight into combo A (a straw soldier cut down); combo B on a second one; a sprint and the dash
+## attack; the guard (the shield comes off his back); then he stands calm until he puts the weapons away (STOW_AFTER). On the
+## open floor south of the posts, facing east. The two straw soldiers stand there from the start, kept out of the "enemy" group
+## until the first press (they are still "damageable") so the walk is not cut short by the draw a foe close by asks for.
+##   godot --path . --rendering-driver opengl3 --resolution 960x540 --write-movie <dir>/f.png --fixed-fps 30 --quit-after 480
+##     res://tools/arena.tscn -- bot=showreel quit=1
+func _t_showreel() -> bool:
+	var y := 1.2
+	var start := Vector3(-4.6, y, 27.0)
+	var east := Vector3(40.0, y, 27.0)
+	var straw: Array = arena.get("straw")
+	var s0 := straw[0] as TrainingDummy
+	var s1 := straw[1] as TrainingDummy
+	var w: Node = arena.get("world")
+	s0.teleport(w.call("ground", Vector3(-0.6, y, 27.0)), PI * 0.5)
+	s1.teleport(w.call("ground", Vector3(0.6, y, 25.8)), PI * 0.5)
+	for m in [s0, s1]:
+		(m as Node).remove_from_group("enemy")
+	hero.revive(Transform3D(Basis(Vector3(0, 0, 1), Vector3.UP, Vector3(-1, 0, 0)), start))
+	hero.invulnerable = 0.0
+	cam.lock_on(null)
+	cam.follow(hero, true)
+	await _wait(1.0)
+	_mark("showreel")
+	# 1) the walk, weapons on his back and at his hip
+	var t0 := _time
+	while _time - t0 < 1.3:
+		hero.debug_move = _stick_to(east) * 0.45
+		await get_tree().physics_frame
+	hero.debug_move = Vector2.ZERO
+	# 2) the press: the sword drawn straight into combo A
+	for m in [s0, s1]:
+		(m as Node).add_to_group("enemy")
+	_mark("show_a")
+	for i in 4:
+		await _tap(&"attack")
+		await _wait(0.3 if i < 3 else 0.2)
+	await _wait(0.75)
+	# 3) combo B (the string after A alternates)
+	_mark("show_b")
+	for i in 3:
+		await _tap(&"attack")
+		await _wait(0.28)
+	await _wait(0.7)
+	# 4) a sprint and the dash attack
+	_mark("show_dash")
+	hero.inp.bot[&"sprint"] = true
+	t0 = _time
+	while _time - t0 < 1.6:
+		hero.debug_move = _stick_to(east)
+		if hero.sprinting and Vector2(hero.velocity.x, hero.velocity.z).length() > HeroMelee.DASH_SPEED + 0.5:
+			break
+		await get_tree().physics_frame
+	await _tap(&"attack")
+	hero.inp.bot[&"sprint"] = false
+	hero.debug_move = Vector2.ZERO
+	await _wait(1.0)
+	# 5) the guard
+	_mark("show_guard")
+	hero.inp.bot[&"guard"] = true
+	await _wait(1.1)
+	hero.inp.bot[&"guard"] = false
+	# 6) calm: he puts them away by himself
+	_mark("show_calm")
+	var stowed: bool = await _until(func() -> bool: return not hero.rig.sword_in_hand() and not hero.rig.shield_in_hand(), 6.5)
+	await _wait(0.8)
+	_mark("show_end")
+	return _result("showreel", stowed, "stowed_at_end=%s" % str(stowed))
+

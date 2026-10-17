@@ -26,7 +26,45 @@ def _seg_dist(p, a, b):
 
 def torso_clear(p):
     """distance from a point (chest space) to the nearest torso surface (negative inside)"""
-    return min(_seg_dist(p, a, b) - r for (a, b, r) in TORSO_CAPS)
+    return float(_caps_clear(np.asarray(p, float)[None, :], _TC)[0])
+
+
+def _caps_arrays(caps):
+    A = np.array([a for (a, b, r) in caps])
+    AB = np.array([b - a for (a, b, r) in caps])
+    return A, AB, np.einsum("ij,ij->i", AB, AB), np.array([r for (a, b, r) in caps])
+
+
+def _caps_clear(P, C):
+    """vectorised: for points P (m, 3), the distance to the nearest capsule surface of C (A, AB, AB.AB, R) (negative inside)"""
+    A, AB, ABAB, R = C
+    d = P[:, None, :] - A[None, :, :]
+    t = np.clip(np.einsum("mij,ij->mi", d, AB) / ABAB[None, :], 0.0, 1.0)
+    q = d - AB[None, :, :] * t[:, :, None]
+    return np.min(np.sqrt(np.einsum("mij,mij->mi", q, q)) - R[None, :], axis=1)
+
+
+_TC = _caps_arrays(TORSO_CAPS)
+
+
+## the thighs as capsules in the pelvis frame (origin the pelvis bone): hip to a knee bent a little forward, and their radius
+THIGH_CAPS = [(np.array([0.112 * sx, -0.06, 0.0]), np.array([0.13 * sx, -0.47, -0.07]), 0.085) for sx in (-1.0, 1.0)]
+BLADE_PTS = (0.12, 0.3, 0.5, 0.7, 0.88, 1.0)
+
+
+def blade_clearance(s, body):
+    """the smallest distance (m) from the blade (points along it, rig space) to the torso's capsules (chest frame) and the thighs'
+    (pelvis frame), minus the blade's half-width (negative: inside)"""
+    tb, co, pb, po = body["tb"], body["co"], body["pb"], body["po"]
+    g = s["grip"]
+    d = s["tip"] - g
+    P = g[None, :] + d[None, :] * _BLADE_U[:, None]
+    best = min(float(np.min(_caps_clear((P - co) @ tb, _TC))), float(np.min(_caps_clear((P - po) @ pb, _THC))))
+    return best - 0.03
+
+
+_BLADE_U = np.array(BLADE_PTS)
+_THC = _caps_arrays(THIGH_CAPS)
 
 
 def arm_state(x, body):
@@ -37,7 +75,7 @@ def arm_state(x, body):
     hb = hand_basis(hrb, hrk, 1.0)
     grip_cs = W + hb @ GRIP
     tb, co = body["tb"], body["co"]
-    return {"grip": co + tb @ grip_cs, "tip": co + tb @ (grip_cs + 0.64 * hrb), "flat": tb @ hb[:, 0], "elbow": co + tb @ E,
+    return {"grip": co + tb @ grip_cs, "tip": co + tb @ (grip_cs + BLADE_TIP * hrb), "flat": tb @ hb[:, 0], "elbow": co + tb @ E,
             "wrist": co + tb @ W, "f": tb @ f, "blade": tb @ hrb, "E_cs": E, "W_cs": W, "hrb": hrb, "hand": hb, "pole": pole}
 
 
@@ -49,6 +87,10 @@ def body_at(S, t):
 def wrist_ext_deg(x, body):
     """the hand's extension as the rig's own measure sees it (anim_check._wrist): approximated by the param ext here"""
     return x[5]
+
+
+_QU = np.array([0.5, 0.7, 0.9])
+_QF = np.array([0.167, 0.5, 0.833])
 
 
 def residual(x, body, tgt):
@@ -66,20 +108,33 @@ def residual(x, body, tgt):
         res.append((s["flat"][1] - tgt["flat_y"]) / 0.2)
     if "flat_dir" in tgt:  # the flat normal along a given axis (either sign)
         res.append((1 - abs(np.dot(s["flat"], unit(tgt["flat_dir"])))) / 0.2)
+    if "flat_vec" in tgt:  # signed: the back of the hand (the blade's flat) faces this way (moveset.py)
+        res += list((s["flat"] - unit(np.asarray(tgt["flat_vec"], float))) / tgt.get("flat_sig", 0.2))
     if "elbow" in tgt:
         res += list((s["elbow"] - tgt["elbow"]) / 0.05)
+    if "pole" in tgt:      # the elbow bends towards this side of the shoulder-to-wrist line (rig space, weak; moveset.py)
+        sh = body["co"] + body["tb"] @ SHOULDER_CS
+        ax = unit(s["wrist"] - sh)
+        bend = perp(s["elbow"] - sh, ax)
+        want = perp(np.asarray(tgt["pole"], float), ax)
+        if np.linalg.norm(bend) > 0.02 and np.linalg.norm(want) > 1e-3:
+            res += list((unit(bend) - unit(want)) / tgt.get("pole_sig", 0.6))
+        else:
+            res += [0.0, 0.0, 0.0]
+    if "tip_min" in tgt:   # the tip stays over this height (the ground; moveset.py)
+        res.append(max(tgt["tip_min"] - s["tip"][1], 0.0) / 0.02)
+    if "blade_clear" in tgt:  # the blade stays out of the torso and the thighs (moveset.py; tgt value: the margin, m)
+        res.append(max(tgt["blade_clear"] - blade_clearance(s, body), 0.0) / 0.015)
     # elbow stays out of the torso (chest space distance from the spine line)
     E = s["E_cs"]
     d = np.hypot(E[0], E[2] * 1.0)
     res.append(max(0.30 - d, 0.0) / 0.03)
     # the arm keeps clear of the torso (the checker's capsules, in chest space; the upper arm 0.072, the forearm 0.064)
     S0 = SHOULDER_CS
-    cl = 9.0
-    for q in (0.5, 0.7, 0.9):
-        cl = min(cl, torso_clear(S0 + (E - S0) * q) - 0.070)
     Wc = s["W_cs"]
-    for q in (0.167, 0.5, 0.833):
-        cl = min(cl, torso_clear(E + (Wc - E) * q) - 0.065)
+    PU = S0[None, :] + (E - S0)[None, :] * _QU[:, None]
+    PF = E[None, :] + (Wc - E)[None, :] * _QF[:, None]
+    cl = min(float(np.min(_caps_clear(PU, _TC))) - 0.070, float(np.min(_caps_clear(PF, _TC))) - 0.065)
     res.append(max(CLEAR_MARGIN - cl, 0.0) / 0.01 if CLEAR_ON else 0.0)
     # limits (always present, zero inside)
     for k, v in zip(NAMES, x):

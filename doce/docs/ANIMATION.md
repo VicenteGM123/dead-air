@@ -333,6 +333,8 @@ before, 7.1 against 6.7 cm: cloth sensitivity to the new idle stance, the pose o
 
 ## 4. Strike spec (what step 2 was built to; 4.8 says how and what came out)
 
+(4.1-4.8 are the first rebuild of attack1-3 and the heavy. The blows the game plays now are the long blade's moveset, in 4.9.)
+
 Keep the **event times** the game depends on (they are the hit windows): attack1 swing 0.13 s, impact 0.205 s (frame 6.2),
 steps 0.2 and 0.53, length 0.56; attack2 swing 0.12, impact 0.20, length 0.56; attack3 swing 0.27, impact 0.345
 (frame 10.4), length 0.80; heavy swing 0.36, impact 0.47 (frame 14.1), length 1.00. Change the **poses and their timing**
@@ -559,6 +561,70 @@ longer without moving the hit window. (2) A lunge (up to 2 m in 0.14-0.3 s) outr
 and lunge throws the cape over the shoulders (cloth, not authored). (4) The cape against the heavy's shield (4.5 cm) and arm
 (3-6 cm) during the spin is the cloth's, as in the baseline; depending on the cloth's random start it also reaches 2-8 cm into the pelvis or the left thigh for a frame or two at the start of the spin. (5) Blows started in the air (the zip strike), the water or a roll
 were probed for NaNs and wild steps only (none), not judged on strips. (6) attack2 misses one of the old 13 arc bins.
+
+### 4.9 The moveset for the long blade (2026-10-17)
+
+The blows of 4.8 were replaced by a moveset for the 0.98 m blade, built on the client's reference poses: combo A (a1
+diagonal forehand, a2 rising backhand, a3 wide horizontal forehand, a4 a stepping overhead chop that ends with the blade
+struck into the ground), combo B (b1 rising diagonal out of the low carry, b2 descending backhand, b3 a lunging thrust),
+the dash attack (a leaping overhead slash out of a sprint, landing in the ground-strike pose) and the heavy (the charged
+spin, rebuilt). Numbers, routing and feel are in docs/COMBAT.md 3.2. `attack1`/`attack2`/`attack3` remain as aliases of
+a1/a2/a4 (`STRIKE_ALIAS`).
+
+**What was taken from the references.** From the client's screenshots, two poses: P5 (low and wide, the blade held back:
+the heavy's coil) and P8 (the blade struck into the ground at the end of a chop: the end of a4 and of the dash). From the
+study notes: each blow in its own plane with the edge leading; the follow-through carrying the tip across and behind; the
+leap-and-plant finisher (a4), the piercing thrust (b3), the leap out of the run (dash) and a low, level spin (heavy). The
+timing is slow wind-up (the last frames nearly still), a fast cut of 3-4 frames, a short hold, then a slow settle; the
+wind-up of a chained blow sits inside the previous follow-through.
+
+**How they were made** (`docs/anim_design/moveset.py`, python + numpy; `mview.py` draws quick stick-figure strips):
+
+* Each blow has a **cut plane**, a great circle round the moving right shoulder through two directions. The blade turns
+  about the plane's normal and its flat is that normal, so the edge leads. The keys give the time, the grip's place on
+  the plane (angle and reach from the shoulder) and the blade's angle on it.
+* **Which edge leads** (`back`). With the true edge (-1), the back of the hand faces -n and the blade lags the forearm
+  by 30-88 degrees. With the false edge (+1), the blade runs ahead of the forearm. A forehand turned over into a
+  backhand in 3 frames would need about 240 degrees of forearm twist, and the forearm has 110 either way of thumb-up. So
+  the second blow of each pair is the **pendulum** back along the same plane on the false edge: a2 after a1, b2 after
+  b1, with no turnover of the hand. a3 is palm down: a palm-up horizontal forehand is out of reach with the wrist's
+  30.5-degree limit. b3 is a thumb-up thrust with the blade 18 degrees up: a thrust in the forearm's line cannot be held
+  at that limit.
+* The flat is a **roll angle** about the blade, interpolated between the keys. A slerp of the flat vectors flipped by
+  73 degrees in one sample.
+* **Dense IK**: every 1/120 s the seven arm angles are solved by least squares, starting from and pulled towards the
+  previous sample. The limits are `uln` <= 59.5, `tw` +-110, `ext` +-60, `el` 8-140 and `r` -95..100. The solve also
+  keeps the blade clear of the torso and the thighs, and the tip at least 0.12 m over the ground (except the two chops
+  into it). Where that continuation would jump to another branch (a3's wind-up, b3's thrust, the turnovers of the
+  recoveries), the segment is **joint-space** (`js=True`): the angles go straight from one solved key to the next
+  (`solve_key`, multi-start).
+* **Chained blows start on the exact pose of the blow before at its `open` time** (`chain_from`), so a buffered press
+  flows into the next blow with no blend jump. a1, b1 and the dash start from the armed **carry**, the pose (`X_CARRY`)
+  that every blow's recovery returns to. Body, head and shield curves and the feet plans are authored per blow; the dash
+  and the heavy have their feet baked into the pose (`"mode": "baked"`) and never run on the gait (`_strike_own_legs`).
+* The heavy keeps its charge: the pose at 0.30 s is the coil, held while the button is. Standing, the held coil now keeps
+  its own low, wide stance (`_strike_layer` with `own` legs); on the charge walk the legs blend to the gait. The release
+  is a whole-body `rot` of 360 degrees about the right foot between 0.30 and 0.72 s, with the blade level and out at
+  arm's length.
+* Export: 60 Hz samples plus the keys into `strike_data.gd.txt`, then `splice_strike.py` puts it into the rig between the
+  STRIKES markers. Edit the generator and splice; never edit the block.
+
+**Checked**: the python check of every blow (lowest tip, blade-to-body clearance, the edge leading through the active
+window, the flat's roll rate, joint steps); Godot strips of every blow alone and of the strings chained
+(`tools/strike_strips.sh`; `preview_heracles.gd` row `chain:a1,a2,a3,a4[:speed]` plays each blow from the previous one's
+`open`); the other armed actions for the long blade (dodge, pull, death, hit_heavy were re-keyed where the blade
+touched the ground or the body); the arena bot at 60 fps (19/19).
+
+**Known limits.** (1) b1 crosses his front high (tip 1.8 m up): a low beast in front is still hit (the hit band reaches
+0.9 m under the blade), but against wolves the cut reads high. (2) The cuts are fast: the tip peaks at 90-145 m/s for 2-3
+frames (the thrust 45, the spin 66). The 30 m/s ceiling of 4.2 and `anim_check mode=strike` was set for the old short
+blows; the tool still measures attack1-3 by their old event times and was not re-based for the new blows. (3) The
+recoveries go back to the carry along visible sweeps (a1 and a3 low across the front, b1 over the head). (4) A few holds
+sit at a joint limit, so the follow-through stops short of the design (a1's blade ends 25 degrees down, not 35). (5) The
+cape in the long lunges (b3, the dash) is cloth and not authored. (6) The armed carry and the draw are the STOW lane's.
+The blows start and end on `X_CARRY`: grip at (0.346, 0.84, 0.081) in rig space, blade pointing back and down (azimuth
+150, elevation -37), back of the hand towards the thigh. The carry and the draw must arrive at that pose.
+(INTEGRATE dealt with (1), (3) for b1, part of (2) and (5), and (6): section 10.)
 
 ---
 
@@ -1067,3 +1133,139 @@ ranges 67 of 72; the arena, encounter and lion bots pass; the wheat walk passes;
   visibly off: the leg is fully stretched in a spin of 55 degrees per frame). The arena bot passes at 24 fps (16 of 16).
 * The roll's left foot dips 2.6 cm under the ground in two samples (0.07 s) at the landing crouch; the roll's plume and spear no longer do.
 * Changes outside the owned files: none in this step (step 2's one line in `scripts/player/hero_melee.gd`, `rig.set_strike_run`, stays).
+
+---
+
+## 9. Carrying the weapons (lane STOW)
+
+Two states. **ARMED**: the sword in the right fist, the shield on the left forearm. **STOWED**: the sword in a scabbard at his left
+hip, the shield on his back with the chain spear strapped over it. The game starts STOWED (`Hero._ready` and the respawn at the altar
+call `rig.set_armed(false, true)`); a bare `RigHeracles.new()` (previews, the clip checker, the anim tools) starts ARMED as before.
+
+**Rig API.** `set_armed(on, instant := false)` plays the draw or the sheathe of whatever is not where it should be (`instant`: put
+there now); `is_armed()` (a draw playing counts as armed, a sheathe as not); `sword_in_hand()`, `sword_free()` (in the hand and its
+tip out of the throat), `shield_in_hand()`, `stow_busy()`, `stow_action_for(on, sword, shield)` (the action name, "" if nothing to do),
+`scabbard_segment()` (throat and end, world space, for tools), `alert` (0..1, set by Hero: the armed idle's ready stance).
+`weapons_aside` (the wrestle) is unchanged. **Hero API.** `weapons_ready()` (= `rig.sword_free()`), `request_arms(sword, shield)`,
+`STOW_AFTER := 4.0`, `ARMS_FOE_DRAW := 8.0`, `ARMS_FOE_CALM := 12.0`, `ARMS_WADE := 0.75`.
+
+**The actions** (upper body: `play_at(a, 1.0, true)`, the legs keep the locomotion; their moments are `STOW_EV`):
+
+| action | length | moments (s) |
+|---|---|---|
+| `draw` | 0.55 | fist on the grip 0.12, the tip out of the throat 0.27; fist on the rim 0.15, forearm into the band 0.40; handover 0.44 |
+| `draw_sword` | 0.24 | grip 0.06, tip out 0.15 (a blow waiting for it starts here); ends cocked over the right shoulder |
+| `draw_shield` | 0.26 | rim 0.07, forearm in 0.18 (handover 0.18); ends at his side, or up in front as `draw_shield_guard` (`_variant()` picks it while the guard is held) |
+| `sheathe` | 0.80 | rim 0.12, the tip finds the throat 0.38, shield hung 0.50, sword home 0.56; handover 0.62 |
+| `sheathe_sword` | 0.62 | tip in 0.26, home 0.42 |
+| `sheathe_shield` | 0.55 | rim 0.08, hung 0.36 |
+
+Sounds through the Sfx autoload at -6 dB: `sword_draw` (grip), `sword_sheathe` (the tip in the throat), `shield_draw` (forearm in),
+`shield_stow` (hung); silent until the FX lane's files are in.
+
+**No pops.** No node changes parent: after the solve `_stow_frame` works out every prop's frame from what holds it (`AT_SHEATH`,
+`AT_HAND`, `AT_BACK`, `AT_RIM`: the left fist on the rim between the back and the arm, `AT_ARM`) and `_place_weapons` puts it there. A
+hand-off keeps where the prop was as an offset in its new holder's frame that dies away (smoothstep, 5-16/s). `_stow_pose` (after the
+blend) puts the fists exactly on the grip in the scabbard, along the slide and on the rim on his back, and keeps the free blade a
+hand's breadth over the ground and outside the right leg (`_blade_clear`, as in the carry: the lowest tip in a draw on the run is
+0.22 m at 6.2 m/s, 0.21 m at 9.0). The arms' carry weights (`_carry_sw`, `_carry_sh`) blend the relaxed and the armed locomotion
+(about 0.25 s). Tip heights in the carry: standing 0.27 m, walk 0.34-0.56, run 0.54-1.0, sprint 0.82-1.37.
+
+**The scabbard.** Dark leather (`SHEATH` #3B2216, darker than the belt, lighter seams), bronze throat, band and chape; 0.96 m (grip
+space -0.15 to -1.11). It hangs by a short strap from the belt at his left hip (`SCAB_HINGE`), the throat at `SCAB_T`, pointing back,
+down and a little out (`SCAB_D`, 57 degrees from the vertical), and swings on the strap as a damped pendulum driven by the pelvis'
+acceleration and tilt (`SCAB_K` 140, `SCAB_C` 13, at most 1.3 rad), the chape kept 7 cm over the ground and the sheath outside the left
+thigh. A draw turns it to follow the blade out (`SCAB_D_DRAW`), a sheathe turns it up to meet the tip (`SCAB_D_SHEATHE`); while the
+blade slides the scabbard lies along it. The cape drapes over it (a cape collider). The diagonal back scabbard was not needed.
+
+**The shield on his back.** On the spine between the shoulder blades (`SHB_C`; 3 cm further out over the lion's pelt), face out and a
+little up, hanging from its top, in the frame of the spear on the back (it follows the upper back); the cape stays under it (`_cape_step`).
+The spear lies over it (`spear_over_xf`: 0.135 m further out at the head, 0.19 at the butt), so the throw and the catch have `_over`
+variants (`throw_over`, `catch_over`, and `_lion`), picked by `_variant()`. The shield is drawn round his left side.
+
+**Locomotion** (`_ground_arms`, `_ground_pose`, `_air_pose`). Relaxed: loose fists swinging against the legs (`T_RX_A` 24 degrees at
+the walk, 50 at the run, 58 at the sprint, more forward than back, the elbows bending with speed); the run leans in (P2: `T_LEAN`
+13.5 degrees at 6.2 m/s, 27 at 9.0). Idle P1: the weight on one leg, changing every 6-11 s; standing on with the weapons away, the left
+hand rests on the pommel a few seconds in eleven (`_pommel_rest`). Armed: the sword low in the right fist, the blade trailing back and
+down (`T_AC_EV` -34 degrees at the walk to -24 at the sprint), kept 26 cm over the ground and outside the right leg (`_blade_clear`);
+idle P9 (the blade hanging steeply by his right foot), with `alert` the ready stance (lower, the shield up in front of his left side).
+Guard P7: crouched behind the shield, looking over its rim, the sword arm back low (the guard walk too). Air P6: arms spread, knee up;
+armed, the sword arm out to the side with the blade back. Jump and land keys trail the blade.
+
+**The rules** (`Hero._tick_arms`, every tick; the foes scanned every 0.2 s). Both come out for the lock-on, a hostile foe within 8 m
+(`is_fighting()`, a telegraph, or a brain past idle and not walking home; dummies count) and after a hit (once the reaction is over).
+A blow pressed with the sword away plays `draw_sword` and the blow starts when the tip is out (kept 0.7 s; from stowed the hit lands
+about 0.32 s after the press); the heavy's charge the same; the guard plays `draw_shield` first, but the guard and its parry window
+are up from the press. Both go away after `STOW_AFTER` s of calm (no hostile foe within 12 m, no lock, no guard, no blow, charge or
+stagger), in water deeper than 0.75 m and swimming. Nothing starts until he is free (`_arms_free`: MOVE, not rolling, zipping or
+hanging, the rig idle or in an action that may be cut). The zip to a ring sheathes the sword on the way (the left fist holds the
+chain); the wrestle lays down only what is in his hands.
+
+**Preview.** `armed=0|1` (draw rows start stowed, sheathe rows armed), `ready=<0..1>`, the row `idlelong:<s>`, the views `hipl`,
+`hipb`, `backc`, `gamec`, `tqlc`.
+
+**Outside the STOW blocks** (`# >>> STOW BEGIN` .. `# <<< STOW END` in rig_heracles.gd; the STOW sections of hero.gd): one-line hooks
+in `_build`, `_action_defs`, `_animate` (x3), `_apply_bones`; `_variant` (the `_over` and `draw_shield_guard` variants);
+`_throw_def` / `_catch_def` (an `over` argument); `NEUTRAL`'s sword hand (trailing back, was forward and down); `T_LEAN`; the arms of
+`_ground_pose` (now `_ground_arms`), its guard block (P7) and the idle's weight shift; `_air_pose` arms and the jump / land keys;
+`_cape_colliders` (the whole blade, the scabbard) and `_cape_step` (the shield on the back); `preview_pose(..., armed, ready_k)`.
+
+**Not done / for the other lanes.** The other actions (hit, recoil, dodge, backstep, climb, pet, pull, victory, death) were authored
+for the old blade and are untouched; `NEUTRAL`'s new sword hand changes what they inherit where a key leaves the sword hand out. The
+clip checker's `shield_skin()` does not know the shield can be on his back. Petting a cat and donning the pelt do not sheathe first
+(the pelt hides the stowed weapons with the others). The hang and the ledge climb (P3) are as they were.
+
+## 10. The lanes wired together (INTEGRATE, 2026-10-17)
+
+STOW (the weapons carried), MOVESET (the blows) and FX (the feel tools) merged with LOOK's hero into one rig. The rig's own
+INTEGRATE code sits between `# >>> INTEGRATE BEGIN` and `# <<< INTEGRATE END` at the end of rig_heracles.gd; the changes
+elsewhere are marked `INTEGRATE` in their comments. The blows themselves changed only through the generator
+(`docs/anim_design/moveset.py`, then `splice_strike.py`).
+
+**Drawing into the blow.** A press with the sword sheathed plays a variant of `draw_sword` that leads into the blow the
+routing rule picked at the press (`draw_into` = a1, b1 or dash; `DRAW_INTO` {go 0.245 s, skip 0.06 / 0.05 / 0.05};
+`_variant` answers `draw_sword_<blow>`; built by `_draw_into_actions` from STOW's draw keys). Keys at 0, 0.05, 0.15,
+0.185, 0.215, go, go + 0.08: STOW's reach to the grip and the pull, then the free blade swung down in front of him (`dip`)
+and round his right side (`side`) into the blow's own pose `skip` s in (arm, chest, neck and head from `_strike_pose`), the
+trunk turning with it. Hero hands over at `draw_go()`: `HeroMelee.start_entry(route, draw_skip())` starts the blow with
+`rig.action_t = skip`. The sheet row `entry:<blow>[:speed]` (et0 / et1) shows the press to the blow's end.
+
+**Out of a blow.** When a blow ends or is cut, the inertialized blend carried the sword hand's speed on; the recovery's
+last sweep carried the fist 16 cm into his hip (b1, a1, a3, the heavy). `IO_STRIKE_V` caps the carried speed of the sword
+hand's channels at 1.2 m/s for a blend out of a strike or the throw (`_io_from_strike`, set in `advance()` and
+`stop_action()`). Fist and blade against the pelvis at the blows' ends: 16.5 cm -> 4 cm; at the throw's end 4.6 -> 3.6 cm
+(the rest is the path from the throw's end pose to the carry, not carried speed).
+
+**The other armed actions** were keyed for the old short blade held forward; with the long trailing blade they swung it
+through the ground or the legs. Re-keyed (strips: merged/shots/acts): `ready` (recoil, the climb's end) = the trailing
+carry; hit 0.09; hit_heavy 0.36; dodge 0.15 / 0.25 / 0.45 / 0.56; victory (a partial key at 0.14, a shallower 0.3);
+pull (the hand out at his side); death 0.08 / 0.24; climb (partial keys 0.44 / 0.52 and its own end hand); throw (partial
+keys 0.12 / 0.8: the blade round his right side); parry (the sword cocks back over the right shoulder instead of pointing
+ahead, so the guard's blade no longer snaps round); the air pose's blade further out; `T_AB_L` wider at speed (the shield
+met the left thigh in the sprint); the guard's sword fist out from the hip.
+
+**MOVESET's open points**, through the generator: b1's plane lowered (`B_PLANE`, shared with b2: it meets the foe 0.94 m
+up and crosses his front 1.0 m up, a wolf's height); b1's recovery low across his front like A's (its cost 354 -> 92);
+the cuts of a2, a3, b1, b2 spread over a frame or two more, the snap kept (peaks 79-136 m/s); a1's follow-through over
+3 frames and then the recovery at once, no slow settle; b2's wind-up cocked further forward (on the lowered plane the
+forearm went through his head); b3's shield flung back wide over the lunging left thigh; the heavy's held coil with the
+fist at the left hip (the blade lay across the shield). Impact events: a4 0.28 s, b1 0.155 s. Frame counts (wind-up /
+cut / hold): a1 9/3/9, a2 5/3/0, a3 6/4/1, a4 13/3/11, b1 7/4/3, b2 5/3/2, b3 10/3/11, dash 14/4/12, heavy 1/20/13.
+
+**The spear on his back** (`SPEAR_BACK_TIP` / `SPEAR_BACK_BUTT`, shared by `spear_back_xf` and `spear_over_xf`): tip
+(-0.47, 1.8, 0.24), butt (0.26, 0.72, 0.31), 34 degrees from the vertical. From the front its head is a spear behind his
+left shoulder, not a horn or an ear over his head.
+
+**The cloak** (`_cape_step`): in b3's lunge (0.12-0.6 s) the drape is held like in the dodge (shape 30), and whenever the
+sword arm reaches ahead of the chest the cloth lying on the upper arm slides round it to its back, a quarter of the way
+each collision pass, so the cloak hangs behind the outstretched arm instead of over it like a sleeve.
+
+**Clip check** (`tools/clip_check_heracles.tscn`, the blows and every armed action): what is left is grazes of 2-6 cm for
+a few frames: the blade against the spear's butt and chain coil behind his right hip as a1, a3 and b1 blend into the idle
+(5 cm), the raised shield against the spearhead in the dash (4.7 cm), the heavy's blade against the shield at the
+release (4.6 cm, one frame), the spear hand against the shield in the throw and the catch (4 cm), the fist against the
+hip as the throw ends (3.6 cm), the cloak against the left upper arm late in b3's hold (5 cm, one frame), and the cloth's
+usual few cm. Older than this round and left as they were: in the lion outfit the shield passes 9 cm into the hood in the
+throw (0.43 s, two frames). b2's first frames when played on its own from the idle
+(it always follows b1 in play) and the stow actions played on an armed rig are the checker's artefacts.
+

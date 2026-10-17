@@ -12,7 +12,9 @@ extends Node3D
 ##    frames hero and target; a flick of the right stick or the mouse switches to the next target on that side;
 ##    released on a press, on death, beyond LOCK_KEEP or out of sight; Game.lock_changed(target);
 ##  - feel: trauma shake (Game.shake -> add_trauma; Settings "shake"), nudge(dir, amount) on blows, FOV kicks
-##    when sprinting (set_sprint) and zipping along the chain (set_zip);
+##    when sprinting (set_sprint) and zipping along the chain (set_zip); the blow's kick (Game.kick -> kick: the
+##    view jolts along the blow and springs back) and the finisher's FOV punch (Game.fov_punch -> fov_punch: a
+##    quick zoom-in easing back), both in real time, added on top of the shake (Settings "shake" turns them off);
 ##  - modes: "follow" (the game), "orbit" (title), "fly" (free camera: WASD + mouse, E / Q, Shift).
 ## Angles: yaw 0 = camera behind a hero facing -Z (north), increasing anticlockwise seen from above; pitch < 0
 ## looks down. Moved in _process (after the hero and its rig); physics interpolation off.
@@ -56,6 +58,23 @@ var _arm := 5.5
 var _lead := Vector3.ZERO
 var _nudge := Vector3.ZERO
 var _nudge_v := Vector3.ZERO
+## FX lane: the blow's kick (see kick()): metres of offset and degrees of rotation for amount 1; the spring's
+## natural frequency (rad/s) and damping ratio (0.45: one overshoot of ~20 %, still by ~0.18 s).
+const KICK_M := 0.05
+const KICK_DEG := 1.0
+const KICK_W := 39.0
+const KICK_Z := 0.45
+var _kick_p := Vector3.ZERO
+var _kick_v := Vector3.ZERO
+var _kick_r := Vector3.ZERO
+var _kick_rv := Vector3.ZERO
+## FX lane: the FOV punch (see fov_punch()): seconds to reach the full zoom-in; the current punch's start value,
+## peak (degrees), length and clock (s).
+const PUNCH_IN := 0.045
+var _punch_from := 0.0
+var _punch_amp := 0.0
+var _punch_dur := 0.0
+var _punch_t := 0.0
 var _fov_now := 60.0
 var _zip := false
 var _zip_k := 0.0
@@ -183,6 +202,107 @@ func nudge(dir: Vector3, amount: float) -> void:
 	if not bool(Settings.get_v("shake")):
 		return
 	_nudge_v += dir.normalized() * amount * 9.0
+
+
+## FX lane: the blow's kick. The view jolts `amount` x KICK_M m along `dir_world` and turns KICK_DEG degrees with
+## it (pitch towards an up/down blow, roll and a little yaw towards a sideways one), peaks ~0.03 s later, swings
+## back through rest at ~0.09 s with one small overshoot (~20 %) and is still by ~0.18 s: an underdamped spring
+## (KICK_W, KICK_Z) given a kick of velocity. Real time (it plays through the hit-stop, like the shake); kicks
+## add up; on top of the shake and the nudge. Settings "shake" off: nothing.
+func kick(dir_world: Vector3, amount: float) -> void:
+	if not bool(Settings.get_v("shake")) or amount <= 0.0 or dir_world.length_squared() < 1e-8:
+		return
+	var d := dir_world.normalized()
+	var dl := global_transform.basis.inverse() * d if is_inside_tree() else d
+	var g := amount * _kick_gain()
+	_kick_v += d * KICK_M * g
+	# (x pitch: a downward blow nods the view down; z roll: the top of the view tips the way of the blow; y yaw)
+	_kick_rv += Vector3(dl.y, -dl.x * 0.5, -dl.x) * deg_to_rad(KICK_DEG) * g
+
+
+## FX lane: a quick zoom-in by `deg` degrees (narrower field of view) that eases back to normal over `dur` s (in
+## PUNCH_IN s, then a smooth return). A weaker punch during a stronger one is ignored. Real time; follow mode only.
+func fov_punch(deg: float, dur: float) -> void:
+	if not bool(Settings.get_v("shake")) or deg <= 0.0:
+		return
+	var now := _punch_value()
+	if deg <= now:
+		return
+	_punch_from = now
+	_punch_amp = deg
+	_punch_dur = maxf(dur, PUNCH_IN + 0.05)
+	_punch_t = 0.0
+
+
+## FX lane helper: the world direction of a blow's kick by name, relative to the view (`left` / `right` across the
+## screen, `up` / `down` vertical, `forward` along the view on the ground), e.g.
+## Game.kick(Game.camera.kick_dir(&"left"), 0.8). Unknown names: Vector3.ZERO (no kick).
+func kick_dir(kind: StringName) -> Vector3:
+	var b := global_transform.basis if is_inside_tree() else Basis.IDENTITY
+	match kind:
+		&"left":
+			return -b.x
+		&"right":
+			return b.x
+		&"up":
+			return Vector3.UP
+		&"down":
+			return Vector3.DOWN
+		&"forward":
+			var f := Vector3(-b.z.x, 0.0, -b.z.z)
+			return f.normalized() if f.length_squared() > 1e-6 else Vector3.FORWARD
+	return Vector3.ZERO
+
+
+## Peak of the kick spring's response to a unit kick of velocity: kick() divides by it, so `amount` 1 peaks at
+## exactly KICK_M m and KICK_DEG degrees.
+static func _kick_gain() -> float:
+	var wd := KICK_W * sqrt(1.0 - KICK_Z * KICK_Z)
+	var tp := atan(wd / (KICK_Z * KICK_W)) / wd
+	return 1.0 / (exp(-KICK_Z * KICK_W * tp) * sin(wd * tp) / wd)
+
+
+func _punch_value() -> float:
+	if _punch_t >= _punch_dur:
+		return 0.0
+	if _punch_t < PUNCH_IN:
+		var u := _punch_t / PUNCH_IN
+		return lerpf(_punch_from, _punch_amp, 1.0 - (1.0 - u) * (1.0 - u))
+	var v := (_punch_t - PUNCH_IN) / maxf(_punch_dur - PUNCH_IN, 1e-3)
+	return _punch_amp * (1.0 - smoothstep(0.0, 1.0, v))
+
+
+## The kick spring (sub-stepped: stable and the same at any frame rate) and the punch's clock, in real time.
+func _step_kick(real_dt: float) -> void:
+	if _punch_t < _punch_dur:
+		_punch_t += real_dt
+	if _kick_p == Vector3.ZERO and _kick_v == Vector3.ZERO and _kick_r == Vector3.ZERO and _kick_rv == Vector3.ZERO:
+		return
+	var n := clampi(ceili(real_dt / 0.004), 1, 30)
+	var h := real_dt / float(n)
+	var k := KICK_W * KICK_W
+	var c := 2.0 * KICK_Z * KICK_W
+	for i in n:
+		_kick_v += (-_kick_p * k - _kick_v * c) * h
+		_kick_p += _kick_v * h
+		_kick_rv += (-_kick_r * k - _kick_rv * c) * h
+		_kick_r += _kick_rv * h
+	if _kick_p.length_squared() < 1e-10 and _kick_v.length_squared() < 1e-8 and _kick_r.length_squared() < 1e-10 \
+			and _kick_rv.length_squared() < 1e-8:
+		_kick_p = Vector3.ZERO
+		_kick_v = Vector3.ZERO
+		_kick_r = Vector3.ZERO
+		_kick_rv = Vector3.ZERO
+
+
+## The kick's offset and the punch's narrower view on the camera (after _place has set them for this frame).
+func _apply_kick() -> void:
+	if mode != "follow":
+		return
+	cam.position = global_transform.basis.inverse() * _kick_p
+	var p := _punch_value()
+	if p > 0.0:
+		cam.fov = maxf(cam.fov - p, 10.0)
 
 
 ## Wider view while zipping along the chain.
@@ -425,6 +545,8 @@ func _process(delta: float) -> void:
 		"fly":
 			_process_fly(real_dt)
 	trauma = maxf(0.0, trauma - real_dt * 1.7)
+	_step_kick(real_dt)
+	_apply_kick()
 	_apply_shake()
 	_cut_props(real_dt)
 
@@ -1151,10 +1273,12 @@ func _process_fly(dt: float) -> void:
 
 func _apply_shake() -> void:
 	var s := trauma * trauma
+	# (the kick's turn rides on top: pitch, yaw and roll; zero outside follow mode)
+	var kr := _kick_r if mode == "follow" else Vector3.ZERO
+	cam.rotation = Vector3(kr.x, kr.y, kr.z)
 	if s <= 0.0001:
 		cam.h_offset = 0.0
 		cam.v_offset = 0.0
-		cam.rotation.z = 0.0
 		return
 	# the noise gives the jolt's direction; its size is kept between 60 and 100 % of the full swing (simplex noise
 	# alone often sits near 0 for a few frames: the same blow would shake 1 px one time and 5 px the next)
@@ -1166,4 +1290,4 @@ func _apply_shake() -> void:
 		n *= 0.6 / l
 	cam.h_offset = n.x * s * 0.35
 	cam.v_offset = n.y * s * 0.35
-	cam.rotation.z = _noise.get_noise_2d(_t * 30.0, 50.0) * s * 0.05
+	cam.rotation.z = _noise.get_noise_2d(_t * 30.0, 50.0) * s * 0.05 + kr.z

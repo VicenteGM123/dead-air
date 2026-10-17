@@ -157,8 +157,9 @@ doce/
       gfx/mesh_builder.gd     MeshBuilder: low-poly mesh kit (flat/auto-smoothed normals, vertex colours, xf stack)
       gfx/materials.gd        Materials (static): shared materials + set_param() (per-node, web-safe)
       gfx/rig.gd              Rig: base of every code-animated character (parts, play(), event signal, flash, fade)
-      gfx/rig_heracles.gd     RigHeracles: the hero (Corinthian helmet, no face; cuirass, red cape cloth, xiphos, round
-                              shield, the chain spear on his back; the lion pelt outfit), section 5.7; since 2026-10-16 the
+      gfx/rig_heracles.gd     RigHeracles: the hero (bare-headed, short wavy hair, a faceless face; bare torso, linen
+                              kilt, red cape cloth under a mantle with a gold brooch, the sword, the round leather shield,
+                              the chain spear on his back; the lion pelt outfit), section 5.7; since 2026-10-16 the
                               gait (feet planted in the world, a leaning torso that counter-rotates), the four sword blows
                               (joint-angle curves, a chain of hips, chest, shoulder, elbow and wrist) and every other action
                               are authored to docs/ANIMATION.md
@@ -575,7 +576,16 @@ func grapple_cue(window: float); func grapple_thrash(cost: float); func grapple_
 func grapple_window_left() -> float      # the open squeeze window (s), for the UI's wrestle prompt
 func recoil(point: Vector3, strong: bool)         # a deflected blade (HeroMelee)
 func on_spear_stuck(target, kind); func on_spear_missed()   # ChainSpear -> hero
+# STOW (the weapons carried; docs/ANIMATION.md 9) and INTEGRATE (the draw into the blow; docs/COMBAT.md 3.2)
+const STOW_AFTER := 4.0                  # s of calm before he puts them away
+func weapons_ready() -> bool             # the sword in his hand and clear of the scabbard
+func request_arms(sword: bool, shield: bool)   # the blow / guard code asks; the quick draws play when he is free
 ```
+**The weapons carried** (STOW, wired by INTEGRATE): he starts and respawns with the sword in its scabbard at his left
+hip and the shield on his back, and walks and stands relaxed; the lock-on, a hit or a foe turning on him within 8 m
+draw both, and STOW_AFTER s of calm (no hostile foe within 12 m) put them away. A press with the sword away draws it
+straight into the blow it starts (combo A, B or the dash, chosen at the press); a guard press draws the shield first
+with the parry window counted from the press.
 **The free hand in the wheat** (FINAL, the client's "Gladiator" shot; `Hero._feed_brush`, called from `_feed_rig`
 every tick): walking, or at his normal pace (not sprinting), on the ground, in MOVE, no guard, no lock, no action on
 the rig and no live foe within 9 m for 1.2 s, with wheat (`world.wheat.in_field`) where his left hand would be (0.62 m
@@ -586,7 +596,8 @@ the ears it passes dip and spring back. On keyboard the normal pace is the run (
 too, with the hand trailing a little lower and further out; with a stick tilted halfway he walks (2.2 m/s).
 
 The hero is CORE's combat character; every number (speeds, the combo's frames, hit-stops, shakes, stamina, the
-roll, the guard and parry, the chain's moves, the camera) is in docs/COMBAT.md. In short: a 3-blow combo that starts
+roll, the guard and parry, the chain's moves, the camera) is in docs/COMBAT.md. In short: two combo strings for the
+long blade (A of four blows, B of three, alternating in a fight), a dash attack out of a sprint, each blow starting
 on the press, a heavy spin coiled out of the follow-through when the button stays down, magnetism and a lunge
 along a displacement curve (no overshoot into the foe), a frame-rate independent blade sweep against
 `Combat.hurt_volumes`, impact feel (hit-stop, shake, a camera nudge, the foe's flash, flinch and knockback, a
@@ -625,10 +636,22 @@ func set_shadows(on: bool) -> void
 Each rig gets its own copies of its materials (`add_part`), so flashes never leak to other rigs.
 
 `RigHeracles extends Rig` (`scripts/gfx/rig_heracles.gd`: built by the HERO stream, owned by CORE since the merge)
-is the hero: a skinned code rig (Skeleton3D, 30 bones) about 1.9 m tall, Corinthian helmet with a crest (no face),
-bronze cuirass, a red cape simulated as cloth (72 particles; it stays in front of walls and rising ground behind
-him), the aspis on the left forearm, the xiphos in the right hand, the chain spear on his back; the lion outfit
-(the head as a hood, the pelt as a cape) after the labour.
+is the hero: a skinned code rig (Skeleton3D, 30 bones) about 1.9 m tall. Since the hero round (2026-10-17, the
+client's reference picture) he is bare-headed: short wavy brown hair in chunky locks, swept up and back from a clear
+forehead into a quiff (`_hair_t`, `HAIR_LOCKS`), and a faceless face (planes only: brow, a straight nose, cheekbones, a
+square jaw; no eyes, no mouth, nothing painted); a bare muscular torso (warm tan skin, the muscles in the geometry with
+a few percent of vertex shading), thick forearms in big leather bracers, big fists (`HAND_GROW`, grown round the grip),
+a wide leather belt with a bronze plate buckle, a cream linen kilt (on the skirt bones; its own mesh and material,
+`_mat_kilt`: lowpoly's `amb_sat`/`amb_tint` keep the cream warm in the shade) with a red front panel, thick leather
+wraps from below the knee to the ankle over big sandals (`FOOT_K`); a big deep red cloak: a mantle laid over both
+shoulders (`collar_meshes`: rays from inside the chest to the body's surface, skinned like the skin under it) pinned at
+the upper chest by a round gold brooch, and under its hem the cloak itself, simulated as cloth (13 x 10 particles, the
+pinned row skinned to the shoulders): wide behind him, a little round his sides, down to about 0.4 m above the ground;
+it stays in front of walls and rising ground behind him, inside the shield on his arm, and is carried round with his
+chest when he spins (`_cape_step`); the round shield (leather face in two browns, a dark rolled rim, a bronze boss, a
+carrying strap across its back) on the left forearm, the sword in the right hand, the chain spear on his back; the lion
+outfit (the head as a hood over his head, the hair hidden under it; the pelt in place of the cloak and its mantle)
+after the labour. The outfit names stay `&"helmet"` (the default, bare-headed now) and `&"lion"`.
 ```gdscript
 func set_motion_state(s: StringName)    # &"ground" | &"air" | &"swim" | &"zip" | &"hang"
 func set_vertical_speed(vy: float)
@@ -895,7 +918,9 @@ poise 99, blades deflected, `grapplable`: hurt only by the wrestle's squeezes) i
 The UI (UI stream, `scripts/ui/ui.gd`, a CanvasLayer or Control root that main.gd adds when the file exists)
 listens to the Game signals (4.1), reads `Game.hero.hp / max_hp / stamina / max_stamina /
 interact_target` (+ `interact_info()`), `Game.camera.lock_target`, and implements `show_title()`, `show_play()`,
-`show_pause(paused: bool)`. Optionally it sets `Game.hud` to a node with `screen_flash(color, seconds)`. Key caps
+`show_pause(paused: bool)`. Optionally it sets `Game.hud` to a node with `screen_flash(color, seconds)`. The HUD's
+medallion (hud.gd, bottom-left) shows the hero as he is now (INTEGRATE): his bare head in profile with wavy hair and no
+face (`icons.gd` icon `"helmet"`, the name kept), the lion's head once he wears the pelt. Key caps
 for prompts: `glyphs.gd` `caps_for(action)` knows DOCE's actions on keyboard, pad and touch. Minimal UI only: health
 and stamina, the boss bar, prompts and messages, the labour card. Since the merge it also reads:
 `Game.hero.chain_candidate` (the HUD's chain mark: a thin bronze ring with four ticks and the chain key on what the
@@ -1386,8 +1411,10 @@ CPU only (the rig's `advance()` 0.9-1.3 ms; the first rig's 48 ms compile), not 
   dolphins live on the island so far (nobody owns the villagers yet).
 - Shadow hatching: a cross-hatch shows on surfaces near the sun's terminator (cypress flanks, big rocks, the cliff
   faces at the cave mouths): lowpoly's `ph_toon_shadow()` thresholds the PCF-filtered shadow into a pattern there.
-- The hero's cape still cuts through the left arm and the shield for a frame or two in the heavy spin and the strafe
-  (4.5-5.7 cm); the backhand's blade is behind his body from a camera behind him (docs/COMBAT.md, open points).
+- The hero's cloak (2026-10-17: the big cloak, carried round with his chest in spins) is clear of the body, the arms,
+  the legs, the shield and the spear in the clip check's idle, walk, run, sprint, guard, blows, dodge and air states,
+  but for one sample of the heavy spin (an arm between two cloth points, 7 cm, one frame); the backhand's blade is behind
+  his body from a camera behind him (docs/COMBAT.md, open points).
 - Mouth B: while the hero, still in front of the face, starts hauling the boulder, its soft framing (32 degrees round)
   can leave him half hidden by the jamb for about a second before the view swings in behind him; a small sunlit patch
   shows inside the shadow on the face to the right of the lowered arch (light through a gap in the rock above it).

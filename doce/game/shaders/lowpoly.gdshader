@@ -34,6 +34,11 @@ global uniform vec4 g_cut_b;
 uniform float cut_foliage = 0.0;
 uniform vec3 tint = vec3(1.0);
 uniform float metal = 0.0; // TOON: bronze / gold surfaces of this material get anime metal highlights
+// LOOK2 (the hero's linen): the sky ambient in this material's shade, its saturation (0: a neutral grey of the same strength, so
+// a cream cloth stays warm in the shade instead of turning lavender under the blue sky) and a tint on it. The sunlit side keeps
+// the ambient every other material has: light() hands the difference back with the sun. The defaults change nothing.
+uniform float amb_sat = 1.0;
+uniform vec3 amb_tint = vec3(1.0);
 
 const float BAYER4[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
 
@@ -45,6 +50,7 @@ varying float v_fogf;
 varying float v_cloud;
 varying vec3 v_wpos;
 varying float v_metal;
+varying vec3 v_amb_fix;
 
 void vertex() {
 	v_albedo_day = ph_toon_albedo_day(ph_srgb_to_linear(COLOR.rgb)) * tint;
@@ -117,7 +123,10 @@ void fragment() {
 			v_metal = metal;
 		}
 	}
-	vec3 base = albedo * ph_toon_ambient(wn) * mix(1.0, 0.72, v_metal) + emit;
+	vec3 amb = ph_toon_ambient(wn);
+	vec3 amb_m = mix(vec3(dot(amb, vec3(0.2126, 0.7152, 0.0722))), amb, amb_sat) * amb_tint;
+	vec3 base = albedo * amb_m * mix(1.0, 0.72, v_metal) + emit;
+	v_amb_fix = albedo * (amb - amb_m) * mix(1.0, 0.72, v_metal) * (1.0 - flash);
 	// a cool sky reflection band across the upper half of metal parts (anime metal)
 	vec3 vn = normalize(NORMAL);
 	base += albedo * smoothstep(0.3, 0.36, vn.y) * 0.18 * v_metal * (1.0 - g_night * 0.6);
@@ -143,7 +152,7 @@ void light() {
 	vec3 lit;
 	if (LIGHT_IS_DIRECTIONAL) {
 		float k = ph_toon_ramp(ndl) * ph_toon_shadow(ATTENUATION) * v_cloud;
-		lit = ALBEDO * LIGHT_COLOR / PI * k;
+		lit = ALBEDO * LIGHT_COLOR / PI * k + v_amb_fix * k;
 		if (v_metal > 0.0) {
 			vec3 H = normalize(LIGHT + VIEW);
 			float nh = dot(NORMAL, H);

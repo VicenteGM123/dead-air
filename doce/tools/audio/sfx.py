@@ -1,4 +1,5 @@
-"""DOCE sound effects (mono): Heracles' combat, the chain spear, footsteps, the world and the interface.
+"""DOCE sound effects (mono): Heracles' combat (and the long blade's: swings, hits, the ground slam, drawing and
+stowing the weapons), the chain spear, footsteps, the world and the interface.
 The beasts (wolves, boars, the Nemean Lion, the wrestle) live in beasts.py.
 
 Every recipe is layered: a transient (very short filtered noise), a body (modes or a sine with a pitch drop) and a
@@ -691,6 +692,331 @@ def ui_card() -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
+# The hero round (FX lane): the long blade (0.98 m), its hits, the ground slam, drawing and stowing the weapons
+# ---------------------------------------------------------------------------
+
+def _blade_whoosh(n: int, rng, cen, gain, body: float = 0.45, air: float = 0.18, whistle: float = 0.14,
+                  wfac: float = 2.0, hp: float = 110.0, nfft: int = 512) -> np.ndarray:
+    """The long blade through the air: a main band, a deeper body band (the long blade moves more air than the
+    old xiphos), an airy top and the thin whistle of the edge, all following the same centre and gain curves."""
+    main = unit(whoosh(n, rng, cen, gain, width=0.36, hp=hp, nfft=nfft))
+    low = unit(whoosh(n, rng, [(p[0], p[1] * 0.42) for p in cen], gain, width=0.65, hp=50, nfft=max(nfft, 1024)))
+    top = unit(whoosh(n, rng, [(p[0], p[1] * 2.2) for p in cen], gain, width=0.4, lp=6500))
+    wh = unit(whoosh(n, rng, [(p[0], p[1] * wfac) for p in cen], gain, width=0.05, lp=7500))
+    return main + body * low + air * top + whistle * wh
+
+
+def _woom(n: int, f_pts, gain) -> np.ndarray:
+    """A low pressure 'woom' (a sine gliding with the pass) under a heavy swing."""
+    t = tvec(n)
+    return np.sin(TAU * np.cumsum(pts(t, f_pts)) / SR) * env_points(n, gain)
+
+
+def swing_long(variant: str) -> np.ndarray:
+    """The long blade's light cuts: deeper and with a longer tail than the old xiphos. a: the middle one; b: higher,
+    snappier and shorter, a brighter edge; c: lower and longer, the pitch falling away after the pass (Doppler)."""
+    rng = rng_for("doce-swing-long", variant)
+    if variant == "a":
+        dur, pk = 0.40, 0.12
+        cen = [(0.0, 360), (pk, 1250), (pk + 0.08, 900), (dur, 400)]
+        woom_f = [(0, 70), (pk, 98), (dur, 60)]
+        wh = 0.14
+    elif variant == "b":
+        dur, pk = 0.34, 0.09
+        cen = [(0.0, 480), (pk, 1550), (pk + 0.06, 1150), (dur, 520)]
+        woom_f = [(0, 82), (pk, 112), (dur, 70)]
+        wh = 0.2
+    else:
+        dur, pk = 0.48, 0.15
+        cen = [(0.0, 300), (pk, 1080), (pk + 0.05, 820), (pk + 0.14, 470), (dur, 300)]
+        woom_f = [(0, 62), (pk, 90), (dur, 50)]
+        wh = 0.1
+    n = secs(dur)
+    gain = [(0.0, 0.0), (pk * 0.5, 0.35), (pk, 1.0), (pk + 0.07, 0.55), (pk + 0.16, 0.22), (dur, 0.0)]
+    y = _blade_whoosh(n, rng, cen, gain, whistle=wh)
+    y += 0.3 * unit(_woom(n, woom_f, gain))
+    y *= env_points(n, gain) ** 0.25
+    y = wet(y, "small", 0.06)
+    return finish(y, dur, -3.0, fade_in=0.004, fade_out=0.06, lp=8500)
+
+
+def swing_big() -> np.ndarray:
+    """The finisher's chop: the long blade raised and brought down hard: a slow pre-swish as it rises, a heavy
+    whoosh with a deep 'woom', and the edge's whistle rising into the pass."""
+    rng = rng_for("doce-swing-big")
+    dur, pk = 0.62, 0.27
+    n = secs(dur)
+    cen = [(0.0, 240), (0.14, 480), (pk, 1050), (pk + 0.1, 600), (dur, 260)]
+    gain = [(0.0, 0.0), (0.12, 0.22), (0.2, 0.5), (pk, 1.0), (pk + 0.08, 0.6), (pk + 0.2, 0.2), (dur, 0.0)]
+    y = _blade_whoosh(n, rng, cen, gain, body=0.6, whistle=0.0, nfft=1024)
+    y += 0.42 * unit(_woom(n, [(0, 52), (pk, 88), (dur, 44)], gain))
+    # the rising whistle: a narrow band (and a faint tone) climbing into the pass, cut off just after it
+    wg = [(0.0, 0.0), (0.1, 0.12), (pk - 0.01, 1.0), (pk + 0.05, 0.25), (pk + 0.13, 0.0), (dur, 0.0)]
+    wpts = [(0.0, 800), (pk, 2500), (pk + 0.05, 2350), (dur, 1900)]
+    whistle = unit(whoosh(n, rng, wpts, wg, width=0.035, lp=8000))
+    t = tvec(n)
+    tone = np.sin(TAU * np.cumsum(pts(t, wpts, log=True) * (1.0 + 0.004 * smooth_random(n, rng, 30.0))) / SR)
+    whistle += 0.5 * tone * env_points(n, wg)
+    y += 0.42 * unit(whistle)
+    # cloth and leather as the arms come down
+    cloth = whoosh(n, rng, [(0, 900), (0.15, 1300), (0.3, 700)], [(0, 0), (0.04, 0.5), (0.16, 0.3), (0.3, 0)],
+                   width=0.9, lp=4500, hp=200)
+    y += 0.1 * unit(cloth)
+    y = wet(y, "small", 0.07)
+    return finish(y, dur, -3.0, fade_in=0.006, fade_out=0.08, lp=8500)
+
+
+def swing_thrust() -> np.ndarray:
+    """The thrust: short and piercing: a narrow, fast rush, a thin high whistle and the push of the lunge."""
+    rng = rng_for("doce-swing-thrust")
+    dur, pk = 0.3, 0.07
+    n = secs(dur)
+    cen = [(0.0, 900), (pk, 2300), (pk + 0.05, 1700), (dur, 1100)]
+    gain = [(0.0, 0.0), (0.03, 0.5), (pk, 1.0), (pk + 0.04, 0.45), (pk + 0.12, 0.12), (dur, 0.0)]
+    main = unit(whoosh(n, rng, cen, gain, width=0.22, hp=300))
+    hiss = unit(whoosh(n, rng, [(p[0], p[1] * 1.6) for p in cen], gain, width=0.14, lp=8000))
+    whistle = unit(whoosh(n, rng, [(0, 2600), (pk, 3300), (dur, 2900)],
+                          [(0, 0), (0.04, 0.6), (pk, 1.0), (pk + 0.05, 0.2), (0.2, 0.0), (dur, 0.0)], width=0.03, lp=8000))
+    push = unit(burst(n, rng, 0.05, [("lp", 260, 0.7)], attack=0.01))
+    y = main + 0.35 * hiss + 0.22 * whistle + 0.35 * push
+    y = wet(y, "small", 0.05)
+    return finish(y, 0.28, -3.0, fade_in=0.003, fade_out=0.05, lp=8500)
+
+
+def swing_spin() -> np.ndarray:
+    """The charged spin: the long blade circling the hero: a whoosh whose pitch and loudness swell and fall as the
+    edge comes round past the listener (a Doppler cycle per turn), a deep 'woom' under it, the cloth of the release."""
+    rng = rng_for("doce-swing-spin")
+    dur = 0.9
+    n = secs(dur)
+    ts = np.linspace(0.0, dur, 120)
+    turn = 0.31  # one turn (the heavy blow's active frames)
+    ph = TAU * (ts - 0.06) / turn
+    shape = np.interp(ts, [0.0, 0.05, 0.12, 0.42, 0.55, dur], [0.0, 0.3, 0.8, 1.0, 0.45, 0.0])
+    near = 0.5 + 0.5 * np.sin(ph - 0.6)  # 1 when the edge passes nearest (in front of him)
+    doppler = 1.0 + 0.3 * np.cos(ph - 0.6)  # pitch up as it comes, down as it goes
+    cen = [(float(a), float(520.0 * d * (0.8 + 0.4 * s))) for a, d, s in zip(ts, doppler, shape)]
+    gain = [(float(a), float(s * (0.45 + 0.55 * k))) for a, s, k in zip(ts, shape, near)]
+    y = _blade_whoosh(n, rng, cen, gain, body=0.7, whistle=0.1, nfft=1024)
+    y += 0.4 * unit(_woom(n, [(0, 48), (0.25, 80), (0.5, 60), (dur, 42)], [(float(a), float(s)) for a, s in zip(ts, shape)]))
+    cloth = whoosh(n, rng, [(0, 800), (0.1, 1300), (0.25, 900)], [(0, 0), (0.03, 0.7), (0.12, 0.35), (0.25, 0)],
+                   width=0.9, lp=4500, hp=200)
+    y += 0.12 * unit(cloth)
+    y = wet(y, "small", 0.09)
+    return finish(y, dur, -3.0, fade_in=0.005, fade_out=0.12, lp=8500)
+
+
+def swing_dash() -> np.ndarray:
+    """The dash attack: a push-off (grit and a low thump), the rush of the leap, then the cut."""
+    rng = rng_for("doce-swing-dash")
+    dur = 0.78
+    n = secs(dur)
+    y = np.zeros(n)
+    times = np.sort(rng.uniform(0.0, 0.05, 16))
+    y += 0.35 * unit(grain_cloud(n, rng, times, np.exp(-times / 0.03), 1000, 3400, 0.0008, 0.0025))
+    y += 0.4 * unit(burst(n, rng, 0.03, [("lp", 380, 0.7)], attack=0.002))
+    rush = whoosh(n, rng, [(0, 500), (0.2, 1000), (0.36, 800)], [(0, 0), (0.05, 0.4), (0.22, 0.6), (0.34, 0.2), (0.4, 0)],
+                  width=0.9, lp=5000, hp=180)
+    y += 0.45 * unit(rush)
+    pk = 0.44
+    cen = [(0.3, 340), (pk, 1300), (pk + 0.07, 900), (dur, 380)]
+    gain = [(0.0, 0.0), (0.3, 0.0), (pk - 0.05, 0.45), (pk, 1.0), (pk + 0.07, 0.5), (pk + 0.2, 0.15), (dur, 0.0)]
+    y += 0.95 * unit(_blade_whoosh(n, rng, cen, gain, body=0.5, whistle=0.14))
+    y += 0.25 * unit(_woom(n, [(0, 60), (pk, 92), (dur, 55)], gain))
+    y = wet(y, "small", 0.06)
+    return finish(y, dur, -3.0, fade_in=0.002, fade_out=0.08, lp=8500)
+
+
+def hit_cut(variant: str) -> np.ndarray:
+    """The long blade biting into fur and flesh: a sharp transient, a wet-ish slice, a short body thump. a: the
+    middle one; b: brighter and shorter; c: deeper, with a longer slice."""
+    rng = rng_for("doce-hit-cut", variant)
+    p = {"a": dict(f_hi=125, f_lo=58, dec=0.055, sl0=3600, sl1=1300, sl_len=0.07, bp=820, wetf=700),
+         "b": dict(f_hi=150, f_lo=68, dec=0.045, sl0=4200, sl1=1600, sl_len=0.055, bp=980, wetf=820),
+         "c": dict(f_hi=110, f_lo=50, dec=0.07, sl0=3200, sl1=1100, sl_len=0.09, bp=700, wetf=600)}[variant]
+    n = secs(0.36)
+    y = np.zeros(n)
+    # the edge meeting the hide
+    y += 0.55 * unit(burst(n, rng, 0.0025, [("hp", 1800, 0.7), ("lp", 7000, 0.7)], attack=0.0003))
+    # the body taking it
+    y += 1.0 * thump(n, p["f_hi"], p["f_lo"], 0.014, p["dec"], attack=0.001)
+    y += 0.5 * unit(burst(n, rng, 0.035, [("lp", 450, 0.7)]))
+    y += 0.5 * unit(burst(n, rng, 0.022, [("bp", p["bp"], 0.9), ("lp", 3000, 0.7)], attack=0.0008))
+    # the slice: a falling band of noise with a wet grain
+    L = p["sl_len"]
+    sl = whoosh(n, rng, [(0, p["sl0"]), (L, p["sl1"]), (0.3, p["sl1"] * 0.8)],
+                [(0, 0), (0.003, 1.0), (L * 0.5, 0.6), (L, 0.2), (L + 0.05, 0.0), (0.36, 0.0)], width=0.5, lp=7000)
+    y += 0.42 * unit(sl)
+    times = np.sort(rng.uniform(0.004, L + 0.03, 10))
+    y += 0.16 * unit(bubbles(n, rng, times, p["wetf"], p["wetf"] * 2.2, 0.003, 0.009, 1.0, amp=np.exp(-times / 0.04)))
+    times2 = np.sort(rng.uniform(0.002, 0.06, 14))
+    y += 0.14 * unit(grain_cloud(n, rng, times2, np.exp(-times2 / 0.03), 2200, 5200, 0.0005, 0.0016, q=0.9))
+    y = wet(y, "small", 0.1)
+    return finish(y, 0.32, -3.0, fade_out=0.06, lp=8000)
+
+
+def hit_big() -> np.ndarray:
+    """The finisher landing: the cut (transient, slice) on top of a deep bass thump and a sub boom."""
+    rng = rng_for("doce-hit-big")
+    n = secs(0.7)
+    y = np.zeros(n)
+    y += 0.5 * unit(burst(n, rng, 0.003, [("hp", 1500, 0.7), ("lp", 6500, 0.7)], attack=0.0003))
+    # one deep falling thump (two sines gliding to nearby pitches would beat: a dip, then a second swell)
+    y += 1.0 * thump(n, 112, 42, 0.03, 0.2, attack=0.0015)
+    # the sub boom under it: low noise, not a tone (no beating with the thump)
+    y += 0.5 * unit(burst(n, rng, 0.16, [("lp", 140, 0.7), ("hp", 30, 0.7)], attack=0.004))
+    y += 0.55 * unit(burst(n, rng, 0.05, [("lp", 320, 0.7)]))
+    y += 0.5 * unit(burst(n, rng, 0.03, [("bp", 700, 0.8), ("lp", 2600, 0.7)]))
+    sl = whoosh(n, rng, [(0, 3400), (0.1, 1200), (0.3, 900)], [(0, 0), (0.004, 1.0), (0.05, 0.55), (0.12, 0.15), (0.18, 0.0),
+                                                                 (0.7, 0.0)], width=0.55, lp=6500)
+    y += 0.38 * unit(sl)
+    times = np.sort(rng.uniform(0.004, 0.12, 12))
+    y += 0.14 * unit(bubbles(n, rng, times, 600, 1400, 0.004, 0.012, 1.0, amp=np.exp(-times / 0.05)))
+    y += 0.14 * unit(debris(n, rng, 0.01, 12, 0.05, 600, 2400, 0.1))
+    y = wet(y, "small", 0.16)
+    return finish(y, 0.65, -3.0, fade_out=0.15, lp=7000)
+
+
+def hit_thrust() -> np.ndarray:
+    """A stab: a dull thud, then a short tearing tail as the blade goes in."""
+    rng = rng_for("doce-hit-thrust")
+    n = secs(0.45)
+    y = np.zeros(n)
+    y += 0.4 * unit(burst(n, rng, 0.002, [("hp", 2200, 0.7), ("lp", 7000, 0.7)], attack=0.0003))
+    y += 1.0 * thump(n, 160, 72, 0.01, 0.05, attack=0.0008)
+    y += 0.55 * unit(burst(n, rng, 0.03, [("bp", 520, 0.8), ("lp", 1800, 0.7)], attack=0.001))
+    # the tear: a rasp of noise grains thinning out, with a rough flutter
+    times = 0.02 + np.sort(rng.exponential(0.035, 40))
+    times = times[times < 0.2]
+    y += 0.4 * unit(grain_cloud(n, rng, times, np.exp(-(times - 0.02) / 0.06), 1200, 3200, 0.0008, 0.003, q=1.4))
+    rasp = whoosh(n, rng, [(0, 1500), (0.15, 2200)], [(0, 0), (0.015, 0.0), (0.03, 1.0), (0.1, 0.4), (0.19, 0.0), (0.45, 0.0)],
+                  width=0.6, lp=6000)
+    rasp *= np.clip(0.6 + 0.6 * smooth_random(n, rng, 70.0), 0.0, None)
+    y += 0.25 * unit(rasp)
+    y = wet(y, "small", 0.1)
+    return finish(y, 0.42, -3.0, fade_out=0.08, lp=7500)
+
+
+def slam_sfx() -> np.ndarray:
+    """A ground impact (a chop into the ground, the dash's landing): a deep thump, a crunch of earth and stones,
+    a short rumble, grit falling back."""
+    rng = rng_for("doce-slam")
+    dur = 1.1
+    n = secs(dur)
+    y = np.zeros(n)
+    y += 1.0 * thump(n, 85, 32, 0.03, 0.2, attack=0.002)
+    y += 0.6 * unit(burst(n, rng, 0.07, [("lp", 240, 0.7)], attack=0.002))
+    times = np.sort(rng.exponential(0.018, 40))
+    times = times[times < 0.09]
+    y += 0.45 * unit(grain_cloud(n, rng, times, np.exp(-times / 0.04), 500, 2600, 0.001, 0.004, q=1.1))
+    for tt in np.sort(rng.uniform(0.0, 0.04, 5)):
+        place(y, unit(burst(secs(0.08), rng, rng.uniform(0.004, 0.012), [("bp", rng.uniform(400, 1400), 1.2)])), tt,
+              rng.uniform(0.25, 0.45))
+    y += 0.45 * unit(rumble(n, rng, [(0, 0), (0.02, 1.0), (0.3, 0.45), (0.8, 0.0)], 85, 50))
+    y += 0.22 * unit(debris(n, rng, 0.12, 22, 0.15, 500, 2600, 0.25))
+    y = wet(y, "open", 0.18)
+    return finish(y, 1.0, -3.0, fade_out=0.25, lp=7000)
+
+
+def _slide(n: int, rng, fc_pts, gain_pts, hp: float = 500.0, lp: float = 8000.0) -> np.ndarray:
+    """A blade sliding in leather: friction noise through a resonance that follows fc_pts, with a stick-slip grain."""
+    def mag(tt, f):
+        fc = pts(tt, fc_pts, log=True)
+        g = pts(tt, gain_pts)
+        return g * (mag_band(f, fc, 0.35) + 0.32 * mag_band(f, fc * 1.9, 0.25)) * mag_lp(f, lp, 2) * mag_hp(f, hp, 1)
+    s = unit(spectral_noise(n, mag, rng, nfft=512))
+    return s * np.clip(0.7 + 0.5 * smooth_random(n, rng, 45.0), 0.0, None)
+
+
+def sword_draw() -> np.ndarray:
+    """The long blade drawn from its leather scabbard: the throat's leather gives, the blade slides out (the scrape
+    rising as less of it is left inside) and leaves with a short bright ring."""
+    rng = rng_for("doce-sword-draw")
+    dur = 0.85
+    n = secs(dur)
+    y = np.zeros(n)
+    y += 0.35 * unit(creak(n, rng, [900.0, 1600.0, 2500.0], [(0, 50), (0.08, 35)],
+                           [(0, 0), (0.01, 1.0), (0.06, 0.5), (0.1, 0.0)], q=8.0))
+    y += 0.3 * thump(n, 180, 110, 0.01, 0.03, attack=0.002)
+    y += 0.7 * _slide(n, rng, [(0, 1600), (0.05, 1800), (0.42, 3600), (0.5, 3800)],
+                      [(0, 0), (0.05, 0.0), (0.09, 0.8), (0.3, 1.0), (0.42, 0.9), (0.45, 0.0)])
+    ring = metal(n, rng, 1250.0, BLADE, [1.0, 0.6, 0.5, 0.35, 0.25, 0.15, 0.08], [0.28, 0.22, 0.18, 0.14, 0.1, 0.08, 0.06],
+                 beat=2.5, lp=7500, hp=500)
+    place(y, ring, 0.44, 0.38)
+    shing = whoosh(n, rng, [(0, 4200), (0.6, 3600)], [(0, 0), (0.43, 0.0), (0.445, 1.0), (0.5, 0.3), (0.6, 0.0), (dur, 0.0)],
+                   width=0.25, lp=8500)
+    y += 0.14 * unit(shing)
+    y = wet(y, "small", 0.12)
+    return finish(y, 0.8, -4.0, fade_in=0.002, fade_out=0.15, lp=8500)
+
+
+def sword_sheathe() -> np.ndarray:
+    """The blade slid home: a scrape falling in pitch as it goes in, then the guard meets the scabbard's throat
+    with a soft wooden-leather click."""
+    rng = rng_for("doce-sword-sheathe")
+    dur = 0.7
+    n = secs(dur)
+    y = np.zeros(n)
+    y += 0.6 * _slide(n, rng, [(0, 3200), (0.3, 1700), (0.4, 1500)],
+                      [(0, 0), (0.03, 0.7), (0.15, 1.0), (0.32, 0.8), (0.36, 0.0)], hp=450, lp=7500)
+    k = secs(0.25)
+    click = unit(damped_modes(k, [520, 1180, 2050], [1.0, 0.5, 0.2], [0.03, 0.018, 0.01], attack=0.0006, rng=rng))
+    click += 0.5 * unit(burst(k, rng, 0.004, [("bp", 1500, 1.0)], attack=0.0003)) + 0.6 * thump(k, 170, 95, 0.008, 0.03)
+    place(y, unit(click), 0.36, 0.9)
+    y += 0.18 * unit(creak(n, rng, [800.0, 1500.0], [(0, 30), (0.6, 18)], [(0, 0), (0.38, 0.0), (0.41, 1.0), (0.5, 0.0)],
+                           q=8.0))
+    y = wet(y, "small", 0.1)
+    return finish(y, 0.65, -4.0, fade_in=0.003, fade_out=0.12, lp=8000)
+
+
+def shield_draw() -> np.ndarray:
+    """The shield taken off the back: the leather strap creaks as it slips off the shoulder, then the wooden shield
+    thuds into the arm (a tick of its brass rim)."""
+    rng = rng_for("doce-shield-draw")
+    dur = 0.65
+    n = secs(dur)
+    y = np.zeros(n)
+    y += 0.55 * unit(creak(n, rng, [950.0, 1700.0, 2600.0], [(0, 28), (0.12, 55), (0.22, 35)],
+                           [(0, 0), (0.02, 0.8), (0.14, 1.0), (0.24, 0.0)], q=9.0))
+    y += 0.25 * unit(whoosh(n, rng, [(0, 700), (0.2, 1100)], [(0, 0), (0.05, 0.7), (0.2, 0.4), (0.28, 0.0), (dur, 0.0)],
+                            width=0.9, lp=4500, hp=200))
+    k = secs(0.4)
+    thud = unit(thump(k, 150, 72, 0.015, 0.07, attack=0.0015))
+    thud += 0.55 * unit(damped_modes(k, [200, 460, 820, 1300], [1.0, 0.55, 0.3, 0.15], [0.06, 0.04, 0.025, 0.015],
+                                     attack=0.001, rng=rng))
+    thud += 0.35 * unit(burst(k, rng, 0.02, [("lp", 900, 0.7)]))
+    place(y, unit(thud), 0.25, 1.0)
+    rim = metal(k, rng, 760.0, PLATE, [1.0, 0.6, 0.4, 0.25, 0.15, 0.1, 0.05], [0.12, 0.1, 0.08, 0.06, 0.05, 0.04, 0.03],
+                beat=2.0, lp=5500, hp=300)
+    place(y, rim, 0.252, 0.12)
+    y = wet(y, "small", 0.12)
+    return finish(y, 0.6, -4.0, fade_in=0.003, fade_out=0.1, lp=8000)
+
+
+def shield_stow() -> np.ndarray:
+    """The shield slung onto the back: a muffled wooden thud against the cape and the shoulders, then the strap
+    pulled tight (a shorter, higher creak) and the buckle's clink."""
+    rng = rng_for("doce-shield-stow")
+    dur = 0.65
+    n = secs(dur)
+    y = np.zeros(n)
+    y += 0.2 * unit(whoosh(n, rng, [(0, 900), (0.1, 1300)], [(0, 0), (0.03, 0.8), (0.1, 0.0), (dur, 0.0)], width=0.9,
+                           lp=4000, hp=200))
+    k = secs(0.4)
+    thud = unit(thump(k, 120, 60, 0.02, 0.08, attack=0.003))
+    thud += 0.4 * unit(filt(damped_modes(k, [180, 410, 740], [1.0, 0.45, 0.2], [0.05, 0.03, 0.02], attack=0.002, rng=rng),
+                            [("lp", 1500, 0.7)]))
+    thud += 0.45 * unit(burst(k, rng, 0.03, [("lp", 500, 0.7)]))
+    place(y, unit(thud), 0.08, 1.0)
+    y += 0.5 * unit(creak(n, rng, [1200.0, 2100.0, 3000.0], [(0, 45), (0.15, 70)],
+                          [(0, 0), (0.22, 0.0), (0.25, 1.0), (0.38, 0.6), (0.42, 0.0)], q=9.0))
+    place(y, link_clink(rng, 2400.0, 0.08), 0.43, 0.22)
+    place(y, link_clink(rng, 3100.0, 0.06), 0.455, 0.12)
+    y = wet(y, "small", 0.1)
+    return finish(y, 0.6, -4.0, fade_in=0.003, fade_out=0.1, lp=8000)
+
+
+# ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 
@@ -732,6 +1058,24 @@ SFX = {
     "ui_unlock": ui_unlock,
     "ui_toast": ui_toast,
     "ui_card": ui_card,
+    # the hero round (FX lane): the long blade, its hits, the slam, the weapons drawn and stowed
+    "swing_light_a": lambda: swing_long("a"),
+    "swing_light_b": lambda: swing_long("b"),
+    "swing_light_c": lambda: swing_long("c"),
+    "swing_big": swing_big,
+    "swing_thrust": swing_thrust,
+    "swing_spin": swing_spin,
+    "swing_dash": swing_dash,
+    "hit_cut_a": lambda: hit_cut("a"),
+    "hit_cut_b": lambda: hit_cut("b"),
+    "hit_cut_c": lambda: hit_cut("c"),
+    "hit_big": hit_big,
+    "hit_thrust": hit_thrust,
+    "slam": slam_sfx,
+    "sword_draw": sword_draw,
+    "sword_sheathe": sword_sheathe,
+    "shield_draw": shield_draw,
+    "shield_stow": shield_stow,
 }
 SFX["footstep"] = lambda: step("earth", 2)
 for _s in ("grass", "stone", "sand"):

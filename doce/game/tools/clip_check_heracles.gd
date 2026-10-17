@@ -304,9 +304,9 @@ func _volumes() -> Array:
 		var o := 0 if side == 0 else 4
 		var sfx := "_r" if side == 0 else "_l"
 		cap.call("uarm" + sfx, bx[RigHeracles.UARM_R + o].origin, bx[RigHeracles.FARM_R + o].origin, 0.072)
-		cap.call("farm" + sfx, bx[RigHeracles.FARM_R + o].origin, bx[RigHeracles.HAND_R + o].origin, 0.064)
+		cap.call("farm" + sfx, bx[RigHeracles.FARM_R + o].origin, bx[RigHeracles.HAND_R + o].origin, 0.072)
 		var hb: Transform3D = bx[RigHeracles.HAND_R + o]
-		cap.call("hand" + sfx, hb.origin + hb.basis * Vector3(0, -0.05, 0), hb.origin + hb.basis * RigHeracles.GRIP, 0.058)
+		cap.call("hand" + sfx, hb.origin + hb.basis * Vector3(0, -0.05, 0), hb.origin + hb.basis * RigHeracles.GRIP, 0.064)
 		var pa := _skin(RigHeracles.PAUL_R + side)
 		var ps := RigHeracles.mx(RigHeracles.P_SHOULDER, 1.0 if side == 0 else -1.0) + Vector3(0.012 * (1.0 if side == 0 else -1.0), 0.03, 0.0)
 		cap.call("pauldron" + sfx, pa * ps, pa * ps, 0.085)
@@ -315,7 +315,7 @@ func _volumes() -> Array:
 		var o := 0 if side == 0 else 3
 		var sfx := "_r" if side == 0 else "_l"
 		cap.call("thigh" + sfx, bx[RigHeracles.THIGH_R + o].origin, bx[RigHeracles.SHIN_R + o].origin, 0.088)
-		cap.call("shin" + sfx, bx[RigHeracles.SHIN_R + o].origin, bx[RigHeracles.FOOT_R + o].origin, 0.07)
+		cap.call("shin" + sfx, bx[RigHeracles.SHIN_R + o].origin, bx[RigHeracles.FOOT_R + o].origin, 0.076)
 		var fb := _skin(RigHeracles.FOOT_R + o)
 		var an := RigHeracles.mx(RigHeracles.P_ANKLE, 1.0 if side == 0 else -1.0)
 		cap.call("foot" + sfx, fb * (an + Vector3(0, -0.05, 0.04)), fb * (an + Vector3(0, -0.06, -0.17)), 0.04)

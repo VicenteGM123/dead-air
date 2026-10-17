@@ -418,6 +418,7 @@ def summary(S, name, verbose=True):
 
 
 if __name__ == "__main__":
+    # (legacy since 2026-10-17: the blows the rig plays are moveset.py's; exporting these would put the old four back)
     force = "--resolve" in sys.argv
     allS = build_all(force)
     for k, S in allS.items():
@@ -425,4 +426,7 @@ if __name__ == "__main__":
             print("=====", k)
             report(S, IMP[k], every=99)
         summary(S, k)
-    export(allS)
+    if "--export-legacy" in sys.argv:
+        export(allS)
+    else:
+        print("(not exported: the rig's blows come from moveset.py; --export-legacy writes the old four to strike_data.gd.txt)")

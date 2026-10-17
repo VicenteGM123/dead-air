@@ -1,7 +1,7 @@
 class_name Icons
 ## Minimal vector icons drawn with CanvasItem calls, so the UI stays crisp at any resolution and needs no image
 ## assets. Designed on a 0..1 square, flat, in one colour plus at most a lighter or darker tint of it. No faces:
-## the Corinthian helmet shows only its dark eye slit, beasts only a glowing eye.
+## the hero's head is a faceless profile (INTEGRATE: no longer the Corinthian helmet), beasts show only a glowing eye.
 
 static func draw(ci: CanvasItem, icon: String, r: Rect2, col: Color) -> void:
 	var s := minf(r.size.x, r.size.y)
@@ -12,22 +12,38 @@ static func draw(ci: CanvasItem, icon: String, r: Rect2, col: Color) -> void:
 	var light := Color(col.lerp(Color.WHITE, 0.45), col.a)
 	match icon:
 		"helmet":
-			# Corinthian helmet in profile (facing right), crest of horsehair arching over it.
-			var crest := PackedVector2Array()
-			for i in 15:
-				var t := float(i) / 14.0
-				crest.append(p.call(lerpf(0.2, 0.74, t), 0.34 - 0.3 * sin(PI * t) - 0.04 * t))
-			for i in range(14, -1, -1):
-				var t := float(i) / 14.0
-				crest.append(p.call(lerpf(0.27, 0.68, t), 0.36 - 0.17 * sin(PI * t) - 0.02 * t))
-			ci.draw_colored_polygon(crest, light)
-			var shell := PackedVector2Array([p.call(0.24, 0.92), p.call(0.21, 0.7), p.call(0.25, 0.48), p.call(0.35, 0.33),
-				p.call(0.5, 0.27), p.call(0.66, 0.3), p.call(0.77, 0.41), p.call(0.81, 0.53), p.call(0.79, 0.68),
-				p.call(0.75, 0.8), p.call(0.69, 0.82), p.call(0.65, 0.74), p.call(0.6, 0.9), p.call(0.42, 0.95)])
-			ci.draw_colored_polygon(shell, col)
-			ci.draw_colored_polygon(_leaf(p.call(0.56, 0.53), p.call(0.79, 0.5), s * 0.045), dark)
-			ci.draw_colored_polygon(PackedVector2Array([p.call(0.655, 0.54), p.call(0.7, 0.54), p.call(0.685, 0.8), p.call(0.655, 0.79)]), dark)
-			ci.draw_line(p.call(0.3, 0.62), p.call(0.48, 0.66), Color(dark, dark.a * 0.6), maxf(1.0, s * 0.03), true)
+			# (INTEGRATE: the hero as he looks now, the bare-headed default; the outfit's name stays "helmet") his head in profile, facing
+			# right, faceless (only the planes of brow, nose and jaw make the outline), on a thick neck, the short wavy hair swept up off
+			# the brow and back over the crown in waves; the locks incised in the dark, as on a vase.
+			ci.draw_colored_polygon(PackedVector2Array([p.call(0.37, 0.98), p.call(0.41, 0.7), p.call(0.6, 0.72), p.call(0.68, 0.98)]), col)
+			var head := PackedVector2Array([p.call(0.3, 0.52), p.call(0.33, 0.38), p.call(0.42, 0.3), p.call(0.55, 0.27),
+				p.call(0.66, 0.31), p.call(0.72, 0.38), p.call(0.735, 0.45), p.call(0.725, 0.48), p.call(0.795, 0.57),
+				p.call(0.745, 0.6), p.call(0.755, 0.65), p.call(0.735, 0.72), p.call(0.68, 0.76), p.call(0.57, 0.77),
+				p.call(0.48, 0.72), p.call(0.4, 0.68), p.call(0.33, 0.62)])
+			ci.draw_colored_polygon(head, col)
+			# the hair: a crest of waves round the crown from the quiff over the brow to the nape
+			var hair := PackedVector2Array()
+			var hc: Vector2 = p.call(0.5, 0.48)
+			for i in 29:
+				var a := lerpf(-0.9, -3.95, float(i) / 28.0)
+				var rr := 0.26 + 0.035 * absf(sin(a * 5.0)) + 0.06 * exp(-pow((a + 1.15) / 0.3, 2.0))
+				hair.append(hc + Vector2(cos(a), sin(a)) * rr * s)
+			for q: Vector2 in [Vector2(0.37, 0.6), Vector2(0.43, 0.56), Vector2(0.47, 0.48), Vector2(0.55, 0.4), Vector2(0.63, 0.36), Vector2(0.69, 0.37)]:
+				hair.append(p.call(q.x, q.y))
+			ci.draw_colored_polygon(hair, light)
+			var lw := maxf(1.0, s * 0.028)
+			var inc := Color(dark, dark.a * 0.7)
+			# the hairline at the temple and the sideburn
+			ci.draw_polyline(PackedVector2Array([p.call(0.69, 0.375), p.call(0.62, 0.37), p.call(0.55, 0.42), p.call(0.5, 0.5), p.call(0.49, 0.6)]), inc, lw, true)
+			# the locks, swept back from the brow in waves
+			for k in 3:
+				var pts := PackedVector2Array()
+				for j in 7:
+					var u := float(j) / 6.0
+					var x := lerpf(0.66 - 0.06 * k, 0.33 - 0.01 * k, u)
+					var y := lerpf(0.25 + 0.09 * k, 0.33 + 0.12 * k, u * u) + 0.018 * sin(u * TAU * 1.5)
+					pts.append(p.call(x, y))
+				ci.draw_polyline(pts, inc, lw * 0.85, true)
 		"lion":
 			# The lion's head in profile within a ruff of mane (the hood Heracles wins).
 			var ruff := PackedVector2Array()
