@@ -28,18 +28,21 @@ func _ready() -> void:
 	apply_volumes()
 
 func _setup_buses() -> void:
-	if AudioServer.get_bus_index("Music") == -1:
-		AudioServer.add_bus()
-		var i := AudioServer.bus_count - 1
-		AudioServer.set_bus_name(i, "Music")
-		AudioServer.set_bus_send(i, "Master")
-	if AudioServer.get_bus_index("SFX") == -1:
-		AudioServer.add_bus()
-		var j := AudioServer.bus_count - 1
-		AudioServer.set_bus_name(j, "SFX")
-		AudioServer.set_bus_send(j, "Master")
+	_new_bus("Music")
+	_new_bus("SFX")
 	_music_bus = AudioServer.get_bus_index("Music")
 	_sfx_bus = AudioServer.get_bus_index("SFX")
+
+## Añade un bus al final que envía a Master. Ojo: no usar AudioServer.add_bus(). En la web (Godot 4.7 reproduce
+## los sonidos como "samples" del navegador) add_bus() desordena los buses del navegador: Master termina enviando
+## al bus nuevo y el nuevo a Master, en círculo, y no se oye nada. Agrandar bus_count funciona igual en todas partes.
+func _new_bus(bus_name: String) -> void:
+	if AudioServer.get_bus_index(bus_name) != -1:
+		return
+	var i := AudioServer.bus_count
+	AudioServer.bus_count = i + 1
+	AudioServer.set_bus_name(i, bus_name)
+	AudioServer.set_bus_send(i, "Master")
 
 func _make_loop(name: String, bus: String, db: float) -> AudioStreamPlayer:
 	var st = load("res://assets/audio/%s.ogg" % name)
