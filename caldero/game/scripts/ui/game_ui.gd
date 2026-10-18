@@ -1,20 +1,31 @@
 extends CanvasLayer
 class_name GameUI
-## HUD, diálogo, caldero, pociones, consejos y avisos. Los paneles grandes viven en Overlays.
+## HUD, diálogo, ticket del pedido, estante de pociones, consejos y avisos. Los paneles grandes viven en Overlays y
+## el banco del caldero en BrewUI (scripts/ui/brew_ui.gd, capa 4, debajo de esta).
+# --- R3 BENCH: esta ronda rehízo casi todo el HUD (menos texto, menos paneles):
+#   - estado arriba a la izquierda: «Día n» + icono de la hora, monedas y la barra de renombre (sin palabras).
+#   - menú arriba a la derecha: 4 botones de icono (Recetas, Diario, Mercado, Ajustes) con su palabra al pasar.
+#   - el pedido: un ticket de papel clavado arriba (retrato, el pedido, la pista con iconos de esencia y las runas).
+#   - el estante de pociones: un estantito de madera abajo a la derecha (6 o 12 frascos, con la runa si la tiene).
+#   - el panel «Caldero» ya no existe (es el banco: BrewUI). set_cauldron() queda como aviso (señal cauldron_set).
+#   - consejos de una línea (una nota clavada) que se van solos; avisos y tooltips cortos.
+#   - sin pestaña de pergaminos: magic_setup / show_rack_tab / scroll_slot_center quedan como funciones vacías.
 
-signal brew_pressed
-signal empty_pressed
-signal slot_pressed(index: int)
 signal potion_pressed(index: int)
 signal choice_made(id: String)
 signal dialog_advanced
 signal menu_pressed(id: String)
+signal cauldron_set(contents: Array)   # --- R3 BENCH: el contenido del caldero cambió (el banco se redibuja)
+
+const INK_COL := Color("3a2618")       # --- R3 BENCH: tinta sobre papel
+const PAPER_MARGIN := 21               # --- R3 BENCH: márgenes de ticket_paper.png (7 px de arte a 3x)
 
 var root: Control
 var gold_label: Label
 var day_label: Label
-var time_label: Label
-var level_label: Label
+var time_icon: TextureRect             # --- R3 BENCH: la hora del día como icono
+var time_label: Label                  # --- R3 BENCH: se conserva (oculto) por compatibilidad
+var level_label: Label                 # --- R3 BENCH: se conserva (oculto): el nombre va en el tooltip
 var level_bar: ProgressBar
 var gold_icon: TextureRect
 var hud_panel: PanelContainer
@@ -30,32 +41,35 @@ var _type_speed := 55.0
 var _type_pos := 0.0
 var _waiting_click := false
 
-var order_card: PanelContainer
+# --- R3 BENCH: el ticket del pedido
+var order_card: Control
+var order_paper: PanelContainer
+var order_frame: TextureRect
+var order_portrait: TextureRect
 var order_name: Label
 var order_text: RichTextLabel
-var order_hint: RichTextLabel
+var order_hint: HBoxContainer
+var order_mods: HBoxContainer
+var order_who := ""                    # id del cliente (main.gd lo pone; si no, se busca por el nombre)
+var _portrait_top := {}                # sprite -> primera fila con píxeles (para recortar la cabeza)
+var _order_mod_ids: Array = []         # --- R3 MERGE: las runas que se ven en el ticket (MAGIC3 las lee en su prueba)
+var market_x2: Control                 # --- R3 MERGE: sello «x2» del botón Mercado durante el día (UI-PAPER: encargo al doble)
 
-var cauldron_panel: PanelContainer
-var slot_boxes: Array = []
-var essence_bars := {}
-var essence_vals := {}
-var result_label: RichTextLabel
-var brew_btn: Button
-var empty_btn: Button
-
-var potion_panel: PanelContainer
-var potion_title: Label
-var potion_grid: GridContainer
-# --- PREP: un solo estante abajo a la derecha (Pociones y, con el grimorio abierto, la pestaña Pergaminos)
-var rack_box: VBoxContainer     # contenido del panel: cabecera + rejilla visible
-var rack_head: HBoxContainer    # cabecera: el título, o las dos pestañas
-# --- end PREP
+# --- R3 BENCH: el estante de pociones
+var potion_panel: Control
+var potion_art: TextureRect
+var potion_count: Label
+var potion_slots: Array = []           # Button por hueco (solo los que tienen poción son tocables)
+var potion_grid: Control               # compatibilidad: el contenedor de los huecos
+var _held_slot := -1                   # hueco escondido mientras su frasco vuela hacia él
+var _bench_mode := false
 
 var tooltip: PanelContainer
 var tooltip_box: VBoxContainer
 var toast_box: VBoxContainer
 var tip_panel: PanelContainer
 var tip_text: RichTextLabel
+var _tip_gen := 0
 var banner: Label
 
 func _ready() -> void:
@@ -69,7 +83,6 @@ func _ready() -> void:
 	_build_menu()
 	_build_order_card()
 	_build_dialog()
-	_build_cauldron_panel()
 	_build_potion_panel()
 	_build_tip()
 	_build_tooltip()
@@ -78,28 +91,33 @@ func _ready() -> void:
 	Game.gold_changed.connect(func(_v): refresh_hud())
 	Game.renombre_changed.connect(func(_a, _b): refresh_hud())
 	Game.potions_changed.connect(refresh_potions)
-	Game.upgrades_changed.connect(func(): refresh_potions(); set_cauldron([]))
+	Game.upgrades_changed.connect(func(): refresh_potions())
 	refresh_hud()
 	refresh_potions()
-	set_cauldron([])
 	hide_dialog()
 	hide_order()
 
-# ------------------------------------------------------------------ HUD
+# ------------------------------------------------------------------ HUD (estado)
+
+# --- R3 BENCH: «Día 3 ☀» / monedas / barra de renombre. Sin «oro», sin la hora ni el título en palabras.
+const TOD_ICONS := {"Mañana": "manana", "Mediodía": "mediodia", "Tarde": "tarde", "Atardecer": "atardecer", "Noche": "noche"}
 
 func _build_hud() -> void:
-	hud_panel = UIKit.fancy_panel(UIKit.BG, 16)
-	UIKit.place(hud_panel, Vector2(0, 0), Vector2(22, 18), Vector2(250, 0))
-	hud_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud_panel = UIKit.fancy_panel(UIKit.BG, 14)
+	UIKit.place(hud_panel, Vector2(0, 0), Vector2(22, 18), Vector2(212, 0))
+	hud_panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	root.add_child(hud_panel)
-	var v := UIKit.vbox(6)
+	var v := UIKit.vbox(4)
 	hud_panel.add_child(v)
-	var top := UIKit.hbox(14)
+	var top := UIKit.hbox(10)
 	v.add_child(top)
 	day_label = UIKit.shadow(UIKit.label("Día 1", 30, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold))
 	top.add_child(day_label)
-	time_label = UIKit.label("Mañana", 22, UIKit.MUTED, UIKit.font_italic)
-	time_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	time_icon = UIKit.icon("res://assets/ui/tod_manana.png", 3.0)
+	time_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	top.add_child(time_icon)
+	time_label = UIKit.label("Mañana", 20, UIKit.MUTED, UIKit.font_italic)
+	time_label.visible = false
 	top.add_child(time_label)
 	var g := UIKit.hbox(8)
 	v.add_child(g)
@@ -107,30 +125,34 @@ func _build_hud() -> void:
 	g.add_child(gold_icon)
 	gold_label = UIKit.shadow(UIKit.label("40", 28, Color(1.0, 0.86, 0.45), UIKit.font_bold))
 	g.add_child(gold_label)
-	g.add_child(UIKit.label("oro", 20, UIKit.MUTED))
 	var r := UIKit.hbox(8)
 	v.add_child(r)
-	r.add_child(UIKit.icon("res://assets/icons/emote_gem.png", 2.0))
-	var rv := UIKit.vbox(2)
-	r.add_child(rv)
-	level_label = UIKit.label("Aprendiz", 20, Color(0.85, 0.78, 1.0), UIKit.font_bold)
-	rv.add_child(level_label)
+	r.add_child(UIKit.icon("res://assets/icons/emote_gem.png", 1.6))
+	level_label = UIKit.label("Aprendiz", 18, Color(0.85, 0.78, 1.0), UIKit.font_bold)
+	level_label.visible = false
+	r.add_child(level_label)
 	level_bar = ProgressBar.new()
-	level_bar.custom_minimum_size = Vector2(190, 10)
+	level_bar.custom_minimum_size = Vector2(140, 10)
+	level_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	level_bar.max_value = 1.0
 	level_bar.show_percentage = false
 	level_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	rv.add_child(level_bar)
+	r.add_child(level_bar)
 
 func refresh_hud() -> void:
 	day_label.text = "Día %d" % Game.day
 	gold_label.text = str(Game.gold)
 	level_label.text = Game.level_name()
+	hud_panel.tooltip_text = "%s · %s" % [Game.level_name(), time_label.text]
 	var tw := create_tween()
 	tw.tween_property(level_bar, "value", Game.level_progress(), 0.4)
 
 func set_time_label(t: String) -> void:
 	time_label.text = t
+	var p := "res://assets/ui/tod_%s.png" % TOD_ICONS.get(t, "mediodia")
+	if ResourceLoader.exists(p):
+		time_icon.texture = load(p)
+	hud_panel.tooltip_text = "%s · %s" % [Game.level_name(), t]
 
 func bump_gold() -> void:
 	gold_label.pivot_offset = gold_label.size / 2.0
@@ -138,61 +160,241 @@ func bump_gold() -> void:
 	tw.tween_property(gold_label, "scale", Vector2(1.25, 1.25), 0.08)
 	tw.tween_property(gold_label, "scale", Vector2.ONE, 0.15)
 
+# --- R3 BENCH: el menú, 4 botones de icono
 func _build_menu() -> void:
 	menu_box = UIKit.hbox(10)
-	UIKit.place(menu_box, Vector2(1, 0), Vector2(-660, 22), Vector2(638, 56), Control.GROW_DIRECTION_BEGIN, Control.GROW_DIRECTION_END)
+	UIKit.place(menu_box, Vector2(1, 0), Vector2(-320, 22), Vector2(298, 64), Control.GROW_DIRECTION_BEGIN, Control.GROW_DIRECTION_END)
 	menu_box.alignment = BoxContainer.ALIGNMENT_END
 	menu_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(menu_box)
-	for m in [["book", "Recetas", "res://assets/icons/pot_sueno_profundo.png"], ["journal", "Diario", "res://assets/icons/emote_note.png"],
-			["market", "Mercado", "res://assets/icons/emote_coin.png"], ["settings", "Ajustes", "res://assets/icons/emote_sparkle.png"]]:
-		var b := UIKit.button(m[1], func(): menu_pressed.emit(m[0]), 22)
-		b.custom_minimum_size = Vector2(0, 52)
+	for m in [["book", "Recetas", "hud_book"], ["journal", "Diario", "hud_journal"],
+			["market", "Mercado", "hud_market"], ["settings", "Ajustes", "hud_settings"]]:
+		var b := UIKit.button("", func(): menu_pressed.emit(m[0]), 22)
+		b.custom_minimum_size = Vector2(64, 64)
+		b.tooltip_text = m[1]
+		var ic := UIKit.icon("res://assets/ui/%s.png" % m[2], 3.0)
+		ic.set_anchors_preset(Control.PRESET_FULL_RECT)
+		ic.offset_left = 8
+		ic.offset_top = 8
+		ic.offset_right = -8
+		ic.offset_bottom = -8
+		b.add_child(ic)
 		menu_box.add_child(b)
+		# --- R3 MERGE: de día el mercado es el encargo de Pip y cuesta el doble: un sellito rojo «x2» en la esquina
+		if m[0] == "market":
+			PaperKit.load_fonts()
+			var tag := PanelContainer.new()
+			var sb := StyleBoxFlat.new()
+			sb.bg_color = Color("9e2b25")            # lacre (guía de estilo)
+			sb.border_color = Color("f4e4bd")
+			sb.set_border_width_all(2)
+			sb.set_corner_radius_all(6)
+			sb.content_margin_left = 5
+			sb.content_margin_right = 5
+			sb.content_margin_top = -2
+			sb.content_margin_bottom = -1
+			tag.add_theme_stylebox_override("panel", sb)
+			tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			var l := UIKit.label("x2", 24, Color("f4e4bd"), PaperKit.font_hand_bold, HORIZONTAL_ALIGNMENT_CENTER)
+			tag.add_child(l)
+			tag.position = Vector2(34, -10)
+			tag.rotation = 0.14
+			tag.visible = false
+			b.add_child(tag)
+			market_x2 = tag
+		# --- end R3 MERGE
+
+## --- R3 MERGE: muestra el «x2» del botón Mercado (main.gd: true con la tienda abierta, false por la mañana).
+func set_day_market(on: bool) -> void:
+	if market_x2:
+		market_x2.visible = on
 
 func set_menu_visible(on: bool) -> void:
-	menu_box.visible = on
+	menu_box.visible = on and not _bench_mode
 	hud_panel.visible = on
 
-# ------------------------------------------------------------------ pedido
+## --- R3 BENCH: con el banco del caldero abierto el menú se esconde (Y / R y Vista / J siguen abriendo recetas y diario).
+func set_bench_mode(on: bool) -> void:
+	_bench_mode = on
+	menu_box.visible = hud_panel.visible and not on
+	if on:
+		hide_tooltip()
 
+# ------------------------------------------------------------------ el ticket del pedido
+
+# --- R3 BENCH: un papelito clavado arriba: retrato, el pedido (una o dos líneas), la pista (iconos de esencia si
+# la pista las nombra; si no, la frase corta) y las runas que pide (res://assets/icons/rune_<id>.png).
 func _build_order_card() -> void:
-	order_card = UIKit.fancy_panel(Color(0.09, 0.075, 0.14, 0.9), 16)
-	order_card.custom_minimum_size = Vector2(620, 0)
-	UIKit.place(order_card, Vector2(0.5, 0), Vector2(-310, 20), Vector2(620, 0), Control.GROW_DIRECTION_BOTH, Control.GROW_DIRECTION_END)
+	order_card = Control.new()
+	UIKit.place(order_card, Vector2(0.5, 0), Vector2(-300, 6), Vector2(600, 10), Control.GROW_DIRECTION_BOTH, Control.GROW_DIRECTION_END)
 	order_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(order_card)
-	var v := UIKit.vbox(4)
-	order_card.add_child(v)
-	var h := UIKit.hbox(8)
-	v.add_child(h)
-	h.add_child(UIKit.icon("res://assets/icons/emote_excl.png", 1.6))
-	order_name = UIKit.label("Pedido", 22, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold)
-	h.add_child(order_name)
-	order_text = UIKit.rich(20)
-	order_text.custom_minimum_size = Vector2(580, 0)
+	order_paper = PanelContainer.new()
+	order_paper.add_theme_stylebox_override("panel", UIKit.paper_style(14))
+	order_paper.custom_minimum_size = Vector2(600, 0)
+	order_paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	order_card.add_child(order_paper)
+	var h := UIKit.hbox(16)
+	order_paper.add_child(h)
+	order_frame = TextureRect.new()
+	order_frame.texture = load("res://assets/ui/ticket_frame.png")
+	order_frame.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	order_frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	order_frame.stretch_mode = TextureRect.STRETCH_SCALE
+	order_frame.custom_minimum_size = Vector2(88, 88)
+	order_frame.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	order_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(order_frame)
+	order_portrait = TextureRect.new()
+	order_portrait.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	order_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	order_portrait.stretch_mode = TextureRect.STRETCH_SCALE
+	order_portrait.position = Vector2(8, 8)
+	order_portrait.size = Vector2(72, 72)
+	order_portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	order_frame.add_child(order_portrait)
+	var v := UIKit.vbox(2)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(v)
+	order_name = UIKit.label("", 23, Color("7a1d18"), UIKit.font_sc_bold)
+	v.add_child(order_name)
+	# --- R3 MERGE: el pedido va escrito a mano, con la letra de los papeles (UI-PAPER: PaperKit, Caveat)
+	order_text = PaperKit.rich(26, INK_COL)
+	order_text.custom_minimum_size = Vector2(440, 0)
 	v.add_child(order_text)
-	order_hint = UIKit.rich(20)
-	order_hint.custom_minimum_size = Vector2(580, 0)
-	v.add_child(order_hint)
-	var pad := Control.new()
-	pad.custom_minimum_size = Vector2(0, 6)
-	pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_child(pad)
+	var bottom := UIKit.hbox(18)
+	v.add_child(bottom)
+	order_hint = UIKit.hbox(6)
+	bottom.add_child(order_hint)
+	order_mods = UIKit.hbox(6)
+	bottom.add_child(order_mods)
+	var pin := TextureRect.new()
+	pin.texture = load("res://assets/ui/ticket_pin.png")
+	pin.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	pin.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	pin.stretch_mode = TextureRect.STRETCH_SCALE
+	pin.size = Vector2(27, 27)
+	pin.position = Vector2(300 - 12, -4)
+	pin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	order_card.add_child(pin)
 
-func show_order(name: String, text: String, hint: String) -> void:
-	order_name.text = "Pedido de %s" % name
-	order_text.text = "[color=#e9e1f2]%s[/color]" % text
-	order_hint.text = "" if hint == "" else "[color=#ffd987][i]Pista: %s[/i][/color]" % hint
-	order_hint.visible = hint != ""
+## El ticket del pedido. name: el nombre que se ve; text: lo que pide; hint: la pista ("" si aún no la pidió);
+## mods: runas que lleva el pedido (ids; el icono es res://assets/icons/rune_<id>.png, si no existe no se dibuja).
+func show_order(name: String, text: String, hint: String, mods: Array = []) -> void:
+	order_name.text = name
+	order_text.text = text
+	_fill_hint(hint)
+	for c in order_mods.get_children():
+		c.queue_free()
+	var runes := 0
+	_order_mod_ids = []   # --- R3 MERGE
+	for m in mods:
+		var p := "res://assets/icons/rune_%s.png" % str(m)
+		if ResourceLoader.exists(p):
+			var ic := UIKit.icon(p, 2.0)
+			ic.mouse_filter = Control.MOUSE_FILTER_PASS
+			ic.tooltip_text = _rune_name(str(m))
+			order_mods.add_child(ic)
+			runes += 1
+			_order_mod_ids.append(str(m))   # --- R3 MERGE
+	order_mods.visible = runes > 0
+	_set_portrait(order_who if order_who != "" else _who_by_name(name))
+	order_who = ""
 	if not order_card.visible:
 		order_card.visible = true
-		UIKit.pop_in(order_card)
-	order_card.reset_size()
-	_resize_later(order_card)
+		order_card.pivot_offset = Vector2(300, 0)
+		order_card.rotation = -0.05
+		order_card.position.y = -40.0
+		order_card.modulate.a = 0.0
+		var tw := create_tween().set_parallel(true)
+		tw.tween_property(order_card, "position:y", 6.0, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.tween_property(order_card, "rotation", 0.012, 0.35).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+		tw.tween_property(order_card, "modulate:a", 1.0, 0.15)
+		Sfx.play("page", 0.08, -8.0)
+	order_paper.reset_size()
+	_resize_later(order_paper)
 
 func hide_order() -> void:
 	order_card.visible = false
+
+## --- R3 MERGE: las runas (ids) que muestra el ticket ahora mismo (MAGIC3: --demo=magictest lo imprime).
+func order_mods_ids() -> Array:
+	return _order_mod_ids.duplicate() if order_card.visible else []
+
+## La pista: si nombra dos esencias, sus iconos (Vida + Sombra); si no, la frase, corta y en cursiva.
+func _fill_hint(hint: String) -> void:
+	for c in order_hint.get_children():
+		c.queue_free()
+	order_hint.visible = hint != ""
+	if hint == "":
+		return
+	order_hint.add_child(UIKit.icon("res://assets/icons/emote_sparkle.png", 1.6))
+	var es := hint_essences(hint)
+	if es.size() == 2:
+		order_hint.add_child(UIKit.ess_icon(es[0], 3.0))
+		var plus := UIKit.label("+", 24, INK_COL, UIKit.font_bold)
+		order_hint.add_child(plus)
+		order_hint.add_child(UIKit.ess_icon(es[1], 3.0))
+		order_hint.tooltip_text = hint
+	else:
+		var l := PaperKit.hand(hint, 24, Color("6e4e2e"), false, HORIZONTAL_ALIGNMENT_LEFT, 380.0)   # --- R3 MERGE: a mano
+		order_hint.add_child(l)
+
+## Las esencias que nombra una pista ("Vida y sombra, para dormir." -> ["vida", "sombra"]).
+static func hint_essences(hint: String) -> Array:
+	var low := hint.to_lower()
+	var out := []
+	for e in Data.ESSENCE_ORDER:
+		var re := RegEx.create_from_string("(^|[^a-záéíóúñ])%s($|[^a-záéíóúñ])" % e)
+		if re.search(low):
+			out.append(e)
+	return out
+
+func _rune_name(id: String) -> String:
+	var runes = Data.get("RUNES")
+	if runes is Dictionary and runes.has(id) and runes[id] is Dictionary:
+		return String(runes[id].get("name", id))
+	return id.capitalize()
+
+func _who_by_name(name: String) -> String:
+	for id in Data.CHARACTERS:
+		if String(Data.CHARACTERS[id].get("name", "")) == name:
+			return id
+	return ""
+
+## Retrato: la cabeza del primer cuadro de su sprite (64x96), recortada desde la primera fila con píxeles.
+func _set_portrait(who: String) -> void:
+	order_frame.visible = who != ""
+	if who == "":
+		return
+	var sid := Story.sprite_id(who)
+	var path := "res://assets/chars/%s_idle.png" % sid
+	if not ResourceLoader.exists(path):
+		order_frame.visible = false
+		return
+	var tex: Texture2D = load(path)
+	var fw := tex.get_width() / 2
+	if not _portrait_top.has(sid):
+		var top := 6
+		var img := tex.get_image()
+		if img:
+			if img.is_compressed():
+				img.decompress()
+			top = -1
+			for y in img.get_height():
+				for x in range(8, fw - 8):
+					if img.get_pixel(x, y).a > 0.5:
+						top = y
+						break
+				if top >= 0:
+					break
+			top = maxi(0, top)
+		_portrait_top[sid] = top
+	var at := AtlasTexture.new()
+	at.atlas = tex
+	var y0: int = maxi(0, int(_portrait_top[sid]) - 2)
+	at.region = Rect2((fw - 36) / 2, y0, 36, 36)
+	order_portrait.texture = at
 
 # ------------------------------------------------------------------ diálogo
 
@@ -295,219 +497,183 @@ func _process(delta: float) -> void:
 	if tooltip.visible:
 		_place_tooltip()
 
-# ------------------------------------------------------------------ caldero
+# ------------------------------------------------------------------ caldero (compatibilidad)
 
-func _build_cauldron_panel() -> void:
-	cauldron_panel = UIKit.fancy_panel(UIKit.BG, 18)
-	cauldron_panel.custom_minimum_size = Vector2(430, 0)
-	UIKit.place(cauldron_panel, Vector2(0, 1), Vector2(22, -300), Vector2(430, 278), Control.GROW_DIRECTION_END, Control.GROW_DIRECTION_BEGIN)
-	cauldron_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	root.add_child(cauldron_panel)
-	var v := UIKit.vbox(8)
-	cauldron_panel.add_child(v)
-	var head := UIKit.hbox(8)
-	v.add_child(head)
-	head.add_child(UIKit.shadow(UIKit.label("Caldero", 26, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold)))
-	var slots := UIKit.hbox(8)
-	v.add_child(slots)
-	for i in 3:
-		var b := Button.new()
-		b.custom_minimum_size = Vector2(64, 64)
-		b.focus_mode = Control.FOCUS_NONE
-		b.tooltip_text = ""
-		var tr := TextureRect.new()
-		tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		tr.set_anchors_preset(Control.PRESET_FULL_RECT)
-		tr.offset_left = 8
-		tr.offset_top = 8
-		tr.offset_right = -8
-		tr.offset_bottom = -8
-		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		tr.name = "Icon"
-		b.add_child(tr)
-		var idx := i
-		b.pressed.connect(func(): slot_pressed.emit(idx))
-		slots.add_child(b)
-		slot_boxes.append(b)
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(10, 0)
-	slots.add_child(spacer)
-	var bars := UIKit.vbox(2)
-	bars.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	slots.add_child(bars)
-	for e in Data.ESSENCE_ORDER:
-		var row := UIKit.hbox(6)
-		bars.add_child(row)
-		var dot := ColorRect.new()
-		dot.color = Data.ESSENCES[e]["color"]
-		dot.custom_minimum_size = Vector2(9, 9)
-		dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.add_child(dot)
-		var bg := ColorRect.new()
-		bg.color = Color(1, 1, 1, 0.06)
-		bg.custom_minimum_size = Vector2(110, 9)
-		bg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.add_child(bg)
-		var fg := ColorRect.new()
-		fg.color = Data.ESSENCES[e]["color"]
-		fg.size = Vector2(0, 9)
-		fg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		bg.add_child(fg)
-		essence_bars[e] = fg
-		var val := UIKit.label("0", 15, UIKit.MUTED, UIKit.font_bold)
-		val.custom_minimum_size = Vector2(16, 0)
-		row.add_child(val)
-		essence_vals[e] = val
-	result_label = UIKit.rich(21)
-	result_label.custom_minimum_size = Vector2(380, 54)
-	v.add_child(result_label)
-	var btns := UIKit.hbox(10)
-	v.add_child(btns)
-	brew_btn = UIKit.button("Remover", func(): brew_pressed.emit(), 24)
-	brew_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	btns.add_child(brew_btn)
-	empty_btn = UIKit.button("Vaciar", func(): empty_pressed.emit(), 20)
-	btns.add_child(empty_btn)
-
+## --- R3 BENCH: el panel «Caldero» ya no existe (el banco del caldero lo dibuja todo). Se sigue llamando desde
+## main.gd cuando cambia lo que hay en el caldero: avisa al banco.
 func set_cauldron(contents: Array) -> void:
-	var slots := Game.cauldron_slots()
-	for i in 3:
-		var b: Button = slot_boxes[i]
-		b.visible = i < slots
-		var tr: TextureRect = b.get_node("Icon")
-		if i < contents.size():
-			tr.texture = load("res://assets/icons/ing_%s.png" % contents[i])
-			b.tooltip_text = "Sacar %s" % Data.INGREDIENTS[contents[i]]["name"]
-			b.disabled = false
-		else:
-			tr.texture = null
-			b.tooltip_text = ""
-			b.disabled = true
-	var m := Game.essence_mix(contents)
-	var r := Game.evaluate(contents)
-	var top: Array = r.get("top", [])
-	for e in Data.ESSENCE_ORDER:
-		var v: int = m.get(e, 0)
-		var fg: ColorRect = essence_bars[e]
-		var w := clampf(v / 8.0, 0.0, 1.0) * 110.0
-		var tw := create_tween()
-		tw.tween_property(fg, "size:x", w, 0.25)
-		var lead: bool = top.size() >= 2 and (e == top[0] or e == top[1])
-		fg.color = Data.ESSENCES[e]["color"] if lead or top.size() < 2 else Data.ESSENCES[e]["color"].darkened(0.45)
-		essence_vals[e].text = str(v)
-		essence_vals[e].add_theme_color_override("font_color", UIKit.TEXT if lead else UIKit.MUTED)
-	if contents.is_empty():
-		result_label.text = "[color=#a99fbf][i]Toca los frascos del estante para echar ingredientes.[/i][/color]"
-	elif contents.size() < 2:
-		result_label.text = "[color=#a99fbf][i]Añade al menos otro ingrediente.[/i][/color]"
-	elif r.get("potion", "") == "":
-		result_label.text = "[color=#ff9b9b]Solo hay una esencia: así no cuaja ninguna poción.[/color]"
-	else:
-		var pid: String = r["potion"]
-		var pot := Game.potency_bonus() + int(r["potency"])
-		var stars := Game.stars_for(pot)
-		var name: String = Data.POTIONS[pid]["name"] if Game.discovered.has(pid) else "Poción desconocida"
-		var e1: String = Data.ESSENCES[top[0]]["name"]
-		var e2: String = Data.ESSENCES[top[1]]["name"]
-		result_label.text = "[b][color=#ffd987]%s[/color][/b]\n[color=#a99fbf]%s + %s · potencia %d (%d %s)[/color]" % [name, e1, e2, pot, stars, "estrella" if stars == 1 else "estrellas"]
-	brew_btn.disabled = r.get("potion", "") == ""
-	empty_btn.disabled = contents.is_empty()
-	_magic_cauldron(contents)   # --- MAGIC: la tinta posible y el botón «Tinta»
+	cauldron_set.emit(contents)
 
-func set_cauldron_enabled(on: bool) -> void:
-	cauldron_panel.modulate.a = 1.0 if on else 0.55
+# ------------------------------------------------------------------ el estante de pociones
 
-# ------------------------------------------------------------------ pociones
+# --- R3 BENCH: un estantito de madera (assets/ui/hud_shelf6.png o hud_shelf12.png, a 3x) con los frascos de pie;
+# las estrellas en el canto de la repisa, el número (3/6) en la plaquita de latón y, si la poción lleva una runa
+# ("rune"), su glifo pequeño junto al frasco.
+const SHELF_K := 3.0
+const SHELF_SLOT_X := [15, 35, 55, 75, 95, 115]
 
 func _build_potion_panel() -> void:
-	potion_panel = UIKit.fancy_panel(UIKit.BG, 18)
-	potion_panel.custom_minimum_size = Vector2(456, 0)
-	UIKit.place(potion_panel, Vector2(1, 1), Vector2(-478, -230), Vector2(456, 208), Control.GROW_DIRECTION_BEGIN, Control.GROW_DIRECTION_BEGIN)
-	potion_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	potion_panel = Control.new()
+	potion_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(potion_panel)
-	var v := UIKit.vbox(6)
-	potion_panel.add_child(v)
-	rack_box = v   # --- PREP: la pestaña de pergaminos (MAGIC) va en este mismo panel
-	var head := UIKit.hbox(8)
-	v.add_child(head)
-	rack_head = head   # --- PREP
-	potion_title = UIKit.shadow(UIKit.label("Pociones", 26, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold))
-	head.add_child(potion_title)
-	potion_grid = GridContainer.new()
-	potion_grid.columns = 6
-	potion_grid.add_theme_constant_override("h_separation", 6)
-	potion_grid.add_theme_constant_override("v_separation", 6)
+	potion_art = TextureRect.new()
+	potion_art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	potion_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	potion_art.stretch_mode = TextureRect.STRETCH_SCALE
+	potion_art.mouse_filter = Control.MOUSE_FILTER_STOP   # tapa el escenario 3D detrás del estante
+	potion_panel.add_child(potion_art)
+	potion_grid = Control.new()
 	potion_grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_child(potion_grid)
+	potion_panel.add_child(potion_grid)
+	potion_count = UIKit.label("0/6", 19, INK_COL, UIKit.font_bold, HORIZONTAL_ALIGNMENT_CENTER)
+	potion_count.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	potion_panel.add_child(potion_count)
 
 func refresh_potions() -> void:
 	var cap := Game.potion_capacity()
-	potion_title.text = "Pociones  %d/%d" % [Game.potions.size(), cap]
-	_rack_titles()   # --- PREP: el número también va en la pestaña
-	for c in potion_grid.get_children():
+	var rows := 2 if cap > 6 else 1
+	var tex: Texture2D = load("res://assets/ui/hud_shelf%d.png" % (rows * 6))
+	var sz := tex.get_size() * SHELF_K
+	potion_art.texture = tex
+	potion_art.size = sz
+	UIKit.place(potion_panel, Vector2(1, 1), Vector2(-sz.x - 22, -sz.y - 22), sz, Control.GROW_DIRECTION_BEGIN, Control.GROW_DIRECTION_BEGIN)
+	potion_count.text = "%d/%d" % [Game.potions.size(), cap]
+	potion_count.position = Vector2(sz.x / 2.0 - 39, -2)
+	potion_count.size = Vector2(78, 24)
+	potion_count.add_theme_color_override("font_color", INK_COL if not Game.potions_full() else Color("7a1d18"))
+	for c in potion_slots:
 		c.queue_free()
-	potion_grid.columns = 6
+	potion_slots.clear()
 	for i in cap:
+		var r := i / 6
+		var col := i % 6
 		var b := Button.new()
-		b.custom_minimum_size = Vector2(64, 70 if cap > 6 else 140)
+		b.flat = true
 		b.focus_mode = Control.FOCUS_NONE
+		for st in ["normal", "hover", "pressed", "disabled", "focus", "hover_pressed"]:
+			b.add_theme_stylebox_override(st, StyleBoxEmpty.new())
 		b.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		var top := (7.0 + r * 31.0) * SHELF_K
+		b.position = Vector2((SHELF_SLOT_X[col] - 10) * SHELF_K, top)
+		b.size = Vector2(20, 31) * SHELF_K
+		potion_grid.add_child(b)
+		potion_slots.append(b)
 		if i < Game.potions.size():
 			var p: Dictionary = Game.potions[i]
-			var v := UIKit.vbox(0)
-			v.set_anchors_preset(Control.PRESET_FULL_RECT)
-			v.alignment = BoxContainer.ALIGNMENT_CENTER
-			b.add_child(v)
-			var ic := UIKit.icon("res://assets/icons/pot_%s.png" % p["id"], 3.0 if cap <= 6 else 2.4)
-			ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-			v.add_child(ic)
-			var st := UIKit.stars(Game.stars_for(p["potency"]), 0.9 if cap <= 6 else 0.7)
-			st.alignment = BoxContainer.ALIGNMENT_CENTER
-			v.add_child(st)
+			var ic := TextureRect.new()
+			ic.texture = load("res://assets/icons/pot_%s.png" % p["id"])
+			ic.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			ic.stretch_mode = TextureRect.STRETCH_SCALE
+			ic.size = Vector2(16, 16) * SHELF_K
+			ic.position = Vector2(2, 6) * SHELF_K
+			ic.pivot_offset = Vector2(8, 16) * SHELF_K
+			ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			ic.name = "Icon"
+			ic.visible = i != _held_slot
+			b.add_child(ic)
+			var st := HBoxContainer.new()
+			st.add_theme_constant_override("separation", 1)
+			st.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			st.position = Vector2(1.5, 23.5) * SHELF_K
+			for k in 3:
+				var s := UIKit.icon("res://assets/ui/shelf_star.png" if k < Game.stars_for(int(p["potency"])) else "res://assets/ui/shelf_star_empty.png", SHELF_K)
+				st.add_child(s)
+			b.add_child(st)
+			# la runa (o las dos runas) de la etiqueta, pequeñas junto al frasco
+			var gy := 2.0
+			for rk in ["rune", "rune2"]:
+				var rune := String(p.get(rk, ""))
+				if rune != "" and ResourceLoader.exists("res://assets/icons/rune_%s.png" % rune):
+					var g := UIKit.icon("res://assets/icons/rune_%s.png" % rune, 1.0)
+					g.position = Vector2(b.size.x - 24, gy)
+					b.add_child(g)
+					gy += 24.0
 			var idx := i
 			b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 			b.pressed.connect(func(): potion_pressed.emit(idx))
-			b.mouse_entered.connect(func(): show_potion_tooltip(idx))
-			b.mouse_exited.connect(hide_tooltip)
+			b.mouse_entered.connect(func():
+				show_potion_tooltip(idx)
+				var tw := ic.create_tween()
+				tw.tween_property(ic, "position:y", 3 * SHELF_K, 0.08))
+			b.mouse_exited.connect(func():
+				hide_tooltip()
+				if is_instance_valid(ic):
+					var tw := ic.create_tween()
+					tw.tween_property(ic, "position:y", 6 * SHELF_K, 0.1))
 		else:
 			b.disabled = true
-		potion_grid.add_child(b)
+			b.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
+## Centro (en pantalla) del frasco del hueco index.
 func potion_slot_center(index: int) -> Vector2:
-	if index < potion_grid.get_child_count():
-		var c: Control = potion_grid.get_child(index)
-		return c.get_global_rect().get_center()
+	if index >= 0 and index < potion_slots.size():
+		var b: Control = potion_slots[index]
+		return b.get_global_rect().position + Vector2(10, 14) * SHELF_K
 	return potion_panel.get_global_rect().get_center()
+
+## --- R3 BENCH: esconde el frasco del hueco index mientras otro vuela hacia él (release lo muestra con un saltito).
+func hold_potion_slot(index: int) -> void:
+	_held_slot = index
+	if index >= 0 and index < potion_slots.size() and potion_slots[index].has_node("Icon"):
+		potion_slots[index].get_node("Icon").visible = false
+
+func release_potion_slot() -> void:
+	var i := _held_slot
+	_held_slot = -1
+	if i >= 0 and i < potion_slots.size() and potion_slots[i].has_node("Icon"):
+		var ic: TextureRect = potion_slots[i].get_node("Icon")
+		ic.visible = true
+		ic.scale = Vector2(1.3, 0.7)
+		ic.create_tween().tween_property(ic, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 # ------------------------------------------------------------------ consejos, tooltip, avisos
 
+# --- R3 BENCH: el consejo es una nota de papel de una línea; se va sola a los secs segundos (0: se queda).
 func _build_tip() -> void:
-	tip_panel = UIKit.fancy_panel(Color(0.12, 0.09, 0.05, 0.93), 18)
-	tip_panel.custom_minimum_size = Vector2(450, 0)
-	UIKit.place(tip_panel, Vector2(1, 0), Vector2(-472, 96), Vector2(450, 0), Control.GROW_DIRECTION_BEGIN, Control.GROW_DIRECTION_END)
+	tip_panel = PanelContainer.new()
+	tip_panel.add_theme_stylebox_override("panel", UIKit.paper_style(10))
+	UIKit.place(tip_panel, Vector2(0, 0), Vector2(1200, 100), Vector2(10, 0))
 	tip_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(tip_panel)
-	var v := UIKit.vbox(4)
-	tip_panel.add_child(v)
-	var h := UIKit.hbox(8)
-	v.add_child(h)
-	h.add_child(UIKit.icon("res://assets/icons/emote_sparkle.png", 1.8))
-	h.add_child(UIKit.label("Consejo", 22, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold))
-	tip_text = UIKit.rich(21)
-	tip_text.custom_minimum_size = Vector2(394, 0)
-	v.add_child(tip_text)
+	var h := UIKit.hbox(10)
+	tip_panel.add_child(h)
+	var ic := UIKit.icon("res://assets/icons/emote_sparkle.png", 2.0)
+	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(ic)
+	tip_text = UIKit.rich(22)
+	tip_text.autowrap_mode = TextServer.AUTOWRAP_OFF   # una línea: la nota mide lo que su texto
+	tip_text.add_theme_color_override("default_color", INK_COL)
+	tip_text.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(tip_text)
 	tip_panel.visible = false
 
-func show_tip(text: String) -> void:
+func show_tip(text: String, secs := 10.0) -> void:
 	tip_text.text = text
 	tip_panel.visible = true
-	tip_panel.reset_size()
-	_resize_later(tip_panel)
+	_fit_tip()
 	UIKit.pop_in(tip_panel)
+	_tip_gen += 1
+	if secs > 0.0:
+		var gen := _tip_gen
+		get_tree().create_timer(secs).timeout.connect(func():
+			if gen == _tip_gen and tip_panel.visible:
+				var tw := tip_panel.create_tween()
+				tw.tween_property(tip_panel, "modulate:a", 0.0, 0.5)
+				tw.tween_callback(func():
+					if gen == _tip_gen:
+						tip_panel.visible = false
+					tip_panel.modulate.a = 1.0))
+
+## La nota del consejo se ajusta a su texto y queda pegada a la derecha (bajo el menú).
+func _fit_tip() -> void:
+	for i in 3:
+		tip_panel.reset_size()
+		tip_panel.position.x = root.size.x - tip_panel.size.x - 22
+		tip_panel.pivot_offset = tip_panel.size / 2.0
+		await get_tree().process_frame
+		if not is_instance_valid(tip_panel):
+			return
 
 ## Los RichTextLabel calculan su alto un cuadro después: reajusta el panel entonces.
 func _resize_later(c: Control) -> void:
@@ -519,14 +685,16 @@ func _resize_later(c: Control) -> void:
 		c.reset_size()
 
 func hide_tip() -> void:
+	_tip_gen += 1
 	tip_panel.visible = false
+	tip_panel.modulate.a = 1.0
 
 func _build_tooltip() -> void:
-	tooltip = UIKit.fancy_panel(Color(0.06, 0.05, 0.1, 0.96), 16)
+	tooltip = UIKit.fancy_panel(Color(0.06, 0.05, 0.1, 0.96), 14)
 	tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tooltip.z_index = 50
 	root.add_child(tooltip)
-	tooltip_box = UIKit.vbox(6)
+	tooltip_box = UIKit.vbox(4)
 	tooltip.add_child(tooltip_box)
 	tooltip.visible = false
 
@@ -535,6 +703,7 @@ func _clear_tooltip() -> void:
 		tooltip_box.remove_child(c)
 		c.queue_free()
 
+# --- R3 BENCH: tooltips cortos: el ingrediente (nombre, esencias en iconos, cuántos quedan)...
 func show_ingredient_tooltip(id: String) -> void:
 	_clear_tooltip()
 	var d: Dictionary = Data.INGREDIENTS[id]
@@ -543,21 +712,21 @@ func show_ingredient_tooltip(id: String) -> void:
 	h.add_child(UIKit.icon("res://assets/icons/ing_%s.png" % id, 2.5))
 	var v := UIKit.vbox(2)
 	h.add_child(v)
-	v.add_child(UIKit.label(d["name"], 25, UIKit.GOLD_BRIGHT, UIKit.font_bold))
-	var chips := UIKit.hbox(12)
-	v.add_child(chips)
-	for e in d["ess"]:
-		chips.add_child(UIKit.essence_chip(e, d["ess"][e], 20))
-	var desc := UIKit.rich(19)
-	desc.custom_minimum_size = Vector2(380, 0)
-	desc.text = "[i][color=#b8aecb]%s[/color][/i]" % d["desc"]
-	tooltip_box.add_child(desc)
+	v.add_child(UIKit.label(d["name"], 24, UIKit.GOLD_BRIGHT, UIKit.font_bold))
+	var row := UIKit.hbox(4)
+	v.add_child(row)
+	for e in Data.ESSENCE_ORDER:
+		for k in int(d["ess"].get(e, 0)):
+			row.add_child(UIKit.ess_icon(e, 2.0))
 	var n: int = Game.stock.get(id, 0)
-	tooltip_box.add_child(UIKit.label("En el estante: %d   ·   Precio: %d oro" % [n, d["price"]], 19, UIKit.TEXT if n > 0 else UIKit.BAD))
+	var cnt := UIKit.label("×%d" % n, 22, UIKit.TEXT if n > 0 else UIKit.BAD, UIKit.font_bold)
+	cnt.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(cnt)
 	tooltip.visible = true
 	tooltip.reset_size()
 	_place_tooltip()
 
+# ... y la poción (nombre, estrellas, para qué sirve en una línea, y su runa si la tiene).
 func show_potion_tooltip(idx: int) -> void:
 	if idx >= Game.potions.size():
 		return
@@ -569,12 +738,21 @@ func show_potion_tooltip(idx: int) -> void:
 	h.add_child(UIKit.icon("res://assets/icons/pot_%s.png" % p["id"], 2.5))
 	var v := UIKit.vbox(2)
 	h.add_child(v)
-	v.add_child(UIKit.label(d["name"], 25, UIKit.GOLD_BRIGHT, UIKit.font_bold))
-	v.add_child(UIKit.stars(Game.stars_for(p["potency"]), 1.2))
-	var desc := UIKit.rich(19)
-	desc.custom_minimum_size = Vector2(360, 0)
-	desc.text = "[i][color=#b8aecb]%s[/color][/i]\n[color=#a99fbf]Potencia %d · Toca para entregar.[/color]" % [d["effect"], p["potency"]]
-	tooltip_box.add_child(desc)
+	v.add_child(UIKit.label(d["name"], 24, UIKit.GOLD_BRIGHT, UIKit.font_bold))
+	v.add_child(UIKit.stars(Game.stars_for(p["potency"]), 1.1))
+	var eff := UIKit.label(d["effect"], 19, Color("b8aecb"), UIKit.font_italic)
+	tooltip_box.add_child(eff)
+	for rk in ["rune", "rune2"]:
+		var rune := String(p.get(rk, ""))
+		if rune == "":
+			continue
+		var rh := UIKit.hbox(6)
+		if ResourceLoader.exists("res://assets/icons/rune_%s.png" % rune):
+			rh.add_child(UIKit.icon("res://assets/icons/rune_%s.png" % rune, 1.0))
+		rh.add_child(UIKit.label(_rune_name(rune), 20, UIKit.GOLD, UIKit.font_bold))
+		if p.has(rk + "_stars"):
+			rh.add_child(UIKit.stars(int(p[rk + "_stars"]), 0.8))
+		tooltip_box.add_child(rh)
 	tooltip.visible = true
 	tooltip.reset_size()
 	_place_tooltip()
@@ -597,17 +775,17 @@ func _place_tooltip() -> void:
 
 func _build_toasts() -> void:
 	toast_box = UIKit.vbox(8)
-	UIKit.place(toast_box, Vector2(0.5, 0), Vector2(-400, 250), Vector2(800, 10), Control.GROW_DIRECTION_BOTH, Control.GROW_DIRECTION_END)
+	UIKit.place(toast_box, Vector2(0.5, 0), Vector2(-400, 236), Vector2(800, 10), Control.GROW_DIRECTION_BOTH, Control.GROW_DIRECTION_END)
 	toast_box.alignment = BoxContainer.ALIGNMENT_BEGIN
 	toast_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(toast_box)
 
 func toast(text: String, color := UIKit.TEXT, duration := 2.6) -> void:
 	var p := PanelContainer.new()
-	p.add_theme_stylebox_override("panel", UIKit.panel_style(Color(0.06, 0.05, 0.1, 0.9), UIKit.GOLD, 1, 6, 14))
+	p.add_theme_stylebox_override("panel", UIKit.panel_style(Color(0.06, 0.05, 0.1, 0.9), UIKit.GOLD, 1, 18, 12))
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	p.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	var l := UIKit.label(text, 22, color, UIKit.font_bold, HORIZONTAL_ALIGNMENT_CENTER)
+	var l := UIKit.label(text, 21, color, UIKit.font_bold, HORIZONTAL_ALIGNMENT_CENTER)
 	p.add_child(l)
 	toast_box.add_child(p)
 	p.modulate.a = 0.0
@@ -664,224 +842,38 @@ func fly_coins(from: Vector2, count: int) -> void:
 
 # --- WORLD: en el mercado no se ven el caldero ni las pociones (son cosas de la tienda)
 func set_shop_panels_visible(on: bool) -> void:
-	cauldron_panel.visible = on
-	potion_panel.visible = on
+	potion_panel.visible = on   # --- R3 BENCH: ya no hay panel del caldero
 	if not on:
 		hide_tooltip()
 # --- end WORLD
 
 func set_gameplay_visible(on: bool) -> void:
-	cauldron_panel.visible = on
-	potion_panel.visible = on
+	potion_panel.visible = on   # --- R3 BENCH
 	set_menu_visible(on)
 	if not on:
 		hide_order()
 		hide_tip()
 		hide_tooltip()
 
-# --- MAGIC: el estante de pergaminos y el botón «Tinta» del caldero ----------------------------------------------
-# --- PREP: los pergaminos ya no van en un panel encima de las pociones (tapaba el mostrador y al cliente): son la
-# pestaña «Pergaminos» del mismo estante de abajo a la derecha, que ocupa lo mismo que antes el de pociones.
-# Pestañas: botones (el ratón y el cursor del mando, A / LB / RB, las tocan). show_rack_tab() la cambia sola: main.gd
-# la pone en lo que pide el cliente que espera, en «Pociones» al preparar una poción y en «Pergaminos» al inscribir.
-## Tocar un pergamino del estante (main.gd lo entrega como una poción).
+# --- MAGIC / PREP: los pergaminos tenían una pestaña en este estante y el caldero un botón «Tinta».
+# --- R3 BENCH: los pergaminos dejan de ser un producto (MAGIC3) y «Tinta» está en el banco del caldero (BrewUI).
+# Se conservan las funciones y señales que otros scripts llaman, vacías, para que nada se rompa.
 signal scroll_pressed(index: int)
-## «Tinta» en el panel del caldero (main.gd convierte la mezcla en tinta).
 signal ink_pressed
+var rack_tab := "potion"
 
-var scroll_grid: GridContainer
-var ink_btn: Button
-var tab_potions: Button     # --- PREP
-var tab_scrolls: Button     # --- PREP
-var rack_tab := "potion"    # --- PREP: la pestaña a la vista ("potion" o "scroll")
-var _magic_on := false
-var _magic_seen_unlock := false
-var _last_contents: Array = []
-
-## Lo llama main.gd en _ready(), después de crear la interfaz.
 func magic_setup() -> void:
-	if _magic_on:
-		return
-	# --- PREP: las dos pestañas en la cabecera del estante (en lugar del título «Pociones») y la rejilla debajo
-	tab_potions = _rack_tab_button("potion")
-	tab_scrolls = _rack_tab_button("scroll")
-	rack_head.add_child(tab_potions)
-	rack_head.add_child(tab_scrolls)
-	scroll_grid = GridContainer.new()
-	scroll_grid.columns = 6
-	scroll_grid.add_theme_constant_override("h_separation", 6)
-	scroll_grid.add_theme_constant_override("v_separation", 6)
-	scroll_grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	rack_box.add_child(scroll_grid)
-	Game.upgrades_changed.connect(refresh_scrolls)   # sus huecos miden lo mismo que los de las pociones
-	# --- end PREP
-	ink_btn = UIKit.button("Tinta", func(): ink_pressed.emit(), 20)
-	ink_btn.tooltip_text = "Convierte la mezcla en tinta para pergaminos (la decide la esencia más fuerte)."
-	var row := brew_btn.get_parent()
-	row.add_child(ink_btn)
-	row.move_child(ink_btn, empty_btn.get_index())
-	Game.scrolls_changed.connect(refresh_scrolls)
-	Game.magic_changed.connect(_magic_sync)
-	_magic_on = true
-	refresh_scrolls()
-	_magic_sync()
+	pass
 
-## Las pestañas del estante se ven desde que se abrió el grimorio (antes, el título «Pociones» de siempre).
-func _magic_sync() -> void:
-	if not _magic_on:
-		return
-	# --- PREP
-	potion_title.visible = not Game.magic_unlocked
-	tab_potions.visible = Game.magic_unlocked
-	tab_scrolls.visible = Game.magic_unlocked
-	if not Game.magic_unlocked:
-		rack_tab = "potion"
-	_rack_show()
-	# --- end PREP
-	ink_btn.visible = Game.magic_unlocked
-	if Game.magic_unlocked != _magic_seen_unlock:
-		_magic_seen_unlock = Game.magic_unlocked
-		set_cauldron(_last_contents)
+func show_rack_tab(_kind: String) -> void:
+	pass
 
 func refresh_scrolls() -> void:
-	if not _magic_on:
-		return
-	var cap := Game.scroll_capacity()
-	_rack_titles()   # --- PREP
-	for c in scroll_grid.get_children():
-		c.queue_free()
-	# --- PREP: huecos tan altos como la rejilla de pociones (el estante no cambia de tamaño al cambiar de pestaña)
-	var tall := Game.potion_capacity() <= 6
-	for i in cap:
-		var b := Button.new()
-		b.custom_minimum_size = Vector2(64, 140 if tall else 146)
-		# --- end PREP
-		b.focus_mode = Control.FOCUS_NONE
-		b.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		if i < Game.scrolls.size():
-			var s: Dictionary = Game.scrolls[i]
-			var v := UIKit.vbox(0)
-			v.set_anchors_preset(Control.PRESET_FULL_RECT)
-			v.alignment = BoxContainer.ALIGNMENT_CENTER
-			b.add_child(v)
-			var ic := UIKit.icon("res://assets/icons/spell_%s.png" % s["id"], 3.0 if tall else 2.6)   # --- PREP
-			ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-			v.add_child(ic)
-			var st := UIKit.stars(Game.stars_for(int(s["potency"])), 0.9 if tall else 0.7)   # --- PREP
-			st.alignment = BoxContainer.ALIGNMENT_CENTER
-			v.add_child(st)
-			var idx := i
-			b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-			b.pressed.connect(func(): scroll_pressed.emit(idx))
-			b.mouse_entered.connect(func(): show_scroll_tooltip(idx))
-			b.mouse_exited.connect(hide_tooltip)
-		else:
-			b.disabled = true
-		scroll_grid.add_child(b)
+	pass
 
-## Centro (en pantalla) del hueco i del estante de pergaminos.
-func scroll_slot_center(index: int) -> Vector2:
-	if not _magic_on:
-		return root.size / 2.0
-	# --- PREP: con la pestaña de pociones a la vista, el pergamino vuela hasta la pestaña «Pergaminos»
-	if not scroll_grid.is_visible_in_tree():
-		return (tab_scrolls if tab_scrolls.is_visible_in_tree() else potion_panel).get_global_rect().get_center()
-	# --- end PREP
-	var live := []
-	for c in scroll_grid.get_children():
-		if not c.is_queued_for_deletion():
-			live.append(c)
-	if index >= 0 and index < live.size():
-		return (live[index] as Control).get_global_rect().get_center()
+func scroll_slot_center(_index: int) -> Vector2:
 	return potion_panel.get_global_rect().get_center()
 
-# --- PREP: las pestañas del estante ------------------------------------------------------------------------------
-## Pone a la vista la pestaña de pociones ("potion") o la de pergaminos ("scroll"). La de pergaminos solo existe
-## desde que se abrió el grimorio.
-func show_rack_tab(kind: String) -> void:
-	if kind != "scroll" or not _magic_on or not Game.magic_unlocked:
-		kind = "potion"
-	if kind == rack_tab:
-		return
-	rack_tab = kind
-	hide_tooltip()
-	_rack_show()
-
-func _rack_tab_button(kind: String) -> Button:
-	var b := Button.new()
-	b.focus_mode = Control.FOCUS_NONE
-	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	b.add_theme_font_override("font", UIKit.font_sc_bold)
-	b.add_theme_font_size_override("font_size", 21)
-	b.visible = false
-	b.pressed.connect(func():
-		if rack_tab != kind:
-			Sfx.play("page" if kind == "scroll" else "click", 0.05, -6.0)
-		show_rack_tab(kind))
-	b.mouse_entered.connect(func(): Sfx.play("hover", 0.05, -14.0))
-	return b
-
-## Estilo de una pestaña: la elegida, dorada; la otra, apagada (como las pestañas de los paneles grandes).
-func _rack_tab_style(b: Button, on: bool) -> void:
-	for st in ["normal", "hover", "pressed", "disabled"]:
-		var bg := Color(0.26, 0.2, 0.36, 0.98) if on else (Color(0.2, 0.16, 0.28, 0.98) if st == "hover" else Color(0.12, 0.1, 0.18, 0.9))
-		var border := UIKit.GOLD_BRIGHT if on else (UIKit.GOLD if st == "hover" else Color(UIKit.GOLD.r, UIKit.GOLD.g, UIKit.GOLD.b, 0.4))
-		var sb := UIKit.button_style(bg, border)
-		sb.content_margin_left = 12
-		sb.content_margin_right = 12
-		sb.content_margin_top = 1
-		sb.content_margin_bottom = 1
-		b.add_theme_stylebox_override(st, sb)
-	for c in ["font_color", "font_hover_color", "font_pressed_color"]:
-		b.add_theme_color_override(c, UIKit.GOLD_BRIGHT if on or c != "font_color" else UIKit.MUTED)
-
-func _rack_show() -> void:
-	if not _magic_on:
-		return
-	var scrolls := rack_tab == "scroll"
-	potion_grid.visible = not scrolls
-	scroll_grid.visible = scrolls
-	_rack_tab_style(tab_potions, not scrolls)
-	_rack_tab_style(tab_scrolls, scrolls)
-
-func _rack_titles() -> void:
-	if not _magic_on:
-		return
-	tab_potions.text = "Pociones %d/%d" % [Game.potions.size(), Game.potion_capacity()]
-	tab_scrolls.text = "Pergaminos %d/%d" % [Game.scrolls.size(), Game.scroll_capacity()]
-# --- end PREP
-
-func show_scroll_tooltip(idx: int) -> void:
-	if idx >= Game.scrolls.size():
-		return
-	_clear_tooltip()
-	var s: Dictionary = Game.scrolls[idx]
-	var d: Dictionary = Data.SPELLS[s["id"]]
-	var h := UIKit.hbox(10)
-	tooltip_box.add_child(h)
-	h.add_child(UIKit.icon("res://assets/icons/spell_%s.png" % s["id"], 2.5))
-	var v := UIKit.vbox(2)
-	h.add_child(v)
-	v.add_child(UIKit.label(d["name"], 25, UIKit.GOLD_BRIGHT, UIKit.font_bold))
-	v.add_child(UIKit.stars(Game.stars_for(int(s["potency"])), 1.2))
-	var desc := UIKit.rich(19)
-	desc.custom_minimum_size = Vector2(360, 0)
-	desc.text = "[i][color=#b8aecb]%s[/color][/i]\n[color=#a99fbf]%s · potencia %d · Toca para entregar.[/color]" % [d["effect"], d["kind"], s["potency"]]
-	tooltip_box.add_child(desc)
-	tooltip.visible = true
-	tooltip.reset_size()
-	_place_tooltip()
-
-## Después de set_cauldron(): enseña qué tinta saldría de la mezcla y activa el botón «Tinta».
-func _magic_cauldron(contents: Array) -> void:
-	_last_contents = contents.duplicate()
-	if not _magic_on:
-		return
-	ink_btn.visible = Game.magic_unlocked
-	var r := Game.ink_for_mix(contents)
-	ink_btn.disabled = r.is_empty()
-	if Game.magic_unlocked and not r.is_empty():
-		var d: Dictionary = Data.INKS[r["ink"]]
-		var col: Color = d["color"]
-		result_label.text += "\n[color=#a99fbf]o en tinta:[/color] [color=#%s]%s ×%d[/color]" % [col.lightened(0.2).to_html(false), d["name"], r["qty"]]
-# --- end MAGIC
+func show_scroll_tooltip(_idx: int) -> void:
+	pass
+# --- end R3 BENCH

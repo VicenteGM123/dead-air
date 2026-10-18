@@ -56,6 +56,24 @@ func lane_z(px: float) -> float:
 func point(px: float) -> Vector3:
 	return Vector3(px, 0.0, lane_z(px))
 
+# --- R3 WORLD3: se camina a la misma velocidad por los tramos inclinados del carril (p. ej. el paso hacia el fondo
+# para cruzar la trampilla del mostrador): la velocidad es por metro recorrido, no por metro de x.
+## Cuánto avanza x por cada metro caminado en el tramo donde está (dir > 0: hacia la derecha; dir < 0: hacia la izquierda).
+func _dx_per_m(px: float, dir: float) -> float:
+	if lane.size() < 2 or dir == 0.0:
+		return 1.0
+	for i in range(1, lane.size()):
+		var a: Vector2 = lane[i - 1]
+		var b: Vector2 = lane[i]
+		if (dir > 0.0 and px < b.x) or (dir < 0.0 and px <= b.x) or i == lane.size() - 1:
+			var dx := b.x - a.x
+			var seg_len := a.distance_to(b)
+			if dx <= 0.0001 or seg_len <= 0.0001:
+				return 1.0
+			return clampf(dx / seg_len, 0.08, 1.0)
+	return 1.0
+# --- end R3 WORLD3
+
 ## La pone en un punto del carril sin caminar.
 func teleport(px: float, face_dir := 0) -> void:
 	_cancel()
@@ -163,12 +181,12 @@ func _process(delta: float) -> void:
 	if dir != 0.0:
 		_cancel()
 		var old := x
-		x = clampf(x + dir * speed * delta, x_min(), x_max())
+		x = clampf(x + dir * speed * delta * _dx_per_m(x, dir), x_min(), x_max())   # --- R3 WORLD3
 		actor.face(1 if dir > 0.0 else -1)
 		moving = absf(x - old) > 0.0001
 	elif _has_target:
 		var d := _target - x
-		var step := auto_speed * delta
+		var step := auto_speed * delta * _dx_per_m(x, signf(d))   # --- R3 WORLD3
 		actor.face(1 if d > 0.0 else -1)
 		if absf(d) <= step:
 			x = _target

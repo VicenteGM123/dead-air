@@ -14,8 +14,8 @@ const DPAD_STEP := 12.0      # un toque de la cruceta
 const DPAD_SPEED := 480.0    # cruceta mantenida
 const SNAP_DIST := 60.0      # al soltar el stick cerca de algo tocable, el cursor se acerca solo
 const PAD_DEVICE := 77       # marca los eventos que inventa el mando (para no confundirlos con el ratón y el teclado)
-const PAD_HINT := "Mando: stick izquierdo mueve el cursor · A tocar · B volver · X avanzar · Y recetas · Vista diario · Menú ajustes"
-const WEB_SOUND_HINT := "En el navegador, el sonido empieza con el primer clic o tecla (el mando no cuenta)."
+const PAD_HINT := "A tocar · B volver · X avanzar · Y recetas · Vista diario"   # --- R3 MERGE: dieta de texto
+const WEB_SOUND_HINT := "Sonido: un clic o una tecla"   # --- R3 MERGE: dieta de texto
 
 static var active := false          # el cursor del mando está a la vista (y el del sistema, escondido)
 static var where := Vector2.ZERO    # dónde está, en coordenadas del lienzo (los tooltips lo usan)
@@ -24,6 +24,7 @@ var ui: GameUI
 var ov: Overlays
 var world: ShopWorld
 var market: MarketWorld   # --- WORLD: el mercado (sus puestos son tocables cuando está a la vista)
+var brew: BrewUI          # --- R3 BENCH: el banco del caldero (sus frascos y botones son tocables cuando está abierto)
 var needs_gesture := false   # web: el navegador no deja sonar nada hasta un clic o una tecla
 var _sprite: Sprite2D
 var _pos := Vector2(960, 540)
@@ -91,7 +92,7 @@ func _on_button(b: int, pressed: bool) -> void:
 				else:
 					_mouse_button(false)
 		JOY_BUTTON_B:
-			if pressed and ov.is_open():
+			if pressed and (ov.is_open() or _bench_open()):   # --- R3 BENCH: B también cierra el banco
 				_tap(KEY_ESCAPE)
 		JOY_BUTTON_X:
 			_key(KEY_SPACE, pressed)
@@ -263,8 +264,18 @@ func _a_advances_dialog() -> bool:
 ## Botones visibles y activos de la capa que manda (la ventana abierta, o si no hay, la interfaz del juego).
 func _buttons() -> Array:
 	var out := []
+	# --- R3 BENCH: con el banco del caldero abierto (y sin ventana ni diálogo encima), sus frascos y botones
+	if not ov.is_open() and _bench_open() and not ui.dialog_open():
+		_collect(brew.root, out)
+		return out
+	# --- end R3 BENCH
 	_collect(ov.root if ov.is_open() else ui.root, out)
 	return out
+
+# --- R3 BENCH
+func _bench_open() -> bool:
+	return brew != null and brew.is_open()
+# --- end R3 BENCH
 
 func _collect(n: Node, out: Array) -> void:
 	for c in n.get_children():
@@ -280,7 +291,7 @@ func _targets() -> Array:
 	var out := []
 	for b in _buttons():
 		out.append(b.get_global_rect())
-	if world == null or ov.is_open():
+	if world == null or ov.is_open() or _bench_open():   # --- R3 BENCH: el banco tapa la tienda
 		return out
 	# --- WORLD: en el mercado, los puestos y la puerta de la tienda; en la tienda, también las estaciones.
 	# Solo cuenta lo que está en pantalla (la tienda y el mercado son más anchos que ella).

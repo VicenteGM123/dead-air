@@ -166,6 +166,8 @@ BANGS = {
     'parted':   [(16.6, 17.6, -0.4, 2.4, 2), (13.2, 14.4, 0.6, 3.0, 2), (9.6, 10.4, -1.4, 2.6, 3), (6.4, 6.0, 0.8, 3.2, 3)],
     'straight': [(16.4, 17.2, 0.0, 2.4, 2), (13.0, 13.8, 0.6, 3.0, 2), (9.8, 10.2, -0.2, 2.8, 3), (6.6, 6.4, 0.8, 3.2, 3)],
     'frieren':  [(16.8, 17.6, 0.0, 2.4, 2), (13.6, 14.2, -0.8, 2.8, 2), (10.6, 10.8, 0.8, 2.6, 3), (7.0, 6.8, -0.4, 3.2, 3)],
+    # --- R3 ART3: raya al medio (Lirien): los mechones nacen junto a la raya y se abren hacia los dos lados
+    'centre':   [(12.6, 17.4, -0.2, 2.2, 2), (12.0, 14.6, 0.6, 2.6, 2), (10.8, 9.4, 0.8, 2.6, 3), (10.2, 6.2, -0.2, 2.8, 3)],
     'swept':    [(16.8, 18.4, -1.2, 2.6, 2), (12.6, 15.4, -0.2, 3.2, 2), (8.6, 11.4, -0.8, 3.2, 3), (5.8, 7.4, 0.4, 2.8, 3)],
     'spiky':    [(16.5, 18.6, -1.8, 2.6, 2), (12.8, 14.8, -0.6, 3.0, 2), (9.2, 10.8, -1.8, 2.8, 3), (6.2, 7.0, -0.2, 3.0, 3)],
     'short':    [(16.2, 17.4, -2.2, 3.0, 2), (12.6, 14.0, -1.6, 3.6, 2), (9.0, 10.2, -2.2, 3.6, 3), (6.0, 6.6, -1.2, 3.4, 3)],
@@ -267,6 +269,11 @@ def hair_cap(cv, B, sp):
     tone[ring & ~near_sep] = np.maximum(tone[ring & ~near_sep], 4)
     tone[core & ~near_sep] = 5
     tone[seps] = np.maximum(1, tone[seps] - 2)
+    if hs.get('part') is not None:
+        # --- R3 ART3: raya del peinado: línea fina desde la frente hacia la coronilla
+        px_ = hs['part']
+        pl = cv.line([H(B, px_, hs.get('hairline', 4.0) - 0.5), H(B, px_ - 0.8, 1.5), H(B, px_ - 2.2, -1.0)]) & vis
+        tone[pl] = np.maximum(1, tone[pl] - 2)
     if cv.kinds.get('hair') in ('silver', 'white'):
         tone = np.minimum(6, tone + 1)
     cv.base7[vis] = tone[vis].astype(np.int8)
@@ -524,7 +531,7 @@ def hair_ring(cv, B, sp):
     m = cv.poly([H(B, 0.6, 6.0), H(B, 2.6, 4.6), H(B, 4.4, 6.4), H(B, 4.6, 12.6), H(B, 3.2, 14.6), H(B, 0.8, 14.2),
                  H(B, -0.6, 10.5)])
     m &= ~cv.of(B.head_part) | (cv.xs < B.hx + B.head['w'] * 0.32)
-    p = hmass(cv, m, 3, cast=1, iline=True)
+    p = hmass(cv, m, sp.get('hair', {}).get('ring_base', 3), cast=1, iline=True)   # --- R3 ART3: ring_base
     lit = (cv.xs - H(B, 2.0, 8.0)[0]) * L2[0] + (cv.ys - H(B, 2.0, 8.0)[1]) * L2[1]
     cv.base7[m & (cv.pid == p) & (lit > 1.0)] = cv.base7[m & (cv.pid == p) & (lit > 1.0)] + 1
     cv.base7[m & (cv.pid == p) & (cv.ys > H(B, 0, 12.0)[1])] -= 1
@@ -543,6 +550,33 @@ def hair_spikes(cv, B, sp, pose, n=5, big=1.0):
         b_ = H(B, x + (tx - x) * big, y + (ty - y) * big)
         pts = bez(a, ((a[0] + b_[0]) / 2 - 0.5, (a[1] + b_[1]) / 2), b_, 6)
         hlock(cv, pts, taper(len(pts), 2.3 * s, 'root'), base=3 if x < 10 else 2, shine_at=0.1, shine_len=2.0, cast=0)
+
+
+TOUSLE = {
+    # --- R3 ART3: pelo revuelto prolijo (niños): mechones grandes que se levantan en la coronilla y la nuca
+    # (raíz, control, punta, ancho, tono) en unidades de cabeza
+    'boy': [((5.2, 3.0), (1.4, 1.4), (-2.6, 3.8), 2.6, 2),
+            ((3.8, 6.0), (0.0, 6.6), (-2.8, 10.2), 2.4, 2),
+            ((7.6, 1.6), (5.4, -2.0), (2.6, -3.4), 2.6, 3),
+            ((10.6, 1.2), (12.8, -1.6), (15.4, -1.4), 2.2, 3)],
+}
+
+
+def tousle(cv, B, sp, pose):
+    """Mechones sueltos sobre el casquete (coronilla y nuca) que rompen la silueta en puntas grandes y limpias."""
+    hs = sp.get('hair', {})
+    style = hs.get('tousle')
+    if not style:
+        return None
+    s = hs_(B)
+    lag = pose.lag
+    first = None
+    for (r0, c, t, w, tb) in TOUSLE.get(style, []):
+        tip = (t[0], t[1] + lag * 0.4)
+        pts = lock_pts(B, r0, c, tip, n=10)
+        q = hlock(cv, pts, taper(11, w * s, 'root'), base=tb, shine=tb >= 3, shine_at=0.15, shine_len=2.5, cast=1)
+        first = first or q
+    return first
 
 
 def hair_shaggy_back(cv, B, sp, pose):
@@ -574,7 +608,7 @@ def _mustache(cv, B, mat, base=3):
           mat=mat, base=base - 1, shine=False, cast=0, sep=False)
 
 
-def beard(cv, B, sp, pose, kind='full', len=10, mat='beard'):
+def beard(cv, B, sp, pose, kind='full', len=10, mat='beard', beads=None, bead_mat='gold'):   # --- R3 ART3: 'flowing', beads
     """Barbas por mechones: dejan ver ojos, nariz y mejillas (empiezan bajo los pómulos). Cada mechón con su brillo
     arriba y más oscuro hacia la punta; las puntas dibujan picos abajo."""
     L = len
@@ -604,6 +638,43 @@ def beard(cv, B, sp, pose, kind='full', len=10, mat='beard'):
             hlock(cv, pts, taper(11, w * s, 'root'), mat=mat, base=tb,
                   shine=tb >= 3, shine_at=0.05, shine_len=2.5, cast=1, fade=fade)
         _mustache(cv, B, mat)
+        return p0
+    if kind == 'flowing':
+        # --- R3 ART3: barba larga natural (como la de Osvald): nace en las patillas y las mejillas bajo los ojos, cae
+        # hasta el pecho en 5 mechones grandes con punta; cada mechón con su brillo arriba a la izquierda y más oscuro
+        # hacia la punta; bigote de dos mechones que cae a los lados de la boca.
+        tip = chin + L
+        mass = cv.poly([H(B, 3.6, 9.6), H(B, 5.0, 12.4), H(B, 7.4, 14.0), H(B, 10.6, 15.0), H(B, 14.4, 14.2),
+                        H(B, 17.2, 12.6), H(B, 18.8, 11.8), H(B, 19.4, 15.0), H(B, 18.8, chin + L * 0.45),
+                        H(B, 15.4, chin + L * 0.80), H(B, 11.6, tip - 0.5), H(B, 7.6, chin + L * 0.85),
+                        H(B, 4.0, chin + L * 0.55), H(B, 2.6, 15.0)])
+        p0 = hmass(cv, mass, 2, mat=mat, cast=1)
+        fade = (B.chin + 3 + L * 0.55,)
+        locks = [  # (raíz, control 1, control 2, punta, ancho, tono)
+            ((18.4, 12.0), (19.4, 16.0), (19.0, chin + L * 0.30), (17.4, chin + L * 0.55 + lag), 2.6, 2),
+            ((15.0, 14.4), (16.0, 18.0), (16.2, chin + L * 0.50), (14.8, chin + L * 0.86 + lag), 3.0, 2),
+            ((11.2, 15.4), (12.0, 19.0), (12.4, chin + L * 0.60), (11.4, tip + lag), 3.2, 3),
+            ((7.8, 14.0), (7.0, 18.0), (7.6, chin + L * 0.55), (8.4, chin + L * 0.90 + lag), 3.0, 3),
+            ((4.2, 10.4), (3.0, 14.0), (3.4, chin + L * 0.35), (4.8, chin + L * 0.62 + lag), 2.6, 3),
+        ]
+        for (r0, c1, c2, t, w, tb) in locks:
+            pts = lock_pts(B, r0, c1, c2, t, n=14)      # 15 puntos ('len' es el largo de la barba aquí)
+            hlock(cv, pts, taper(15, w * s, 'leaf', belly=0.30), mat=mat, base=tb, shine=tb >= 3, shine_at=0.08,
+                  shine_len=3.0, cast=1, fade=fade, bright=1, sep_d=1)
+        # bigote: dos mechones desde bajo la nariz, caen a los lados de la boca (más claros: les da la luz)
+        a3 = (B.head['a'][3][0] * HW / B.head['w'], B.head['a'][3][1] * HH / B.head['h'])
+        mx, my = a3
+        hlock(cv, lock_pts(B, (mx + 0.8, my - 1.8), (mx - 1.4, my - 1.6), (mx - 3.4, my + 1.4), n=9), taper(10, 1.5 * s, 'root'),
+              mat=mat, base=4, shine=False, cast=1, sep=True)
+        hlock(cv, lock_pts(B, (mx + 0.6, my - 1.8), (mx + 2.8, my - 1.6), (mx + 4.0, my + 1.2), n=9), taper(10, 1.4 * s, 'root'),
+              mat=mat, base=3, shine=False, cast=1, sep=True)
+        # cuentas (barba de enano): un aro de metal de 2x2 en algunos mechones
+        for (bx, by_) in (beads or ()):
+            c = H(B, bx, chin + by_ * L)
+            x0, y0 = int(round(c[0])), int(round(c[1]))
+            # tonos fijos (un píxel de brillo arriba a la izquierda): las piezas de 2x2 no se oscurecen como línea
+            for (dx, dy, lv) in ((0, 0, 4), (1, 0, 3), (0, 1, 2), (1, 1, 1)):
+                cv.dot(x0 + dx, y0 + dy, bead_mat, lv)
         return p0
     if kind == 'short':
         mass = cv.poly([H(B, 3.4, 11.0), H(B, 5.2, 14.6), H(B, 8.5, 17.4), H(B, 13.0, 17.6), H(B, 17.2, 15.6), H(B, 18.6, 12.0),

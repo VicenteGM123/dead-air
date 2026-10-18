@@ -19,36 +19,52 @@ signal station_reached(id: String)
 signal station_left(id: String)
 # --- end WORLD
 
+# --- R3 WORLD3: el mostrador es transversal: corre de la pared del fondo hacia delante (a lo largo de z) y parte la
+# tienda en dos. A su izquierda, el lado de ella (biblioteca, caldero, estantes); a su derecha, el de los clientes
+# (la puerta). Junto a la pared tiene una trampilla con bisagra: el único paso, y solo lo usa ella.
+const COUNTER_X := 0.85         # eje del mostrador
+const COUNTER_HW := 0.39        # medio ancho de la tabla de arriba
+const COUNTER_BW := 0.32        # medio ancho del cuerpo
+const COUNTER_Z0 := -4.0        # contra la pared del fondo
+const COUNTER_Z1 := 3.5         # extremo delantero, casi en el borde del suelo (en el juego queda bajo la pantalla)
+const FLAP_Z0 := -3.35          # la trampilla tapa el hueco entre FLAP_Z0 y FLAP_Z1 (bisagra en FLAP_Z0)
+const FLAP_Z1 := -2.5
+const SERVE_Z := -1.15          # ella y el cliente, frente a frente por encima del mostrador
 const P_OUTSIDE := Vector3(4.0, 0, -6.2)
 const P_DOOR_IN := Vector3(4.0, 0, -3.35)
-const P_DOOR_FRONT := Vector3(3.6, 0, -2.2)
-const P_CUSTOMER := Vector3(1.75, 0, -1.2)
-const P_ALCH_COUNTER := Vector3(-1.6, 0, -1.25)
+const P_DOOR_FRONT := Vector3(3.3, 0, -2.35)
+const P_CUSTOMER := Vector3(1.78, 0, -1.15)       # del lado de la puerta, frente al mostrador
+const P_ALCH_COUNTER := Vector3(0.03, 0, -1.15)   # de su lado del mostrador
+# --- end R3 WORLD3
 const P_ALCH_CAULDRON := Vector3(-2.35, 0, -1.65)
 const CAULDRON_POS := Vector3(-3.4, 0, -2.55)
-const COUNTER_TOP := 1.08
+const COUNTER_TOP := 0.9       # --- R3 WORLD3 (era 1.08): a la cintura, como los puestos del mercado
 const WALL_Z := -4.0
 # --- WORLD: la tienda es más ancha que la pantalla. De izquierda a derecha: biblioteca | caldero | mostrador | puerta.
 const ROOM_X0 := -15.8          # pared izquierda (biblioteca)
 const ROOM_X1 := 7.6            # pared derecha
 const LIB_X1 := -7.6            # tabique entre la biblioteca y la sala del caldero
 const DESK_POS := Vector3(-11.45, 0, -2.7)
-## Carril por donde camina la alquimista: Vector2(x, z). Pasa por delante del caldero y por detrás del mostrador.
+## Carril por donde camina la alquimista: Vector2(x, z). Pasa por delante del caldero hasta su lado del mostrador;
+## para ir a la puerta da un paso hacia el fondo y cruza el mostrador por la trampilla (R3 WORLD3).
 const LANE := [
 	Vector2(-15.0, -2.1), Vector2(-10.2, -2.2), Vector2(-8.6, -2.0), Vector2(-7.0, -1.6),
-	Vector2(-2.35, -1.65), Vector2(-1.6, -1.25), Vector2(-1.0, -1.62), Vector2(1.5, -1.7),
-	Vector2(3.95, -2.5), Vector2(6.9, -2.3),
+	Vector2(-2.35, -1.65), Vector2(-0.9, -1.3), Vector2(0.03, -1.15),
+	Vector2(0.2, -2.92), Vector2(1.5, -2.92),
+	Vector2(3.95, -2.78), Vector2(5.3, -2.65),
 ]
 ## Estaciones: x del punto donde se para, hacia dónde mira, su sector [x0, x1] y su nombre.
+## --- R3 WORLD3: el mostrador se atiende desde su lado (x 0.03); el sector de la puerta empieza en la trampilla.
 const STATIONS := {
 	"biblioteca": {"x": -10.2, "face": -1, "zone": Vector2(-15.8, -7.6), "name": "Biblioteca · grimorio"},
-	"caldero": {"x": -2.35, "face": -1, "zone": Vector2(-7.6, -1.9), "name": "Caldero"},
-	"mostrador": {"x": -1.6, "face": 1, "zone": Vector2(-1.9, 2.2), "name": "Mostrador"},
-	"puerta": {"x": 3.95, "face": 1, "zone": Vector2(2.2, 7.6), "name": "Puerta"},
+	"caldero": {"x": -2.35, "face": -1, "zone": Vector2(-7.6, -1.1), "name": "Caldero"},
+	"mostrador": {"x": 0.03, "face": 1, "zone": Vector2(-1.1, 0.46), "name": "Mostrador"},
+	"puerta": {"x": 3.95, "face": 1, "zone": Vector2(0.46, 7.6), "name": "Puerta"},
 }
 const STATION_LABEL_Y := {"biblioteca": 1.75, "caldero": 1.75, "mostrador": 1.75, "puerta": 2.85}
 const CAM_X0 := -10.0           # la cámara sigue a la alquimista entre estos límites
-const CAM_X1 := 1.3
+const CAM_X1 := 2.0             # --- R3 WORLD3 (era 1.3): del lado de la puerta se ve el frente del mostrador
+const CAM_COUNTER_X := -0.3     # --- R3 WORLD3: de su lado, la cámara no pasa de aquí (se ve el mostrador de lado)
 # --- end WORLD
 
 var camera: Camera3D
@@ -87,6 +103,12 @@ var _hover_station := ""
 var _cam_x := 0.0
 var cam_fixed_x := INF          # si es finito, la cámara se queda en esa x (capturas de toda la tienda)
 # --- end WORLD
+# --- R3 WORLD3: la trampilla del mostrador
+var flap_pivot: Node3D          # bisagra (gira en x: 0 = cerrada, FLAP_OPEN = levantada contra la pared)
+var _flap_a := 0.0
+var _flap_open := false
+const FLAP_OPEN := -1.82        # radianes (~104°: queda apoyada hacia la pared, detrás de su paso)
+# --- end R3 WORLD3
 
 var _mats := {}
 
@@ -193,6 +215,47 @@ func _pick(parent: Node3D, size: Vector3, offset: Vector3, on_click: Callable, o
 		a.mouse_exited.connect(on_exit)
 	parent.add_child(a)
 	return a
+
+# --- R3 WORLD3: madera con la veta a lo largo de z (el mostrador corre hacia el fondo)
+## Como _mat(), pero la proyección triplanar es en el espacio del objeto: sigue el giro de la caja (_zbox).
+func _mat_obj(albedo: String, normal := "", scale := 1.0, rough := 0.8, tint := Color.WHITE) -> StandardMaterial3D:
+	var key := "obj:" + albedo + normal + str(scale) + str(tint)
+	if _mats.has(key):
+		return _mats[key]
+	var m := _mat(albedo, normal, scale, rough, tint).duplicate()
+	m.uv1_world_triplanar = false
+	_mats[key] = m
+	return m
+
+## Caja por sus límites, girada 90° en y: su veta (x local) queda a lo largo de z.
+func _zbox(x0: float, x1: float, y0: float, y1: float, z0: float, z1: float, mat: Material, parent: Node3D = null) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(z1 - z0, y1 - y0, x1 - x0)
+	mi.mesh = bm
+	mi.material_override = mat
+	mi.position = Vector3((x0 + x1) / 2.0, (y0 + y1) / 2.0, (z0 + z1) / 2.0)
+	mi.rotation_degrees = Vector3(0, 90, 0)
+	(parent if parent else self).add_child(mi)
+	return mi
+
+## Un panel con textura (cuadro plano) que mira hacia `normal` (+x, -x o +z); u = a lo largo, v = alto.
+func _panel(tex: String, normal_tex: String, size: Vector2, center: Vector3, facing: Vector3, uv_scale: Vector2) -> MeshInstance3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = _tex(tex)
+	if normal_tex != "":
+		m.normal_enabled = true
+		m.normal_texture = _tex(normal_tex)
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	m.roughness = 0.8
+	m.uv1_scale = Vector3(uv_scale.x, uv_scale.y, 1.0)
+	var q := _quad(size, center, m)
+	if facing.x > 0.5:
+		q.rotation_degrees = Vector3(0, 90, 0)
+	elif facing.x < -0.5:
+		q.rotation_degrees = Vector3(0, -90, 0)
+	return q
+# --- end R3 WORLD3
 
 func _register_upgrade(id: String, node: Node3D) -> void:
 	if not upgrade_nodes.has(id):
@@ -516,23 +579,83 @@ func rack_slot_position(index: int) -> Vector3:
 	return rack_sprites[index].global_position + Vector3(0, 0.25, 0)
 
 func _build_counter() -> void:
-	var wood_d := _mat("res://assets/tex/wood_dark.png", "res://assets/tex/wood_dark_n.png", 1.0, 0.8)
-	var wood_l := _mat("res://assets/tex/wood_light.png", "res://assets/tex/wood_light_n.png", 1.0, 0.6)
-	_box_b(-1.0, 1.0, 0.0, 1.0, -1.6, -0.9, wood_d)
-	_box_b(-1.08, 1.08, 1.0, COUNTER_TOP, -1.68, -0.82, wood_l)
-	var fm := StandardMaterial3D.new()
-	fm.albedo_texture = _tex("res://assets/tex/counter_front.png")
-	fm.normal_enabled = true
-	fm.normal_texture = _tex("res://assets/tex/counter_front_n.png")
-	fm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	fm.roughness = 0.8
-	_quad(Vector2(2.0, 1.0), Vector3(0.0, 0.5, -0.895), fm)
+	# --- R3 WORLD3: el mostrador transversal. Corre de la pared del fondo (COUNTER_Z0) hasta delante (COUNTER_Z1, bajo
+	# el borde de la pantalla) y parte la tienda: a la izquierda trabaja ella, a la derecha esperan los clientes. Junto
+	# a la pared, un poste corto sostiene la bisagra de la trampilla (FLAP_Z0..FLAP_Z1): por ahí pasa ella. Vista desde
+	# la cámara: la tabla clara con canto, el costado de su lado (cajones y puertas), el frente de paneles del lado de
+	# los clientes y, encima, la campanilla, el libro de cuentas, el recetario, unos frascos, el mortero y la vela.
+	var wood_d := _mat_obj("res://assets/tex/wood_dark.png", "res://assets/tex/wood_dark_n.png", 1.0, 0.8)
+	var wood_l := _mat_obj("res://assets/tex/wood_light.png", "res://assets/tex/wood_light_n.png", 1.0, 0.55, Color(0.86, 0.8, 0.74))
+	var cx := COUNTER_X
+	var hw := COUNTER_HW
+	var bw := COUNTER_BW
+	var top := COUNTER_TOP
+	# poste del fondo, contra la pared (la bisagra de la trampilla apoya en su canto)
+	_zbox(cx - bw, cx + bw, 0.0, top - 0.08, COUNTER_Z0, FLAP_Z0, wood_d)
+	_zbox(cx - hw, cx + hw, top - 0.08, top, COUNTER_Z0 + 0.02, FLAP_Z0, wood_l)
+	# el cuerpo largo y su tabla (con un poco de vuelo delante y a los lados)
+	_zbox(cx - bw, cx + bw, 0.0, top - 0.08, FLAP_Z1, COUNTER_Z1, wood_d)
+	_zbox(cx - hw, cx + hw, top - 0.08, top, FLAP_Z1, COUNTER_Z1 + 0.07, wood_l)
+	# moldura oscura bajo el canto de la tabla, a los dos lados (separa la tabla del cuerpo)
+	for sx in [-1.0, 1.0]:
+		var xa: float = cx + sx * bw
+		var xb: float = cx + sx * (bw + 0.035)
+		_zbox(minf(xa, xb), maxf(xa, xb), top - 0.13, top - 0.08, FLAP_Z1 + 0.02, COUNTER_Z1, wood_d)
+	# zócalo oscuro
+	_zbox(cx - bw - 0.02, cx + bw + 0.02, 0.0, 0.07, FLAP_Z1 + 0.02, COUNTER_Z1 + 0.02, wood_d)
+	_zbox(cx - bw - 0.02, cx + bw + 0.02, 0.0, 0.07, COUNTER_Z0, FLAP_Z0 - 0.01, wood_d)
+	# costados: paneles del lado de los clientes, cajones y puertas del lado de ella, y el frente del extremo
+	var body_len := COUNTER_Z1 - FLAP_Z1
+	var zc := (COUNTER_Z1 + FLAP_Z1) / 2.0
+	var ph := top - 0.2                      # alto de los paneles (entre el zócalo y la moldura)
+	var py := 0.07 + ph / 2.0
+	_panel("res://assets/tex/counter_front.png", "res://assets/tex/counter_front_n.png", Vector2(body_len - 0.04, ph),
+		Vector3(cx + bw + 0.004, py, zc), Vector3.RIGHT, Vector2(body_len / 2.0, 1.0))
+	_panel("res://assets/tex/counter_side.png", "", Vector2(body_len - 0.04, ph),
+		Vector3(cx - bw - 0.004, py, zc), Vector3.LEFT, Vector2(body_len / 2.0, 1.0))
+	_panel("res://assets/tex/counter_front.png", "res://assets/tex/counter_front_n.png", Vector2(2.0 * bw, ph),
+		Vector3(cx, py, COUNTER_Z1 + 0.004), Vector3.BACK, Vector2(0.5, 1.0))
+	var post_len := FLAP_Z0 - COUNTER_Z0
+	_panel("res://assets/tex/counter_side.png", "", Vector2(post_len - 0.04, ph),
+		Vector3(cx - bw - 0.004, py, (COUNTER_Z0 + FLAP_Z0) / 2.0), Vector3.LEFT, Vector2(post_len / 2.0, 1.0))
+	_panel("res://assets/tex/counter_front.png", "res://assets/tex/counter_front_n.png", Vector2(post_len - 0.04, ph),
+		Vector3(cx + bw + 0.004, py, (COUNTER_Z0 + FLAP_Z0) / 2.0), Vector3.RIGHT, Vector2(post_len / 2.0, 1.0))
+	# la trampilla: una tabla con bisagras de hierro y una argolla de latón; se levanta hacia la pared cuando ella pasa
+	flap_pivot = Node3D.new()
+	flap_pivot.name = "Flap"
+	flap_pivot.position = Vector3(cx, top, FLAP_Z0)
+	add_child(flap_pivot)
+	var flap_len := FLAP_Z1 - FLAP_Z0
+	_zbox(-hw, hw, -0.08, 0.0, 0.012, flap_len - 0.008, wood_l, flap_pivot)
+	var iron := StandardMaterial3D.new()
+	iron.albedo_color = Color(0.17, 0.15, 0.16)
+	iron.metallic = 0.6
+	iron.roughness = 0.45
+	for hx in [-0.24, 0.24]:
+		_box(Vector3(0.07, 0.014, 0.2), Vector3(hx, 0.007, 0.08), iron, flap_pivot)        # bisagra (arriba)
+		_box(Vector3(0.06, 0.012, 0.62), Vector3(hx, -0.086, 0.34), iron, flap_pivot)      # cincho de hierro (abajo: se ve al levantarla)
+		_box(Vector3(0.09, 0.03, 0.03), Vector3(hx, 0.0, 0.0), iron, flap_pivot)
+	var brass := StandardMaterial3D.new()
+	brass.albedo_color = Color(0.86, 0.66, 0.32)
+	brass.metallic = 0.75
+	brass.roughness = 0.3
+	_box(Vector3(0.12, 0.016, 0.035), Vector3(0.0, 0.008, flap_len - 0.1), brass, flap_pivot)
+	# encima. El tramo entre el sitio de atender y la trampilla queda despejado (desde la cámara, lo que hay ahí tapa a
+	# la alquimista cuando cruza). En el poste del fondo, unos frascos; a la altura de los dos, el sitio de la poción que
+	# entrega (counter_potion) y la campanilla del lado de los clientes; más adelante, el libro de cuentas, el
+	# recetario, la vela y el mortero (lo de más al fondo se ve más arriba).
+	for b in [[-0.22, "bottle_sm_1", -3.78], [-0.08, "bottle_sm_3", -3.86], [0.05, "bottle_sm_5", -3.76]]:
+		_sprite("res://assets/props/%s.png" % b[1], 0.034, Vector3(cx + b[0], top, b[2]))
+	var cbell := _sprite("res://assets/props/counter_bell.png", 0.036, Vector3(cx + 0.21, top, -1.02))
+	cbell.name = "CounterBell"
+	_sprite("res://assets/props/ledger.png", 0.024, Vector3(cx - 0.12, top, -0.45))
 	# libro de recetas abierto
-	var book := _sprite("res://assets/props/open_book.png", 0.032, Vector3(-0.45, COUNTER_TOP, -1.25))
-	_pick(book, Vector3(0.75, 0.35, 0.5), Vector3(0, 0.15, 0), func(): book_clicked.emit())
-	_sprite("res://assets/props/mortar.png", 0.032, Vector3(0.15, COUNTER_TOP, -1.5))
+	var book := _sprite("res://assets/props/open_book.png", 0.022, Vector3(cx + 0.06, top, 0.3))
+	_pick(book, Vector3(0.5, 0.3, 0.35), Vector3(0, 0.13, 0), func(): book_clicked.emit())
+	_sprite("res://assets/props/mortar.png", 0.028, Vector3(cx + 0.17, top, 1.0))
 	# vela
-	var candle := _sprite("res://assets/props/candle.png", 0.035, Vector3(0.78, COUNTER_TOP, -1.45))
+	var candle := _sprite("res://assets/props/candle.png", 0.035, Vector3(cx - 0.2, top, 0.9))
+	# --- end R3 WORLD3
 	var fl := AnimatedSprite3D.new()
 	var sf := SpriteFrames.new()
 	var ft := _tex("res://assets/props/flame.png")
@@ -554,19 +677,22 @@ func _build_counter() -> void:
 	fl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	candle.add_child(fl)
 	fl.play("default")
-	_omni(Vector3(0.78, COUNTER_TOP + 0.5, -1.2), Color(1.0, 0.72, 0.42), 0.9, 3.2)
-	# lámpara colgante sobre el mostrador: ilumina a los clientes
-	var lamp := _sprite("res://assets/props/lantern.png", 0.045, Vector3(2.5, 3.15, -1.3), null, "top")
+	# --- R3 WORLD3: la vela, la lámpara colgante y la poción entregada, en el mostrador nuevo
+	_omni(candle.position + Vector3(0.0, 0.5, 0.3), Color(1.0, 0.72, 0.42), 0.9, 3.2)
+	# lámpara colgante sobre el mostrador, entre ella y el cliente: los ilumina a los dos
+	var lx := COUNTER_X + 0.05
+	var lamp := _sprite("res://assets/props/lantern.png", 0.045, Vector3(lx, 3.15, SERVE_Z), null, "top")
 	lamp.shaded = false
 	lamp.modulate = Color(1.4, 1.25, 1.0)
 	lamp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var cord := _box_b(2.485, 2.515, 3.15, 5.8, -1.32, -1.28, _mat("res://assets/tex/wood_dark.png", "", 1.0))
+	var cord := _box_b(lx - 0.015, lx + 0.015, 3.15, 5.8, SERVE_Z - 0.02, SERVE_Z + 0.02, _mat("res://assets/tex/wood_dark.png", "", 1.0))
 	cord.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var ll := _omni(Vector3(2.2, 2.5, -0.9), Color(1.0, 0.76, 0.48), 1.3, 4.5, true)
+	var ll := _omni(Vector3(COUNTER_X + 0.75, 2.35, SERVE_Z + 0.55), Color(1.0, 0.76, 0.48), 1.3, 4.5, true)
 	ll.light_volumetric_fog_energy = 0.3
-	# poción entregada (aparece sobre el mostrador)
-	counter_potion = _sprite("res://assets/icons/pot_elixir_alba.png", 0.03, Vector3(0.55, COUNTER_TOP, -1.15))
+	# poción entregada: aparece sobre el mostrador, entre los dos
+	counter_potion = _sprite("res://assets/icons/pot_elixir_alba.png", 0.03, Vector3(COUNTER_X, COUNTER_TOP, SERVE_Z))
 	counter_potion.visible = false
+	# --- end R3 WORLD3
 	# área del cliente
 	var cust_area := Node3D.new()
 	add_child(cust_area)
@@ -609,7 +735,7 @@ func _build_decor() -> void:
 	pm.size = Vector2(2.4, 3.2)
 	rug.mesh = pm
 	rug.material_override = rug_m
-	rug.position = Vector3(2.4, 0.012, -0.6)
+	rug.position = Vector3(3.15, 0.012, -0.9)   # --- R3 WORLD3: del lado de los clientes (antes bajo el mostrador)
 	rug.rotation_degrees = Vector3(0, 90, 0)
 	add_child(rug)
 	_register_upgrade("alfombra", rug)
@@ -622,7 +748,7 @@ func _build_decor() -> void:
 	# farolillos de luciérnaga (mejora)
 	var lamps := Node3D.new()
 	add_child(lamps)
-	for p in [Vector3(-0.8, COUNTER_TOP, -1.45), Vector3(-2.6, 3.33, -3.7), Vector3(2.75, 1.42, -3.85)]:
+	for p in [Vector3(COUNTER_X + 0.21, COUNTER_TOP, -3.8), Vector3(-2.6, 3.33, -3.7), Vector3(2.75, 1.42, -3.85)]:   # --- R3 WORLD3
 		var j := _sprite("res://assets/props/firefly_jar.png", 0.04, p, lamps)
 		j.shaded = false
 		j.modulate = Color(1.4, 1.5, 1.1)
@@ -949,6 +1075,26 @@ func _process(delta: float) -> void:
 		# --- end WORLD
 		camera.position = _cam_base + off + Vector3(sin(_t * 0.11) * 0.08, sin(_t * 0.17) * 0.04, 0.0)
 		camera.look_at(_cam_target + off, Vector3.UP)
+	_update_flap(delta)   # --- R3 WORLD3
+
+# --- R3 WORLD3: la trampilla se levanta (hacia la pared) cuando ella se acerca al hueco y baja cuando ya pasó.
+func _update_flap(delta: float) -> void:
+	if flap_pivot == null or alchemist == null:
+		return
+	var p := alchemist.position
+	var near := absf(p.x - COUNTER_X) < COUNTER_HW + 0.5 and p.z < FLAP_Z1 + 0.2 and p.z > FLAP_Z0 - 0.5
+	if near != _flap_open:
+		_flap_open = near
+		if near:
+			Sfx.play_pitched("door", 1.75, -13.0)   # un crujido corto de madera
+		else:
+			Sfx.play("click", 0.08, -11.0)
+	var goal := FLAP_OPEN if _flap_open else 0.0
+	if not is_equal_approx(_flap_a, goal):
+		# sube rápido; baja un poco más despacio y da un golpecito al cerrar
+		_flap_a = move_toward(_flap_a, goal, delta * (6.0 if _flap_open else 4.2))
+		flap_pivot.rotation.x = _flap_a
+# --- end R3 WORLD3
 
 # --- WORLD: biblioteca, estaciones, caminar y cámara ------------------------------------------------
 
@@ -1117,12 +1263,14 @@ func _build_stations() -> void:
 	_pick(desk, Vector3(1.6, 1.5, 0.9), Vector3(0, 0.75, 0.15), func(): _station_press("biblioteca"),
 		func(): _station_hover("biblioteca", true), func(): _station_hover("biblioteca", false))
 	station_nodes["caldero"] = cauldron
+	# --- R3 WORLD3: el mostrador transversal: se toca su tramo de atender (entre ella y el cliente)
 	var counter := Node3D.new()
-	counter.position = Vector3(0.0, 0, -1.25)
+	counter.position = Vector3(COUNTER_X, 0, SERVE_Z)
 	add_child(counter)
 	station_nodes["mostrador"] = counter
-	_pick(counter, Vector3(2.16, 1.08, 0.86), Vector3(0, 0.54, 0), func(): _station_press("mostrador"),
+	_pick(counter, Vector3(2.0 * COUNTER_HW, 1.12, 2.4), Vector3(0, 0.56, -0.1), func(): _station_press("mostrador"),
 		func(): _station_hover("mostrador", true), func(): _station_hover("mostrador", false))
+	# --- end R3 WORLD3
 	var door := Node3D.new()
 	door.position = Vector3(4.0, 0, -3.95)
 	add_child(door)
@@ -1233,7 +1381,12 @@ func _cam_goal() -> float:
 		return cam_fixed_x
 	if alchemist == null:
 		return 0.0
-	return clampf(alchemist.position.x + alchemist.facing * 0.6, CAM_X0, CAM_X1)
+	var g := alchemist.position.x + alchemist.facing * 0.6
+	# --- R3 WORLD3: de su lado del mostrador (y mientras cruza la trampilla) la cámara se queda a su izquierda: el
+	# mostrador se ve de lado (no de punta), el cliente del otro lado se ve entero y a ella se la ve pasar
+	if alchemist.position.x < COUNTER_X + COUNTER_HW + 0.3:
+		g = minf(g, CAM_COUNTER_X)
+	return clampf(g, CAM_X0, CAM_X1)
 
 ## Pone la cámara sobre la alquimista sin deslizarse (tras teletransportarla).
 func snap_camera() -> void:
@@ -1244,43 +1397,4 @@ func pad_picks() -> Array:
 	return [[station_nodes["biblioteca"], 0.95], [station_nodes["mostrador"], 0.9], [station_nodes["puerta"], 1.3]]
 # --- end WORLD
 
-# --- MAGIC: el estante de pergaminos, colgado en la pared junto al de pociones (a la derecha del mapa) --------------
-# Un panal de madera de 3 x 2 huecos (assets/props/scroll_rack.png); cada pergamino del estante es un rollo atado con
-# una cinta del color de su hechizo (assets/props/roll_<hechizo>.png). Lo dibuja tools/arte/magic_art.py.
-const SCROLL_RACK_POS := Vector3(-0.02, 2.8, -3.95)
-const SCROLL_RACK_PX := 0.024
-var scroll_rack: Sprite3D
-var scroll_rolls: Array[Sprite3D] = []
-
-## main.gd lo llama después de build().
-func build_scroll_rack() -> void:
-	if scroll_rack:
-		return
-	var px := SCROLL_RACK_PX
-	scroll_rack = _sprite("res://assets/props/scroll_rack.png", px, SCROLL_RACK_POS)
-	for i in mini(Game.scroll_capacity(), 6):
-		var col := i % 3
-		var row := i / 3
-		var pos := SCROLL_RACK_POS + Vector3((col - 1) * 9.0 * px, (9.0 if row == 0 else 3.0) * px, 0.02)
-		var s := _sprite("res://assets/props/roll_sello_calor.png", px, pos)
-		s.visible = false
-		scroll_rolls.append(s)
-	Game.scrolls_changed.connect(refresh_scroll_rack)
-	refresh_scroll_rack()
-
-func refresh_scroll_rack() -> void:
-	for i in scroll_rolls.size():
-		var s := scroll_rolls[i]
-		if i < Game.scrolls.size():
-			s.texture = _tex("res://assets/props/roll_%s.png" % Game.scrolls[i]["id"])
-			s.visible = true
-		else:
-			s.visible = false
-
-## Dónde está (en el mundo) el pergamino i del estante: de ahí sale volando al entregarlo.
-func scroll_slot_position(index: int) -> Vector3:
-	if scroll_rolls.is_empty():
-		return SCROLL_RACK_POS + Vector3(0, 0.3, 0.05)
-	index = clampi(index, 0, scroll_rolls.size() - 1)
-	return scroll_rolls[index].global_position + Vector3(0, 0.05, 0.05)
-# --- end MAGIC
+# --- R3 MAGIC3: aquí estaba el estante 3D de pergaminos (MAGIC, ronda 2): ya no hay pergaminos.

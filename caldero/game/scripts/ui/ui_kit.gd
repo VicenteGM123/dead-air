@@ -135,6 +135,7 @@ static func theme() -> Theme:
 	# check
 	t.set_color("font_color", "CheckButton", TEXT)
 	t.set_font("font", "CheckButton", font_regular)
+	style_tooltips(t)   # --- R3 BENCH
 	_theme = t
 	return t
 
@@ -300,3 +301,43 @@ static func pop_in(c: Control) -> void:
 	tw.set_parallel(true)
 	tw.tween_property(c, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.tween_property(c, "modulate:a", 1.0, 0.15)
+
+# --- R3 BENCH: papel del ticket y de los consejos, iconos de esencia y el estilo de los tooltips --------------------
+## Papel con bordes deshilachados (assets/ui/ticket_paper.png, 9 cortes ya a 3x). margin: relleno interior extra.
+static func paper_style(margin := 14) -> StyleBoxTexture:
+	var sb := StyleBoxTexture.new()
+	sb.texture = load("res://assets/ui/ticket_paper.png")
+	for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+		sb.set_texture_margin(side, 21)
+		sb.set_content_margin(side, 21 + margin - 8)
+	sb.set_content_margin(SIDE_BOTTOM, 21 + margin - 4)
+	sb.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
+	sb.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
+	return sb
+
+## Icono de una esencia (assets/ui/ess_<esencia>.png, 11x11): fuego, escarcha, vida, sombra, luz.
+static func ess_icon(ess: String, scale := 3.0) -> TextureRect:
+	var p := "res://assets/ui/ess_%s.png" % ess
+	if not ResourceLoader.exists(p):
+		var d := ColorRect.new()
+		d.color = Data.ESSENCES.get(ess, {}).get("color", Color.WHITE)
+		d.custom_minimum_size = Vector2(11, 11) * scale
+		d.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var wrap := TextureRect.new()
+		wrap.custom_minimum_size = d.custom_minimum_size
+		wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		wrap.add_child(d)
+		return wrap
+	var tr := icon(p, scale)
+	tr.tooltip_text = Data.ESSENCES.get(ess, {}).get("name", ess)
+	return tr
+
+## Los tooltips del juego (las palabras de los botones de icono): panel oscuro con borde dorado, letra Alegreya.
+static func style_tooltips(t: Theme) -> void:
+	var sb := panel_style(Color(0.06, 0.05, 0.1, 0.96), GOLD, 1, 6, 10)
+	sb.shadow_size = 4
+	t.set_stylebox("panel", "TooltipPanel", sb)
+	t.set_color("font_color", "TooltipLabel", GOLD_BRIGHT)
+	t.set_font("font", "TooltipLabel", font_bold)
+	t.set_font_size("font_size", "TooltipLabel", 21)
+# --- end R3 BENCH

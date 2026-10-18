@@ -1,454 +1,1207 @@
 extends Node
 class_name GrimoireUI
-## El grimorio de la maestra, en el escritorio de la biblioteca (la estación "biblioteca" de la tienda).
-## Páginas de hechizos (como el libro de recetas), los materiales (papel, vitela y tintas) y el minijuego de la runa
-## (scripts/ui/rune_game.gd) para inscribir pergaminos, que van al estante de pergaminos y se entregan como pociones.
-## main.gd lo crea en _ready() y lo abre en _open_grimoire(). Todo funciona con ratón, teclado y el cursor del mando.
+## R3 MAGIC3 · El LIBRO DE RUNAS de la maestra, en el escritorio de la biblioteca (la estación "biblioteca").
+## Un libro abierto de verdad (tapas de cuero, dos hojas de pergamino: assets/ui/grimoire_*.png, tools/arte/magic_art.py)
+## con dos modos, que se cambian con los marcapáginas de arriba:
+##  - RUNAS (hojear): a la izquierda las runas (las aprendidas con su glifo; las otras, un contorno en blanco) y tus
+##    tintas; a la derecha la runa elegida en grande, la tinta que pide y lo que hace, en pocas palabras.
+##  - ENCANTAR: a la izquierda el estante (elige la poción) y su etiqueta; a la derecha la runa, los cinco tinteros
+##    (moja la pluma en la tinta de la runa) y «Trazar»: la runa se traza sobre la etiqueta (scripts/ui/rune_game.gd).
+##    Trazo perfecto = 3 estrellas, a tiempo = 2, se acabó la vela = 1. La poción queda con "rune" / "rune_stars"
+##    (Game.enchant). Si un cliente espera, su pedido está clavado en la hoja y «Entregar» se la lleva al mostrador.
+## Ratón, teclado (flechas + Intro o Espacio; Esc cierra, o suelta la pluma) y mando (PadCursor: A / B / LB / RB).
+## main.gd lo crea en _ready() y lo abre en _open_grimoire().
 
-signal inscribed(scroll: Dictionary, perfect: bool)
+signal enchanted(potion: Dictionary, stars: int)
 
-const PAGE_BG := Color(0.11, 0.085, 0.07, 0.97)
+const BOOK := Vector2(1440, 870)          # el libro a 3x (grimoire_book.png mide 480x290)
+const LEFT := Rect2(66, 54, 600, 738)      # zona útil de la hoja izquierda (coordenadas del libro)
+const RIGHT := Rect2(774, 54, 600, 738)
+const INK := Color("3a2618")
+const INK_SOFT := Color("6b5236")
+const INK_FAINT := Color(0.42, 0.32, 0.2, 0.5)
+const CREAM := Color("f4e9cf")
+const GREEN := Color("4e6b3a")
+const WAX := Color("9e2b25")
+const BRASS := Color("c9a15a")
 
-var main                     # main.gd (customer_ready, current)
+var main                     # main.gd (customer_ready, current, _on_potion)
 var ui: GameUI
 var ov: Overlays
 var world: ShopWorld
-var busy := false            # la runa está abierta
-var demo_auto := -1.0        # capturas: la runa se traza sola hasta esta fracción
-var _sel := ""               # página elegida
-var _paper := "papel"
+var busy := false            # la pluma está trazando
+var demo_auto := -1.0        # capturas y bot: la runa se traza sola hasta esta fracción
+var mode := "browse"         # "browse" (hojear) o "enchant" (encantar)
+var _sel := ""               # runa elegida
+var _pot_key := {}           # poción elegida (id, potencia y runas: se busca con Game.find_potion)
+var _ink := ""               # tinta en la pluma
+var _root: Control
+var _left: Control
+var _right: Control
+var _tabs := {}
+var _note: Control           # la nota de la maestra (la primera vez)
+var _msg: Label              # un aviso corto en la hoja derecha
+var _game: RuneGame
+var _trace_rune := ""
+var _trace_key := {}
+var _trace_done := false
+var _trace_stars := 1
+var _status: Label           # la línea de estado de la hoja derecha (el aviso corto la tapa un momento)
+var _last_enchanted := {}
+var _kb := false             # se está usando el teclado (foco visible)
+var _focus_key := ""
+var _focus_sb: StyleBoxFlat
 var _glow_t := 0.0
-var _list: GridContainer
-var _detail: VBoxContainer
-var _mats: HBoxContainer
-var _stats: RichTextLabel
+var _announcing := false
+var _celebrate_stars := 0
+var _tip_done := false
+var bot_fail := ""           # por qué falló bot_enchant (pruebas)
 
 func setup(m) -> void:
 	main = m
 	ui = m.ui
 	ov = m.ov
 	world = m.world
+	ov.closed.connect(func(id: String):
+		if id == "grimoire":
+			_on_closed())
 
 func _ready() -> void:
 	Sfx.magic_load()
+	UIKit.load_fonts()
+	_focus_sb = StyleBoxFlat.new()
+	_focus_sb.draw_center = false
+	_focus_sb.border_color = Color("f0d58a")
+	_focus_sb.set_border_width_all(4)
+	_focus_sb.set_corner_radius_all(10)
+	_focus_sb.expand_margin_left = 4
+	_focus_sb.expand_margin_right = 4
+	_focus_sb.expand_margin_top = 4
+	_focus_sb.expand_margin_bottom = 4
 	Game.level_up.connect(func(_lv): _announce_pages.call_deferred())
 	Game.journal_changed.connect(func(): _announce_pages.call_deferred())
+	Game.magic_changed.connect(func(): _announce_pages.call_deferred())
 
 func _process(delta: float) -> void:
-	# si hay páginas nuevas sin leer, el grimorio del escritorio suelta chispitas de vez en cuando
+	# el escritorio suelta chispitas mientras el grimorio espera (sin abrir, o con páginas nuevas)
 	_glow_t += delta
-	if _glow_t < 2.4:
-		return
-	_glow_t = 0.0
-	if world and world.visible and world.grimoire_sprite and Game.has_new_pages() and not ov.is_open():
-		world.spawn_sparkles(world.grimoire_sprite.global_position + Vector3(0, 0.3, 0.15), Color(1.3, 1.1, 1.9), 6)
+	if _glow_t >= 2.4:
+		_glow_t = 0.0
+		if world and world.visible and world.grimoire_sprite and Game.desk_glows() and not ov.is_open():
+			world.spawn_sparkles(world.grimoire_sprite.global_position + Vector3(0, 0.3, 0.15), Color(1.3, 1.1, 1.9), 6)
+	if busy and (not is_instance_valid(_game) or ov.current != "grimoire"):
+		if _trace_done:
+			_commit_trace()   # ya estaba trazada
+		busy = false   # el libro se cerró por otro lado mientras trazaba: no se gastó nada
+	if _ticket_was and ov.current != "grimoire":
+		_hud_ticket(true)   # (cerrado sin avisar: close(false))
 
-## Abre el grimorio (la alquimista ya está en el escritorio). La primera vez, la nota de la maestra.
+## Está abierto el libro.
+func is_open() -> bool:
+	return ov.current == "grimoire" and is_instance_valid(_root)
+
+# ------------------------------------------------------------------ abrir
+
+## Abre el libro (la alquimista ya está en el escritorio). La primera vez: la nota de la maestra y la runa de Prisa.
+## Si un cliente espera una poción con runas y está en el estante, se abre en ENCANTAR con esa poción y esa runa.
 func open() -> void:
 	if ov.is_open() or busy:
 		return
 	Sfx.play("grimoire", 0.03, -3.0)
-	if not Game.magic_unlocked:
-		_show_intro()
-	else:
-		show_book()
-
-# ------------------------------------------------------------------ la primera vez
-
-func _show_intro() -> void:
-	var p := UIKit.fancy_panel(PAGE_BG, 30)
-	p.custom_minimum_size = Vector2(920, 0)
-	var v := UIKit.vbox(14)
-	p.add_child(v)
-	var ic := UIKit.icon("res://assets/icons/spell_pergamino_luz.png", 6.0)
-	ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	v.add_child(ic)
-	v.add_child(_title("El grimorio de tu maestra", 44))
-	var r := UIKit.rich(24)
-	r.custom_minimum_size = Vector2(840, 0)
-	r.text = "[center][color=#c9bfd9]Entre las páginas hay una nota con la letra de tu maestra:[/color]\n[i]«Las pociones se beben; los hechizos se escriben. Con una hoja, tinta hecha de una esencia y un trazo firme, la magia se queda quieta en el papel hasta que alguien la necesite. Traza las runas sin miedo: la magia perdona a quien escribe con cariño.\nEn el cajón te dejé hojas y dos frascos de tinta. Tobías, el del mercado, vende más.»[/i][/center]"
-	v.add_child(r)
-	v.add_child(UIKit.divider())
-	var gifts := UIKit.hbox(26)
-	gifts.alignment = BoxContainer.ALIGNMENT_CENTER
-	v.add_child(gifts)
-	for id in Game.MAGIC_STARTER:
-		var h := UIKit.hbox(6)
-		h.add_child(UIKit.icon("res://assets/icons/%s.png" % id, 3.0))
-		h.add_child(UIKit.label("%s ×%d" % [Data.MAGIC_ITEMS[id]["name"], Game.MAGIC_STARTER[id]], 21, UIKit.TEXT, UIKit.font_bold))
-		gifts.add_child(h)
-	var b := UIKit.button("Abrir el grimorio", func():
+	var first := not Game.magic_unlocked
+	if first:
 		Game.unlock_magic()
-		Sfx.play("page", 0.05, -4.0)
-		show_book(), 26)
-	b.custom_minimum_size = Vector2(340, 60)
-	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	v.add_child(b)
-	ov._open("grimoire_intro", p)
+	Game.new_rune_pages()
+	var target := _order_target()
+	if first:
+		show_book("prisa", "browse")
+		_show_note()
+	elif not target.is_empty():
+		show_book(target["rune"], "enchant", target["index"])
+	elif not Game.order_runes(_order()).is_empty():
+		show_book(Game.order_runes(_order())[0], "browse")   # la runa que pide el cliente (la poción aún no está)
+	else:
+		show_book("", "browse")
 
-# ------------------------------------------------------------------ el libro
+## El pedido del cliente que espera, si le falta una runa a su poción del estante: {"index", "rune"} (o {}).
+func _order_target() -> Dictionary:
+	var req := _order()
+	if req.is_empty() or Game.order_runes(req).is_empty():
+		return {}
+	for i in Game.potions.size():
+		var p: Dictionary = Game.potions[i]
+		if p["id"] != Story.wanted(req):
+			continue
+		var r := Game.next_rune_for(p, req)
+		if r != "" and Game.enchant_problem(i, r) in ["", "ink"]:
+			return {"index": i, "rune": r}
+	return {}
 
-func _title(text: String, size := 40) -> Label:
-	return UIKit.shadow(UIKit.label(text, size, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold, HORIZONTAL_ALIGNMENT_CENTER), 3)
+## El pedido del cliente que espera en el mostrador ({} si no hay).
+func _order() -> Dictionary:
+	if main == null or not main.customer_ready or not is_instance_valid(main.customer):
+		return {}
+	var c: Dictionary = main.current
+	if c.is_empty() or c.get("kind", "") == "return":
+		return {}
+	return c
 
-## Las páginas del grimorio. sel: la página que se abre (si no, la última vista, o la primera nueva).
-func show_book(sel := "") -> void:
-	if sel != "":
+## Abre el libro (o lo rehace si ya está abierto). sel: la runa; m: "browse" o "enchant"; potion: índice del estante.
+func show_book(sel := "", m := "", potion := -1) -> void:
+	if m != "":
+		mode = m
+	if sel != "" and Data.RUNES.has(sel):
 		_sel = sel
-	if _sel == "" or not Data.SPELLS.has(_sel):
-		_sel = Data.SPELL_ORDER[0]
-		for id in Data.SPELL_ORDER:
-			if Game.page_is_new(id):
-				_sel = id
-				break
-	if ov.current == "grimoire" and is_instance_valid(_detail):
-		_refresh_book()
-		return
-	var p := UIKit.fancy_panel(PAGE_BG, 28)
-	p.custom_minimum_size = Vector2(1320, 800)
-	var v := UIKit.vbox(10)
-	p.add_child(v)
-	v.add_child(_title("Grimorio"))
-	v.add_child(UIKit.label("Una hoja, tinta de una esencia y el trazo de la runa: un pergamino. Se entregan a los clientes como las pociones.",
-		20, UIKit.MUTED, UIKit.font_italic, HORIZONTAL_ALIGNMENT_CENTER))
-	var h := UIKit.hbox(28)
-	h.custom_minimum_size = Vector2(1260, 530)
-	v.add_child(h)
-	var left := UIKit.vbox(18)
-	left.custom_minimum_size = Vector2(620, 0)
-	h.add_child(left)
-	_list = GridContainer.new()
-	_list.columns = 2
-	_list.add_theme_constant_override("h_separation", 10)
-	_list.add_theme_constant_override("v_separation", 8)
-	left.add_child(_list)
-	left.add_child(UIKit.divider())
-	_stats = UIKit.rich(21)
-	_stats.custom_minimum_size = Vector2(620, 0)
-	left.add_child(_stats)
-	_detail = UIKit.vbox(10)
-	_detail.custom_minimum_size = Vector2(612, 530)
-	h.add_child(_detail)
-	v.add_child(UIKit.divider())
-	_mats = UIKit.hbox(18)
-	_mats.alignment = BoxContainer.ALIGNMENT_CENTER
-	v.add_child(_mats)
-	var rule := UIKit.rich(19)
-	rule.custom_minimum_size = Vector2(1260, 0)
-	rule.text = "[center][color=#d9c79f]¿Sin tinta? Cómprala a [b]Tobías[/b] en el mercado, o prepárala en el caldero con el botón [b]Tinta[/b]: la decide la [b]esencia más fuerte[/b] de la mezcla.[/color][/center]"
-	v.add_child(rule)
-	var close := UIKit.button("Cerrar", func(): ov.close(), 22)
-	close.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	v.add_child(close)
-	_refresh_book()
-	ov._open("grimoire", p)
+	if _sel == "" or not Data.RUNES.has(_sel):
+		_sel = _default_rune()
+	if potion >= 0 and potion < Game.potions.size():
+		_pot_key = Game.potions[potion].duplicate()
+	_ink = ""
+	if not is_open():
+		_build_book()
+		ov._open("grimoire", _root)
+		_hud_ticket(false)
+	_refresh()
 
-## Vuelve a llenar la lista de páginas, la página elegida y los materiales (sin cerrar el libro).
-func _refresh_book() -> void:
-	for box in [_list, _detail, _mats]:
-		for c in box.get_children():
-			c.visible = false   # deja de ocupar sitio ya; se borra al final del cuadro
-			c.queue_free()
-	_fill_detail(_detail, _sel)
-	for id in Data.SPELL_ORDER:
-		var known := Game.spell_known(id)
-		var b := Button.new()
-		b.text = Data.SPELLS[id]["name"] if known else "Página en blanco"
+func _default_rune() -> String:
+	for id in Data.RUNE_ORDER:
 		if Game.page_is_new(id):
-			b.text += "  ✦"
-			b.add_theme_color_override("font_color", UIKit.GOLD_BRIGHT)
-		if not known:
-			b.add_theme_color_override("font_color", Color(0.6, 0.56, 0.68))
-		b.icon = load("res://assets/icons/spell_%s.png" % (id if known else "desconocido"))
+			return id
+	var known := Game.known_runes()
+	return known[0] if not known.is_empty() else Data.RUNE_ORDER[0]
+
+# ------------------------------------------------------------------ el libro (tapas, hojas, marcapáginas)
+
+func _build_book() -> void:
+	_root = Control.new()
+	_root.custom_minimum_size = BOOK
+	_root.size = BOOK
+	_root.mouse_filter = Control.MOUSE_FILTER_STOP
+	# marcapáginas (asoman por arriba; las tapas tapan su base)
+	_tabs.clear()
+	var tx := 150.0
+	for t in [["browse", "Runas", "res://assets/icons/rune_prisa.png"], ["enchant", "Encantar", "res://assets/icons/pot_sueno_profundo.png"]]:
+		var b := TextureButton.new()
+		b.ignore_texture_size = true
+		b.stretch_mode = TextureButton.STRETCH_SCALE
+		b.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		b.position = Vector2(tx, -58)
+		b.size = Vector2(52, 24) * 3.0
+		b.focus_mode = Control.FOCUS_ALL
+		b.add_theme_stylebox_override("focus", _focus_sb)
+		b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		b.set_meta("fk", "tab_" + t[0])
+		var kind: String = t[0]
+		b.pressed.connect(func(): _set_mode(kind))
+		b.mouse_entered.connect(func(): Sfx.play("hover", 0.05, -14.0))
+		var h := UIKit.hbox(8)
+		h.alignment = BoxContainer.ALIGNMENT_CENTER
+		h.position = Vector2(0, 6)
+		h.size = Vector2(156, 44)
+		b.add_child(h)
+		h.add_child(UIKit.icon(t[2], 2.0))
+		h.add_child(UIKit.shadow(UIKit.label(t[1], 26, CREAM, UIKit.font_sc_bold), 2))
+		_root.add_child(b)
+		_tabs[kind] = b
+		tx += 186.0
+	var bg := TextureRect.new()
+	bg.texture = load("res://assets/ui/grimoire_book.png")
+	bg.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bg.stretch_mode = TextureRect.STRETCH_SCALE
+	bg.size = BOOK
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(bg)
+	_left = Control.new()
+	_left.position = LEFT.position
+	_left.size = LEFT.size
+	_left.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_left)
+	_right = Control.new()
+	_right.position = RIGHT.position
+	_right.size = RIGHT.size
+	_right.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_right)
+	var close := TextureButton.new()
+	close.texture_normal = load("res://assets/ui/grimoire_close.png")
+	close.texture_hover = load("res://assets/ui/grimoire_close_hover.png")
+	close.ignore_texture_size = true
+	close.stretch_mode = TextureButton.STRETCH_SCALE
+	close.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	close.size = Vector2(54, 54)
+	close.position = Vector2(BOOK.x - 40, -24)
+	close.tooltip_text = "Cerrar (Esc)"
+	close.focus_mode = Control.FOCUS_ALL
+	close.add_theme_stylebox_override("focus", _focus_sb)
+	close.set_meta("fk", "close")
+	close.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	close.pressed.connect(func():
+		Sfx.play("click", 0.05, -4.0)
+		if busy:
+			_cancel_trace()
+		ov.close())
+	_root.add_child(close)
+	_note = null
+
+func _set_mode(m: String) -> void:
+	if busy or m == mode:
+		return
+	Sfx.play("page", 0.08, -6.0)
+	mode = m
+	_ink = ""
+	if m == "enchant":
+		var t := _order_target()
+		if not t.is_empty():
+			_pot_key = Game.potions[t["index"]].duplicate()
+			_sel = t["rune"]
+		elif not Game.rune_known(_sel) and not Game.known_runes().is_empty():
+			_sel = Game.known_runes()[0]
+	_refresh()
+
+## Rehace las dos hojas según el modo (sin cerrar el libro).
+func _refresh() -> void:
+	if not is_instance_valid(_root):
+		return
+	var fo := _root.get_viewport().gui_get_focus_owner() if _root.is_inside_tree() else null
+	if fo and _root.is_ancestor_of(fo) and fo.has_meta("fk"):
+		_focus_key = String(fo.get_meta("fk"))
+	for page in [_left, _right]:
+		for c in page.get_children():
+			page.remove_child(c)
+			c.queue_free()
+	_msg = null
+	_status = null
+	for k in _tabs:
+		var on: bool = k == mode
+		var b: TextureButton = _tabs[k]
+		b.texture_normal = load("res://assets/ui/grimoire_tab_%s.png" % ("on" if on else "off"))
+		b.texture_hover = load("res://assets/ui/grimoire_tab_%s.png" % ("on" if on else "hover"))
+		b.position.y = -64.0 if on else -54.0
+		b.disabled = busy
+	if mode == "enchant":
+		_enchant_left()
+		_enchant_right()
+	else:
+		_browse_left()
+		_browse_right()
+	if is_instance_valid(_note):
+		_note.move_to_front()
+	if _kb and not busy:
+		_restore_focus.call_deferred()
+
+# ------------------------------------------------------------------ piezas
+
+func _lbl(text: String, size: int, col := INK, font: Font = null, align := HORIZONTAL_ALIGNMENT_CENTER) -> Label:
+	# --- R3 MERGE: lo que el libro dice «a mano» (la cursiva: efectos, avisos, la nota de la maestra) usa la letra de los
+	# papeles (UI-PAPER: PaperKit.font_hand, Caveat), un poco más grande porque es más estrecha. Títulos y botones: Alegreya.
+	if font != null and font == UIKit.font_italic:
+		PaperKit.load_fonts()
+		return UIKit.label(text, int(round(size * 1.18)), col, PaperKit.font_hand, align)
+	# --- end R3 MERGE
+	return UIKit.label(text, size, col, font if font else UIKit.font_bold, align)
+
+## Pone un control en la hoja, en una posición (y un tamaño, si se da) de la hoja.
+func _put(c: Control, page: Control, pos: Vector2, size := Vector2.ZERO) -> Control:
+	page.add_child(c)
+	c.position = pos
+	if size != Vector2.ZERO:
+		c.size = size
+	return c
+
+## Un texto centrado en una franja de la hoja.
+func _text(page: Control, text: String, y: float, size: int, col := INK, font: Font = null, w := 600.0, x := 0.0) -> Label:
+	var l := _lbl(text, size, col, font)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_put(l, page, Vector2(x, y), Vector2(w, 0))
+	return l
+
+## Un botón sin fondo (la figura la dibuja draw_fn): medallones, frascos, tinteros.
+func _flat_button(key: String, size: Vector2, cb: Callable, tip := "") -> Button:
+	var b := Button.new()
+	b.flat = true
+	for st in ["normal", "hover", "pressed", "disabled", "hover_pressed"]:
+		b.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+	b.add_theme_stylebox_override("focus", _focus_sb)
+	b.focus_mode = Control.FOCUS_ALL
+	b.custom_minimum_size = size
+	b.size = size
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.tooltip_text = tip
+	b.set_meta("fk", key)
+	b.pressed.connect(cb)
+	b.mouse_entered.connect(func():
+		Sfx.play("hover", 0.05, -14.0)
+		b.queue_redraw())
+	b.mouse_exited.connect(func(): b.queue_redraw())
+	return b
+
+## Estilo de textura (piezas de 9 cortes de magic_art.py, ya a 3x).
+func _sbt(name: String, m := 15) -> StyleBoxTexture:
+	var sb := StyleBoxTexture.new()
+	sb.texture = load("res://assets/ui/%s.png" % name)
+	sb.texture_margin_left = m
+	sb.texture_margin_right = m
+	sb.texture_margin_top = m
+	sb.texture_margin_bottom = m
+	sb.content_margin_left = 24
+	sb.content_margin_right = 24
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 12
+	sb.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
+	sb.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
+	return sb
+
+## Un botón de cuero con letras claras (una o dos palabras). kind "gold": de lacre rojo (la acción principal).
+func _leather(key: String, text: String, cb: Callable, kind := "", icon_path := "") -> Button:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_ALL
+	b.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	b.add_theme_stylebox_override("normal", _sbt("grimoire_btn_gold" if kind == "gold" else "grimoire_btn"))
+	b.add_theme_stylebox_override("hover", _sbt("grimoire_btn_hover"))
+	b.add_theme_stylebox_override("pressed", _sbt("grimoire_btn_pressed"))
+	b.add_theme_stylebox_override("hover_pressed", _sbt("grimoire_btn_pressed"))
+	b.add_theme_stylebox_override("disabled", _sbt("grimoire_btn_off"))
+	b.add_theme_stylebox_override("focus", _focus_sb)
+	b.add_theme_color_override("font_color", CREAM)
+	b.add_theme_color_override("font_hover_color", Color("ffe8a8"))
+	b.add_theme_color_override("font_pressed_color", Color("ffe8a8"))
+	b.add_theme_color_override("font_disabled_color", Color(0.75, 0.72, 0.7))
+	b.add_theme_font_override("font", UIKit.font_sc_bold)
+	b.add_theme_font_size_override("font_size", 30)
+	if icon_path != "":
+		b.icon = load(icon_path)
 		b.expand_icon = true
 		b.add_theme_constant_override("icon_max_width", 40)
-		b.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.custom_minimum_size = Vector2(305, 58)
-		b.focus_mode = Control.FOCUS_NONE
-		b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		if id == _sel:
-			b.add_theme_stylebox_override("normal", UIKit.button_style(Color(0.3, 0.22, 0.14, 0.98), UIKit.GOLD_BRIGHT))
-		b.pressed.connect(func():
-			Sfx.play("page", 0.08, -8.0)
-			show_book(id))
-		b.mouse_entered.connect(func(): Sfx.play("hover", 0.05, -14.0))
-		_list.add_child(b)
-	var n_known := Game.known_spells().size()
-	_stats.text = "[center][color=#d9c79f]Páginas que sabes leer: [b]%d de %d[/b]\nPergaminos inscritos: [b]%d[/b]   ·   Trazos perfectos: [b]%d[/b]   ·   Tinta preparada: [b]%d[/b][/color]\n\n[color=#a99fbf][i]«La magia perdona a quien escribe con cariño.»[/i]\n— nota de tu maestra[/color][/center]" % [
-		n_known, Data.SPELL_ORDER.size(), Game.magic_stats["scrolls"], Game.magic_stats["perfect"], Game.magic_stats["inks"]]
-	_mats.add_child(UIKit.label("Tus materiales:", 21, UIKit.MUTED, UIKit.font_italic))
-	for id in Data.MAGIC_ITEM_ORDER:
-		var n := Game.item_count(id)
-		var m := UIKit.hbox(4)
-		m.tooltip_text = Data.MAGIC_ITEMS[id]["name"]
-		m.mouse_filter = Control.MOUSE_FILTER_PASS
-		var ic := UIKit.icon("res://assets/icons/%s.png" % id, 2.4)
-		if n <= 0:
-			ic.modulate = Color(0.45, 0.42, 0.5)
-		m.add_child(ic)
-		m.add_child(UIKit.label("×%d" % n, 21, UIKit.TEXT if n > 0 else UIKit.MUTED, UIKit.font_bold))
-		_mats.add_child(m)
+	b.custom_minimum_size = Vector2(0, 66)
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.set_meta("fk", key)
+	b.pressed.connect(func():
+		Sfx.play("click", 0.05, -4.0)
+		cb.call())
+	b.mouse_entered.connect(func(): Sfx.play("hover", 0.05, -14.0))
+	return b
 
-func _fill_detail(detail: VBoxContainer, id: String) -> void:
-	var d: Dictionary = Data.SPELLS[id]
-	var known := Game.spell_known(id)
-	var top := UIKit.hbox(18)
-	detail.add_child(top)
-	top.add_child(UIKit.icon("res://assets/icons/spell_%s.png" % (id if known else "desconocido"), 6.0))
-	var tv := UIKit.vbox(4)
-	tv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	top.add_child(tv)
-	if not known:
-		tv.add_child(UIKit.label("Página en blanco", 36, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold))
-		var r := UIKit.rich(22)
-		r.custom_minimum_size = Vector2(470, 0)
-		var txt := "[color=#b8aecb]Las letras aparecerán cuando tu renombre llegue a «%s»." % Game.level_name(int(d["level"]))
-		if d.has("gift"):
-			txt += " O quizá algún viajero te regale esta página…"
-		r.text = txt + "[/color]"
-		tv.add_child(r)
+## Centra horizontalmente un botón en la hoja a una altura (cuando ya conoce su tamaño).
+func _center_x(c: Control, page: Control, y: float, w := 0.0) -> void:
+	page.add_child(c)
+	var cw := w if w > 0.0 else maxf(c.get_combined_minimum_size().x, c.size.x)
+	c.size.x = cw
+	c.position = Vector2((page.size.x - cw) / 2.0, y)
+
+## Un adorno de tinta (una raya con un rombo) para separar.
+func _rule(page: Control, y: float, w := 360.0) -> void:
+	var c := Control.new()
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_put(c, page, Vector2((page.size.x - w) / 2.0, y), Vector2(w, 14))
+	c.draw.connect(func():
+		var m := w / 2.0
+		c.draw_line(Vector2(0, 7), Vector2(m - 14, 7), INK_FAINT, 2.0)
+		c.draw_line(Vector2(m + 14, 7), Vector2(w, 7), INK_FAINT, 2.0)
+		c.draw_colored_polygon(PackedVector2Array([Vector2(m, 0), Vector2(m + 7, 7), Vector2(m, 14), Vector2(m - 7, 7)]), INK_SOFT))
+
+## El retrato de un personaje: el primer cuadro de su animación de reposo.
+func _portrait(id: String, h: float) -> TextureRect:
+	var tr := TextureRect.new()
+	var path := "res://assets/chars/%s_idle.png" % Story.sprite_id(id)
+	if ResourceLoader.exists(path):
+		var tex: Texture2D = load(path)
+		var at := AtlasTexture.new()
+		at.atlas = tex
+		at.region = Rect2(0, 0, tex.get_width() / 2, tex.get_height())
+		tr.texture = at
+	tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tr.custom_minimum_size = Vector2(h * 2.0 / 3.0, h)
+	tr.size = tr.custom_minimum_size
+	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return tr
+
+## Una palomita (la runa del pedido ya va en la etiqueta).
+func _check(size := 28.0, ok := true) -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(size, size)
+	c.size = c.custom_minimum_size
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	c.draw.connect(func():
+		if ok:
+			c.draw_polyline(PackedVector2Array([Vector2(size * 0.15, size * 0.55), Vector2(size * 0.42, size * 0.8), Vector2(size * 0.88, size * 0.2)]), GREEN, 5.0, true)
+		else:
+			c.draw_arc(Vector2(size, size) / 2.0, size * 0.32, 0.0, TAU, 24, INK_FAINT, 3.0, true))
+	return c
+
+## Las estrellas (1 a 3) en una fila.
+func _stars(n: int, scale := 1.5) -> HBoxContainer:
+	var s := UIKit.stars(n, scale)
+	s.alignment = BoxContainer.ALIGNMENT_CENTER
+	return s
+
+## El glifo de una runa dibujado en grande sobre el pergamino: un círculo mágico tenue, el trazo en el color de su
+## tinta (con su sombra de tinta oscura) y el punto donde empieza. Es la misma forma que se traza.
+func _glyph(id: String, side: float, locked := false) -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(side, side)
+	c.size = c.custom_minimum_size
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var pts: Array = Data.RUNES[id]["points"] if Data.RUNES.has(id) else []
+	var col: Color = Data.INKS[Game.rune_ink(id)]["color"] if Data.RUNES.has(id) else INK_SOFT
+	c.draw.connect(func():
+		var ctr := Vector2(side, side) / 2.0
+		var R := side * 0.47
+		if locked:
+			for k in 40:
+				if k % 2 == 0:
+					c.draw_arc(ctr, R * 0.8, k * TAU / 40.0, (k + 1) * TAU / 40.0, 4, INK_FAINT, 4.0, true)
+			return
+		c.draw_arc(ctr, R, 0.0, TAU, 96, INK_FAINT, 3.0, true)
+		c.draw_arc(ctr, R - 14.0, 0.0, TAU, 96, Color(INK_FAINT, 0.3), 2.0, true)
+		for k in 24:
+			var a := k * TAU / 24.0
+			var l := 10.0 if k % 3 == 0 else 5.0
+			c.draw_line(ctr + Vector2(cos(a), sin(a)) * (R - 14.0), ctr + Vector2(cos(a), sin(a)) * (R - 14.0 + l), Color(INK_FAINT, 0.45), 2.0, true)
+		var pad := side * 0.2
+		var inner := side - pad * 2.0
+		var q: Array = []
+		for p in pts:
+			q.append(Vector2(pad, pad) + p * inner)
+		for i in range(1, q.size()):
+			c.draw_line(q[i - 1], q[i], Color(INK, 0.9), side * 0.075, true)
+		for p in q:
+			c.draw_circle(p, side * 0.0375, Color(INK, 0.9))
+		for i in range(1, q.size()):
+			c.draw_line(q[i - 1], q[i], col, side * 0.045, true)
+		for p in q:
+			c.draw_circle(p, side * 0.0225, col)
+		for i in range(1, q.size()):
+			c.draw_line(q[i - 1], q[i], col.lightened(0.6), side * 0.012, true)
+		if not q.is_empty():
+			# por dónde se empieza
+			c.draw_circle(q[0], side * 0.05, INK)
+			c.draw_circle(q[0], side * 0.032, Color(1, 0.97, 0.88)))
+	return c
+
+## Un medallón de runa (botón): su icono, o el contorno en blanco si no se sabe; la elegida lleva un aro de latón.
+func _medal(id: String, side: float, selected: bool, cb: Callable, show_new := true) -> Button:
+	var known := Game.rune_known(id)
+	var b := _flat_button("rune_" + id, Vector2(side, side), cb, Data.RUNES[id]["name"] if known else "")
+	var ic_path := ("res://assets/icons/rune_%s.png" % id) if known else "res://assets/ui/grimoire_rune_locked.png"
+	var ic := UIKit.icon(ic_path, (side - 30.0) / 24.0)
+	ic.position = Vector2(15, 15)
+	ic.size = Vector2(side - 30.0, side - 30.0)
+	b.add_child(ic)
+	var is_new := known and show_new and Game.page_is_new(id)
+	b.draw.connect(func():
+		var ctr := Vector2(side, side) / 2.0
+		if selected:
+			b.draw_circle(ctr, side * 0.5, Color(1.0, 0.86, 0.45, 0.28))
+			b.draw_arc(ctr, side * 0.48, 0.0, TAU, 64, BRASS, 5.0, true)
+		elif b.is_hovered():
+			b.draw_arc(ctr, side * 0.47, 0.0, TAU, 64, Color(BRASS, 0.7), 3.0, true)
+		if is_new:
+			var p := Vector2(side - 14, 14)
+			b.draw_colored_polygon(PackedVector2Array([p + Vector2(0, -11), p + Vector2(4, -4), p + Vector2(11, 0), p + Vector2(4, 4),
+				p + Vector2(0, 11), p + Vector2(-4, 4), p + Vector2(-11, 0), p + Vector2(-4, -4)]), Color("d8a43a")))
+	return b
+
+## Una poción del estante (botón): su frasco y el glifo de sus runas.
+func _potion_button(i: int, side: Vector2, selected: bool) -> Button:
+	var p: Dictionary = Game.potions[i]
+	var tip := String(Data.POTIONS[p["id"]]["name"])
+	for r in Game.potion_runes(p):
+		tip += " · " + String(Data.RUNES[r["id"]]["name"])
+	var b := _flat_button("pot_%d" % i, side, func(): _pick_potion(i), tip)
+	var ic := UIKit.icon("res://assets/icons/pot_%s.png" % p["id"], 4.0)
+	ic.position = Vector2((side.x - 64.0) / 2.0, 8)
+	b.add_child(ic)
+	var runes := Game.potion_runes(p)
+	for k in runes.size():
+		var r := UIKit.icon("res://assets/icons/rune_%s.png" % runes[k]["id"], 1.25)
+		r.position = Vector2(side.x - 32.0, 2.0 + k * 28.0)
+		b.add_child(r)
+	var st := _stars(Game.stars_for(int(p["potency"])), 1.0)
+	st.position = Vector2((side.x - 48.0) / 2.0, side.y - 22.0)
+	st.size = Vector2(48, 16)
+	b.add_child(st)
+	b.draw.connect(func():
+		var r := Rect2(Vector2(2, 2), side - Vector2(4, 4))
+		if selected:
+			b.draw_rect(r, Color(1.0, 0.86, 0.45, 0.25))
+			b.draw_rect(r, BRASS, false, 4.0)
+		elif b.is_hovered():
+			b.draw_rect(r, Color(BRASS, 0.6), false, 3.0))
+	return b
+
+## Un tintero (botón): el icono de la tinta y cuántos frascos quedan. El elegido tiene la pluma mojada.
+func _ink_button(ink: String, picked: bool, cb: Callable) -> Button:
+	var n := Game.item_count(ink)
+	var b := _flat_button("ink_" + ink, Vector2(104, 112), cb, String(Data.INKS[ink]["name"]))
+	var ic := UIKit.icon("res://assets/icons/%s.png" % ink, 4.0)
+	ic.position = Vector2(20, 4 if picked else 12)
+	if n <= 0:
+		ic.modulate = Color(0.55, 0.5, 0.48, 0.75)
+	b.add_child(ic)
+	var cnt := _lbl("×%d" % n, 26, INK if n > 0 else INK_FAINT)
+	cnt.position = Vector2(0, 78)
+	cnt.size = Vector2(104, 30)
+	b.add_child(cnt)
+	b.draw.connect(func():
+		var ctr := Vector2(52, 44)
+		if picked:
+			b.draw_circle(ctr, 48, Color(1.0, 0.86, 0.45, 0.25))
+			b.draw_arc(ctr, 48, 0.0, TAU, 48, BRASS, 4.0, true)
+		elif b.is_hovered():
+			b.draw_arc(ctr, 46, 0.0, TAU, 48, Color(BRASS, 0.6), 3.0, true))
+	return b
+
+## El pedido del cliente que espera, clavado en la hoja: su cara, la poción y las runas (con palomita las que ya van
+## en la etiqueta de la poción elegida). w: ancho de la nota.
+func _order_card(page: Control, pos: Vector2, w: float, p: Dictionary) -> Control:
+	var req := _order()
+	if req.is_empty():
+		return null
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _sbt("grimoire_note", 21))
+	card.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.custom_minimum_size = Vector2(w, 0)
+	var h := UIKit.hbox(14)
+	card.add_child(h)
+	h.add_child(_portrait(String(req["who"]), 104.0))
+	var v := UIKit.vbox(6)
+	v.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(v)
+	v.add_child(_lbl(Story.char_name(String(req["who"])), 26, INK, UIKit.font_sc_bold, HORIZONTAL_ALIGNMENT_LEFT))
+	var row := UIKit.hbox(8)
+	v.add_child(row)
+	var want := Story.wanted(req)
+	row.add_child(UIKit.icon("res://assets/icons/pot_%s.png" % want, 3.0) if Game.discovered.has(want) else UIKit.icon("res://assets/icons/pot_desconocida.png", 3.0))
+	var have := Game.potion_rune_ids(p) if not p.is_empty() and p.get("id", "") == want else []
+	for r in Game.order_runes(req):
+		row.add_child(_lbl("+", 30, INK_SOFT))
+		row.add_child(UIKit.icon("res://assets/icons/rune_%s.png" % r, 2.0))
+		row.add_child(_check(26.0, have.has(r)))
+	_put(card, page, pos)
+	_put(UIKit.icon("res://assets/ui/grimoire_pin.png", 3.0), page, pos + Vector2(w / 2.0 - 12.0, -16.0))
+	return card
+
+## Un aviso corto en la hoja derecha (sale y se va).
+func _flash_msg(text: String, col := WAX) -> void:
+	if not is_instance_valid(_right):
 		return
-	Game.mark_page_read(id)
-	tv.add_child(UIKit.label(d["name"], 36, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold))
-	tv.add_child(UIKit.label(d["kind"], 20, UIKit.MUTED, UIKit.font_italic))
-	var eff := UIKit.rich(22)
-	eff.custom_minimum_size = Vector2(470, 0)
-	eff.text = "[i]%s[/i]" % d["effect"]
-	tv.add_child(eff)
-	detail.add_child(UIKit.divider())
-	# materiales del hechizo
-	var row := UIKit.hbox(14)
-	detail.add_child(row)
-	row.add_child(UIKit.label("Tinta:", 22, UIKit.MUTED))
-	var inks: Dictionary = d["inks"]
-	for ink in inks:
-		var have := Game.item_count(ink)
-		var need: int = inks[ink]
-		var chip := UIKit.hbox(4)
-		chip.add_child(UIKit.icon("res://assets/icons/%s.png" % ink, 2.4))
-		chip.add_child(UIKit.label("%s ×%d" % [Data.INKS[ink]["name"], need], 21, UIKit.TEXT if have >= need else UIKit.BAD, UIKit.font_bold))
-		chip.add_child(UIKit.label("(tienes %d)" % have, 18, UIKit.MUTED))
-		row.add_child(chip)
-	# la hoja: papel o vitela (la vitela da una estrella más)
-	var prow := UIKit.hbox(10)
-	detail.add_child(prow)
-	prow.add_child(UIKit.label("Hoja:", 22, UIKit.MUTED))
-	if Game.item_count(_paper) <= 0:
-		for alt in Data.PAPER_ORDER:
-			if Game.item_count(alt) > 0:
-				_paper = alt
-				break
-	for pid in Data.PAPER_ORDER:
-		var n := Game.item_count(pid)
-		var label := "%s ×%d" % [Data.PAPERS[pid]["name"], n]
-		if pid == "vitela":
-			label += "  (+1 ★)"
-		var pb := UIKit.button(label, func():
-			_paper = pid
-			_refresh_book(), 19)
-		pb.icon = load("res://assets/icons/%s.png" % pid)
-		pb.expand_icon = true
-		pb.add_theme_constant_override("icon_max_width", 30)
-		pb.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		pb.custom_minimum_size = Vector2(0, 48)
-		if pid == _paper:
-			pb.add_theme_stylebox_override("normal", UIKit.button_style(Color(0.3, 0.22, 0.14, 0.98), UIKit.GOLD_BRIGHT))
-			pb.add_theme_color_override("font_color", UIKit.GOLD_BRIGHT)
-		elif n <= 0:
-			pb.add_theme_color_override("font_color", Color(0.6, 0.56, 0.68))
-		prow.add_child(pb)
-	# la runa y lo que vale
-	var mid := UIKit.hbox(20)
-	detail.add_child(mid)
-	mid.add_child(RuneGame.preview(d["rune"], _ink_color(id), 150.0))
-	var info := UIKit.vbox(6)
-	info.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	mid.add_child(info)
-	info.add_child(UIKit.label("Runa de %d puntos" % d["rune"].size(), 22, UIKit.TEXT, UIKit.font_bold))
-	info.add_child(UIKit.label("Precio base: %d oro" % d["base"], 21, Color(1.0, 0.86, 0.45)))
-	var stars_now := Game.stars_for(Game.scroll_potency(_paper, false))
-	var sh := UIKit.hbox(8)
-	info.add_child(sh)
-	sh.add_child(UIKit.label("Con esta hoja:", 19, UIKit.MUTED))
-	sh.add_child(UIKit.stars(stars_now, 1.2))
-	sh.add_child(UIKit.label("(+1 con trazo perfecto)", 18, UIKit.MUTED, UIKit.font_italic))
-	if Game.spells_made.has(id):
-		var bh := UIKit.hbox(8)
-		info.add_child(bh)
-		bh.add_child(UIKit.label("Tu mejor pergamino:", 19, UIKit.MUTED))
-		bh.add_child(UIKit.stars(Game.stars_for(int(Game.spells_made[id])), 1.2))
-	# inscribir
-	var why := Game.inscribe_problem(id, _paper)
-	var go := UIKit.button("Inscribir pergamino", func(): _inscribe(id), 26)
-	go.custom_minimum_size = Vector2(360, 62)
-	go.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	go.disabled = why != ""
-	detail.add_child(go)
-	if why != "":
-		var w := UIKit.label(why, 19, UIKit.BAD, UIKit.font_italic, HORIZONTAL_ALIGNMENT_CENTER)
-		w.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		w.custom_minimum_size = Vector2(600, 0)
-		detail.add_child(w)
+	if is_instance_valid(_msg):
+		_msg.queue_free()
+	_msg = _lbl(text, 30, col, UIKit.font_italic)
+	var y := 592.0
+	var st := _status
+	if is_instance_valid(st):
+		y = st.position.y
+		st.visible = false
+	_put(_msg, _right, Vector2(0, y), Vector2(600, 36))
+	_msg.modulate.a = 0.0
+	var tw := _msg.create_tween()
+	tw.tween_property(_msg, "modulate:a", 1.0, 0.15)
+	tw.tween_interval(1.6)
+	tw.tween_property(_msg, "modulate:a", 0.0, 0.5)
+	tw.tween_callback(func():
+		if is_instance_valid(st):
+			st.visible = true)
 
-## Color de la tinta principal del hechizo (para la runa).
-func _ink_color(id: String) -> Color:
-	var inks: Dictionary = Data.SPELLS[id]["inks"]
-	for k in inks:
-		return Data.INKS[k]["color"]
-	return Data.SPELLS[id]["color"]
+func _shake(c: Control) -> void:
+	if not is_instance_valid(c):
+		return
+	var x0 := c.position.x
+	var tw := c.create_tween()
+	for k in 3:
+		tw.tween_property(c, "position:x", x0 + 7.0, 0.04)
+		tw.tween_property(c, "position:x", x0 - 7.0, 0.04)
+	tw.tween_property(c, "position:x", x0, 0.04)
 
-# ------------------------------------------------------------------ inscribir: la runa
+# ------------------------------------------------------------------ RUNAS (hojear)
 
-func _inscribe(id: String) -> void:
+func _browse_left() -> void:
+	_text(_left, "Runas", 6, 46, INK, UIKit.font_sc_bold)
+	_text(_left, "%d / %d" % [Game.known_runes().size(), Data.RUNE_ORDER.size()], 60, 24, INK_SOFT, UIKit.font_italic)
+	for i in Data.RUNE_ORDER.size():
+		var id: String = Data.RUNE_ORDER[i]
+		var col := i % 4
+		var row := i / 4
+		var pos := Vector2(14 + col * 146, 104 + row * 196)
+		var b := _medal(id, 132.0, id == _sel, func(): _pick_rune(id))
+		_put(b, _left, pos)
+		var known := Game.rune_known(id)
+		var nm := _lbl(String(Data.RUNES[id]["name"]) if known else "?", 24, INK if known else INK_FAINT)
+		_put(nm, _left, pos + Vector2(-8, 134), Vector2(148, 30))
+	_rule(_left, 478)
+	# tus tintas
+	for k in Data.INK_ORDER.size():
+		var ink: String = Data.INK_ORDER[k]
+		var n := Game.item_count(ink)
+		var ic := UIKit.icon("res://assets/icons/%s.png" % ink, 4.0)
+		ic.tooltip_text = String(Data.INKS[ink]["name"])
+		ic.mouse_filter = Control.MOUSE_FILTER_PASS
+		if n <= 0:
+			ic.modulate = Color(0.55, 0.5, 0.48, 0.75)
+		_put(ic, _left, Vector2(36 + k * 112, 500))
+		_put(_lbl("×%d" % n, 26, INK if n > 0 else INK_FAINT), _left, Vector2(18 + k * 112, 566), Vector2(100, 30))
+	_order_card(_left, Vector2(90, 612), 420.0, {})
+
+func _browse_right() -> void:
+	var d: Dictionary = Data.RUNES[_sel]
+	var known := Game.rune_known(_sel)
+	if not known:
+		_text(_right, "Página en blanco", 14, 44, INK_FAINT, UIKit.font_sc_bold)
+		_put(_glyph(_sel, 300.0, true), _right, Vector2(150, 110))
+		var y := 450.0
+		for way in _unlock_ways(_sel):
+			var h := UIKit.hbox(14)
+			h.alignment = BoxContainer.ALIGNMENT_CENTER
+			h.add_child(way[0])
+			h.add_child(_lbl(way[1], 30, INK_SOFT, UIKit.font_italic))
+			_put(h, _right, Vector2(0, y), Vector2(600, 100))
+			y += 120.0
+		return
+	Game.mark_page_read(_sel)
+	_text(_right, String(d["name"]), 6, 56, INK, UIKit.font_sc_bold)
+	_put(_glyph(_sel, 340.0), _right, Vector2(130, 88))
+	# la tinta que pide (icono) y cuánta tienes
+	var ink := Game.rune_ink(_sel)
+	var h2 := UIKit.hbox(10)
+	h2.alignment = BoxContainer.ALIGNMENT_CENTER
+	var ic := UIKit.icon("res://assets/icons/%s.png" % ink, 4.0)
+	ic.tooltip_text = String(Data.INKS[ink]["name"])
+	ic.mouse_filter = Control.MOUSE_FILTER_PASS
+	h2.add_child(ic)
+	h2.add_child(_lbl("×%d" % Game.item_count(ink), 30, INK if Game.item_count(ink) > 0 else WAX))
+	_put(h2, _right, Vector2(0, 440), Vector2(600, 70))
+	_text(_right, String(d["effect"]), 528, 34, INK, UIKit.font_italic, 540.0, 30.0)
+	var go := _leather("go_enchant", "Encantar", func():
+		_sel = _sel
+		_set_mode("enchant"), "gold", "res://assets/icons/pot_sueno_profundo.png")
+	_center_x(go, _right, 640, 300)
+
+## Cómo se aprende una runa que todavía no se sabe: [[icono, unas palabras], ...].
+func _unlock_ways(id: String) -> Array:
+	var d: Dictionary = Data.RUNES[id]
+	var out := []
+	if d.has("shop"):
+		var item: Dictionary = Data.MAGIC_ITEMS.get(String(d["shop"]), {})
+		out.append([_portrait("tobias", 96.0), "Tobías · %d oro" % int(item.get("price", 0))])
+	if d.has("gift"):
+		var g: Dictionary = d["gift"]
+		out.append([_portrait(String(g["hero"]), 96.0), "Regalo de %s" % Story.char_name(String(g["hero"]))])
+	if int(d.get("level", 99)) < Data.LEVELS.size():
+		out.append([UIKit.icon("res://assets/icons/emote_gem.png", 4.0), "Renombre: %s" % Game.level_name(int(d["level"]))])
+	return out
+
+func _pick_rune(id: String) -> void:
 	if busy:
 		return
-	var why := Game.inscribe_problem(id, _paper)
+	Sfx.play("page", 0.08, -8.0)
+	_sel = id
+	_ink = ""
+	_refresh()
+
+# ------------------------------------------------------------------ ENCANTAR
+
+## La poción elegida (índice en el estante, -1 si no hay): la última elegida, o la que pide el cliente, o la primera.
+func _pot_index() -> int:
+	if not _pot_key.is_empty():
+		var i := Game.find_potion(_pot_key)
+		if i >= 0:
+			return i
+	var t := _order_target()
+	if not t.is_empty():
+		return t["index"]
+	for i in Game.potions.size():
+		if Game.potion_runes(Game.potions[i]).is_empty():
+			return i
+	return 0 if not Game.potions.is_empty() else -1
+
+func _pick_potion(i: int) -> void:
+	if busy or i < 0 or i >= Game.potions.size():
+		return
+	Sfx.play("click", 0.06, -6.0)
+	_pot_key = Game.potions[i].duplicate()
+	var r := Game.next_rune_for(Game.potions[i], _order())
+	if r != "" and Game.rune_known(r) and Game.potions[i]["id"] == Story.wanted(_order()):
+		_sel = r
+	_ink = ""
+	_refresh()
+
+## Moja la pluma en un tintero. Tiene que ser la tinta de la runa (si no, el tintero tiembla y no se gasta nada).
+func pick_ink(ink: String) -> void:
+	if busy or mode != "enchant":
+		return
+	var b := _find_button("ink_" + ink)
+	if Game.item_count(ink) <= 0:
+		Sfx.play("sad", 0.0, -8.0)
+		_shake(b)
+		_flash_msg("Sin tinta: Tobías o el caldero")
+		return
+	if ink != Game.rune_ink(_sel):
+		Sfx.play("sad", 0.0, -8.0)
+		_shake(b)
+		_flash_msg("Esa tinta no prende en esta runa")
+		return
+	Sfx.play("plop", 0.08, -4.0)
+	_ink = ink
+	_refresh()
+
+func _find_button(key: String) -> Control:
+	for page in [_left, _right]:
+		if not is_instance_valid(page):
+			continue
+		for c in page.get_children():
+			if c.has_meta("fk") and String(c.get_meta("fk")) == key:
+				return c
+	return null
+
+func _enchant_left() -> void:
+	_text(_left, "Encantar", 6, 46, INK, UIKit.font_sc_bold)
+	var idx := _pot_index()
+	if Game.potions.is_empty():
+		_text(_left, "El estante está vacío.", 200, 32, INK_SOFT, UIKit.font_italic)
+		_put(UIKit.icon("res://assets/icons/pot_desconocida.png", 8.0), _left, Vector2(236, 270))
+		_order_card(_left, Vector2(90, 600), 420.0, {})
+		return
+	# el estante: 6 por fila
+	var n := Game.potions.size()
+	var per := 6
+	var bw := Vector2(94, 112)
+	for i in n:
+		var row := i / per
+		var col := i % per
+		var in_row := mini(per, n - row * per)
+		var x0 := (600.0 - in_row * (bw.x + 4.0)) / 2.0
+		_put(_potion_button(i, bw, i == idx), _left, Vector2(x0 + col * (bw.x + 4.0), 72 + row * (bw.y + 6)))
+	var top := 72.0 + ceili(n / float(per)) * (bw.y + 6) + 12.0
+	if idx < 0:
+		return
+	var p: Dictionary = Game.potions[idx]
+	# el frasco elegido, en grande, con su etiqueta colgando (centrado entre el estante y el pedido clavado)
+	var big := UIKit.icon("res://assets/icons/pot_%s.png" % p["id"], 8.0)
+	var by := top + maxf(0.0, (586.0 - top - 244.0) / 2.0)
+	_put(big, _left, Vector2(56, by))
+	_text(_left, String(Data.POTIONS[p["id"]]["name"]), by + 130, 28, INK, UIKit.font_sc_bold, 260.0, -10.0)
+	_put(_tag(p), _left, Vector2(300, by - 4))
+	var string := Control.new()
+	string.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_put(string, _left, Vector2.ZERO, Vector2(600, 700))
+	string.draw.connect(func():
+		var a := Vector2(120, by + 28)
+		var b := Vector2(300 + 34, by - 4 + 78)
+		string.draw_polyline(PackedVector2Array([a, a.lerp(b, 0.5) + Vector2(0, 26), b]), Color("8a6e4a"), 3.0, true))
+	string.move_to_front()
+	# entregar, si el cliente espera (de lacre si la poción ya es justo lo que pidió)
+	var req := _order()
+	if not req.is_empty():
+		var ready: bool = p["id"] == Story.wanted(req) and Game.next_rune_for(p, req) == ""
+		var give := _leather("give", "Entregar", func(): _deliver(), "gold" if ready else "", "res://assets/icons/pot_%s.png" % p["id"])
+		_put(give, _left, Vector2(330, by + 168))
+		give.size = Vector2(250, 66)
+	_order_card(_left, Vector2(90, 600), 420.0, p)
+
+## La etiqueta de la poción: sus huecos (1, o 2 desde «Maestra de pociones") con las runas que ya lleva y sus estrellas.
+func _tag(p: Dictionary) -> Control:
+	var tag := TextureRect.new()
+	tag.texture = load("res://assets/ui/grimoire_tag.png")
+	tag.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	tag.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tag.stretch_mode = TextureRect.STRETCH_SCALE
+	tag.size = Vector2(64, 40) * 4.0
+	tag.custom_minimum_size = tag.size
+	tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var slots := Game.label_slots()
+	var runes := Game.potion_runes(p)
+	var side := 92.0 if slots == 1 else 70.0
+	for k in slots:
+		var cx := 146.0 if slots == 1 else 110.0 + k * 80.0
+		var holder := Control.new()
+		holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		holder.position = Vector2(cx - side / 2.0, 20)
+		holder.size = Vector2(side, side + 30)
+		tag.add_child(holder)
+		if k < runes.size():
+			var ic := UIKit.icon("res://assets/icons/rune_%s.png" % runes[k]["id"], side / 24.0)
+			holder.add_child(ic)
+			var st := _stars(int(runes[k]["stars"]), 1.0)
+			st.position = Vector2((side - 48.0) / 2.0, side + 2)
+			st.size = Vector2(48, 16)
+			holder.add_child(st)
+			if _celebrate_stars > 0 and k == runes.size() - 1:
+				_pop(ic)
+		else:
+			var e := UIKit.icon("res://assets/ui/grimoire_rune_locked.png", side / 24.0)
+			holder.add_child(e)
+	return tag
+
+func _pop(c: Control) -> void:
+	c.pivot_offset = c.custom_minimum_size / 2.0
+	c.scale = Vector2(1.6, 1.6)
+	c.modulate = Color(2.0, 1.8, 1.2)
+	var tw := c.create_tween().set_parallel(true)
+	tw.tween_property(c, "scale", Vector2.ONE, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(c, "modulate", Color.WHITE, 0.6)
+
+func _enchant_right() -> void:
+	var known := Game.known_runes()
+	if not Game.rune_known(_sel) and not known.is_empty():
+		_sel = known[0]
+	# las runas que sabes, en fila
+	var n := known.size()
+	var x0 := (600.0 - n * 74.0) / 2.0
+	for i in n:
+		var id: String = known[i]
+		var b := _medal(id, 70.0, id == _sel, func(): _pick_rune(id), false)
+		b.disabled = busy
+		_put(b, _right, Vector2(x0 + i * 74.0, 2))
+	var d: Dictionary = Data.RUNES[_sel]
+	var ink := Game.rune_ink(_sel)
+	var head := UIKit.hbox(12)
+	head.alignment = BoxContainer.ALIGNMENT_CENTER
+	head.add_child(_lbl(String(d["name"]), 44, INK, UIKit.font_sc_bold))
+	var need := UIKit.icon("res://assets/icons/%s.png" % ink, 3.0)
+	need.tooltip_text = String(Data.INKS[ink]["name"])
+	need.mouse_filter = Control.MOUSE_FILTER_PASS
+	head.add_child(need)
+	_put(head, _right, Vector2(0, 80), Vector2(600, 56))
+	var idx := _pot_index()
+	if busy:
+		# la etiqueta en grande: aquí se traza la runa
+		_game = RuneGame.new()
+		_game.look = "label"
+		_game.points = d["points"]
+		_game.ink = Data.INKS[ink]["color"]
+		_game.time_limit = 3.5 + 1.3 * d["points"].size()
+		_game.auto_until = demo_auto
+		_game.custom_minimum_size = Vector2(460, 460)
+		_put(_game, _right, Vector2(70, 142), Vector2(460, 460))
+		_game.finished.connect(_on_trace_finished)
+		var how := "Une los puntos en orden"
+		_status = _text(_right, how, 612, 28, INK_SOFT, UIKit.font_italic)
+		var cancel := _leather("cancel", "Soltar", func(): _cancel_trace())
+		cancel.focus_mode = Control.FOCUS_NONE
+		_center_x(cancel, _right, 662, 220)
+		return
+	_put(_glyph(_sel, 300.0), _right, Vector2(150, 140))
+	_text(_right, String(d["effect"]), 446, 30, INK_SOFT, UIKit.font_italic, 560.0, 20.0)
+	# los cinco tinteros
+	for k in Data.INK_ORDER.size():
+		var ik: String = Data.INK_ORDER[k]
+		var b2 := _ink_button(ik, ik == _ink, func(): pick_ink(ik))
+		_put(b2, _right, Vector2(26 + k * 112, 494))
+	# trazar, o por qué todavía no
+	var why := Game.enchant_problem(idx, _sel) if idx >= 0 else "none"
+	var reason := {"none": "Prepara una poción", "same": "Ya la lleva", "full": "Etiqueta llena", "ink": "Sin tinta: Tobías o el caldero",
+		"page": "Página en blanco"}
+	if why == "" and _ink == "":
+		_status = _text(_right, "Moja la pluma", 614, 30, INK_SOFT, UIKit.font_italic)
+	elif why != "":
+		_status = _text(_right, String(reason.get(why, why)), 614, 30, WAX, UIKit.font_italic)
+	else:
+		_status = _text(_right, "", 614, 30, INK_SOFT, UIKit.font_italic)
+	var go := _leather("trace", "Trazar", func(): start_trace(), "gold", "res://assets/icons/%s.png" % ink)
+	go.disabled = why != "" or _ink == ""
+	_center_x(go, _right, 664, 280)
+
+func _deliver() -> void:
+	var idx := _pot_index()
+	if busy or idx < 0:
+		return
+	ov.close()
+	main._on_potion(idx)
+
+# ------------------------------------------------------------------ trazar
+
+## Empieza a trazar la runa elegida en la etiqueta de la poción elegida (con la pluma ya mojada en su tinta).
+func start_trace() -> void:
+	if busy or mode != "enchant" or not is_open():
+		return
+	var idx := _pot_index()
+	var why := Game.enchant_problem(idx, _sel) if idx >= 0 else "none"
 	if why != "":
-		ui.toast(why, UIKit.BAD)
+		Sfx.play("sad", 0.0, -8.0)
+		_flash_msg("No se puede")
+		return
+	if _ink != Game.rune_ink(_sel):
+		Sfx.play("sad", 0.0, -8.0)
+		_flash_msg("Moja la pluma")
 		return
 	busy = true
-	var col := _ink_color(id)
-	ov.close(false)
+	_trace_done = false
+	_trace_rune = _sel
+	_trace_key = Game.potions[idx].duplicate()
+	_pot_key = _trace_key.duplicate()
+	if _root.is_inside_tree():
+		_root.get_viewport().gui_release_focus()
+	Sfx.play("quill", 0.05, -3.0)
 	if world.grimoire_sprite:
 		world.grimoire_sprite.modulate = Color(1.5, 1.4, 1.8)
-	Sfx.play("quill", 0.05, -3.0)
-	var res: int = await _rune(id, col)
+	_refresh()
+
+## Inscribe la runa ya trazada (gasta la tinta) y deja de trazar. Devuelve la poción encantada ({} si no se pudo).
+func _commit_trace() -> Dictionary:
+	if not busy or not _trace_done:
+		return {}
+	var idx := Game.find_potion(_trace_key)
+	var p := Game.enchant(idx, _trace_rune, _trace_stars) if idx >= 0 else {}
+	busy = false
+	_game = null
 	if world.grimoire_sprite:
 		world.grimoire_sprite.modulate = Color.WHITE
+	if not p.is_empty():
+		_last_enchanted = p.duplicate()
+		_pot_key = p.duplicate()
+		_ink = ""
+	return p
+
+## Soltó la pluma (Esc, B o «Soltar»): no se gasta nada.
+func _cancel_trace() -> void:
+	if not busy or _trace_done:
+		return
 	busy = false
-	if res < 0:
-		ui.toast("Guardaste la pluma. No se gastó nada.")
-		return
-	var perfect := res == 1
-	var s := Game.inscribe(id, _paper, perfect)
-	if s.is_empty():
-		return
-	_celebrate(s, perfect, col)
-	inscribed.emit(s, perfect)
-
-## Abre la runa y espera: 1 trazo perfecto, 0 trazada, -1 cancelada (Esc, B o «Guardar la pluma»).
-func _rune(id: String, col: Color) -> int:
-	var d: Dictionary = Data.SPELLS[id]
-	var v := UIKit.vbox(8)
-	v.add_child(_title(d["name"], 42))
-	var how := "Pasa el cursor (o usa las flechas) por los puntos, en orden, antes de que se consuma la vela."
-	if ov.pad_hint != "":
-		how = "Mueve el cursor con el stick por los puntos, en orden, antes de que se consuma la vela."
-	var hint := UIKit.shadow(UIKit.label(how, 22, UIKit.TEXT, UIKit.font_italic, HORIZONTAL_ALIGNMENT_CENTER))
-	v.add_child(hint)
-	var game := RuneGame.new()
-	game.points = d["rune"]
-	game.ink = col
-	game.time_limit = 3.5 + 1.3 * d["rune"].size()
-	game.auto_until = demo_auto
-	game.custom_minimum_size = Vector2(600, 600)
-	game.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	v.add_child(game)
-	var cancel := UIKit.button("Guardar la pluma", func(): ov.close(), 20)
-	cancel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	v.add_child(cancel)
-	ov._open("rune", v)
-	var result := [-2]
-	game.finished.connect(func(perfect: bool):
-		result[0] = 1 if perfect else 0
-		cancel.visible = false
-		if perfect:
-			hint.text = "¡Trazo perfecto! El pergamino tendrá una estrella más."
-			hint.add_theme_color_override("font_color", UIKit.GOLD_BRIGHT)
-		elif game.completed:
-			hint.text = "¡Runa trazada!"
-		else:
-			hint.text = "La vela se consumió… pero la runa quedó escrita.")
-	var on_close := func(cid: String):
-		if cid == "rune" and result[0] == -2:
-			result[0] = -1
-	ov.closed.connect(on_close)
-	while result[0] == -2:
-		await get_tree().process_frame
-		if not is_instance_valid(game) and result[0] == -2:
-			result[0] = -1
-	ov.closed.disconnect(on_close)
-	if result[0] >= 0:
-		await get_tree().create_timer(1.2).timeout
-		if ov.current == "rune":
-			ov.close(false)
-	return result[0]
-
-func _celebrate(s: Dictionary, perfect: bool, col: Color) -> void:
-	var d: Dictionary = Data.SPELLS[s["id"]]
-	var stars := Game.stars_for(int(s["potency"]))
+	_game = null
 	if world.grimoire_sprite:
-		world.spawn_sparkles(world.grimoire_sprite.global_position + Vector3(0, 0.45, 0.2), Color(col.r * 1.6, col.g * 1.6, col.b * 1.6), 26)
-	world.alchemist.hop(1)
-	_fly_to_rack(s)
-	if perfect:
-		ui.show_banner("¡Trazo perfecto!", "%s · %d %s" % [d["name"], stars, "estrella" if stars == 1 else "estrellas"])
-	else:
-		ui.toast("Inscribiste %s (%d %s)." % [d["name"], stars, "estrella" if stars == 1 else "estrellas"], UIKit.GOLD_BRIGHT, 3.0)
-	if Game.magic_stats["scrolls"] == 1:
-		# --- PREP: los pergaminos son una pestaña del estante de abajo a la derecha
-		ui.show_tip("¡Tu primer pergamino! Está en tu estante (abajo a la derecha), en la pestaña [b]Pergaminos[/b].\nAlgunos clientes piden pergaminos: tócalo allí para entregarlo, como una poción.")
-	elif main.customer_ready and main.current.get("scroll", "") == s["id"]:
-		ui.toast("Justo lo que pidió %s: tócalo en el estante para entregarlo." % Data.CHARACTERS[main.current["who"]]["name"], UIKit.GOOD, 3.5)
-	# --- INTEGRATE: la corazonada (STORY), como con las pociones: si un cliente espera un pergamino, Miga ronronea
-	# y ella piensa «Esto debería funcionar…» (o duda, si no es el que pidió)
-	if main.has_method("intuition_after_craft"):
-		main.intuition_after_craft("scroll", String(s["id"]))
-	# --- end INTEGRATE
+		world.grimoire_sprite.modulate = Color.WHITE
+	_refresh()
+	_flash_msg("No se gastó nada", INK_SOFT)
 
-## El pergamino vuela (en la pantalla) hasta su lugar en el estante de pergaminos.
-func _fly_to_rack(s: Dictionary) -> void:
-	# el estante se acaba de rehacer: sus huecos tienen posición después de que el contenedor los acomode
-	await get_tree().process_frame
-	await get_tree().process_frame
-	var idx := Game.scroll_index(s["id"], int(s["potency"]))
-	var tex: Texture2D = load("res://assets/icons/spell_%s.png" % s["id"])
-	var c := TextureRect.new()
-	c.texture = tex
-	c.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	c.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	c.size = Vector2(64, 64)
-	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	c.z_index = 40
-	ui.root.add_child(c)
-	var from := ui.root.size / 2.0 - Vector2(32, 32)
-	var to := ui.scroll_slot_center(idx) - Vector2(32, 32)
-	c.position = from
-	var mid := from.lerp(to, 0.5) + Vector2(0, -160)
-	var tw := c.create_tween()
-	tw.tween_property(c, "position", mid, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_property(c, "position", to, 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	tw.tween_callback(func():
-		Sfx.play("plop", 0.1, -6.0)
-		c.queue_free())
+func _on_trace_finished(_perfect: bool) -> void:
+	if not busy or _trace_done or not is_instance_valid(_game):
+		return
+	_trace_done = true
+	_trace_stars = _game.stars()
+	await get_tree().create_timer(0.9).timeout   # que se vea el destello de la runa
+	if not busy:
+		return   # (el libro se cerró en ese momento: _commit_trace ya la inscribió)
+	var stars := _trace_stars
+	var p := _commit_trace()
+	if p.is_empty():
+		_refresh()
+		return
+	# si el pedido pide otra runa, esa queda elegida
+	var nxt := Game.next_rune_for(p, _order()) if p["id"] == Story.wanted(_order()) else ""
+	if nxt != "" and Game.rune_known(nxt):
+		_sel = nxt
+	_celebrate_stars = stars
+	_refresh()
+	_celebrate_stars = 0
+	Sfx.play("sparkle", 0.0, -3.0)
+	if world.grimoire_sprite:
+		world.spawn_sparkles(world.grimoire_sprite.global_position + Vector3(0, 0.45, 0.2), Color(1.6, 1.4, 2.0), 22)
+	_flash_msg(["", "La runa quedó débil", "¡Runa inscrita!", "¡Trazo perfecto!"][clampi(stars, 1, 3)], GREEN if stars >= 2 else INK_SOFT)
+	enchanted.emit(p, stars)
+
+## Al cerrar el libro: si la poción encantada ya es lo que pide el cliente, Miga ronronea (la corazonada).
+## El ticket del pedido (GameUI) se esconde mientras el libro está abierto: el pedido va clavado en la hoja.
+var _ticket_was := false
+func _hud_ticket(on: bool) -> void:
+	var card = ui.get("order_card")
+	if not (card is Control):
+		return
+	if not on:
+		_ticket_was = card.visible
+		card.visible = false
+	elif _ticket_was:
+		card.visible = true
+		_ticket_was = false
+
+func _on_closed() -> void:
+	_hud_ticket(true)
+	if busy and _trace_done:
+		_commit_trace()   # se cerró justo después de trazar: la runa queda inscrita igual
+	busy = false
+	_game = null
+	if world and world.grimoire_sprite:
+		world.grimoire_sprite.modulate = Color.WHITE
+	if not _last_enchanted.is_empty() and main.has_method("intuition_after_enchant"):
+		main.intuition_after_enchant(_last_enchanted)
+	_last_enchanted = {}
+	if not Game.magic_unlocked:
+		return
+	if Game.magic_stats["runes"] == 1 and _order().is_empty() and not _tip_done:
+		_tip_done = true
+		ui.show_tip("Ya lleva su runa: entrégala desde el [b]estante[/b].")   # --- R3 MERGE: corto
+
+# ------------------------------------------------------------------ la nota de la maestra (la primera vez)
+
+func _show_note() -> void:
+	if is_instance_valid(_note):
+		_note.queue_free()
+	_note = Control.new()
+	_note.mouse_filter = Control.MOUSE_FILTER_STOP
+	_note.position = Vector2(0, 0)
+	_note.size = BOOK
+	_root.add_child(_note)
+	var shade := ColorRect.new()
+	shade.color = Color(0.1, 0.06, 0.04, 0.25)
+	shade.size = BOOK
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_note.add_child(shade)
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _sbt("grimoire_note", 21))
+	card.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	card.custom_minimum_size = Vector2(560, 0)
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.rotation = deg_to_rad(-2.0)
+	_note.add_child(card)
+	card.position = Vector2(RIGHT.position.x + 20, 170)
+	var v := UIKit.vbox(14)
+	card.add_child(v)
+	v.add_child(_lbl("De tu maestra", 30, INK_SOFT, UIKit.font_sc_bold))
+	var t := _lbl(String(Data.RUNE_TEXT["note"]), 30, INK, UIKit.font_italic)
+	t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	t.custom_minimum_size = Vector2(500, 0)
+	v.add_child(t)
+	var h := UIKit.hbox(12)
+	h.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_child(h)
+	h.add_child(UIKit.icon("res://assets/icons/rune_prisa.png", 3.0))
+	h.add_child(_lbl("+", 32, INK_SOFT))
+	for id in Game.MAGIC_STARTER:
+		h.add_child(UIKit.icon("res://assets/icons/%s.png" % id, 4.0))
+		h.add_child(_lbl("×%d" % int(Game.MAGIC_STARTER[id]), 30, INK))
+	var ok := _leather("note_ok", "Entendido", func(): dismiss_note(), "gold")
+	ok.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	v.add_child(ok)
+	var pin := UIKit.icon("res://assets/ui/grimoire_pin.png", 3.0)
+	pin.position = card.position + Vector2(266, -16)
+	_note.add_child(pin)
+
+func note_visible() -> bool:
+	return is_instance_valid(_note)
+
+func dismiss_note() -> void:
+	if is_instance_valid(_note):
+		Sfx.play("page", 0.05, -5.0)
+		_note.queue_free()
+		_note = null
+
+# ------------------------------------------------------------------ teclado
+
+func _input(ev: InputEvent) -> void:
+	if not is_open() or not (ev is InputEventKey) or not ev.pressed:
+		return
+	if busy:
+		if ev.keycode == KEY_ESCAPE and not ev.echo:
+			_cancel_trace()
+			get_viewport().set_input_as_handled()
+		return
+	if ev.keycode in [KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE, KEY_TAB]:
+		_kb = true
+		var fo := _root.get_viewport().gui_get_focus_owner()
+		if fo == null or not _root.is_ancestor_of(fo):
+			_restore_focus()
+			get_viewport().set_input_as_handled()
+
+## Pone el foco del teclado en el botón de antes (o en el principal de la hoja).
+func _restore_focus() -> void:
+	if not is_open() or busy:
+		return
+	if is_instance_valid(_note):
+		var okb := _find_in(_note, "note_ok")
+		if okb:
+			okb.grab_focus()
+		return
+	var b := _find_in(_root, _focus_key) if _focus_key != "" else null
+	if b == null:
+		b = _find_in(_root, "trace" if mode == "enchant" else "rune_" + _sel)
+	if b == null or (b is BaseButton and b.disabled):
+		b = _find_in(_root, "rune_" + _sel)
+	if b == null:
+		b = _find_in(_root, "close")
+	if b:
+		b.grab_focus()
+
+func _find_in(n: Node, key: String) -> Control:
+	for c in n.get_children():
+		if c is Control and c.has_meta("fk") and String(c.get_meta("fk")) == key and c.is_visible_in_tree():
+			return c
+		var r := _find_in(c, key)
+		if r:
+			return r
+	return null
 
 # ------------------------------------------------------------------ páginas nuevas
 
-## Al subir de nivel o al terminar un capítulo de un viajero: anuncia las páginas recién aprendidas.
+## Al subir de nivel, al terminar un capítulo de un viajero o al comprar la página de Tobías: anuncia las runas
+## recién aprendidas (cuando no hay ningún panel abierto).
 func _announce_pages() -> void:
-	# --- INTEGRATE: nada de avisos tapados por un panel (el correo de la mañana, una subida de nivel...): espera a que
-	# no quede ninguno abierto durante un momento (al cerrarse el correo puede abrirse justo la subida de nivel)
+	if _announcing or not Game.magic_unlocked:
+		return
+	_announcing = true
 	var calm := 0.0
 	while calm < 0.35:
 		await get_tree().process_frame
 		calm = 0.0 if ov.is_open() else calm + get_process_delta_time()
-	# --- end INTEGRATE
-	var news := Game.new_spell_pages()
+	_announcing = false
+	var news := Game.new_rune_pages()
 	if news.is_empty():
 		return
 	for id in news:
-		var d: Dictionary = Data.SPELLS[id]
-		var g: Dictionary = d.get("gift", {})
-		if not g.is_empty() and Game.level() < int(d["level"]):
-			ui.toast(g["text"], UIKit.GOLD_BRIGHT, 4.5)
-	var names := []
-	for id in news:
-		names.append(Data.SPELLS[id]["name"])
+		var g: Dictionary = Data.RUNES[id].get("gift", {})
+		if not g.is_empty() and Game.level() < int(Data.RUNES[id].get("level", 99)) and int(Game.hero_progress.get(g["hero"], 0)) >= int(g["chapter"]):
+			ui.toast(String(g["text"]), UIKit.GOLD_BRIGHT, 4.5)
+	var names: Array = news.map(func(id): return String(Data.RUNES[id]["name"]))
 	var what: String = names[0] if names.size() == 1 else ", ".join(names.slice(0, names.size() - 1)) + " y " + names[-1]
-	if Game.magic_unlocked:
-		ui.toast("Nueva página en el grimorio: %s." % what, UIKit.GOLD_BRIGHT, 4.0)
-	else:
-		ui.toast("En la biblioteca, el grimorio de tu maestra empezó a brillar…", UIKit.GOLD_BRIGHT, 4.0)
+	ui.toast("Nueva runa en el grimorio: %s" % what, UIKit.GOLD_BRIGHT, 4.0)
 	if world and world.grimoire_sprite:
 		world.spawn_sparkles(world.grimoire_sprite.global_position + Vector3(0, 0.4, 0.15), Color(1.4, 1.2, 1.9), 20)
+
+# ------------------------------------------------------------------ el bot (pruebas automáticas)
+
+## Va al escritorio, abre el grimorio por primera vez (lee la nota) y lo cierra. true si quedó abierto.
+func bot_open() -> bool:
+	if not world.at_station("biblioteca"):
+		if not await world.go_station("biblioteca"):
+			return false
+	open()
+	for i in 3:
+		await get_tree().process_frame
+	dismiss_note()
+	if ov.current == "grimoire":
+		ov.close()
+	return Game.magic_unlocked
+
+## Va al escritorio y encanta la poción index con la runa: el libro en ENCANTAR, la tinta de la runa y el trazo (un
+## cursor automático: trazo perfecto). Devuelve la poción encantada ({} si no se pudo).
+func bot_enchant(index: int, rune: String) -> Dictionary:
+	bot_fail = ""
+	if index < 0 or index >= Game.potions.size() or Game.enchant_problem(index, rune) != "":
+		bot_fail = "problema: " + (Game.enchant_problem(index, rune) if index >= 0 and index < Game.potions.size() else "índice")
+		return {}
+	var key: Dictionary = Game.potions[index].duplicate()
+	for attempt in 3:   # si otra cosa la hace caminar (llega un cliente), vuelve a intentarlo
+		if world.at_station("biblioteca"):
+			break
+		await world.go_station("biblioteca")
+	if not world.at_station("biblioteca"):
+		bot_fail = "no llegó al escritorio (estación=%s)" % world.current_station()
+		return {}
+	var idx := Game.find_potion(key)
+	if idx < 0 or ov.is_open():
+		bot_fail = "poción=%d panel=%s" % [idx, ov.current]
+		return {}
+	_last_enchanted = {}
+	show_book(rune, "enchant", idx)
+	for i in 3:
+		await get_tree().process_frame
+	pick_ink(Game.rune_ink(rune))
+	var prev := demo_auto
+	demo_auto = 1.0
+	start_trace()
+	demo_auto = prev
+	var t := 0.0
+	while busy and t < 30.0:
+		await get_tree().process_frame
+		t += get_process_delta_time()
+	var res := _last_enchanted.duplicate()
+	if res.is_empty():
+		bot_fail = "trazo: busy=%s panel=%s tinta=%s" % [busy, ov.current, _ink]
+		if is_instance_valid(_game):
+			bot_fail += " juego: auto=%s estado=%d punto=%d/%d tam=%s t=%.2f" % [_game.auto_until, _game._state, _game._next, _game._pts.size(), _game.size, _game._t]
+	await get_tree().create_timer(0.3).timeout
+	if ov.current == "grimoire":
+		ov.close()
+	return res

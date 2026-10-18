@@ -201,22 +201,24 @@ KKKKKKKKKKKKKKKKKKK
 # (+1 derecha, -1 izquierda); tilt: cadera cercana más alta (+) o lejana (-); lean: hombros desplazados en x;
 # sway: cadera desplazada en x (el peso se va hacia la pierna de apoyo).
 STANCES = {
+    # --- R3 ART3: los pies quietos van SIEMPRE apoyados (nada de talón levantado: se leía como una cuña rara) y la
+    # punta es continua (-1..1): el pie cercano apunta casi a la cámara (corto, redondo), el lejano hacia la derecha.
     # peso en la pierna cercana; la lejana suelta, rodilla hacia dentro y el pie abierto a la derecha
-    'easy':   dict(an=0.5, af=4.0, ln=0, lf=1, tn=-1, tf=1, kn=1, kf=-1, tilt=1, lean=-0.5, sway=-0.5),
+    'easy':   dict(an=0.5, af=4.0, ln=0, lf=0, tn=-0.45, tf=0.75, kn=1, kf=-1, tilt=1, lean=-0.5, sway=-0.5),
     # peso en la pierna lejana; la cercana suelta y adelantada, pie abierto a la izquierda
-    'easy_f': dict(an=-4.0, af=0.0, ln=1, lf=0, tn=-1, tf=1, kn=1, kf=1, tilt=-1, lean=0.5, sway=0.5),
+    'easy_f': dict(an=-3.5, af=0.0, ln=0, lf=0, tn=-0.6, tf=0.7, kn=1, kf=1, tilt=-1, lean=0.5, sway=0.5),
     # firme, pies bien separados (guerreros, guardias)
-    'wide':   dict(an=-3.5, af=4.0, ln=0, lf=0, tn=-1, tf=1, kn=-1, kf=1, tilt=0, lean=0, sway=0),
+    'wide':   dict(an=-3.5, af=4.0, ln=0, lf=0, tn=-0.7, tf=0.85, kn=-1, kf=1, tilt=0, lean=0, sway=0),
     # recogida (faldas largas, gente mayor): pies algo separados, puntas abiertas
-    'prim':   dict(an=-1.5, af=2.5, ln=0, lf=0, tn=-1, tf=1, kn=-1, kf=1, tilt=0, lean=0, sway=0),
+    'prim':   dict(an=-1.5, af=2.5, ln=0, lf=0, tn=-0.35, tf=0.6, kn=-1, kf=1, tilt=0, lean=0, sway=0),
     # un pie adelante hacia la derecha (en marcha, decidida)
-    'step':   dict(an=3.5, af=-1.0, ln=0, lf=1, tn=1, tf=1, kn=1, kf=1, tilt=0, lean=0.5, sway=0.5),
+    'step':   dict(an=3.5, af=-1.0, ln=0, lf=0, tn=0.85, tf=0.6, kn=1, kf=1, tilt=0, lean=0.5, sway=0.5),
     # niño inquieto: piernas abiertas, una rodilla doblada
-    'kid':    dict(an=-3.0, af=3.5, ln=0, lf=1, tn=-1, tf=1, kn=-1, kf=-1, tilt=1, lean=0, sway=0),
+    'kid':    dict(an=-3.0, af=3.5, ln=0, lf=0, tn=-0.6, tf=0.8, kn=-1, kf=-1, tilt=1, lean=0, sway=0),
     # estocada agachada: pie lejano adelante (derecha), cercano atrás, cadera baja, rodillas dobladas, torso adelante
-    'lunge':  dict(an=-5.5, af=5.0, ln=1, lf=0, tn=-1, tf=1, kn=-1, kf=1, tilt=0, lean=2.5, sway=0.5, crouch=4, kmax=3.2),
+    'lunge':  dict(an=-5.5, af=5.0, ln=1, lf=0, tn=-0.8, tf=0.9, kn=-1, kf=1, tilt=0, lean=2.5, sway=0.5, crouch=4, kmax=3.2),
     # agachada / al acecho: pies abiertos, rodillas afuera
-    'crouch': dict(an=-4.0, af=4.0, ln=0, lf=0, tn=-1, tf=1, kn=-1, kf=1, tilt=0, lean=1.0, sway=0, crouch=3, kmax=2.6),
+    'crouch': dict(an=-4.0, af=4.0, ln=0, lf=0, tn=-0.7, tf=0.8, kn=-1, kf=1, tilt=0, lean=1.0, sway=0, crouch=3, kmax=2.6),
 }
 
 
@@ -338,6 +340,11 @@ class Body:
             knee = self._knee(hip, ank, kdir, hmax=(3.0 if pose.kind == 'walk' and lifted >= 2 else st.get('kmax', 1.4)))
             self.leg[side] = dict(hip=hip, knee=knee, ank=ank, ground=gy, lift=lifted, toe=toe,
                                   heel=(0 if lifted == 0 else (1 if lifted <= 2 else 2)))
+        # --- R3 ART3: en el contacto del paso, el pie de delante apoya el talón (la punta un poco arriba)
+        if pose.step == 0:
+            self.leg['n']['strike'] = True
+        elif pose.step == 2:
+            self.leg['f']['strike'] = True
 
     def _knee(self, hip, ank, kdir=1, hmax=1.6):
         l1, l2 = self.l1, self.l2
@@ -474,6 +481,14 @@ class Body:
             return S(3.0, (yh + 0.5 - sh[1]) / k, 'back') if n else S(2.0, (yh + 0.5 - sh[1]) / k, 'back')
         if name == 'behind':       # mano a la espalda
             return S(1.5, (yw + 2.0 - sh[1]) / k, (-1.5, 7.0)) if n else S(-1.0, (yw + 2.0 - sh[1]) / k, (1.0, 7.0))
+        if name == 'parasol':      # --- R3 ART3: sombrilla al hombro: mano delante del pecho, codo abajo y afuera
+            if n:
+                return A(cs - 2.2, ysh + 5.0, (-3.0, 5.5))
+            return A(cs + 3.0, ysh + 5.0, (3.0, 5.5))
+        if name == 'clasp':        # --- R3 ART3: manos sueltas juntas por delante, a la altura del cinturón (tranquila)
+            if n:
+                return A(cx + 0.2, yw - 0.5, 'back')
+            return A(cx + 1.8, yw - 1.0, 'out')
         if name == 'lantern':      # brazo estirado hacia delante y abajo (farol, cuchara)
             return S(4.5, (yw + 4.0 - sh[1]) / k, 'back') if n else S(3.5, (yw + 3.5 - sh[1]) / k, 'back')
         raise KeyError(name)

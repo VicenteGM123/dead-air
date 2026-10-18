@@ -1,10 +1,10 @@
 extends Control
 class_name RuneGame
-## Minijuego de la runa (para inscribir pergaminos): pasa el cursor por los puntos brillantes, en orden, antes de que
-## se acabe el tiempo. Funciona con el ratón y con el cursor del mando (que mueve el ratón). Es generoso: los puntos
+## Minijuego de la runa (R3 MAGIC3: se traza sobre la ETIQUETA de una poción, en el libro de runas): pasa el cursor
+## por los puntos brillantes, en orden, antes de que se acabe el tiempo. Funciona con el ratón y con el cursor del mando (que mueve el ratón). Es generoso: los puntos
 ## se encienden desde lejos y el tiempo empieza al tocar el primero. Trazo PERFECTO = terminar a tiempo siguiendo las
 ## líneas la mayor parte del recorrido (como la zona dorada al remover: +1 estrella). Si se acaba el tiempo, la runa
-## queda escrita igual (sin la estrella extra).
+## queda escrita igual (sin la estrella extra). Estrellas de la runa (stars()): perfecto 3, a tiempo 2, sin tiempo 1.
 
 signal finished(perfect: bool)
 signal node_lit(index: int)
@@ -17,7 +17,8 @@ const PERFECT_ACCURACY := 0.66  # parte del recorrido sobre las líneas para un 
 const AUTO_SPEED := 620.0       # px/s del cursor automático (capturas)
 const PEN_SPEED := 430.0        # px/s de la pluma con el teclado (flechas o WASD)
 
-var points: Array = []          # Vector2 en 0..1 (Data.SPELLS[id]["rune"])
+var points: Array = []          # Vector2 en 0..1 (Data.RUNES[id]["points"])
+var look := "page"              # --- R3 MAGIC3: "page" (hoja de pergamino) o "label" (la etiqueta de la poción)
 var ink := Color(1.0, 0.75, 0.35)
 var time_limit := 8.0
 var auto_until := -1.0          # capturas: un cursor automático recorre la runa hasta esta fracción (0..1); -1 = jugador
@@ -40,6 +41,7 @@ var _sparks: Array = []         # [[pos, vel, vida, color], ...]
 var _flash := 0.0
 var _auto_d := 0.0
 var _page: StyleBoxFlat
+var _label: StyleBoxTexture     # --- R3 MAGIC3
 var _font: Font
 
 func _ready() -> void:
@@ -54,6 +56,16 @@ func _ready() -> void:
 	_page.shadow_color = Color(0, 0, 0, 0.5)
 	_page.shadow_size = 14
 	_page.shadow_offset = Vector2(0, 6)
+	# --- R3 MAGIC3: la etiqueta (pieza de 9 cortes de tools/arte/magic_art.py, ya a 3x)
+	if look == "label" and ResourceLoader.exists("res://assets/ui/grimoire_label.png"):
+		texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		_label = StyleBoxTexture.new()
+		_label.texture = load("res://assets/ui/grimoire_label.png")
+		for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+			_label.set_texture_margin(side, 27)
+		_label.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
+		_label.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
+	# --- end R3 MAGIC3
 	resized.connect(_layout)
 	_layout()
 
@@ -62,6 +74,12 @@ func _layout() -> void:
 	var inner := size - Vector2(PAD, PAD) * 2.0
 	for p in points:
 		_pts.append(Vector2(PAD, PAD) + Vector2(p.x * inner.x, p.y * inner.y))
+
+## --- R3 MAGIC3: las estrellas de la runa trazada: perfecto 3, a tiempo 2, se acabó la vela 1.
+func stars() -> int:
+	if perfect:
+		return 3
+	return 2 if completed else 1
 
 ## Fracción de tiempo que queda (1 = toda).
 func time_left() -> float:
@@ -180,10 +198,15 @@ func _key_pen(delta: float) -> void:
 func _auto_step(delta: float) -> void:
 	if _pts.size() < 2:
 		return
+	# --- R3 MAGIC3: empieza justo en el primer punto y avanza a pasos cortos (con un primer cuadro lento, el cursor
+	# saltaba más allá del punto 1, que ya no se encendía: la runa del bot se quedaba esperando)
+	if not _has_cursor:
+		_set_cursor(_pts[0])
+		return
 	var total := 0.0
 	for i in range(1, _pts.size()):
 		total += _pts[i - 1].distance_to(_pts[i])
-	_auto_d = minf(_auto_d + AUTO_SPEED * delta, total * clampf(auto_until, 0.0, 1.0))
+	_auto_d = minf(_auto_d + AUTO_SPEED * minf(delta, 0.05), total * clampf(auto_until, 0.0, 1.0))   # --- R3 MAGIC3
 	var d := _auto_d
 	var p: Vector2 = _pts[0]
 	for i in range(1, _pts.size()):
@@ -209,11 +232,14 @@ static func _seg_dist(p: Vector2, a: Vector2, b: Vector2) -> float:
 
 func _draw() -> void:
 	var r := Rect2(Vector2.ZERO, size)
-	draw_style_box(_page, r)
 	var c := size / 2.0
 	var ink_dark := ink.darkened(0.55)
-	# borde interior y círculo mágico que gira despacio
-	draw_rect(r.grow(-16.0), Color(0.48, 0.34, 0.2, 0.35), false, 2.0)
+	if _label:
+		draw_style_box(_label, r)   # --- R3 MAGIC3: la etiqueta de la poción
+	else:
+		draw_style_box(_page, r)
+		draw_rect(r.grow(-16.0), Color(0.48, 0.34, 0.2, 0.35), false, 2.0)
+	# círculo mágico que gira despacio
 	var R := minf(size.x, size.y) * 0.5 - 34.0
 	draw_arc(c, R, 0.0, TAU, 96, Color(ink_dark, 0.28), 3.0, true)
 	draw_arc(c, R - 14.0, 0.0, TAU, 96, Color(ink_dark, 0.18), 2.0, true)
@@ -265,7 +291,7 @@ func _draw() -> void:
 		var s := 3.0 + 3.0 * k2
 		draw_rect(Rect2(sp[0] - Vector2(s, s) * 0.5, Vector2(s, s)), Color(sp[3], k2))
 	# el tiempo: una barra que se consume (como una vela)
-	var bar := Rect2(Vector2(46.0, size.y - 40.0), Vector2(size.x - 92.0, 12.0))
+	var bar := Rect2(Vector2(46.0, size.y - (52.0 if _label else 40.0)), Vector2(size.x - 92.0, 12.0))
 	draw_rect(bar, Color(0.22, 0.12, 0.06, 0.45))
 	var left := time_left()
 	var bc := ink if left > 0.3 else ink.lerp(Color(1.0, 0.35, 0.3), 0.6)

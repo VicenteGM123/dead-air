@@ -39,7 +39,6 @@ var npcs: Array = []                  # [{a, x, z, tx, tz, speed, wait, pass, gr
 var pigeons: Array = []               # [{s, state, vel, t, home}]
 var _swallow_t := 3.0
 var _swallow_frames: SpriteFrames
-var _water_mats: Array = []
 var _label: Label3D
 var _label_text := {}
 var _hover := ""
@@ -432,75 +431,7 @@ func _build_shop_facade() -> void:
 
 ## La placita: fuente con agua que cae, un árbol, bancos, un carro de verduras y flores.
 func _build_plaza() -> void:
-	var stone := _mat("res://assets/tex/stone.png", "res://assets/tex/stone_n.png", 0.7, 0.9, Color(1.0, 0.97, 0.92))
-	var f := Node3D.new()
-	f.position = FOUNTAIN_POS
-	add_child(f)
-	var basin := MeshInstance3D.new()
-	var cy := CylinderMesh.new()
-	cy.top_radius = 1.35
-	cy.bottom_radius = 1.42
-	cy.height = 0.6
-	cy.radial_segments = 20
-	basin.mesh = cy
-	basin.material_override = stone
-	basin.position = Vector3(0, 0.3, 0)
-	f.add_child(basin)
-	var water := _water_disc(1.2, 0.58, f)
-	water.position.y = 0.56
-	var col := MeshInstance3D.new()
-	var cy2 := CylinderMesh.new()
-	cy2.top_radius = 0.2
-	cy2.bottom_radius = 0.28
-	cy2.height = 1.25
-	cy2.radial_segments = 12
-	col.mesh = cy2
-	col.material_override = stone
-	col.position = Vector3(0, 1.2, 0)
-	f.add_child(col)
-	var bowl := MeshInstance3D.new()
-	var cy3 := CylinderMesh.new()
-	cy3.top_radius = 0.62
-	cy3.bottom_radius = 0.22
-	cy3.height = 0.3
-	cy3.radial_segments = 16
-	bowl.mesh = cy3
-	bowl.material_override = stone
-	bowl.position = Vector3(0, 1.9, 0)
-	f.add_child(bowl)
-	var w2 := _water_disc(0.55, 0.5, f)
-	w2.position.y = 2.04
-	var top := MeshInstance3D.new()
-	var sp := SphereMesh.new()
-	sp.radius = 0.16
-	sp.height = 0.32
-	top.mesh = sp
-	top.material_override = stone
-	top.position = Vector3(0, 2.22, 0)
-	f.add_child(top)
-	# chorritos que caen del cuenco de arriba
-	var p := GPUParticles3D.new()
-	p.amount = 46
-	p.lifetime = 0.7
-	p.preprocess = 1.0
-	var pm := ParticleProcessMaterial.new()
-	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
-	pm.emission_ring_axis = Vector3(0, 1, 0)
-	pm.emission_ring_radius = 0.6
-	pm.emission_ring_inner_radius = 0.56
-	pm.emission_ring_height = 0.02
-	pm.direction = Vector3(0, -1, 0)
-	pm.spread = 8.0
-	pm.initial_velocity_min = 0.2
-	pm.initial_velocity_max = 0.5
-	pm.gravity = Vector3(0, -4.5, 0)
-	pm.color = Color(1.1, 1.15, 1.25)
-	p.process_material = pm
-	p.draw_pass_1 = _particle_quad("res://assets/props/drop.png", 0.03)
-	p.position = Vector3(0, 2.0, 0)
-	p.visibility_aabb = AABB(Vector3(-1.5, -2.5, -1.5), Vector3(3, 3, 3))
-	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	f.add_child(p)
+	_build_fountain()   # --- R3 WORLD3: la fuente con agua de verdad (ver más abajo)
 	# árbol, arbustos y bancos
 	_sprite("res://assets/props/tree.png", 0.062, Vector3(FOUNTAIN_POS.x + 0.6, 0, -6.9))
 	_sprite("res://assets/props/bush.png", 0.045, Vector3(FOUNTAIN_POS.x - 2.2, 0, -5.9))
@@ -513,31 +444,231 @@ func _build_plaza() -> void:
 	_sprite("res://assets/props/bucket.png", 0.03, Vector3(FOUNTAIN_POS.x + 1.55, 0, FOUNTAIN_POS.z + 0.9))
 	_sprite("res://assets/props/cart.png", 0.036, Vector3(10.6, 0, -2.6))
 
-func _water_disc(r: float, alpha: float, parent: Node3D) -> MeshInstance3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_texture = _tex("res://assets/tex/water.png")
-	m.albedo_color = Color(1, 1, 1, alpha + 0.3)
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	m.uv1_triplanar = true
-	m.uv1_world_triplanar = true
-	m.uv1_scale = Vector3(0.9, 0.9, 0.9)
-	m.roughness = 0.15
-	m.metallic_specular = 0.8
-	m.emission_enabled = true
-	m.emission = Color(0.12, 0.22, 0.3)
-	_water_mats.append(m)
+# --- R3 WORLD3: la fuente con agua de verdad ----------------------------------------------------------------------
+# Antes la pileta era un cilindro macizo (el agua quedaba dentro de la piedra). Ahora: una pileta hueca (pared de
+# piedra con su borde), con fondo y unas monedas, llena de agua (shaders/fountain_water.gdshader: olas, anillos donde
+# caen los chorros, destellos, un poco transparente); el cuenco de arriba también hueco y con agua; un surtidor en lo
+# alto que lo llena y 8 chorros que caen del borde del cuenco a la pileta (shaders/fountain_stream.gdshader), con
+# salpicaduras donde tocan el agua. Todo funciona en Compatibility (WebGL 2).
+const BASIN_R_OUT := 1.42
+const BASIN_R_IN := 1.16
+const BASIN_H := 0.64
+const BASIN_FLOOR := 0.3        # poco hondo (como las de verdad): así desde la calle se ve el fondo con las monedas
+const WATER_Y := 0.53
+const BOWL_TOP := 2.04
+const BOWL_R_OUT := 0.66
+const BOWL_R_IN := 0.55
+const BOWL_WATER := 1.99
+const JET_COUNT := 8
+const JET_PHASE := 0.3927        # el primer chorro a 22,5° (así ninguno cae justo delante de la columna)
+const JET_LAND_R := 0.98
+var fountain_water: MeshInstance3D
+var fountain_streams: MeshInstance3D
+
+func _build_fountain() -> void:
+	var stone := _mat("res://assets/tex/stone.png", "res://assets/tex/stone_n.png", 0.7, 0.9, Color(1.0, 0.97, 0.92))
+	var stone_dk := _mat("res://assets/tex/stone.png", "res://assets/tex/stone_n.png", 0.7, 0.95, Color(0.5, 0.58, 0.56))
+	var f := Node3D.new()
+	f.name = "Fountain"
+	f.position = FOUNTAIN_POS
+	add_child(f)
+	# la pileta: pared hueca con un borde que sobresale (de donde se ve el agua por dentro)
+	_mesh_in(f, _ring_mesh(BASIN_R_IN, BASIN_R_OUT - 0.04, BASIN_H - 0.08, 0.0, BASIN_R_OUT, BASIN_FLOOR), stone)
+	_mesh_in(f, _ring_mesh(BASIN_R_IN - 0.05, BASIN_R_OUT + 0.05, BASIN_H, BASIN_H - 0.09, BASIN_R_OUT + 0.05, BASIN_H - 0.09), stone)
+	# el fondo (piedra oscura, con verdín) y unas monedas que brillan bajo el agua
+	var floor_mi := _cyl(f, BASIN_R_IN + 0.02, BASIN_R_IN + 0.02, 0.04, BASIN_FLOOR - 0.02, stone_dk, 32)
+	floor_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var gold := StandardMaterial3D.new()
+	gold.albedo_color = Color(0.95, 0.74, 0.28)
+	gold.metallic = 0.85
+	gold.roughness = 0.3
+	gold.emission_enabled = true
+	gold.emission = Color(0.8, 0.58, 0.16)
+	for c in [[0.75, -2.3], [0.85, -0.6], [0.55, -1.0], [0.7, -0.15]]:   # más bien atrás: desde la calle el borde tapa la parte de delante
+		var coin := _cyl(f, 0.06, 0.06, 0.012, BASIN_FLOOR + 0.006, gold, 10)
+		coin.position.x = cos(c[1]) * c[0]
+		coin.position.z = sin(c[1]) * c[0]
+		coin.rotation.x = randf_range(-0.12, 0.12)
+	# la columna (desde el fondo, con un zócalo bajo el agua), el cuenco de arriba y el surtidor
+	_cyl(f, 0.36, 0.4, 0.14, BASIN_FLOOR + 0.07, stone, 16)
+	_cyl(f, 0.2, 0.28, 1.8 - BASIN_FLOOR, (1.8 + BASIN_FLOOR) / 2.0, stone, 12)
+	_mesh_in(f, _ring_mesh(BOWL_R_IN, BOWL_R_OUT, BOWL_TOP, 1.72, 0.22, BOWL_WATER - 0.08, 20), stone)
+	_cyl(f, BOWL_R_IN + 0.01, BOWL_R_IN + 0.01, 0.02, BOWL_WATER - 0.08, stone_dk, 20)   # fondo del cuenco
+	_cyl(f, 0.1, 0.13, 0.36, BOWL_WATER + 0.12, stone, 10)
+	var top := MeshInstance3D.new()
+	var sp := SphereMesh.new()
+	sp.radius = 0.13
+	sp.height = 0.26
+	sp.radial_segments = 12
+	sp.rings = 6
+	top.mesh = sp
+	top.material_override = stone
+	top.position = Vector3(0, BOWL_WATER + 0.36, 0)
+	f.add_child(top)
+	# el agua: la pileta y el cuenco de arriba
+	var wsh: Shader = load("res://shaders/fountain_water.gdshader")
+	fountain_water = _water_surface(f, wsh, BASIN_R_IN + 0.03, WATER_Y, {"radius": BASIN_R_IN, "jets": float(JET_COUNT),
+		"jets_r": JET_LAND_R, "jet_phase": JET_PHASE})
+	_water_surface(f, wsh, BOWL_R_IN + 0.02, BOWL_WATER, {"radius": BOWL_R_IN, "jets": 4.0, "jets_r": 0.3,
+		"jet_phase": 0.0, "center_jet": 1.0, "ring_max": 0.22, "alpha": 0.86})
+	# los chorros: 8 caen del borde del cuenco a la pileta; 4 cortitos salen del surtidor al cuenco
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in JET_COUNT:
+		var a := JET_PHASE + TAU * float(i) / float(JET_COUNT)
+		_stream_tube(st, a, BOWL_R_OUT - 0.01, BOWL_TOP - 0.01, JET_LAND_R, WATER_Y, 0.0, 0.036, 0.026)
+	for i in 4:
+		var a := TAU * float(i) / 4.0 + 0.4
+		_stream_tube(st, a, 0.06, BOWL_WATER + 0.42, 0.3, BOWL_WATER, 0.22, 0.025, 0.018)
+	fountain_streams = MeshInstance3D.new()
+	fountain_streams.name = "Streams"
+	fountain_streams.mesh = st.commit()
+	var smat := ShaderMaterial.new()
+	smat.shader = load("res://shaders/fountain_stream.gdshader")
+	fountain_streams.material_override = smat
+	fountain_streams.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	f.add_child(fountain_streams)
+	# salpicaduras donde caen los chorros (y en el cuenco de arriba)
+	for i in JET_COUNT:
+		var a := JET_PHASE + TAU * float(i) / float(JET_COUNT)
+		_splash(f, Vector3(cos(a) * JET_LAND_R, WATER_Y + 0.02, sin(a) * JET_LAND_R), 6, 1.0)
+	_splash(f, Vector3(0, BOWL_WATER + 0.02, 0), 8, 0.6)
+
+## Un MeshInstance3D con esa malla y material, hijo de `parent`.
+func _mesh_in(parent: Node3D, mesh: Mesh, mat: Material) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = mat
+	parent.add_child(mi)
+	return mi
+
+## Un cilindro (tronco de cono) centrado en y.
+func _cyl(parent: Node3D, r_top: float, r_bot: float, h: float, y: float, mat: Material, segs := 16) -> MeshInstance3D:
+	var cy := CylinderMesh.new()
+	cy.top_radius = r_top
+	cy.bottom_radius = r_bot
+	cy.height = h
+	cy.radial_segments = segs
+	cy.rings = 1
+	var mi := _mesh_in(parent, cy, mat)
+	mi.position = Vector3(0, y, 0)
+	return mi
+
+## Un anillo de piedra hueco: pared de fuera (de r_out_bot en y_out_bot a r_out en y_top), pared de dentro (r_in, de
+## y_in_bot a y_top) y la cara de arriba. La piedra usa proyección triplanar, así que no hacen falta UV.
+func _ring_mesh(r_in: float, r_out: float, y_top: float, y_out_bot: float, r_out_bot: float, y_in_bot: float, segs := 32) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var up := Vector3.UP
+	var slope := (r_out - r_out_bot) / maxf(0.001, y_top - y_out_bot)
+	for i in segs:
+		var a0 := TAU * float(i) / float(segs)
+		var a1 := TAU * float(i + 1) / float(segs)
+		var d0 := Vector3(cos(a0), 0.0, sin(a0))
+		var d1 := Vector3(cos(a1), 0.0, sin(a1))
+		# fuera (Godot: caras delanteras en sentido horario)
+		var n0 := (d0 - up * slope).normalized()
+		var n1 := (d1 - up * slope).normalized()
+		var t0 := d0 * r_out + up * y_top
+		var t1 := d1 * r_out + up * y_top
+		var b0 := d0 * r_out_bot + up * y_out_bot
+		var b1 := d1 * r_out_bot + up * y_out_bot
+		_tri(st, [t1, t0, b0], [n1, n0, n0])
+		_tri(st, [t1, b0, b1], [n1, n0, n1])
+		# dentro
+		var i0 := d0 * r_in + up * y_top
+		var i1 := d1 * r_in + up * y_top
+		var j0 := d0 * r_in + up * y_in_bot
+		var j1 := d1 * r_in + up * y_in_bot
+		_tri(st, [i0, i1, j1], [-d0, -d1, -d1])
+		_tri(st, [i0, j1, j0], [-d0, -d1, -d0])
+		# arriba
+		_tri(st, [i0, t0, t1], [up, up, up])
+		_tri(st, [i0, t1, i1], [up, up, up])
+	return st.commit()
+
+func _tri(st: SurfaceTool, pts: Array, normals: Array) -> void:
+	for k in 3:
+		st.set_normal(normals[k])
+		st.add_vertex(pts[k])
+
+## Un chorro: un tubo fino que sale de (r0, y0) en la dirección del ángulo `a` y cae en arco hasta (r1, y1).
+## `rise` lo hace subir un poco antes de caer (el surtidor). UV.y = 0 arriba, 1 donde toca el agua.
+func _stream_tube(st: SurfaceTool, a: float, r0: float, y0: float, r1: float, y1: float, rise: float, w0: float, w1: float, steps := 12, sides := 6) -> void:
+	var d := Vector3(cos(a), 0.0, sin(a))
+	var side := Vector3(-d.z, 0.0, d.x)
+	var pts := []
+	for k in steps + 1:
+		var s := float(k) / float(steps)
+		# sale casi horizontal y cae cada vez más rápido (parábola); con `rise`, primero sube
+		var y := y0 + rise * 4.0 * s * (1.0 - s) - (y0 - y1) * (s * s if rise <= 0.0 else s)
+		pts.append(d * lerpf(r0, r1, s) + Vector3(0.0, y, 0.0))
+	var rings := []
+	for k in steps + 1:
+		var p: Vector3 = pts[k]
+		var tv: Vector3 = (pts[mini(k + 1, steps)] - pts[maxi(k - 1, 0)]).normalized()
+		var b2 := tv.cross(side).normalized()
+		var w := lerpf(w0, w1, float(k) / float(steps))
+		var ring := []
+		for j in sides + 1:
+			var ph := TAU * float(j) / float(sides)
+			var n := (side * cos(ph) + b2 * sin(ph)).normalized()
+			ring.append([p + n * w, n, Vector2(float(j) / float(sides), float(k) / float(steps))])
+		rings.append(ring)
+	for k in steps:
+		for j in sides:
+			var q := [rings[k][j], rings[k][j + 1], rings[k + 1][j + 1], rings[k + 1][j]]
+			for idx in [0, 1, 2, 0, 2, 3]:
+				st.set_normal(q[idx][1])
+				st.set_uv(q[idx][2])
+				st.add_vertex(q[idx][0])
+
+## La superficie del agua: un disco con el shader del agua (dibujado antes que los chorros y las salpicaduras).
+func _water_surface(parent: Node3D, sh: Shader, r: float, y: float, params: Dictionary) -> MeshInstance3D:
+	var m := ShaderMaterial.new()
+	m.shader = sh
+	m.render_priority = -1
+	m.set_shader_parameter("center", Vector2(FOUNTAIN_POS.x, FOUNTAIN_POS.z))
+	for k in params:
+		m.set_shader_parameter(k, params[k])
 	var cy := CylinderMesh.new()
 	cy.top_radius = r
 	cy.bottom_radius = r
-	cy.height = 0.04
-	cy.radial_segments = 20
-	mi.mesh = cy
-	mi.material_override = m
+	cy.height = 0.01
+	cy.radial_segments = 40
+	cy.rings = 1
+	var mi := _mesh_in(parent, cy, m)
+	mi.position = Vector3(0, y, 0)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	parent.add_child(mi)
 	return mi
+
+## Gotitas que saltan donde cae un chorro.
+func _splash(parent: Node3D, pos: Vector3, amount: int, strength: float) -> void:
+	var p := GPUParticles3D.new()
+	p.amount = amount
+	p.lifetime = 0.42
+	p.preprocess = 0.5
+	p.randomness = 0.5
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	pm.emission_sphere_radius = 0.05
+	pm.direction = Vector3(0, 1, 0)
+	pm.spread = 38.0
+	pm.initial_velocity_min = 0.45 * strength
+	pm.initial_velocity_max = 1.05 * strength
+	pm.gravity = Vector3(0, -6.5, 0)
+	pm.scale_min = 0.7
+	pm.scale_max = 1.1
+	pm.color = Color(1.05, 1.1, 1.2)
+	p.process_material = pm
+	var q := _particle_quad("res://assets/props/drop.png", 0.026)
+	(q.material as StandardMaterial3D).render_priority = 1
+	p.draw_pass_1 = q
+	p.position = pos
+	p.visibility_aabb = AABB(Vector3(-0.4, -0.2, -0.4), Vector3(0.8, 0.8, 0.8))
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(p)
+# --- end R3 WORLD3
 
 # ------------------------------------------------------------------ puestos
 
@@ -1054,8 +1185,6 @@ func _process(delta: float) -> void:
 	camera.position = _cam_base + off + Vector3(sin(_t * 0.11) * 0.08, sin(_t * 0.17) * 0.04, 0.0)
 	camera.look_at(_cam_target + off, Vector3.UP)
 	fill.position.x = _cam_x + 0.5
-	for m in _water_mats:
-		m.uv1_offset = Vector3(_t * 0.05, _t * 0.03, _t * 0.04)
 	_update_crowd(delta)
 	_update_pigeons(delta)
 	_update_swallows(delta)

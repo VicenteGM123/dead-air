@@ -57,7 +57,7 @@ func new_game_state() -> void:
 	cat_petted_day = 0
 	stats = {"sold": 0, "brewed": 0, "earned": 0, "perfect": 0}
 	tutorial_done = false
-	magic_reset()   # --- MAGIC
+	magic_reset()   # --- MAGIC (R3 MAGIC3: runas)
 	story_reset()   # --- STORY
 	reset_today()
 
@@ -175,7 +175,7 @@ func stars_for(potency: int) -> int:
 	return 1
 
 func price_for(pid: String, potency: int, misses: int) -> Dictionary:
-	var base: int = Data.POTIONS[pid]["base"] if Data.POTIONS.has(pid) else Data.SPELLS[pid]["base"]   # --- MAGIC: también pergaminos
+	var base: int = Data.POTIONS[pid]["base"]   # --- R3 MAGIC3: ya no hay pergaminos (las runas pagan aparte: rune_bonus)
 	var mult: float = [1.0, 1.0, 1.35, 1.75][stars_for(potency)]
 	var price := int(round(base * mult))
 	var tip_mult := 1.0 - 0.2 * mini(misses, 2)
@@ -218,14 +218,31 @@ func add_renombre(v: int) -> void:
 		for lv in range(before + 1, after + 1):
 			level_up.emit(lv)
 
-func buy_ingredient(id: String, qty: int = 1) -> bool:
-	var cost: int = Data.INGREDIENTS[id]["price"] * qty
+func buy_ingredient(id: String, qty: int = 1, day_order := false) -> bool:   # --- R3 PAPER: day_order = encargo de día (x2)
+	var cost: int = market_price(id, day_order) * qty   # --- R3 PAPER
 	if gold < cost or not ingredient_unlocked(id):
 		return false
 	add_gold(-cost)
 	stock[id] = stock.get(id, 0) + qty
 	stock_changed.emit()
 	return true
+
+# --- R3 PAPER: el precio del mercado ---------------------------------------------------------------------------
+## Lo que cuesta una unidad en el mercado. Por la mañana, en el puesto: el precio normal. Durante el día, el encargo
+## que trae Pip («Encargo al mercado», day_order = true) cuesta el doble: es para lo que falte de última hora.
+## La usan el panel del mercado (lo que se ve) y buy_ingredient (lo que se cobra). Sirve también para MAGIC_ITEMS.
+const DAY_ORDER_MULT := 2
+
+func market_price(id: String, day_order := false) -> int:
+	var base := 0
+	if Data.INGREDIENTS.has(id):
+		base = int(Data.INGREDIENTS[id]["price"])
+	else:
+		var mi = Data.get("MAGIC_ITEMS")
+		if mi is Dictionary and mi.has(id):
+			base = int(mi[id].get("price", 0))
+	return base * (DAY_ORDER_MULT if day_order else 1)
+# --- end R3 PAPER
 
 func use_ingredient(id: String) -> bool:
 	if stock.get(id, 0) <= 0:
@@ -249,10 +266,7 @@ func buy_upgrade(id: String) -> bool:
 
 func add_potion(pid: String, potency: int) -> void:
 	potions.append({"id": pid, "potency": potency})
-	potions.sort_custom(func(a, b):
-		if a["id"] != b["id"]:
-			return Data.POTION_ORDER.find(a["id"]) < Data.POTION_ORDER.find(b["id"])
-		return a["potency"] > b["potency"])
+	sort_potions()   # --- R3 MAGIC3: entre pociones iguales, las sin runa primero
 	stats["brewed"] += 1
 	if not discovered.has(pid):
 		discovered[pid] = potency
@@ -265,16 +279,8 @@ func add_potion(pid: String, potency: int) -> void:
 
 ## Devuelve una poción al estante (sin contarla como nueva).
 func return_potion(p: Dictionary) -> void:
-	# --- MAGIC: un pergamino devuelto vuelve a su estante
-	if p.get("kind", "") == "scroll":
-		return_scroll(p)
-		return
-	# --- end MAGIC
 	potions.append(p)
-	potions.sort_custom(func(a, b):
-		if a["id"] != b["id"]:
-			return Data.POTION_ORDER.find(a["id"]) < Data.POTION_ORDER.find(b["id"])
-		return a["potency"] > b["potency"])
+	sort_potions()   # --- R3 MAGIC3: ya no hay pergaminos; la poción vuelve con sus runas
 	potions_changed.emit()
 
 func potion_index(pid: String, potency: int) -> int:
@@ -586,8 +592,8 @@ func _follow_request(o: Dictionary, brewable: Dictionary) -> Dictionary:
 	return q
 
 ## Elige n vecinos o viajeros distintos con un pedido que se pueda cumplir hoy. Primero quienes acaban de llegar al
-## pueblo (sin quitarle todo el día a los de siempre), luego quienes hace más que no vienen. Pergaminos: 1 al día
-## (2 con renombre «Alquimista»).
+## pueblo (sin quitarle todo el día a los de siempre), luego quienes hace más que no vienen. Pedidos con runas: 1 al
+## día (2 con renombre «Alquimista»).   # --- R3 MAGIC3
 func _pick_villagers(n: int, brewable: Dictionary, taken: Dictionary) -> Array:
 	var out := []
 	if n <= 0:
@@ -599,8 +605,8 @@ func _pick_villagers(n: int, brewable: Dictionary, taken: Dictionary) -> Array:
 			var who := String(r.get("who", ""))
 			if who == "" or taken.has(who) or not story_free(who):
 				continue
-			if Data.HEROES.has(who) and Story.wanted_kind(r) != "scroll":
-				continue   # los aventureros vienen por su historia (o, a veces, por un pergamino)
+			if Data.HEROES.has(who) and order_runes(r).is_empty():
+				continue   # los aventureros vienen por su historia (o, a veces, por una poción con runas)   # --- R3 MAGIC3
 			if int(Data.CHARACTERS.get(who, {}).get("arrives", 1)) > day:
 				continue
 			if int(r.get("level", 0)) > level() or int(r.get("day", 0)) > day:
@@ -615,16 +621,19 @@ func _pick_villagers(n: int, brewable: Dictionary, taken: Dictionary) -> Array:
 		if by_who.size() >= n:
 			break
 	var scored := []
+	var runes_left := rune_orders_today()   # --- R3 MAGIC3: pedidos con runas hoy (1; 2 con renombre «Alquimista»)
 	for w in by_who:
 		var s := randf() * 3.0 + clampf(float(day - int(last_seen.get(w, -10))), 0.0, 10.0)
 		if not met.has(w):
 			s += 20.0
+		# --- R3 MAGIC3: quien puede traer un pedido con runas pasa un poco antes (para que lleguen los del día)
+		if runes_left > 0 and by_who[w].any(func(r): return not order_runes(r).is_empty()):
+			s += 6.0
 		scored.append([s, w])
 	scored.sort_custom(func(a, b): return a[0] > b[0])
 	# 1ª pasada: como mucho max_new caras nuevas (para que también vengan los de siempre); 2ª: llenar lo que falte
 	var max_new := maxi(1, n - 1)
 	var newcomers := 0
-	var scrolls_left := 2 if level() >= 2 else 1
 	var picked := {}
 	for cap_pass in 2:
 		for e in scored:
@@ -639,16 +648,20 @@ func _pick_villagers(n: int, brewable: Dictionary, taken: Dictionary) -> Array:
 				newcomers += 1
 			var options: Array = by_who[w].duplicate()
 			options.shuffle()
+			# --- R3 MAGIC3: mientras falten pedidos con runas hoy, primero los de runas; cumplida la cuota, ninguno más
+			if runes_left > 0:
+				options.sort_custom(func(a, b): return order_runes(a).size() > order_runes(b).size())
 			var chosen := {}
 			for r in options:
-				if Story.wanted_kind(r) == "scroll" and scrolls_left <= 0:
+				if not order_runes(r).is_empty() and runes_left <= 0:
 					continue
 				chosen = r
 				break
 			if chosen.is_empty():
 				continue
-			if Story.wanted_kind(chosen) == "scroll":
-				scrolls_left -= 1
+			if not order_runes(chosen).is_empty():
+				runes_left -= 1
+			# --- end R3 MAGIC3
 			var q: Dictionary = chosen.duplicate()
 			q["kind"] = "villager"
 			out.append(q)
@@ -698,7 +711,15 @@ func load_game() -> bool:
 		stock[k] = int(d["stock"][k])
 	potions = []
 	for p in d.get("potions", []):
-		potions.append({"id": String(p["id"]), "potency": int(p["potency"])})
+		# --- R3 MAGIC3: con sus runas (las de una partida vieja no tienen)
+		var pd := {"id": String(p["id"]), "potency": int(p["potency"])}
+		for k in ["rune", "rune2"]:
+			if p is Dictionary and Data.RUNES.has(String(p.get(k, ""))):
+				pd[k] = String(p[k])
+				pd[k + "_stars"] = clampi(int(p.get(k + "_stars", 1)), 1, 3)
+		if Data.POTIONS.has(pd["id"]):
+			potions.append(pd)
+		# --- end R3 MAGIC3
 	discovered = {}
 	for k in d.get("discovered", {}):
 		discovered[k] = int(d["discovered"][k])
@@ -728,62 +749,73 @@ func delete_save() -> void:
 	if has_save():
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 
-# --- MAGIC: grimorio, tintas, papel y pergaminos (Data.SPELLS, Data.MAGIC_ITEMS) ------------------------------------
-# Los pergaminos se guardan y se entregan como las pociones: {"id": hechizo, "potency": int}. La potencia sale del
-# papel (3 papel de trapo, 5 vitela) + 2 si el trazo de la runa fue perfecto: 3 = 1 estrella, 5 = 2, 7 = 3 (stars_for).
+# --- R3 MAGIC3: el libro de runas (Data.RUNES): runas que se inscriben en la ETIQUETA de una poción del estante -------
+# Una poción puede llevar runas: {"id", "potency", "rune", "rune_stars", "rune2", "rune2_stars"} (la etiqueta tiene un
+# hueco; dos desde el renombre «Maestra de pociones»). El grimorio del escritorio (scripts/ui/grimoire_ui.gd) las
+# inscribe con enchant(); algunos clientes las piden (Data.RUNE_REQUESTS, "runes"); al entregar, cada runa pedida que
+# va en la etiqueta paga un extra según sus estrellas (rune_bonus) y la que falta baja la propina de la noticia
+# (scripts/story.gd). Ya no hay pergaminos: las partidas viejas se convierten al cargar (magic_load).
 
-signal magic_changed      # materiales, páginas del grimorio, o lo abrió por primera vez
-signal scrolls_changed    # el estante de pergaminos cambió
+signal magic_changed      # tintas, páginas del grimorio, o lo abrió por primera vez
 
-const SCROLL_CAPACITY := 6
-## Lo que la maestra dejó en el cajón del escritorio (se recibe al abrir el grimorio por primera vez).
-const MAGIC_STARTER := {"papel": 4, "tinta_brasa": 1, "tinta_savia": 1}
+## Lo que la maestra dejó en el cajón del escritorio (se recibe al abrir el grimorio por primera vez, con la runa de Prisa).
+const MAGIC_STARTER := {"tinta_brasa": 2}
+## Lo que paga una runa pedida según sus estrellas (x su "value"): 1 estrella, 2, 3.
+const RUNE_STAR_MULT := [0.0, 0.6, 1.0, 1.5]
+## Partidas viejas (pergaminos): hechizo -> runa, y lo que vale lo que ya no existe (se devuelve en oro al cargar).
+const LEGACY_SPELL_RUNE := {"sello_calor": "prisa", "hechizo_brotes": "dulzor", "runa_calma": "calma", "pergamino_luz": "duracion",
+	"runa_escarcha": "frescor", "mensaje_alado": "alas", "talisman_umbra": "sigilo", "sello_protector": "fuerza"}
+const LEGACY_SCROLL_BASE := {"sello_calor": 16, "hechizo_brotes": 16, "runa_calma": 20, "pergamino_luz": 20, "runa_escarcha": 22,
+	"mensaje_alado": 26, "talisman_umbra": 28, "sello_protector": 34}
+const LEGACY_ITEM_PRICE := {"papel": 2, "vitela": 6}
 
-var magic_unlocked := false   # ya abrió el grimorio: desde entonces llegan clientes que piden pergaminos
-var items := {}               # papel, vitela y tintas (ids de Data.MAGIC_ITEMS) -> cantidad
-var scrolls: Array = []       # [{"id": hechizo, "potency": int}] el estante de pergaminos
-var spell_pages := {}         # hechizo -> "new" (aprendido y sin leer) o "read"
-var spells_made := {}         # hechizo -> mejor potencia inscrita
-var magic_stats := {"scrolls": 0, "perfect": 0, "inks": 0}
+var magic_unlocked := false   # ya abrió el grimorio: desde entonces llegan pedidos con runas
+var items := {}               # tintas y páginas compradas (ids de Data.MAGIC_ITEMS) -> cantidad
+var rune_pages := {}          # runa -> "new" (aprendida y sin leer) o "read"
+var magic_stats := {"runes": 0, "perfect": 0, "inks": 0}
+var legacy_refund := 0        # oro devuelto al cargar una partida vieja (pergaminos, papel): main.gd lo avisa y lo pone a 0
 
 func magic_reset() -> void:
 	magic_unlocked = false
 	items = {}
-	scrolls = []
-	spell_pages = {}
-	spells_made = {}
-	magic_stats = {"scrolls": 0, "perfect": 0, "inks": 0}
-	_mark_known_pages()
+	rune_pages = {}
+	magic_stats = {"runes": 0, "perfect": 0, "inks": 0}
+	legacy_refund = 0
 	magic_changed.emit()
-	scrolls_changed.emit()
 
-## Las páginas que ya se saben quedan como nuevas sin anunciarlas (al empezar, o con una partida vieja).
-func _mark_known_pages() -> void:
-	for id in Data.SPELL_ORDER:
-		if spell_known(id) and not spell_pages.has(id):
-			spell_pages[id] = "new"
-
-## Primera vez que abre el grimorio: recibe los materiales del cajón y aprende las páginas que ya le tocan.
+## Primera vez que abre el grimorio: la nota de la maestra, la tinta del cajón y las páginas que ya le tocan (Prisa,
+## y las que ya ganó con su renombre o le regalaron). Quedan como nuevas (brillan en el libro).
 func unlock_magic() -> void:
 	if magic_unlocked:
 		return
 	magic_unlocked = true
 	for id in MAGIC_STARTER:
 		items[id] = item_count(id) + MAGIC_STARTER[id]
-	for id in Data.SPELL_ORDER:
-		if spell_known(id) and not spell_pages.has(id):
-			spell_pages[id] = "new"
+	for id in Data.RUNE_ORDER:
+		if rune_known(id) and not rune_pages.has(id):
+			rune_pages[id] = "new"
 	magic_changed.emit()
 
-# ------------------------------------------------ materiales (el puesto de Tobías los vende con buy_item / item_count)
+## El escritorio brilla: el grimorio todavía no se abrió (desde el día 2) o hay páginas sin leer.
+func desk_glows() -> bool:
+	return (not magic_unlocked and day >= 2) or has_new_pages()
+
+# ------------------------------------------------ tintas (y la página de Tobías)
 
 func item_count(id: String) -> int:
 	return int(items.get(id, 0))
 
+## Compra en el puesto de Tobías. Las páginas ("max": 1) se compran una vez: enseñan su runa.
 func buy_item(id: String, qty: int = 1) -> bool:
 	if not Data.MAGIC_ITEMS.has(id):
 		return false
-	var cost: int = Data.MAGIC_ITEMS[id]["price"] * qty
+	var it: Dictionary = Data.MAGIC_ITEMS[id]
+	var mx := int(it.get("max", 0))
+	if mx > 0:
+		qty = mini(qty, mx - item_count(id))
+		if qty <= 0:
+			return false
+	var cost: int = int(it["price"]) * qty
 	if gold < cost:
 		return false
 	add_gold(-cost)
@@ -794,142 +826,181 @@ func add_item(id: String, qty: int = 1) -> void:
 	items[id] = maxi(0, item_count(id) + qty)
 	magic_changed.emit()
 
+func rune_ink(rune: String) -> String:
+	return String(Data.RUNES[rune]["ink"]) if Data.RUNES.has(rune) else ""
+
 # ------------------------------------------------ páginas del grimorio
 
-## Se aprende con el renombre de Data.SPELLS[id]["level"], o antes si un viajero la regala ("gift").
-func spell_known(id: String) -> bool:
-	var s: Dictionary = Data.SPELLS[id]
-	if level() >= int(s["level"]):
+## Si ya sabe la runa: la nota de la maestra ("starter"), su renombre ("level"), el regalo de un viajero ("gift") o la
+## página de Tobías ("shop"). Todo, desde que abrió el grimorio. Las de una partida vieja están en rune_pages.
+func rune_known(id: String) -> bool:
+	if not magic_unlocked or not Data.RUNES.has(id):
+		return false
+	if rune_pages.has(id):
 		return true
-	var g: Dictionary = s.get("gift", {})
+	var r: Dictionary = Data.RUNES[id]
+	if r.get("starter", false) or level() >= int(r.get("level", 99)):
+		return true
+	if r.has("shop") and item_count(String(r["shop"])) > 0:
+		return true
+	var g: Dictionary = r.get("gift", {})
 	return not g.is_empty() and int(hero_progress.get(g["hero"], 0)) >= int(g["chapter"])
 
-func known_spells() -> Array:
+func known_runes() -> Array:
 	var out := []
-	for id in Data.SPELL_ORDER:
-		if spell_known(id):
+	for id in Data.RUNE_ORDER:
+		if rune_known(id):
 			out.append(id)
 	return out
 
 ## Páginas recién aprendidas que todavía no se anunciaron (las marca como nuevas en el grimorio).
-func new_spell_pages() -> Array:
+func new_rune_pages() -> Array:
 	var out := []
-	for id in Data.SPELL_ORDER:
-		if spell_known(id) and not spell_pages.has(id):
-			spell_pages[id] = "new"
+	for id in Data.RUNE_ORDER:
+		if rune_known(id) and not rune_pages.has(id):
+			rune_pages[id] = "new"
 			out.append(id)
 	if not out.is_empty():
 		magic_changed.emit()
 	return out
 
 func page_is_new(id: String) -> bool:
-	return spell_pages.get(id, "") == "new"
+	return rune_pages.get(id, "") == "new"
 
 func mark_page_read(id: String) -> void:
 	if page_is_new(id):
-		spell_pages[id] = "read"
+		rune_pages[id] = "read"
+		magic_changed.emit()
 
-## Hay alguna página nueva sin leer (el grimorio del escritorio brilla).
 func has_new_pages() -> bool:
-	for id in spell_pages:
-		if spell_pages[id] == "new":
+	for id in rune_pages:
+		if rune_pages[id] == "new":
 			return true
 	return false
 
-# ------------------------------------------------ inscribir pergaminos
+# ------------------------------------------------ runas en la etiqueta
 
-## Materiales de un pergamino: {material: cantidad} = 1 hoja (papel o vitela) + las tintas del hechizo.
-func spell_cost(id: String, paper: String) -> Dictionary:
-	var c := {paper: 1}
-	var inks: Dictionary = Data.SPELLS[id]["inks"]
-	for k in inks:
-		c[k] = int(c.get(k, 0)) + int(inks[k])
-	return c
+## Huecos de la etiqueta: 1 (2 desde el renombre «Maestra de pociones», cuando llegan pedidos de dos runas).
+func label_slots() -> int:
+	return 2 if level() >= 3 else 1
 
-## "" si se puede inscribir ahora; si no, el motivo (texto para el jugador).
-func inscribe_problem(id: String, paper: String) -> String:
-	if not spell_known(id):
-		return "Todavía no puedes leer esta página."
-	if scrolls_full():
-		return "Tu estante de pergaminos está lleno (%d)." % scroll_capacity()
-	var c := spell_cost(id, paper)
-	var miss := []
-	for k in c:
-		if item_count(k) < c[k]:
-			miss.append(Data.MAGIC_ITEMS[k]["name"])
-	if not miss.is_empty():
-		return "Te falta: %s." % ", ".join(miss)
+## Las runas de una poción: [{"id", "stars"}], en el orden en que se inscribieron.
+func potion_runes(p: Dictionary) -> Array:
+	var out := []
+	for k in ["rune", "rune2"]:
+		var id := String(p.get(k, ""))
+		if id != "":
+			out.append({"id": id, "stars": clampi(int(p.get(k + "_stars", 1)), 1, 3)})
+	return out
+
+func potion_rune_ids(p: Dictionary) -> Array:
+	return potion_runes(p).map(func(r): return r["id"])
+
+## Las runas que pide un cliente (su ticket): ids de Data.RUNES.
+func order_runes(req: Dictionary) -> Array:
+	var out := []
+	var rs = req.get("runes", [])
+	if rs is Array:
+		for r in rs:
+			if Data.RUNES.has(String(r)):
+				out.append(String(r))
+	return out
+
+## La siguiente runa que le falta a esa poción para ese pedido ("" si no le falta ninguna).
+func next_rune_for(p: Dictionary, req: Dictionary) -> String:
+	var have := potion_rune_ids(p)
+	for r in order_runes(req):
+		if not have.has(r):
+			return r
 	return ""
 
-func scroll_potency(paper: String, perfect: bool) -> int:
-	return int(Data.PAPERS[paper]["potency"]) + (2 if perfect else 0)
+## "" si se puede inscribir esa runa en esa poción; si no, el motivo: "none" (no hay poción), "page" (no sabe la
+## runa), "same" (ya la lleva), "full" (la etiqueta no tiene hueco) o "ink" (no le queda esa tinta).
+func enchant_problem(index: int, rune: String) -> String:
+	if index < 0 or index >= potions.size():
+		return "none"
+	if not rune_known(rune):
+		return "page"
+	var have := potion_rune_ids(potions[index])
+	if have.has(rune):
+		return "same"
+	if have.size() >= label_slots():
+		return "full"
+	if item_count(rune_ink(rune)) <= 0:
+		return "ink"
+	return ""
 
-## Gasta los materiales y deja el pergamino en el estante. Devuelve {"id", "potency"} (o {} si no se pudo).
-func inscribe(id: String, paper: String, perfect: bool) -> Dictionary:
-	if inscribe_problem(id, paper) != "":
+## Inscribe la runa en la poción del estante (gasta 1 frasco de su tinta). stars: el trazo (1 a 3). Devuelve la poción
+## encantada ({} si no se pudo). El estante se reordena: búscala después con find_potion().
+func enchant(index: int, rune: String, stars: int) -> Dictionary:
+	if enchant_problem(index, rune) != "":
 		return {}
-	var c := spell_cost(id, paper)
-	for k in c:
-		items[k] = item_count(k) - int(c[k])
-	var pot := scroll_potency(paper, perfect)
-	magic_stats["scrolls"] += 1
-	if perfect:
+	var ink := rune_ink(rune)
+	items[ink] = item_count(ink) - 1
+	var p: Dictionary = potions[index]
+	var k := "rune" if String(p.get("rune", "")) == "" else "rune2"
+	p[k] = rune
+	p[k + "_stars"] = clampi(stars, 1, 3)
+	magic_stats["runes"] += 1
+	if stars >= 3:
 		magic_stats["perfect"] += 1
-	spells_made[id] = maxi(int(spells_made.get(id, 0)), pot)
-	var s := add_scroll(id, pot)
+	sort_potions()
+	potions_changed.emit()
 	magic_changed.emit()
-	return s
+	return p
 
-# ------------------------------------------------ el estante de pergaminos
-
-func scroll_capacity() -> int:
-	return SCROLL_CAPACITY
-
-func scrolls_full() -> bool:
-	return scrolls.size() >= scroll_capacity()
-
-func _sort_scrolls() -> void:
-	scrolls.sort_custom(func(a, b):
+## Orden del estante: como siempre (receta, potencia) y, entre iguales, las sin runa primero.
+func sort_potions() -> void:
+	potions.sort_custom(func(a, b):
 		if a["id"] != b["id"]:
-			return Data.SPELL_ORDER.find(a["id"]) < Data.SPELL_ORDER.find(b["id"])
-		return a["potency"] > b["potency"])
+			return Data.POTION_ORDER.find(a["id"]) < Data.POTION_ORDER.find(b["id"])
+		if a["potency"] != b["potency"]:
+			return a["potency"] > b["potency"]
+		return ",".join(potion_rune_ids(a)) < ",".join(potion_rune_ids(b)))
 
-func add_scroll(id: String, potency: int) -> Dictionary:
-	var s := {"id": id, "potency": potency}
-	scrolls.append(s)
-	_sort_scrolls()
-	scrolls_changed.emit()
-	return s
-
-func scroll_index(id: String, potency: int) -> int:
-	for i in scrolls.size():
-		if scrolls[i]["id"] == id and scrolls[i]["potency"] == potency:
+## Dónde quedó esa poción en el estante (mismo id, potencia y runas). -1 si no está.
+func find_potion(p: Dictionary) -> int:
+	var key := ",".join(potion_rune_ids(p))
+	for i in potions.size():
+		var q: Dictionary = potions[i]
+		if q["id"] == p.get("id", "") and int(q["potency"]) == int(p.get("potency", -1)) and ",".join(potion_rune_ids(q)) == key:
 			return i
-	return scrolls.size() - 1
+	return -1
 
-func take_scroll(index: int) -> Dictionary:
-	if index < 0 or index >= scrolls.size():
-		return {}
-	var s: Dictionary = scrolls[index]
-	scrolls.remove_at(index)
-	scrolls_changed.emit()
-	return s
+## Qué runas del pedido van en la etiqueta: {"want": [ids], "matched": [[id, estrellas]], "missing": [ids],
+## "extra": [ids que no pidió]}.
+func rune_check(item: Dictionary, req: Dictionary) -> Dictionary:
+	var want := order_runes(req)
+	var got := potion_runes(item)
+	var matched := []
+	var missing := []
+	var extra := []
+	for id in want:
+		var s := 0
+		for g in got:
+			if g["id"] == id:
+				s = int(g["stars"])
+		if s > 0:
+			matched.append([id, s])
+		else:
+			missing.append(id)
+	for g in got:
+		if not want.has(g["id"]):
+			extra.append(g["id"])
+	return {"want": want, "matched": matched, "missing": missing, "extra": extra}
 
-## Vuelve al estante (por ejemplo, un pergamino que el cliente no quiso). Acepta el diccionario de la entrega.
-func return_scroll(s: Dictionary) -> void:
-	scrolls.append({"id": String(s["id"]), "potency": int(s["potency"])})
-	_sort_scrolls()
-	scrolls_changed.emit()
+## Lo que el cliente paga de más por las runas que pidió y van en la etiqueta (según sus estrellas).
+func rune_bonus(item: Dictionary, req: Dictionary) -> int:
+	var total := 0.0
+	for m in rune_check(item, req)["matched"]:
+		total += float(Data.RUNES[m[0]]["value"]) * RUNE_STAR_MULT[clampi(int(m[1]), 0, 3)]
+	return int(round(total))
 
-## Saca un pergamino del estante para entregarlo: como una poción ({"id", "potency"}) más "kind": "scroll".
-## main.gd lo pasa a _success / _wrong igual que una poción.
-func take_scroll_for_delivery(index: int) -> Dictionary:
-	var s := take_scroll(index)
-	if s.is_empty():
-		return s
-	var d := s.duplicate()
-	d["kind"] = "scroll"
-	return d
+## Cuántos pedidos con runas puede haber hoy: ninguno sin grimorio; 1; 2 desde el renombre «Alquimista».
+func rune_orders_today() -> int:
+	if not magic_unlocked or known_runes().is_empty():
+		return 0
+	return 2 if level() >= 2 else 1
 
 # ------------------------------------------------ tinta en el caldero
 
@@ -950,114 +1021,46 @@ func ink_for_mix(ings: Array) -> Dictionary:
 			return {"ink": k, "ess": e, "amount": amount, "qty": 1 + (1 if amount >= 4 else 0) + (1 if amount >= 6 else 0)}
 	return {}
 
-# ------------------------------------------------ clientes que piden pergaminos
-
-## Cambia algunos vecinos del día por clientes que piden un pergamino: 1 al día (2 con renombre «Alquimista»),
-## solo desde que abrió el grimorio. 'others': los demás clientes del día (para no repetir a nadie).
-func magic_scroll_customers(villagers: Array, others: Array = []) -> Array:
-	if not magic_unlocked or villagers.is_empty():
-		return villagers
-	var n := mini(1 + (1 if level() >= 2 else 0), villagers.size())
-	var taken := {}
-	for r in others:
-		taken[r["who"]] = true
-	for i in villagers.size() - n:
-		taken[villagers[i]["who"]] = true
-	var picks := scroll_requests(n, taken)
-	var out := villagers.duplicate()
-	for i in picks.size():
-		out[out.size() - 1 - i] = picks[i]
-	return out
-
-## Pedidos de pergaminos posibles hoy: hechizos ya aprendidos, personajes que existen (nombre y sprite) y los
-## capítulos que pidan ("needs"). Devuelve copias listas para la fila ("kind": "villager", "potion": "").
-func scroll_requests(n: int, taken_in: Dictionary = {}) -> Array:
-	var taken := taken_in.duplicate()
-	var pool := []
-	for r in Data.SCROLL_REQUESTS:
-		var who: String = r["who"]
-		if taken.has(who) or not spell_known(r["scroll"]) or not Data.CHARACTERS.has(who):
-			continue
-		if not ResourceLoader.exists("res://assets/chars/%s_idle.png" % who):
-			continue
-		var need: Dictionary = r.get("needs", {})
-		if not need.is_empty() and int(hero_progress.get(need["hero"], 0)) < int(need["chapter"]):
-			continue
-		pool.append(r)
-	pool.shuffle()
-	var out := []
-	for r in pool:
-		if out.size() >= n:
-			break
-		if taken.has(r["who"]):
-			continue
-		var q: Dictionary = r.duplicate()
-		q["kind"] = "villager"
-		if not q.has("potion"):
-			q["potion"] = ""
-		taken[r["who"]] = true
-		out.append(q)
-	return out
-
-## Lo que dice el cliente al recibir el pergamino que pidió: lee la etiqueta y nota la tinta (todavía no lo usó).
-func scroll_react_line(s: Dictionary) -> String:
-	var d: Dictionary = Data.SPELLS[s["id"]]
-	var stars := stars_for(int(s["potency"]))
-	var heads := ["¡%s, justo lo que necesitaba!", "¡%s! Y con qué letra tan bonita.", "¡%s! Nunca había visto un trazo tan firme."]
-	var react: Array = d.get("react", [""])
-	return (heads[stars - 1] % d["name"]) + " " + str(react.pick_random())
-
-## Lo que dice el cliente si no es lo que pidió (un pergamino se reconoce en el acto: tiene etiqueta).
-## Devuelve "" cuando no hay pergaminos de por medio (se usa el texto de siempre).
-func scroll_wrong_line(p: Dictionary, req: Dictionary) -> String:
-	var is_scroll: bool = p.get("kind", "") == "scroll"
-	var wants_scroll: bool = req.get("scroll", "") != ""
-	if is_scroll and wants_scroll:
-		return Data.SCROLL_WRONG_LINES.pick_random() % Data.SPELLS[p["id"]]["name"]
-	if is_scroll:
-		return Data.POTION_NOT_SCROLL
-	if wants_scroll:
-		return Data.SCROLL_NOT_POTION
-	return ""
-
 # ------------------------------------------------ guardado (save_game / load_game lo llaman)
 
 func magic_save() -> Dictionary:
-	return {"unlocked": magic_unlocked, "items": items, "scrolls": scrolls, "pages": spell_pages,
-		"made": spells_made, "stats": magic_stats}
+	return {"unlocked": magic_unlocked, "items": items, "pages": rune_pages, "stats": magic_stats}
 
+## Carga la magia. Una partida de antes (pergaminos) se convierte: los pergaminos del estante y el papel o la vitela
+## se devuelven en oro (legacy_refund), las páginas de hechizos pasan a ser las de sus runas.
 func magic_load(d: Dictionary) -> void:
 	magic_unlocked = bool(d.get("unlocked", false))
+	legacy_refund = 0
 	items = {}
 	var it = d.get("items", {})
 	if it is Dictionary:
 		for k in it:
 			if Data.MAGIC_ITEMS.has(k):
 				items[k] = int(it[k])
-	scrolls = []
+			elif LEGACY_ITEM_PRICE.has(k):
+				legacy_refund += int(LEGACY_ITEM_PRICE[k]) * maxi(0, int(it[k]))
 	var sc = d.get("scrolls", [])
 	if sc is Array:
 		for s in sc:
-			if s is Dictionary and Data.SPELLS.has(String(s.get("id", ""))):
-				scrolls.append({"id": String(s["id"]), "potency": int(s.get("potency", 3))})
-	_sort_scrolls()
-	spell_pages = {}
+			if s is Dictionary:
+				var base := int(LEGACY_SCROLL_BASE.get(String(s.get("id", "")), 16))
+				legacy_refund += int(round(base * [1.0, 1.0, 1.35, 1.75][stars_for(int(s.get("potency", 3)))]))
+	rune_pages = {}
 	var pg = d.get("pages", {})
 	if pg is Dictionary:
 		for k in pg:
-			if Data.SPELLS.has(k):
-				spell_pages[k] = String(pg[k])
-	spells_made = {}
-	var mk = d.get("made", {})
-	if mk is Dictionary:
-		for k in mk:
-			if Data.SPELLS.has(k):
-				spells_made[k] = int(mk[k])
+			var id := String(LEGACY_SPELL_RUNE.get(k, k))
+			if Data.RUNES.has(id):
+				var st := String(pg[k])
+				rune_pages[id] = "new" if st == "new" and rune_pages.get(id, "new") == "new" else "read"
 	var st = d.get("stats", {})
-	for k in magic_stats:
-		magic_stats[k] = int(st.get(k, 0)) if st is Dictionary else 0
-	if spell_pages.is_empty():
-		_mark_known_pages()
+	magic_stats = {"runes": 0, "perfect": 0, "inks": 0}
+	if st is Dictionary:
+		magic_stats["runes"] = int(st.get("runes", st.get("scrolls", 0)))
+		magic_stats["perfect"] = int(st.get("perfect", 0))
+		magic_stats["inks"] = int(st.get("inks", 0))
+	if legacy_refund > 0:
+		gold += legacy_refund
+		gold_changed.emit(gold)
 	magic_changed.emit()
-	scrolls_changed.emit()
-# --- end MAGIC
+# --- end R3 MAGIC3

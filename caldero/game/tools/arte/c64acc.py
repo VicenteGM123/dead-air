@@ -472,10 +472,13 @@ def gem_hold(cv, B, sp, side, pose, gem='gem'):
     cv.dot(x - 0.5, y - 0.6, 'white', 4)
 
 
-def bread(cv, B, sp, side, pose, mat='bread'):
+def bread(cv, B, sp, side, pose, mat='bread', down=False):
     g = B.arm[side]['grip']
     x, y = g[0], g[1]
     a, b = (x - 3.0, y + 3.0), (x + 6.0, y - 7.0)
+    if down:
+        # --- R3 ART3: hogaza llevada abajo, junto a la cadera (la mano la agarra por el medio)
+        a, b = (x - 2.5, y - 4.5), (x + 2.5, y + 5.5)
     m = cv.capsule(a, b, 2.2, 1.9)
     p = cv.put(m, mat, mode='top', iline=True, band=0.35)
     for k in range(4):
@@ -680,3 +683,87 @@ def sprig_hand(cv, B, sp, side, pose, leaf='leaf', flower='flower1'):
     for (dx, dy) in ((0.5, -5.5), (2.2, -4.5), (1.0, -3.2)):
         cv.put(cv.ellipse(x + dx, y + dy, 1.2, 1.0), leaf, mode='top', iline=True)
     cv.put(cv.ellipse(x + 1.6, y - 6.5, 1.3, 1.2), flower, mode='top', iline=True)
+
+
+# --- R3 ART3: sombrilla de verdad: copa grande inclinada sobre el hombro cercano, vara visible desde la mano
+def _parasol_geom(B, side='n', tilt=-0.30, reach=29.0):
+    """Mano (agarre), dirección de la vara y centro del borde de la copa."""
+    A = B.arm[side]
+    el, hd = A['el'], A['hand']
+    dx, dy = hd[0] - el[0], hd[1] - el[1]
+    d = math.hypot(dx, dy) or 1.0
+    g = (hd[0] + dx / d * 1.3, hd[1] + dy / d * 1.3)
+    ux, uy = tilt, -1.0
+    l = math.hypot(ux, uy)
+    ux, uy = ux / l, uy / l
+    rim = (g[0] + ux * reach, g[1] + uy * reach)
+    return g, (ux, uy), rim
+
+
+def parasol_canopy(cv, B, sp, pose, mat='lace', trim='rose', pole='wood2', side='n', radius=15.0, depth=8.5, tilt=-0.30,
+                   reach=29.0, ribs=5, **_):
+    """La copa (va en 'back': queda detrás de la cabeza). Domo visto desde fuera, borde festoneado con encaje,
+    varillas desde la punta, remate arriba."""
+    lag = pose.lag * 0.5
+    g, (ux, uy), rim = _parasol_geom(B, side, tilt, reach)
+    rim = (rim[0], rim[1] + lag)
+    px_, py_ = -uy, ux                               # perpendicular a la vara (a lo largo del borde)
+    apex = (rim[0] + ux * depth, rim[1] + uy * depth)
+    # silueta: el borde (elipse aplastada) y el domo hasta la punta
+    pts = []
+    n = 24
+    for i in range(n + 1):
+        t = math.pi * i / n                          # medio contorno del domo: de un extremo del borde a la punta y al otro
+        a = math.cos(t)
+        h = math.sin(t)
+        pts.append((rim[0] + px_ * radius * a + ux * depth * h ** 0.85, rim[1] + py_ * radius * a + uy * depth * h ** 0.85))
+    # festón del borde (de un extremo al otro, ondulado hacia afuera de la copa)
+    for i in range(ribs * 2 + 1):
+        a = 1.0 - 2.0 * i / (ribs * 2)
+        bump = 1.3 if i % 2 else 0.2
+        pts.append((rim[0] + px_ * radius * a - ux * bump, rim[1] + py_ * radius * a - uy * bump))
+    m = cv.poly(pts)
+    c_ = (rim[0] + ux * depth * 0.45, rim[1] + uy * depth * 0.45)
+    nrm = cv.sphere_n(c_[0] - 2.0, c_[1] - 2.0, radius + 2.0, radius + 2.0, k=0.8)
+    p = cv.put(m, mat, mode='stroke', nrm=nrm, cast=0, iline=True)
+    # varillas: de la punta a los picos del festón
+    for i in range(1, ribs * 2, 2):
+        a = 1.0 - 2.0 * i / (ribs * 2)
+        e = (rim[0] + px_ * radius * a * 0.96 - ux * 1.0, rim[1] + py_ * radius * a * 0.96 - uy * 1.0)
+        cv.shade(cv.line([apex, e]), -1, within=[p])
+    # encaje en el borde: la franja de abajo en el color del ribete
+    if trim:
+        edge = np.zeros_like(m)
+        for i in range(ribs * 2 + 1):
+            a = 1.0 - 2.0 * i / (ribs * 2)
+            for k in np.linspace(-1.0, 1.0, 9):
+                q = (rim[0] + px_ * radius * (a + k / (ribs * 2)) - ux * 0.6, rim[1] + py_ * radius * (a + k / (ribs * 2)) - uy * 0.6)
+                xi, yi = int(round(q[0])), int(round(q[1]))
+                if 0 <= xi < cv.w and 0 <= yi < cv.h:
+                    edge[yi, xi] = True
+        cv.paint(edge & cv.of(p), trim, 2)
+    # remate en la punta
+    cv.put(cv.ellipse(apex[0] + ux * 0.8, apex[1] + uy * 0.8, 0.9, 0.9), pole, mode='shine', iline=True)
+    B.parasol_rim = rim
+    return p
+
+
+def parasol_shaft(cv, B, sp, pose, side='n', pole='wood2', tilt=-0.30, reach=29.0, handle='rose', front=False, **_):
+    """La vara (va en 'over': delante del torso y DETRÁS de la cabeza y el pelo, como apoyada en el hombro): de la mano
+    hasta el borde de la copa y el mango curvo abajo; la mano (que se dibuja después) la agarra."""
+    g, (ux, uy), rim = _parasol_geom(B, side, tilt, reach)
+    top = (rim[0] - ux * 0.5, rim[1] - uy * 0.5 + pose.lag * 0.5)
+    m = cv.capsule((g[0] - ux * 3.0, g[1] - uy * 3.0), top, 0.95, 0.85)
+    if front:
+        # tramo de delante: de la mano hasta el hombro (por encima pasa detrás del pelo y de la cabeza)
+        m &= cv.ys >= B.y_sh - 1
+    p = cv.put(m, pole, mode='shine', iline=False)
+    # mango en gancho bajo la mano
+    hk = bez((g[0] - ux * 3.0, g[1] - uy * 3.0), (g[0] - ux * 5.0 + 1.5, g[1] - uy * 5.0 + 0.5), (g[0] - ux * 4.0 + 2.6, g[1] - uy * 3.6), 5)
+    cv.put(cv.stroke(hk, 0.8, 0.7), handle or pole, mode='shine', iline=False)
+    return p
+
+
+def parasol_grip(cv, B, sp, side, pose, **kw):
+    """Tramo de la vara delante del pecho (lista 'near': la mano lo agarra encima)."""
+    return parasol_shaft(cv, B, sp, pose, side=side, front=True, **kw)

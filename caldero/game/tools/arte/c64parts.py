@@ -752,65 +752,133 @@ def leg(cv, B, sp, side, pose):
     return p
 
 
-def foot_poly(B, side, fl, extra=0.0):
-    """Pie / bota en 3/4 de frente. La punta va hacia 'toe' (+1 derecha, -1 izquierda, 0 de frente);
-    la suela queda plana en el suelo de ese pie; con el talón levantado, el pie se apoya en la punta."""
+def _rot(pts, a, piv):
+    ca, sa = math.cos(a), math.sin(a)
+    return [(piv[0] + (x - piv[0]) * ca - (y - piv[1]) * sa, piv[1] + (x - piv[0]) * sa + (y - piv[1]) * ca) for x, y in pts]
+
+
+def foot_shape(B, side, fl, kind='boots'):
+    """--- R3 ART3: pie / bota en 3/4 (estilo Octopath): suela plana, talón y punta hacia donde apunta el pie.
+    Coordenadas locales: tobillo en (0, 0), x hacia la punta, y hacia abajo, suela en y = 2.5.
+    toe (continuo, -1..1): +1 punta a la derecha, -1 a la izquierda, 0 hacia la cámara (escorzo: el pie se ve corto
+    y redondo). heel: 0 apoyado, 1 despegue (gira sobre la punta: talón arriba), 2 en el aire (cuelga hacia abajo);
+    strike: apoyo de talón (la punta un poco arriba).
+    Devuelve (polígono en px, función px -> local, datos) para pintar suela, talón y puntera."""
     L = B.leg[side]
     ax, ay = L['ank']
-    toe = L['toe']
+    toe = float(L['toe'])
     heel = L['heel']
-    sole = ay + 2.5
-    if toe == 0:
-        w = fl * 0.5
-        return [(ax - w, ay - 1.2), (ax + w, ay - 1.2), (ax + w + 0.4, sole - 1.0), (ax + w, sole), (ax - w, sole), (ax - w - 0.4, sole - 1.0)]
-    s = 1 if toe > 0 else -1
-    bk = 2.0 + extra
-    if heel == 0:
-        pts = [(-bk, ay - 1.2), (1.4, ay - 1.2), (fl - 1.6, sole - 2.2), (fl - 0.4, sole - 1.0), (fl - 0.8, sole), (-bk + 0.4, sole), (-bk - 0.2, sole - 1.0)]
-    elif heel == 1:
-        # despegue: talón arriba, punta en el suelo
-        pts = [(-bk, ay - 1.5), (1.4, ay - 1.3), (fl - 1.2, sole - 0.4), (fl - 1.6, sole + 0.2), (0.5, sole - 0.2), (-bk, ay + 1.4)]
-    else:
-        # en el aire: el pie cuelga un poco hacia abajo
-        pts = [(-bk + 0.2, ay - 1.2), (1.4, ay - 1.2), (fl - 1.2, ay + 1.6), (fl - 1.8, ay + 2.8), (-0.5, ay + 2.6), (-bk + 0.2, ay + 1.6)]
-    return [(ax + s * x, y) for (x, y) in pts]
+    s = 1.0 if toe >= 0 else -1.0
+    at = min(1.0, abs(toe))
+    fwd = 0.40 + 0.60 * at                    # escorzo de lo largo del pie
+    reach = max(2.2, (fl - 1.2) * fwd)        # del tobillo a la punta
+    back = 1.7 * (0.55 + 0.45 * at)           # el talón detrás del tobillo
+    wid = 1.0 + (1.0 - at) * 0.9              # con el pie de frente se ve su ancho
+    pts = [(-back + 0.2, -1.7), (1.0, -1.7), (reach - 2.0, -0.3), (reach - 0.7, 0.5), (reach + 0.1, 1.5),
+           (reach - 0.3, 2.5), (-back - wid * 0.25 + 0.4, 2.5), (-back - wid * 0.25, 1.3)]
+    lift = L.get('lift', 0)
+    a = 0.0
+    if heel == 1:
+        piv = (reach - 0.3, 2.5)
+        d = math.hypot(piv[0], piv[1])
+        a = math.asin(max(-0.9, min(0.9, max(1.0, lift) / max(1.0, d)))) * 1.1
+        pts = _rot(pts, a, piv)
+        dx_, dy_ = _rot([(0.0, 0.0)], a, piv)[0]
+        pts = [(x - dx_, y - dy_) for x, y in pts]
+    elif heel == 2:
+        a = math.radians(18)
+        pts = _rot(pts, a, (0.0, 0.0))
+    elif L.get('strike'):
+        piv = (-back + 0.3, 2.5)
+        a = math.radians(-14)
+        pts = _rot(pts, a, piv)
+        dx_, dy_ = _rot([(0.0, 0.0)], a, piv)[0]
+        pts = [(x - dx_, y - dy_) for x, y in pts]
+    world = [(ax + s * x, ay + y) for x, y in pts]
+    ca, sa = math.cos(-a), math.sin(-a)
+
+    def to_local(X, Y):
+        lx, ly = (X - ax) * s, Y - ay
+        return lx * ca - ly * sa, lx * sa + ly * ca
+    info = dict(reach=reach, back=back, s=s, a=a, flat=(heel == 0 and not L.get('strike')), at=at)
+    return world, to_local, info
+
+
+def foot_poly(B, side, fl, extra=0.0):
+    """Compatibilidad: el polígono del pie (ver foot_shape)."""
+    return foot_shape(B, side, fl)[0]
+
+
+def _foot_details(cv, p, to_local, info, B, side, sole=True, heel_gap=False, cap=True):
+    """Suela (fila de abajo más oscura), talón y puntera con luz; en botas con tacón, un hueco de 1 px bajo el arco."""
+    m = cv.of(p)
+    if not m.any():
+        return
+    ys_, xs_ = np.nonzero(m)
+    lx, ly = to_local(xs_.astype(np.float32), ys_.astype(np.float32))
+    reach, back = info['reach'], info['back']
+    if sole:
+        so = ly >= 1.6
+        sm = np.zeros_like(m)
+        sm[ys_[so], xs_[so]] = True
+        cv.shade(sm, -1, within=[p])
+    if cap:
+        cp = (lx >= reach - 2.2) & (ly >= -0.6) & (ly <= 0.9)
+        cm = np.zeros_like(m)
+        cm[ys_[cp], xs_[cp]] = True
+        cv.shade7(cm, +1, within=[p])
+    if heel_gap and info['flat'] and info['at'] >= 0.55 and reach >= 4.0:
+        g = (ly >= 1.6) & (lx >= -0.2) & (lx <= reach * 0.42)
+        gm = np.zeros_like(m)
+        gm[ys_[g], xs_[g]] = True
+        cv.erase(gm & (cv.pid == p))
 
 
 def feet(cv, B, sp, side, pose):
+    """--- R3 ART3: calzado legible: caña (botas), pie con suela, talón y puntera; los pies quietos siempre apoyados."""
     ft = sp.get('feet', {})
     kind = ft.get('kind', 'boots')
     L = B.leg[side]
     knee, ank = L['knee'], L['ank']
     near = side == 'n'
-    fl = B.d['foot'] + ft.get('long', 0) + (1 if near else 0)
+    fl = B.d['foot'] + ft.get('long', 0) + (0.5 if near else 0)
     sr = B.d['sr']
     bias = -0.7 if not near else 0.0
     if kind == 'bare':
-        m = cv.poly(foot_poly(B, side, fl - 1))
-        return cv.put(m, 'skin', mode='cyl', iline=near, bias=bias)
+        poly, to_local, info = foot_shape(B, side, fl - 1)
+        p = cv.put(cv.poly(poly), 'skin', mode='cyl', iline=near, bias=bias)
+        _foot_details(cv, p, to_local, info, B, side, sole=False, cap=False)
+        return p
+    if kind == 'sandals':
+        poly, to_local, info = foot_shape(B, side, fl - 0.5)
+        m = cv.poly(poly)
+        p = cv.put(m, 'skin', mode='cyl', iline=near, bias=bias)
+        mat = ft.get('mat', 'leather')
+        # suela de cuero bajo el pie y dos tiras (empeine y tobillo)
+        ys_, xs_ = np.nonzero(cv.of(p))
+        lx, ly = to_local(xs_.astype(np.float32), ys_.astype(np.float32))
+        sel = (ly >= 1.7) | ((np.abs(lx - info['reach'] * 0.45) <= 0.6) & (ly >= -0.6)) | ((np.abs(ly + 1.0) <= 0.5) & (lx <= 1.2))
+        sm = np.zeros_like(m)
+        sm[ys_[sel], xs_[sel]] = True
+        cv.paint(sm, mat, 1)
+        return p
     mat = ft.get('mat', 'boots')
     h = ft.get('h', 0.5)          # alto de la caña (fracción de la canilla)
     top = (ank[0] + (knee[0] - ank[0]) * h, ank[1] + (knee[1] - ank[1]) * h)
-    m = cv.poly(foot_poly(B, side, fl, 0.0))
+    poly, to_local, info = foot_shape(B, side, fl, kind)
+    m = cv.poly(poly)
     if kind == 'shoes':
-        top = (ank[0] + (knee[0] - ank[0]) * 0.10, ank[1] + (knee[1] - ank[1]) * 0.10)
-        m |= cv.capsule(top, ank, sr + 0.3, sr + 0.3)
+        top = (ank[0] + (knee[0] - ank[0]) * 0.12, ank[1] + (knee[1] - ank[1]) * 0.12)
+        m |= cv.capsule(top, ank, sr + 0.35, sr + 0.4)
     if kind in ('boots', 'greaves', 'sabaton'):
-        m |= cv.capsule(top, ank, sr + 0.75, sr + 0.6)
-    elif kind == 'sandals':
-        m = cv.poly(foot_poly(B, side, fl - 1))
-        p = cv.put(m, 'skin', mode='cyl', iline=near, bias=bias)
-        strap = m & ((cv.ys == int(round(ank[1] + 1.5))) | (cv.xs == int(round(ank[0]))))
-        cv.paint(strap, mat, 1)
-        return p
+        m |= cv.capsule(top, ank, sr + 0.75, sr + 0.65)
     mode = 'shine' if kind in ('greaves', 'sabaton') else 'cyl'
     p = cv.put(m, mat, mode=mode, iline=near, bias=bias)
     if kind == 'boots':
         # vuelta de la caña
         cuff = cv.capsule((top[0], top[1] - 0.3), (top[0], top[1] + 0.9), sr + 1.1, sr + 1.0)
         cv.put(cuff, ft.get('cuff', mat), mode='cyl', iline=True, bias=bias)
-    # suela oscura
-    cv.shade(cv.of(p) & (cv.ys == int(round(ank[1] + 2.5))), -1)
+    _foot_details(cv, p, to_local, info, B, side, heel_gap=kind in ('boots', 'greaves'))
     return p
 
 

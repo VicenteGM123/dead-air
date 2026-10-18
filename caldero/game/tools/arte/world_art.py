@@ -1170,6 +1170,108 @@ def drop():
     return cv.save('drop')
 
 
+# --- R3 WORLD3: el mostrador transversal (su costado, el libro de cuentas, la campanilla) ------------------------
+
+CF_OUT, CF_DARK, CF_MID, CF_LIGHT, CF_HI = '#140607', '#471d17', '#7a4a2e', '#997246', '#b79a66'
+BRASS = ['#4b1f11', '#bd7434', '#f0c050', '#ffe669', '#fff583']
+
+
+def counter_side():
+    """Costado del mostrador del lado de ella (64x32 = 2 m x 1 m): una fila de cajones y dos puertas de alacena."""
+    rnd = random.Random(31)
+    cv = Cv(64, 32)
+    cv.rect(0, 0, 64, 32, CF_MID)
+    # cajones (8 px de alto): 4 por cada 2 m
+    for i in range(4):
+        x0 = i * 16
+        cv.rect(x0, 0, 16, 9, CF_OUT)
+        cv.rect(x0 + 1, 1, 14, 7, CF_MID)
+        cv.rect(x0 + 1, 1, 14, 1, CF_LIGHT)
+        cv.rect(x0 + 1, 7, 14, 1, CF_DARK)
+        cv.rect(x0 + 1, 1, 1, 7, CF_LIGHT)
+        cv.rect(x0 + 6, 3, 4, 2, BRASS[1])        # tirador de latón
+        cv.rect(x0 + 6, 3, 3, 1, BRASS[2])
+        cv.px(x0 + 6, 3, BRASS[4])
+        cv.px(x0 + 9, 4, BRASS[0])
+    # dos puertas de alacena (cada una 1 m): marco, panel rehundido y argolla
+    for i in range(2):
+        x0 = i * 32
+        cv.rect(x0, 9, 32, 23, CF_OUT)
+        cv.rect(x0 + 1, 10, 30, 21, CF_MID)
+        cv.rect(x0 + 1, 10, 30, 1, CF_LIGHT)
+        cv.rect(x0 + 1, 10, 1, 21, CF_LIGHT)
+        cv.rect(x0 + 4, 13, 24, 15, CF_DARK)       # panel rehundido
+        cv.rect(x0 + 5, 14, 22, 13, CF_MID)
+        cv.rect(x0 + 5, 26, 22, 1, CF_LIGHT)
+        cv.rect(x0 + 26, 14, 1, 13, CF_LIGHT)
+        cv.rect(x0 + 5, 14, 22, 1, CF_DARK)
+        for _ in range(5):                          # veta
+            yy = rnd.randint(16, 25)
+            xx = x0 + rnd.randint(6, 18)
+            cv.rect(xx, yy, rnd.randint(3, 7), 1, CF_DARK)
+        rx = x0 + (27 if i == 0 else 3)              # argolla junto al centro
+        cv.rect(rx, 18, 2, 4, BRASS[1])
+        cv.px(rx, 18, BRASS[3])
+        cv.px(rx + 1, 21, BRASS[0])
+    cv.rect(0, 31, 64, 1, CF_OUT)
+    return cv.save('counter_side', 'tex')
+
+
+def ledger():
+    """El libro de cuentas abierto sobre el mostrador (visto de frente, como open_book.png), con tintero y pluma."""
+    cv = Cv(22, 12)
+    # hojas abiertas (izquierda más clara, derecha en sombra) con columnas de cifras
+    cv.poly([(0, 5), (3, 3), (8, 3), (10, 4), (10, 9), (0, 9)], '#f0e6cc')
+    cv.poly([(10, 4), (12, 3), (17, 3), (19, 5), (19, 9), (10, 9)], '#e2d4b4')
+    cv.rect(10, 4, 1, 5, '#bda995')
+    for y in (5, 7):
+        for x in range(2, 9, 2):
+            cv.px(x, y, '#8a7a6a')
+        for x in range(12, 18, 2):
+            cv.px(x, y, '#8a7a6a')
+    cv.rect(1, 6, 8, 1, '#c9b48e')                # renglones
+    cv.rect(11, 6, 7, 1, '#bfa984')
+    cv.px(16, 7, '#9e2b25'); cv.px(14, 7, '#9e2b25')   # cifras en rojo
+    cv.rect(0, 9, 20, 1, '#bda995')                # canto de las hojas
+    cv.rect(0, 10, 20, 2, '#6a2220')               # tapas de cuero rojo
+    cv.rect(1, 11, 18, 1, '#3a1214')
+    cv.px(0, 10, '#8a3a2a'); cv.px(19, 10, '#4a1618')
+    # tintero y pluma a la derecha
+    cv.rect(18, 8, 4, 4, '#1c1857')
+    cv.rect(19, 7, 2, 1, '#3a3a4a')
+    cv.px(18, 8, '#2f3f8a'); cv.px(21, 11, '#0b0922')
+    for i, (x, y) in enumerate([(20, 6), (20, 5), (21, 4), (21, 3), (21, 2), (21, 1), (21, 0)]):
+        cv.px(x, y, '#fffced' if i % 2 else '#c1b7aa')
+    cv.px(20, 2, '#f4efe6'); cv.px(20, 1, '#fffced')
+    cv.outline(0.45)
+    return cv.save('ledger')
+
+
+def counter_bell():
+    """La campanilla de mostrador: una cúpula de latón con su botón, sobre una base de madera oscura."""
+    cv = Cv(10, 8)
+    cv.rect(0, 6, 10, 2, CF_DARK)                  # base
+    cv.rect(0, 6, 10, 1, CF_LIGHT)
+    cv.rect(1, 5, 8, 1, BRASS[1])                  # cúpula
+    cv.rect(2, 4, 6, 1, BRASS[1])
+    cv.rect(3, 3, 4, 1, BRASS[2])
+    cv.rect(2, 4, 2, 2, BRASS[2])
+    cv.px(3, 3, BRASS[4]); cv.px(2, 4, BRASS[3]); cv.px(3, 4, BRASS[4])
+    cv.rect(7, 4, 1, 2, BRASS[0]); cv.px(8, 5, BRASS[0])
+    cv.rect(4, 2, 2, 1, '#5a5048')                 # vástago y botón
+    cv.rect(4, 1, 2, 1, '#9a8a7a')
+    cv.px(4, 1, '#c8b8a8')
+    cv.outline(0.45)
+    return cv.save('counter_bell')
+
+
+def r3_world3():
+    made = [counter_side(), ledger(), counter_bell()]
+    print('R3 WORLD3 ok', made)
+    return made
+# --- end R3 WORLD3
+
+
 # ------------------------------------------------------------------ todo
 
 def main():
@@ -1208,7 +1310,12 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    # --- R3 WORLD3: "--r3" hace solo el arte de la ronda 3 (mostrador): python3 world_art.py --r3 [carpeta_assets]
+    if '--r3' in sys.argv:
+        sys.argv.remove('--r3')
+        r3_world3()
+    else:
+        main()
     dest = sys.argv[1] if len(sys.argv) > 1 else None
     if dest:
         import shutil
