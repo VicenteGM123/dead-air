@@ -6,7 +6,11 @@ Se juega en https://vicentegm123.github.io/dead-air/caldero/web/
 
 ## Novedades
 
-La tienda ahora se recorre a pie: la alquimista camina entre la biblioteca, el caldero, el mostrador y la puerta, y por la mañana puede salir al mercado, una calle con puestos y gente que pasea. En la biblioteca, el grimorio de su maestra le enseña a escribir pergaminos mágicos, que se venden como las pociones. Los clientes ya no dicen en el acto si la poción les sirvió: se la llevan, y cómo les fue llega después, por carta a la mañana siguiente o cuando vuelven a la tienda. Y el pueblo tiene un elenco nuevo (elfos, enanos, gente bestia, caballeros, magos, campesinos…): los personajes ahora son sprites de 64x96 píxeles al estilo de Octopath Traveler.
+- **Pociones en su propia pantalla:** al usar el caldero se abre el banco: los frascos a la izquierda, el caldero grande a la derecha. Tocas un frasco y cae dentro; luego Remover y Embotellar.
+- **El grimorio encanta pociones:** algunos pedidos traen una runa en su ticket (Prisa, Calma, Dulzor…). Preparas la poción, la encantas en el escritorio de la biblioteca trazando la runa y la entregas. Ya no hay pergaminos.
+- **Menos texto, más papel:** el pedido es un ticket clavado arriba; el recetario, el diario, el correo y los puestos del mercado son hojas de papel con letra a mano.
+- **El mercado:** por la mañana, precio normal; de día el encargo cuesta el doble (x2). La fuente de la plaza ahora tiene agua.
+- **La tienda y el elenco:** el mostrador cruza la tienda y ella pasa por una trampilla; los gorros y cascos cubren el pelo, los pies son nuevos y la alquimista ya no sostiene una poción.
 
 ## Teclado y ratón
 
@@ -14,13 +18,13 @@ La tienda ahora se recorre a pie: la alquimista camina entre la biblioteca, el c
 |---|---|
 | Clic | tocar: un lugar o un objeto de la tienda (ella camina hasta allí y lo usa), un puesto del mercado, un botón |
 | Clic en el suelo, `A` / `D` o las flechas | caminar |
-| `E` | usar el lugar donde está la alquimista |
+| `E` | usar el lugar donde está la alquimista: el caldero abre el banco, el escritorio de la biblioteca abre el grimorio, la puerta lleva al mercado (por la mañana) |
 | `Espacio` | avanzar diálogos y remover |
-| `R` | libro de recetas |
-| `J` | diario de viajeros |
+| `R` / `J` | recetario / diario (`←` `→` o la rueda pasan las hojas) |
 | `Esc` | ajustes (o cerrar la ventana abierta) |
 
-En la runa del grimorio también se traza con las flechas o `WASD`; `Esc` la cancela sin gastar nada.
+En el **banco del caldero**: `1`–`8` echan un frasco, `Espacio` remueve o embotella, `Retroceso` saca el último y `Esc` o `E` lo cierran.
+En el **grimorio** (el escritorio de la biblioteca): flechas e `Intro` para elegir y `Esc` para cerrar; la runa se traza con el ratón, las flechas o `WASD`, y `Esc` suelta la pluma sin gastar tinta.
 
 ## Mando (Xbox y compatibles)
 
@@ -31,12 +35,13 @@ El mando lleva un cursor dorado que hace de ratón: aparece al usar el mando y s
 | Stick izquierdo | mover el cursor (al soltarlo sobre algo tocable, o cerca, se centra solo) |
 | Cruceta izquierda / derecha | caminar (con una ventana o un diálogo abiertos, mueve el cursor) |
 | A | tocar donde está el cursor (o avanzar el diálogo) |
-| B | volver / cerrar la ventana abierta |
+| B | volver / cerrar la ventana abierta (también el banco del caldero) |
 | X | avanzar diálogos y remover (como `Espacio`) |
-| Y | libro de recetas |
+| Y | recetario |
 | Vista | diario de viajeros |
 | Menú | ajustes |
-| LB / RB | saltar al objeto tocable anterior / siguiente (también los lugares de la tienda y los puestos del mercado) |
+| LB / RB | saltar al objeto tocable anterior / siguiente (lugares de la tienda, puestos del mercado, frascos del banco, páginas del grimorio) |
+| LT / RT | pasar las hojas del recetario y del diario |
 | Stick derecho | desplazar listas |
 
 En el navegador, el sonido empieza con el primer clic o tecla: los navegadores no cuentan el mando como interacción (la pantalla de título lo avisa).
