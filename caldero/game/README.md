@@ -2,6 +2,16 @@
 
 Una tiendita de pociones en 2.5D (estilo HD-2D): pixel art dentro de un escenario 3D con luz cálida, desenfoque de maqueta y rayos de luz por la ventana. Al pie de la Montaña Gris hay un pueblo lleno de gente de todo el reino (elfos que recuerdan siglos, enanos, gente gato y gente lobo, una viajera de la raza demonio, caballeros, magos errantes, campesinos…). Te cuentan sus problemas, tú adivinas qué poción necesitan (y, a veces, qué runa debe llevar en la etiqueta), la preparas y se la entregas. Días después te cuentan cómo les fue. Con el tiempo crece tu renombre, se desbloquean ingredientes, runas, mejoras para la tienda y las historias de seis viajeros.
 
+## Novedades (ronda 3)
+
+- **El banco del caldero:** al usar el caldero se abre una pantalla propia: los frascos a la izquierda, el caldero grande a la derecha. Tocas un frasco y cae dentro.
+- **El ticket:** el pedido de cada cliente queda clavado arriba, en un papelito con su cara, la pista en iconos y las runas que pide.
+- **El libro de runas:** el grimorio ahora sirve para encantar pociones. Algunos pedidos traen una runa: preparas la poción, la encantas en el escritorio de la biblioteca y la entregas. Ya no hay pergaminos.
+- **Papeles de verdad:** el recetario, el diario, el correo y los puestos del mercado son hojas de papel con letra a mano, y hay mucho menos texto.
+- **El mercado:** por la mañana, precio normal; de día el encargo cuesta **el doble (x2)**. La fuente de la plaza tiene agua.
+- **La tienda:** el mostrador cruza la tienda; ella pasa por una trampilla y los clientes esperan del otro lado.
+- **El elenco:** gorros y cascos que cubren el pelo, pies nuevos, la alquimista sin la poción en la mano y una Miga más gata.
+
 ## Cómo abrirlo
 
 1. Instala **Godot 4.7** (versión estándar, no la .NET) desde godotengine.org.
@@ -24,10 +34,32 @@ Está hecho y probado con Godot 4.7.2 usando el renderizador Forward+. Si tu com
 - **Noche:** resumen del día y a dormir.
 - Acaricia a **Miga**, la gata. Con el cojín te da suerte.
 
-Caminar: `A` / `D` o las flechas, o haz clic en el suelo. `E` usa el lugar donde está la alquimista. Por la mañana, la puerta (o **Mercado**) lleva al mercado; para volver, la puerta de tu tienda en la calle o **Tienda**.
-Atajos: `Espacio` avanza diálogos y remueve, `R` libro de recetas, `J` diario, `Esc` ajustes. En el recetario y el diario, `←` / `→` (o la rueda del ratón) pasan las hojas. En el banco del caldero: `1`–`8` echan un frasco, `Espacio` remueve o embotella, `Retroceso` saca el último, `Esc` o `E` cierran. En el grimorio: flechas e `Intro`, `Esc` cierra; en la runa también puedes trazar con las flechas o `WASD`, y `Esc` suelta la pluma sin gastar nada.
-Con mando (Xbox y compatibles): el stick izquierdo mueve un cursor, la cruceta izquierda/derecha hace caminar a la alquimista, `A` toca, `B` vuelve o cierra, `X` avanza y remueve, `Y` recetas, `Vista` diario, `Menú` ajustes, `LB` / `RB` saltan entre objetos tocables (también los lugares de la tienda, los puestos del mercado, los frascos del banco y las páginas del grimorio), `LT` / `RT` pasan las hojas del recetario y del diario, y el stick derecho desplaza las listas. El cursor se esconde al mover el ratón.
-La partida se guarda sola al empezar cada día y después de cada cliente (también las noticias que aún no llegan).
+## Controles
+
+| Teclado y ratón | Qué hace |
+|---|---|
+| Clic | tocar: un lugar o un objeto de la tienda (ella camina hasta allí y lo usa), un puesto del mercado, un botón |
+| Clic en el suelo, `A` / `D` o las flechas | caminar |
+| `E` | usar el lugar donde está: el caldero abre el banco, el escritorio de la biblioteca abre el grimorio, la puerta lleva al mercado (por la mañana) |
+| `Espacio` | avanzar diálogos y remover |
+| `R` / `J` | recetario / diario (`←` `→` o la rueda pasan las hojas) |
+| `Esc` | ajustes, o cerrar lo que esté abierto |
+| **Banco del caldero** | `1`–`8` echan un frasco, `Espacio` remueve o embotella, `Retroceso` saca el último, `Esc` o `E` cierran |
+| **Grimorio** (escritorio de la biblioteca) | flechas e `Intro` para elegir, `Esc` cierra; la runa se traza con el ratón, las flechas o `WASD`, y `Esc` suelta la pluma sin gastar tinta |
+
+| Mando (Xbox y compatibles) | Qué hace |
+|---|---|
+| Stick izquierdo | mover el cursor dorado (se centra solo en lo tocable más cercano) |
+| Cruceta izquierda / derecha | caminar (con una ventana abierta, mueve el cursor) |
+| `A` | tocar, o avanzar el diálogo |
+| `B` | volver o cerrar (también el banco del caldero) |
+| `X` | avanzar diálogos y remover |
+| `Y` / `Vista` / `Menú` | recetario / diario / ajustes |
+| `LB` / `RB` | saltar al objeto tocable anterior / siguiente (lugares de la tienda, puestos, frascos del banco, páginas del grimorio) |
+| `LT` / `RT` | pasar las hojas del recetario y del diario |
+| Stick derecho | desplazar listas |
+
+El cursor del mando se esconde al mover el ratón. La partida se guarda sola al empezar cada día y después de cada cliente (también las noticias que aún no llegan).
 
 ## Dónde cambiar cosas
 
@@ -61,7 +93,7 @@ La partida se guarda sola al empezar cada día y después de cada cliente (tambi
 
 Todo el arte está en `assets/`. Los sprites miran a la derecha; los personajes miden 64×96 píxeles por cuadro. Puedes reemplazar cualquier PNG por uno tuyo con el mismo nombre y tamaño.
 
-En `tools/arte/` están los scripts de Python que generaron el pixel art, las texturas, la música y los sonidos (necesitan `pillow`, `numpy`, `scipy` y `ffmpeg`). Los personajes y la gata Miga (también `props/cat.png`) salen de `chars64.py`; `chars.py` es el generador viejo de 32×48 y escribe aparte, en `salida/chars32`. Godot ignora esa carpeta.
+En `tools/arte/` están los scripts de Python que generaron el pixel art, las texturas, la música y los sonidos (necesitan `pillow`, `numpy`, `scipy` y `ffmpeg`). Los personajes y la gata Miga (también `props/cat.png`) salen de `chars64.py` (los gorros y cascos, de `c64hat.py`); `chars.py` es el generador viejo de 32×48 y escribe aparte, en `salida/chars32`. Godot ignora esa carpeta. La interfaz (banco del caldero, ticket, papeles, botones) sale de `ui_art.py`, y el libro de runas y sus iconos de `magic_art.py`.
 
 ### Ideas para seguir
 

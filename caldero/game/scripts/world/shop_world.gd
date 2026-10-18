@@ -1353,6 +1353,37 @@ func at_station(id: String) -> bool:
 func current_station() -> String:
 	return walker.current if walker else ""
 
+## --- R3 SHIP: el letrero de la estación sigue al ratón de verdad. Godot repite cada cuadro la selección 3D con la última
+## posición del ratón que vio fuera de la interfaz; con el banco del caldero abierto (que tapa toda la pantalla) esa
+## posición queda vieja, y como la cámara se mueve, el letrero «Caldero» se encendía solo detrás del banco o al cerrarlo.
+## main.gd llama block_hover(true) al abrir el banco y block_hover(false) al cerrarlo; después, el letrero vuelve
+## cuando el ratón se mueve de verdad sobre la tienda (_unhandled_input: no lo tapa ningún panel).
+var _hover_blocked := false     # el banco del caldero está abierto
+var _hover_live := true         # false desde que se abre el banco hasta que el ratón se mueve sobre la tienda
+var _godot_hover := ""          # la estación que Godot cree que está bajo el ratón (mouse_entered / mouse_exited)
+
+func block_hover(on: bool) -> void:
+	_hover_blocked = on
+	_hover_live = false
+	hide_station_label()
+
+func hover_blocked() -> bool:
+	return _hover_blocked or not _hover_live
+
+func _unhandled_input(ev: InputEvent) -> void:
+	if ev is InputEventMouseMotion and not _hover_blocked and not _hover_live:
+		_hover_live = true
+		if _godot_hover != "":
+			_label_on(_godot_hover)
+
+## Esconde el letrero de la estación.
+func hide_station_label() -> void:
+	if _hover_station != "":
+		_label_off(_hover_station)
+	elif _station_label:
+		_station_label.visible = false
+# --- end R3 SHIP
+
 ## Cambia el letrero que aparece al pasar el cursor por una estación (p. ej. "Puerta · ir al mercado").
 func set_station_label(id: String, text: String) -> void:
 	_station_label_text[id] = text
@@ -1362,19 +1393,32 @@ func set_station_label(id: String, text: String) -> void:
 func _station_hover(id: String, on: bool) -> void:
 	if _station_label == null:
 		return
+	# --- R3 SHIP: se anota lo que cree Godot, pero el letrero solo se enciende si el ratón está de verdad en la tienda
 	if on:
-		_hover_station = id
-		_station_label.text = _station_label_text.get(id, STATIONS[id]["name"])
-		var n: Node3D = station_nodes[id]
-		_station_label.global_position = n.global_position + Vector3(0, STATION_LABEL_Y.get(id, 1.8), 0.35)
-		_station_label.visible = true
-		if id == "biblioteca" and grimoire_sprite:
-			grimoire_sprite.modulate = Color(1.3, 1.25, 1.4)
-	elif _hover_station == id:
-		_hover_station = ""
-		_station_label.visible = false
-		if grimoire_sprite:
-			grimoire_sprite.modulate = Color.WHITE
+		_godot_hover = id
+		if not hover_blocked():
+			_label_on(id)
+	else:
+		if _godot_hover == id:
+			_godot_hover = ""
+		if _hover_station == id:
+			_label_off(id)
+	# --- end R3 SHIP
+
+func _label_on(id: String) -> void:
+	_hover_station = id
+	_station_label.text = _station_label_text.get(id, STATIONS[id]["name"])
+	var n: Node3D = station_nodes[id]
+	_station_label.global_position = n.global_position + Vector3(0, STATION_LABEL_Y.get(id, 1.8), 0.35)
+	_station_label.visible = true
+	if id == "biblioteca" and grimoire_sprite:
+		grimoire_sprite.modulate = Color(1.3, 1.25, 1.4)
+
+func _label_off(_id: String) -> void:
+	_hover_station = ""
+	_station_label.visible = false
+	if grimoire_sprite:
+		grimoire_sprite.modulate = Color.WHITE
 
 func _cam_goal() -> float:
 	if is_finite(cam_fixed_x):

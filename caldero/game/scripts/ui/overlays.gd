@@ -788,7 +788,7 @@ func _refill_market(tab: int) -> void:
 	_mk_body.add_child(_market_ingredients(refresh, [], _market_mode == "day") if tab == 0 else _market_upgrades(refresh))
 
 ## --- R3 PAPER: los ingredientes como artículos (icono, tarjetita con nombre, esencias, precio y cuántos tienes,
-## y +1 / +5). day_order: el encargo de día (precio doble, en tinta roja con su «x2»).
+## y +1 / +5). day_order: el encargo de día (precio doble en tinta roja, con el de la mañana tachado).
 func _market_ingredients(refresh: Callable, only: Array = [], day_order := false) -> Control:
 	var g := GridContainer.new()
 	g.columns = 4
@@ -832,10 +832,25 @@ func _ingredient_good(id: String, refresh: Callable, day_order: bool) -> Control
 	cv.add_child(pr)
 	var price := PaperKit.coins(unit, 36, PaperKit.RED_INK if day_order else PaperKit.INK, 2.0)
 	pr.add_child(price)
+	# --- R3 SHIP: de día, el precio de la mañana tachado y el doble en rojo («3 6»). Antes era «6 x2», que se leía
+	# como 6 por 2 = 12; el sello grande «x2» de arriba ya dice que cuesta el doble.
 	if day_order:
-		var x2 := PaperKit.pic("paper_x2_small", 3.0)
-		x2.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		pr.add_child(x2)
+		var was := PaperKit.hand(str(Game.market_price(id, false)), 30, PaperKit.INK_FAINT, true)
+		was.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var strike := ColorRect.new()
+		strike.color = Color(PaperKit.RED_INK, 0.9)
+		strike.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		strike.anchor_right = 1.0
+		strike.anchor_top = 0.56
+		strike.anchor_bottom = 0.56
+		strike.offset_left = -3.0
+		strike.offset_right = 3.0
+		strike.offset_top = -1.5
+		strike.offset_bottom = 1.5
+		was.add_child(strike)
+		price.add_child(was)
+		price.move_child(was, 1)
+	# --- end R3 SHIP
 	var have := PaperKit.icon_text("paper_i_bag", str(int(Game.stock.get(id, 0))), 32, PaperKit.INK_SOFT, 3.0)
 	have.tooltip_text = "Tienes"
 	have.mouse_filter = Control.MOUSE_FILTER_PASS

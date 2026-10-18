@@ -122,7 +122,7 @@ func _ready() -> void:
 
 	world.jar_clicked.connect(_on_jar_clicked)
 	world.jar_hover.connect(func(id):
-		if not ov.is_open():
+		if not ov.is_open() and not world.hover_blocked():   # --- R3 SHIP: no con el banco abierto (selección vieja)
 			ui.show_ingredient_tooltip(id))
 	world.jar_unhover.connect(func(_id): ui.hide_tooltip())
 	world.cat_clicked.connect(_on_cat_clicked)
@@ -406,12 +406,15 @@ func _talk_request() -> void:
 		elif current.get("retry", false):
 			current["_prefix"] = Story.pick(Data.RETURN_VISITS["retry"]) + " "
 	text = current["_prefix"] + text
+	var head := who
 	if not Game.met.has(current["who"]):
 		Game.met[current["who"]] = true
-		text = "[color=#c9bfd9][i](%s, %s)[/i][/color]\n%s" % [who, Story.char_title(current["who"]), text]
+		# --- R3 SHIP: la primera vez, su oficio junto al nombre (era una línea más: «(Greta, panadera)», el nombre dos veces)
+		var role := Story.char_title(current["who"])
+		head = "%s · %s" % [who, role] if role != "" else who
 	# --- end STORY
 	# --- R3 MAGIC3: aquí estaba ui.show_rack_tab(...) (PREP): ya no hay pestaña de pergaminos en el estante
-	ui.say(who, text, choices)
+	ui.say(head, text, choices)
 
 func _on_customer_clicked() -> void:
 	if customer_ready and not ui.dialog_open() and not busy and not ov.is_open():
@@ -595,8 +598,14 @@ func open_brew() -> void:
 func _on_brew_opened() -> void:
 	ui.set_bench_mode(true)
 	top_box.visible = false
+	# --- R3 SHIP: con el banco abierto, ni el letrero de las estaciones ni el aviso de los frascos (la selección 3D de
+	# Godot sigue con la última posición del ratón y los encendía detrás del banco); ver ShopWorld.block_hover
+	world.block_hover(true)
+	ui.hide_tooltip()
+	# --- end R3 SHIP
 
 func _on_brew_closed() -> void:
+	world.block_hover(false)   # --- R3 SHIP: el letrero vuelve cuando el ratón se mueve sobre la tienda
 	ui.set_bench_mode(false)
 	top_box.visible = true
 	_update_top_buttons()
@@ -840,7 +849,8 @@ func _hand_over(item: Dictionary) -> void:
 		_think(Story.pick(Data.INTUITION["give_match"]))
 	else:
 		customer.emote("question", 1.8)   # lee la etiqueta: no es lo que imaginaba (pero confía en ella)
-	var note := "" if Game.day > 3 else "   [color=#a99fbf][i]Ya te contará cómo le fue.[/i][/color]"
+	# --- R3 SHIP: el recordatorio solo el día 1 (en la entrega del tutorial ya lo dice el consejo de arriba)
+	var note := "" if (Game.day > 1 or tutorial_step == 2) else "   [color=#a99fbf][i]Ya te contará cómo le fue.[/i][/color]"
 	ui.hide_order()
 	var bye := "¡Buen viaje!" if current.get("kind", "") == "hero" else "¡Que te vaya bien!"
 	var paid := "+%d oro" % price
@@ -874,10 +884,12 @@ func _intuition_brew(pid: String, idx: int) -> void:
 		# --- R3 MAGIC3: si el pedido lleva runas, ella piensa en la que falta (se inscribe en el grimorio)
 		var need: Array = Game.order_runes(current)
 		if not need.is_empty():
-			_think("Ahora, la runa de %s…" % Story.rune_name(need[0]))
 			# --- R3 MERGE: con el banco abierto la idea no se ve en la tienda (la tapa el banco): la dice el banco
+			# --- R3 SHIP: y entonces no la piensa además (salía dos veces: el banco y un aviso)
 			if _brew_open():
 				brew.say("Ahora, la runa de %s" % Story.rune_name(need[0]), UIKit.GOLD_BRIGHT, 2.4)
+			else:
+				_think("Ahora, la runa de %s…" % Story.rune_name(need[0]))
 			if Game.magic_stats["runes"] == 0:
 				ui.show_tip("La runa, en el [b]grimorio[/b] de la biblioteca.")   # --- R3 MERGE: corto
 			return
@@ -919,6 +931,11 @@ func _purr() -> void:
 func _think(text: String, good := true) -> void:
 	if in_market or text == "" or not is_instance_valid(world.alchemist):
 		return
+	# --- R3 SHIP: con el banco del caldero abierto el texto 3D quedaba borroso detrás del banco: va como aviso
+	if _brew_open():
+		ui.toast(text, Color(1.0, 0.9, 0.62) if good else Color(0.84, 0.8, 0.95), 2.8)
+		return
+	# --- end R3 SHIP
 	if is_instance_valid(_thought):
 		_thought.queue_free()
 	UIKit.load_fonts()
@@ -1216,7 +1233,7 @@ func _go_market() -> void:
 	_switch_place(true)
 	await get_tree().create_timer(0.15).timeout
 	await _fade_to(0.0, 0.6)
-	ui.show_banner("Plaza del mercado", "Mañana de mercado")
+	ui.show_banner("Plaza del mercado")   # --- R3 SHIP: sin el subtítulo («Mañana de mercado» repetía lo mismo)
 	if not _market_tip_shown:
 		_market_tip_shown = true
 		ui.show_tip("Toca un [b]puesto[/b] para comprar.", 10.0)   # --- R3 BENCH
