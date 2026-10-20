@@ -59,10 +59,17 @@ func new_game_state() -> void:
 	tutorial_done = false
 	magic_reset()   # --- MAGIC (R3 MAGIC3: runas)
 	story_reset()   # --- STORY
+	pace_reset()    # --- R4 PACE: boca a boca y consejos del reloj
+	krapido_reset()   # --- R4 RAVEN: Krápido (reseñas en plumas, totales)
+	events_reset()   # --- R4 EVENTS
+	Ranking.reset()   # --- R4 RANK: el Escalafón del Gremio (ella empieza última)
 	reset_today()
 
 func reset_today() -> void:
+	pace_snapshot()   # --- R4 PACE: guarda el resumen de ayer (Game.pace_last) antes de borrarlo
 	today = {"earned": 0, "renombre": 0, "sold": 0, "new_recipes": [], "journal": []}
+	pace_reset_today()   # --- R4 PACE: "served", "lost_tired", "lost_full", "avg_wait"...
+	krapido_today()   # --- R4 RAVEN: "deliveries", "deliveries_lost", "plumas"
 
 # ------------------------------------------------------------------ niveles y mejoras
 
@@ -336,10 +343,10 @@ func complete_chapter(hero: String) -> Dictionary:
 # --- STORY: primero, quienes vuelven a contar cómo les fue (visitas: no cuentan en el total; algunas traen otro
 # pedido); después, los aventureros y los vecinos y viajeros del pueblo (cada día llegan caras nuevas: "arrives" en
 # Data.CHARACTERS). Nadie viene dos veces el mismo día, ni quien espera noticias o está ofendido por una queja.
-func plan_day() -> Array:
+func plan_day(total_override := -1) -> Array:   # --- R4 PACE: total_override = cuántos pide la demanda del día
 	var queue := []
 	var brewable := brewable_potions()
-	var total := customers_per_day()
+	var total := customers_per_day() if total_override < 0 else total_override   # --- R4 PACE
 	var taken := {}
 	if day == 1 and not tutorial_done:
 		var t: Dictionary = Data.TUTORIAL_REQUEST.duplicate()
@@ -542,6 +549,8 @@ func resolve_outcome(o: Dictionary) -> Dictionary:
 		else:
 			away[who] = day + 3
 			res["away"] = 3
+	if bool(o.get("krapido", false)):   # --- R4 RAVEN: un pedido a domicilio: con su carta llega la reseña en plumas
+		res["plumas"] = krapido_review(o)
 	return res
 
 ## Baja el renombre sin perder el nivel ya alcanzado. Devuelve cuánto bajó.
@@ -690,6 +699,10 @@ func save_game() -> void:
 	}
 	d["magic"] = magic_save()   # --- MAGIC
 	d["story"] = story_save()   # --- STORY: noticias pendientes, quién vino, quién está ofendido
+	d["pace"] = pace_save()     # --- R4 PACE: el boca a boca y los consejos ya vistos
+	d["krapido"] = krapido_save()   # --- R4 RAVEN
+	events_patch_save(d)   # --- R4 EVENTS: invitaciones, evento reservado, trofeos (y el inventario de la tienda durante un evento)
+	d["rank"] = Ranking.save_data()   # --- R4 RANK: el Escalafón del Gremio
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(d, "\t"))
@@ -742,6 +755,13 @@ func load_game() -> bool:
 	var md = d.get("magic", {})   # --- MAGIC
 	magic_load(md if md is Dictionary else {})   # --- MAGIC
 	story_load(d.get("story", {}))   # --- STORY
+	var pd = d.get("pace", {})   # --- R4 PACE (las partidas de antes no lo tienen)
+	pace_load(pd if pd is Dictionary else {})   # --- R4 PACE
+	var kd = d.get("krapido", {})   # --- R4 RAVEN (las partidas viejas no lo tienen)
+	krapido_load(kd if kd is Dictionary else {})   # --- R4 RAVEN
+	var evd = d.get("events", {})   # --- R4 EVENTS
+	events_load(evd if evd is Dictionary else {})   # --- R4 EVENTS
+	Ranking.load_data(d.get("rank", {}))   # --- R4 RANK: una partida vieja (sin "rank") empieza última
 	reset_today()
 	return true
 
@@ -1064,3 +1084,406 @@ func magic_load(d: Dictionary) -> void:
 		gold_changed.emit(gold)
 	magic_changed.emit()
 # --- end R3 MAGIC3
+
+# --- R4 PACE: el día abierto, la fila dentro de la tienda, la paciencia y la demanda -----------------------------------
+# La tienda abierta dura 5 minutos reales: un reloj de 9:00 a 18:00 en la placa del HUD (lo lleva main.gd). Mientras
+# está abierta la gente llega sin parar: cuántos, según el renombre, el día (día de mercado) y el boca a boca (cómo
+# les fue ayer a los que vinieron). Esperan DENTRO, en fila (como mucho PACE_QUEUE_MAX, además de quien está en el
+# mostrador); si la fila está llena, se asoman y se van. Cada uno tiene paciencia (un reloj de arena sobre la cabeza y
+# una barra en el ticket): si se acaba, se va enfadado, baja un poco el renombre y tarda más en volver. Quien recibe
+# rápido su poción deja una propina por rapidez. Lo del día queda en Game.today: "served", "lost_tired", "lost_full",
+# "avg_wait" (segundos), y además "arrived", "lost_closed", "declined", "speed_tips", "renombre_lost".
+# El libro de cuentas de la noche (overlays.gd show_summary) lo muestra.
+
+const PACE_DAY_SECONDS := 300.0      # lo que dura la tienda abierta, en segundos reales (de 9:00 a 18:00)
+const PACE_OPEN_MIN := 540           # 9:00 (minutos desde la medianoche)
+const PACE_CLOSE_MIN := 1080         # 18:00
+const PACE_QUEUE_MAX := 4            # cuántos caben esperando dentro (más quien está en el mostrador)
+const PACE_LINE_SECS := 62.0         # paciencia en la fila de una persona normal (segundos)
+const PACE_COUNTER_SECS := 55.0      # paciencia en el mostrador, desde que pide (segundos)
+const PACE_RUNE_SECS := 30.0         # cada runa del pedido: esta paciencia de más
+const PACE_HERO_SECS := 10.0         # los aventureros esperan algo más por su capítulo
+const PACE_LAST_ARRIVAL := 0.94      # pasada esta parte del día ya no entra nadie nuevo (17:28)
+const PACE_MARKET_EVERY := 4         # cada 4 días, día de mercado: viene gente de toda la comarca
+const PACE_MARKET_MULT := 1.25
+const PACE_SPEED_TIP := 0.25         # propina por rapidez: hasta esta parte del precio
+const PACE_DEMAND_SOFT := 16.0       # por encima de esta demanda, cada punto más cuenta solo un tercio
+## Paciencia de cada persona (x la normal): los niños y la gente con prisa, menos; los mayores, los elfos y los
+## aventureros, más. Quien no está aquí: 1.0 (los elfos 1.3 y los aventureros 1.25).
+const PACE_PATIENCE := {
+	"pip": 0.65, "fizz": 0.7, "marta": 0.8, "nyra": 0.8, "vianne": 0.8, "hassim": 0.85, "brann": 0.85,
+	"ragnar": 0.9, "kit": 0.9, "panadera": 0.95, "roxa": 0.95,
+	"mabel": 1.05, "isolde": 1.1, "zaria": 1.1, "grumm": 1.15, "wren": 1.15, "lupo": 1.2, "tobias": 1.2, "bram": 1.2,
+	"anselmo": 1.25, "aldric": 1.25, "ilse": 1.3, "sylwen": 1.3, "anciano": 1.35, "elda": 1.35, "lirien": 1.4,
+}
+
+var pace_wom := 0.0          # boca a boca (-1..1): lo que se cuenta en el pueblo de la tienda (se guarda)
+var pace_seen := {}          # consejos del reloj y de la fila que ya salieron (se guarda)
+var pace_last := {}          # Game.today del día anterior (no se guarda): para quien lo quiera leer por la mañana
+
+func pace_reset() -> void:
+	pace_wom = 0.0
+	pace_seen = {}
+	pace_last = {}
+
+## Las claves del día (las llama reset_today; los valores los escribe main.gd).
+func pace_reset_today() -> void:
+	for k in ["arrived", "served", "lost_tired", "lost_full", "lost_closed", "declined", "speed_tips", "renombre_lost", "wait_n"]:
+		today[k] = 0
+	today["avg_wait"] = 0.0
+	today["wait_sum"] = 0.0
+
+## Guarda el resumen del día que termina (si hubo tienda) en pace_last.
+func pace_snapshot() -> void:
+	if today.has("arrived") and (int(today.get("arrived", 0)) > 0 or int(today.get("sold", 0)) > 0):
+		pace_last = today.duplicate(true)
+
+func pace_save() -> Dictionary:
+	return {"wom": pace_wom, "seen": pace_seen}
+
+func pace_load(d: Dictionary) -> void:
+	pace_reset()
+	pace_wom = clampf(float(d.get("wom", 0.0)), -1.0, 1.0)
+	var s = d.get("seen", {})
+	if s is Dictionary:
+		for k in s:
+			pace_seen[String(k)] = true
+
+## Hoy es día de mercado (cada PACE_MARKET_EVERY días desde el 4): viene más gente.
+func pace_market_day() -> bool:
+	return day >= PACE_MARKET_EVERY and day % PACE_MARKET_EVERY == 0
+
+## Cuánta gente vendrá hoy, en promedio, mientras la tienda está abierta. Los primeros días, poca; luego crece con los
+## días, el renombre, la campanilla de la puerta, el boca a boca y el día de mercado.
+func pace_demand() -> float:
+	var n := 5.0 + 1.6 * float(clampi(day - 1, 0, 7))   # día 1: 5 ... día 8: ~16
+	n += 1.3 * float(level())
+	if has_upgrade("campanilla"):
+		n += 1.0                                          # «llega 1 cliente más cada día»
+	n *= 1.0 + 0.12 * pace_wom
+	if pace_market_day():
+		n *= PACE_MARKET_MULT
+	if n > PACE_DEMAND_SOFT:   # con mucha fama sigue llegando más gente, pero cada vez menos de golpe
+		n = PACE_DEMAND_SOFT + (n - PACE_DEMAND_SOFT) * 0.35
+	return n
+
+## Cuántos llegarán hoy según el reloj (la demanda, con un poco de azar).
+func pace_arrivals_today() -> int:
+	return maxi(1, int(round(pace_demand() + randf_range(-0.6, 0.6))))
+
+## Además de los del reloj, algunos más pueden entrar si la tienda se queda vacía (quien pasa y la ve libre).
+func pace_spares() -> int:
+	return 2 + (1 if level() >= 2 else 0)
+
+## Cuándo llega cada uno (segundos de tienda abierta), repartidos según la forma del día: más gente a mediodía y algo
+## antes de cerrar. El primero ya espera en la puerta al abrir.
+func pace_schedule(n: int) -> Array:
+	var out: Array = []
+	if n <= 0:
+		return out
+	var steps := 120
+	var cdf: Array = [0.0]
+	var rush := clampf((float(n) - 5.0) / 7.0, 0.0, 1.0)   # con poca gente, repartidos; con mucha, la hora punta
+	for i in steps:
+		cdf.append(float(cdf.back()) + _pace_rate((float(i) + 0.5) / float(steps), rush))
+	var total: float = cdf.back()
+	var t0 := 3.0
+	var t1 := PACE_DAY_SECONDS * PACE_LAST_ARRIVAL
+	for i in n:
+		var u := (float(i) + randf_range(0.15, 0.85)) / float(n) * total
+		var j := 1
+		while j < cdf.size() - 1 and float(cdf[j]) < u:
+			j += 1
+		var a: float = cdf[j - 1]
+		var b: float = cdf[j]
+		var f := (float(j - 1) + clampf((u - a) / maxf(0.0001, b - a), 0.0, 1.0)) / float(steps)
+		out.append(lerpf(t0, t1, f))
+	out.sort()
+	out[0] = minf(float(out[0]), 1.5)
+	return out
+
+## La forma del día (f: 0 a las 9:00, 1 a las 18:00): poca gente temprano, la hora punta del mediodía (de las 12 a
+## las 14, casi la mitad del día) y otro empujón, más chico, a media tarde. rush (0..1): los días con poca gente
+## (los primeros) llegan repartidos, sin hora punta; con más gente, la hora punta se nota entera.
+func _pace_rate(f: float, rush := 1.0) -> float:
+	var peaks := 2.0 * exp(-pow((f - 0.42) / 0.1, 2.0)) + 0.5 * exp(-pow((f - 0.78) / 0.08, 2.0))
+	return 0.45 + rush * peaks + (1.0 - rush) * 0.42
+
+## La paciencia de una persona (x la normal). Los dos primeros días todos esperan con más calma.
+func pace_patience_factor(req: Dictionary) -> float:
+	var who := String(req.get("who", ""))
+	var f := 1.0
+	if PACE_PATIENCE.has(who):
+		f = float(PACE_PATIENCE[who])
+	elif Data.HEROES.has(who):
+		f = 1.25
+	elif String(Data.CHARACTERS.get(who, {}).get("species", "")).begins_with("elf"):
+		f = 1.3
+	if day <= 1:
+		f *= 1.3
+	elif day == 2:
+		f *= 1.15
+	return f
+
+## Cuánto aguanta en la fila (segundos).
+func pace_line_secs(req: Dictionary) -> float:
+	return PACE_LINE_SECS * pace_patience_factor(req)
+
+## Cuánto aguanta en el mostrador desde que pide (segundos): más si el pedido lleva runas o es de un aventurero.
+func pace_counter_secs(req: Dictionary) -> float:
+	var s := PACE_COUNTER_SECS + PACE_RUNE_SECS * float(order_runes(req).size())
+	if String(req.get("kind", "")) == "hero":
+		s += PACE_HERO_SECS
+	return s * pace_patience_factor(req)
+
+## La propina por rapidez: p = la paciencia que le quedaba en el mostrador al recibir la poción (0..1).
+func pace_speed_tip(price: int, p: float) -> int:
+	var k := clampf((p - 0.4) / 0.6, 0.0, 1.0)
+	return int(round(float(price) * PACE_SPEED_TIP * k))
+
+## Atendido (se lleva su poción o ya contó sus noticias). wait: lo que esperó desde que entró (segundos de tienda).
+func pace_served(wait: float, count_wait := true) -> void:
+	today["served"] = int(today.get("served", 0)) + 1
+	if count_wait:
+		today["wait_sum"] = float(today.get("wait_sum", 0.0)) + maxf(0.0, wait)
+		today["wait_n"] = int(today.get("wait_n", 0)) + 1
+		today["avg_wait"] = float(today["wait_sum"]) / float(today["wait_n"])
+
+## Alguien se cansó de esperar y se va enfadado: baja un poco el renombre (nunca por debajo del nivel ya ganado) y
+## tarda más en volver (2 días; un aventurero, no mañana; quien venía a contar algo vuelve en 2 días). Devuelve cuánto
+## renombre se perdió.
+func pace_annoyed(req: Dictionary) -> int:
+	today["lost_tired"] = int(today.get("lost_tired", 0)) + 1
+	var lost := lose_renombre(1)
+	today["renombre"] = int(today.get("renombre", 0)) - lost
+	today["renombre_lost"] = int(today.get("renombre_lost", 0)) + lost
+	var who := String(req.get("who", ""))
+	match String(req.get("kind", "")):
+		"hero":
+			hero_last_day[who] = maxi(int(hero_last_day.get(who, -1)), day + 1)
+		"return":
+			var id := int(req.get("outcome", {}).get("id", -1))
+			for o in pending:
+				if int(o.get("id", -2)) == id:
+					o["due"] = maxi(int(o.get("due", 0)), day + 2)
+		_:
+			if who != "":
+				away[who] = maxi(int(away.get(who, 0)), day + 2)
+	return lost
+
+## Cuando el pueblo no da para toda la demanda del día (la gente que espera noticias no viene con pedidos nuevos):
+## quien iba a volver mañana a contar cómo le fue, viene hoy (como mucho k). Algunos traen otro pedido.
+func pace_early_visits(k: int, roster: Array) -> Array:
+	var out: Array = []
+	if k <= 0:
+		return out
+	var taken := {}
+	for r in roster:
+		taken[String(r.get("who", ""))] = true
+	var brewable := brewable_potions()
+	for o in pending:
+		if out.size() >= k:
+			break
+		var who := String(o.get("who", ""))
+		if String(o.get("via", "")) != "visit" or int(o.get("due", 0)) != day + 1 or taken.has(who):
+			continue
+		o["due"] = day
+		var v := {"kind": "return", "who": who, "outcome": o}
+		var f := _follow_request(o, brewable)
+		if not f.is_empty():
+			v["follow"] = f
+		out.append(v)
+		taken[who] = true
+	return out
+
+## Al cerrar: el boca a boca de mañana sale de la parte de los que vinieron que se fueron atendidos.
+func pace_end_day() -> void:
+	var came := int(today.get("served", 0)) + int(today.get("lost_tired", 0)) + int(today.get("lost_full", 0))
+	if came <= 0:
+		return
+	var rate := float(today.get("served", 0)) / float(came)
+	var score := clampf((rate - 0.75) * 2.5, -1.0, 1.0)
+	pace_wom = clampf(pace_wom * 0.5 + score * 0.5, -1.0, 1.0)
+# --- end R4 PACE
+
+# --- R4 RAVEN: Krápido, el reparto a domicilio por cuervo ---------------------------------------------------------
+# La mejora "krapido" (Data.UPGRADES, puesto de Mabel). Los pedidos del día (las tarjetas de la bola) viven en
+# scripts/krapido.gd y no se guardan: al cerrar la tienda se cancelan sin castigo. Aquí vive lo que dura: las reseñas
+# en plumas (1 a 5) y su promedio, que decide cuántos pedidos llegan cada día, y los totales. Contrato con las otras
+# lanes: Game.today["deliveries"] (entregados hoy), ["deliveries_lost"] (el cuervo se fue sin nada) y ["plumas"].
+
+const KRAPIDO_SEED := [3, 4]        # las dos primeras reseñas «de cortesía»: se empieza con 3,5 plumas
+const KRAPIDO_KEEP := 10            # el promedio usa las últimas 10 reseñas
+const KRAPIDO_SLOW := 40.0          # si Graznido esperó más que esto (segundos), la reseña baja una pluma
+
+var krapido_reviews: Array = []     # [{"who", "plumas", "day", "lost"}], la más nueva al final
+var krapido_stats := {"delivered": 0, "lost": 0, "orders": 0}
+var krapido_seen := false           # ya abrió la bola alguna vez (los consejos de la primera vez)
+
+func krapido_reset() -> void:
+	krapido_reviews = []
+	krapido_stats = {"delivered": 0, "lost": 0, "orders": 0}
+	krapido_seen = false
+
+func krapido_on() -> bool:
+	return has_upgrade("krapido")
+
+## La calificación: el promedio de las últimas reseñas (1 a 5 plumas, con decimales).
+func plumas() -> float:
+	var vals: Array = KRAPIDO_SEED.duplicate()
+	for r in krapido_reviews:
+		vals.append(int(r.get("plumas", 3)))
+	vals = vals.slice(maxi(0, vals.size() - KRAPIDO_KEEP))
+	var t := 0.0
+	for v in vals:
+		t += float(v)
+	return clampf(t / maxf(1.0, float(vals.size())), 1.0, 5.0)
+
+## Cuántos pedidos a domicilio llegan hoy: según las plumas (1 a 4) y uno más desde «Maestra de pociones».
+func krapido_orders_per_day() -> int:
+	var p := plumas()
+	var n := 1
+	if p >= 2.5:
+		n = 2
+	if p >= 3.5:
+		n = 3
+	if p >= 4.5:
+		n = 4
+	if level() >= 3:
+		n += 1
+	return n
+
+## Una reseña nueva (la deja quien recibió la poción, con su carta; o Graznido, enojado, si se fue de vacío).
+func krapido_add_review(who: String, n: int, lost := false) -> void:
+	krapido_reviews.append({"who": who, "plumas": clampi(n, 1, 5), "day": day, "lost": lost})
+	while krapido_reviews.size() > 30:
+		krapido_reviews.pop_front()
+	today["plumas"] = plumas()
+
+## La reseña de un pedido entregado cuando llega su carta: 1 si no era la poción; si era: 3, 4 o 5 plumas según las
+## estrellas, una menos por cada runa que faltó y una menos si Graznido esperó mucho en la ventanilla.
+func krapido_review(o: Dictionary) -> int:
+	var n := 1
+	if bool(o.get("ok", false)):
+		n = 2 + clampi(int(o.get("stars", 1)), 1, 3)
+		var got := []
+		for g in o.get("rune_got", []):
+			if g is Array and not g.is_empty():
+				got.append(String(g[0]))
+		for r in o.get("rune_want", []):
+			if not got.has(String(r)):
+				n -= 1
+		if float(o.get("krapido_wait", 0.0)) > KRAPIDO_SLOW:
+			n -= 1
+	n = clampi(n, 1, 5)
+	krapido_add_review(String(o.get("who", "")), n)
+	return n
+
+func krapido_today() -> void:
+	today["deliveries"] = 0
+	today["deliveries_lost"] = 0
+	today["plumas"] = plumas()
+
+func krapido_save() -> Dictionary:
+	return {"reviews": krapido_reviews, "stats": krapido_stats, "seen": krapido_seen}
+
+func krapido_load(d: Dictionary) -> void:
+	krapido_reset()
+	for r in d.get("reviews", []):
+		if r is Dictionary:
+			krapido_reviews.append({"who": String(r.get("who", "")), "plumas": clampi(int(r.get("plumas", 3)), 1, 5),
+				"day": int(r.get("day", 0)), "lost": bool(r.get("lost", false))})
+	var st = d.get("stats", {})
+	if st is Dictionary:
+		for k in krapido_stats:
+			krapido_stats[k] = int(st.get(k, 0))
+	krapido_seen = bool(d.get("seen", false))
+# --- end R4 RAVEN
+
+# --- R4 EVENTS: los eventos (invitaciones por carta, el evento aceptado, el historial y los trofeos) ----------------
+# Las reglas, el calendario y los textos están en scripts/events.gd (Events); el evento en marcha, en
+# scripts/event_game.gd. Durante un evento el inventario de la tienda se guarda aparte (ev_stash): el caldero usa la
+# despensa del evento y el estante es el del evento. Si se guarda en ese momento, se guarda el de la tienda.
+
+var ev_invite := {}            # la invitación que espera respuesta ({} si no hay); ver Events.make_invite
+var ev_booked := {}            # el evento aceptado: se juega el día ev_booked["day"] (la inscripción ya se pagó)
+var ev_next := 2               # primer día en que puede llegar la próxima invitación (Events.FIRST_DAY)
+var ev_count := 0              # invitaciones recibidas
+var ev_last_kind := ""         # la última clase de evento que la invitó
+var ev_answers: Array = []     # [{"id", "kind", "accepted", "day"}]
+var ev_history: Array = []     # [{"id", "kind", "day", "medal", "points", "tier", "place", "score"}]
+var ev_trophies: Array = []    # [{"kind", "medal", "day", "tier"}]: el estante de trofeos de la tienda
+var ev_done_day := 0           # el día del último evento jugado (si recarga ese día, va directo a la noche)
+var ev_stash := {}             # durante el evento: {"stock", "potions"} de la tienda (no se guarda en la partida)
+
+func events_reset() -> void:
+	ev_invite = {}
+	ev_booked = {}
+	ev_next = 2
+	ev_count = 0
+	ev_last_kind = ""
+	ev_answers = []
+	ev_history = []
+	ev_trophies = []
+	ev_done_day = 0
+	ev_stash = {}
+
+func events_save() -> Dictionary:
+	return {"invite": ev_invite, "booked": ev_booked, "next": ev_next, "count": ev_count, "last": ev_last_kind,
+		"answers": ev_answers, "history": ev_history, "trophies": ev_trophies, "done_day": ev_done_day}
+
+## save_game() la llama: guarda los eventos y, si hay un evento en marcha, el inventario de la tienda (no la despensa).
+func events_patch_save(d: Dictionary) -> void:
+	d["events"] = events_save()
+	if not ev_stash.is_empty():
+		d["stock"] = ev_stash["stock"]
+		d["potions"] = ev_stash["potions"]
+
+func events_load(d: Dictionary) -> void:
+	events_reset()
+	var inv = d.get("invite", {})
+	ev_invite = _ev_fix(inv) if inv is Dictionary else {}
+	var bk = d.get("booked", {})
+	ev_booked = _ev_fix(bk) if bk is Dictionary else {}
+	ev_next = int(d.get("next", 2))
+	ev_count = int(d.get("count", 0))
+	ev_last_kind = String(d.get("last", ""))
+	for k in ["answers", "history", "trophies"]:
+		var a = d.get(k, [])
+		if a is Array:
+			for e in a:
+				if e is Dictionary:
+					get("ev_" + k).append(_ev_fix(e))
+	ev_done_day = int(d.get("done_day", 0))
+
+## JSON devuelve los números como float: los enteros de una invitación o un resultado vuelven a ser int.
+func _ev_fix(e: Dictionary) -> Dictionary:
+	var o: Dictionary = e.duplicate(true)
+	for k in ["day", "sent", "tier", "fee", "difficulty", "points", "place", "score"]:
+		if o.has(k):
+			o[k] = int(o[k])
+	if o.get("plan", null) is Dictionary:
+		for k in ["n", "time", "k", "rounds"]:
+			if o["plan"].has(k):
+				o["plan"][k] = int(o["plan"][k])
+	return o
+
+## Empieza un evento: guarda el inventario de la tienda y pone la despensa del evento y un estante vacío.
+func events_stash(pantry: Dictionary) -> void:
+	if ev_stash.is_empty():
+		ev_stash = {"stock": stock.duplicate(), "potions": potions.duplicate(true)}
+	stock = pantry.duplicate()
+	potions = []
+	stock_changed.emit()
+	potions_changed.emit()
+
+## Termina el evento: devuelve el inventario de la tienda (lo que sobró de la despensa se queda en el evento).
+func events_unstash() -> void:
+	if ev_stash.is_empty():
+		return
+	stock = ev_stash["stock"]
+	potions = ev_stash["potions"]
+	ev_stash = {}
+	stock_changed.emit()
+	potions_changed.emit()
+# --- end R4 EVENTS

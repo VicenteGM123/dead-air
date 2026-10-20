@@ -21,6 +21,8 @@ config/icon="res://icon.png"
 Data="*res://scripts/data.gd"
 Game="*res://scripts/game.gd"
 Sfx="*res://scripts/sfx.gd"
+; --- R4 RANK: el Escalafón del Gremio de Boticarios de Arvendal (scripts/ranking.gd)
+Ranking="*res://scripts/ranking.gd"
 
 [display]
 

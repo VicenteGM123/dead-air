@@ -231,9 +231,24 @@ static func letter(o: Dictionary, res: Dictionary) -> Dictionary:
 		if not Data.WRONG_EFFECTS.has(fx_key):
 			fx_key = "_any"   # --- R3 MAGIC3 (también las noticias viejas de pergaminos)
 		body = "%s %s\n\n%s" % [fail, pick(Data.WRONG_EFFECTS[fx_key]), pick(Data.LETTERS["complaint_close"])]
+	var reward := reward_line(res, who)   # --- R4 RAVEN (antes iba directo en el diccionario)
+	if bool(o.get("krapido", false)):   # --- R4 RAVEN: pedido a domicilio: la posdata del cuervo y la reseña en plumas
+		if String(res.get("gift_text", "")) == "":
+			body += "\n\n" + pick(Data.KRAPIDO_PD)
+		reward = krapido_reward(res, reward)
 	return {"who": who, "sprite": sprite_id(who), "name": char_name(who), "title": char_title(who),
 		"hello": String(ch.get("hello", Data.LETTERS["hello_default"])), "body": body,
-		"sign": String(ch.get("sign", char_name(who))), "reward": reward_line(res, who), "ok": bool(o.get("ok", false))}
+		"sign": String(ch.get("sign", char_name(who))), "reward": reward, "ok": bool(o.get("ok", false))}
+
+## --- R4 RAVEN: la reseña en plumas (1 a 5) al final de lo que trae la carta de un pedido a domicilio.
+static func krapido_reward(res: Dictionary, reward: String) -> String:
+	var n := int(res.get("plumas", 0))
+	if n <= 0:
+		return reward
+	var f := "[img=27]res://assets/ui/raven_head.png[/img] "
+	for i in 5:
+		f += "[img=27]res://assets/ui/pluma_%s.png[/img]" % ("full" if i < n else "empty")
+	return (reward + "     " if reward != "" else "") + f
 
 ## Lo que cuenta quien vuelve a la tienda (main.gd _talk_return).
 static func visit_text(o: Dictionary, res: Dictionary) -> String:

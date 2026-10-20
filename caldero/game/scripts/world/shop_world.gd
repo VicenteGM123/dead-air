@@ -66,6 +66,18 @@ const CAM_X0 := -10.0           # la cámara sigue a la alquimista entre estos l
 const CAM_X1 := 2.0             # --- R3 WORLD3 (era 1.3): del lado de la puerta se ve el frente del mostrador
 const CAM_COUNTER_X := -0.3     # --- R3 WORLD3: de su lado, la cámara no pasa de aquí (se ve el mostrador de lado)
 # --- end WORLD
+# --- R4 RAVEN: Krápido. La ventanilla con percha y la bola de cristal, del lado de ella: en la pared del fondo, entre el
+# tabique de la biblioteca y el estante de ingredientes. Sin la mejora, un trozo de pared tapa el hueco.
+const KRAPIDO_X0 := -7.11        # hueco de la ventanilla (x)
+const KRAPIDO_X1 := -6.49
+const KRAPIDO_Y0 := 1.52         # alféizar
+const KRAPIDO_Y1 := 2.44         # dintel
+const KRAPIDO_PERCH := Vector3(-6.8, 1.615, -3.93)   # donde apoya las patas Graznido
+const KRAPIDO_BALL := Vector3(-6.98, 0.0, -3.3)      # la bola de cristal en su pie
+## La estación de la bola: ella se para a la derecha de la bola, mirándola (la zona se le quita al caldero).
+const KRAPIDO_STATION := {"x": -6.15, "face": -1, "zone": Vector2(-7.6, -5.45), "name": "Krápido"}
+const KRAPIDO_CALDERO_ZONE := Vector2(-5.45, -1.1)
+# --- end R4 RAVEN
 
 var camera: Camera3D
 var env: Environment
@@ -276,8 +288,10 @@ func build() -> void:
 	_build_decor()
 	_build_library()   # --- WORLD
 	_build_characters()
+	_build_krapido()    # --- R4 RAVEN: la ventanilla, la percha, el letrero y la bola de cristal
 	_build_stations()   # --- WORLD
 	_build_walker()     # --- WORLD
+	_build_trophies()   # --- R4 EVENTS
 	_build_particles()
 	refresh_jars()
 	refresh_rack()
@@ -372,7 +386,9 @@ func _build_room() -> void:
 	var z1 := WALL_Z
 	var H := 5.8
 	var pieces := [
-		[-7.6, 0.5, 0.0, H], [0.5, 2.5, 0.0, 1.4], [0.5, 2.5, 3.1, H], [2.5, 3.3, 0.0, H],
+		[-7.6, KRAPIDO_X0, 0.0, H], [KRAPIDO_X0, KRAPIDO_X1, 0.0, KRAPIDO_Y0], [KRAPIDO_X0, KRAPIDO_X1, KRAPIDO_Y1, H],   # --- R4 RAVEN:
+		[KRAPIDO_X1, 0.5, 0.0, H],   # --- R4 RAVEN: el hueco de la ventanilla de Krápido (era [-7.6, 0.5, 0.0, H])
+		[0.5, 2.5, 0.0, 1.4], [0.5, 2.5, 3.1, H], [2.5, 3.3, 0.0, H],
 		[3.3, 4.7, 2.5, H], [4.7, 7.6, 0.0, H],
 	]
 	for p in pieces:
@@ -382,6 +398,9 @@ func _build_room() -> void:
 			_box_b(p[0], p[1], ya, minf(yb, 1.0), z0, z1 + 0.04, stone)
 		if yb > 1.0:
 			_box_b(p[0], p[1], maxf(ya, 1.0), yb, z0, z1, plaster)
+	# --- R4 RAVEN: el tapón del hueco (pared lisa) mientras no se compre Krápido
+	_krapido_plug = _box_b(KRAPIDO_X0, KRAPIDO_X1, KRAPIDO_Y0, KRAPIDO_Y1, z0, z1, plaster)
+	# --- end R4 RAVEN
 	# techo (no se ve, pero bloquea el sol y la niebla de arriba)
 	var ceil_m := StandardMaterial3D.new()
 	ceil_m.albedo_color = Color(0.1, 0.08, 0.1)
@@ -719,8 +738,8 @@ func _build_decor() -> void:
 	# plantas a los lados
 	_sprite("res://assets/props/fern.png", 0.05, Vector3(-5.7, 0, 0.2))
 	_sprite("res://assets/props/fern.png", 0.05, Vector3(6.0, 0, -0.3))
-	_sprite("res://assets/props/barrel.png", 0.04, Vector3(-6.6, 0, -1.2))
-	_sprite("res://assets/props/sack.png", 0.04, Vector3(-6.0, 0, -0.9))
+	_krapido_moved = [_sprite("res://assets/props/barrel.png", 0.04, Vector3(-6.6, 0, -1.2)),
+		_sprite("res://assets/props/sack.png", 0.04, Vector3(-6.0, 0, -0.9))]   # --- R4 RAVEN: (con Krápido se corren: _krapido_refresh)
 	# hierbas colgando de la viga delantera
 	for p in [[-4.3, "herbs"], [-1.9, "lavender"], [2.6, "herbs"], [4.6, "lavender"]]:
 		var s := _sprite("res://assets/props/%s.png" % p[1], 0.04, Vector3(p[0], 4.1, 2.55), null, "top")
@@ -878,6 +897,7 @@ func refresh_upgrades() -> void:
 			n.visible = Game.has_upgrade(id)
 	cauldron.set_copper(Game.has_upgrade("caldero_cobre"))
 	set_cat_on_cushion(Game.has_upgrade("cojin"))
+	_krapido_refresh()   # --- R4 RAVEN: el tapón de la pared y la estación de la bola
 
 func reveal_upgrade(id: String) -> void:
 	refresh_upgrades()
@@ -987,11 +1007,17 @@ func open_door() -> void:
 			tb.tween_property(bell, "rotation:z", 0.3, 0.07)
 			tb.tween_property(bell, "rotation:z", -0.3, 0.07)
 		tb.tween_property(bell, "rotation:z", 0.0, 0.07)
+	if _door_tw and _door_tw.is_valid():
+		_door_tw.kill()   # --- R4 PACE: con la fila la puerta se abre y se cierra seguido: un solo movimiento a la vez
 	var tw := create_tween()
+	_door_tw = tw   # --- R4 PACE
 	tw.tween_property(door_pivot, "rotation:y", deg_to_rad(-105.0), 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func close_door() -> void:
+	if _door_tw and _door_tw.is_valid():
+		_door_tw.kill()   # --- R4 PACE
 	var tw := create_tween()
+	_door_tw = tw   # --- R4 PACE
 	tw.tween_property(door_pivot, "rotation:y", 0.0, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
 
 # ------------------------------------------------------------------ hora del día
@@ -1076,6 +1102,7 @@ func _process(delta: float) -> void:
 		camera.position = _cam_base + off + Vector3(sin(_t * 0.11) * 0.08, sin(_t * 0.17) * 0.04, 0.0)
 		camera.look_at(_cam_target + off, Vector3.UP)
 	_update_flap(delta)   # --- R3 WORLD3
+	_krapido_process(delta)   # --- R4 RAVEN: la bola late y la tapa de la ventanilla se abre
 
 # --- R3 WORLD3: la trampilla se levanta (hacia la pared) cuando ella se acerca al hueco y baja cuando ya pasó.
 func _update_flap(delta: float) -> void:
@@ -1333,7 +1360,7 @@ func _station_press(id: String) -> void:
 
 ## Camina hasta la estación y la usa: emite station_clicked(id) al llegar. false si la interrumpieron.
 func use_station(id: String) -> bool:
-	if walker == null or not STATIONS.has(id):
+	if walker == null or not walker.stations.has(id):   # --- R4 RAVEN: (era STATIONS) "ventanilla" solo existe con la mejora
 		return false
 	if not await walker.go_station(id):
 		return false
@@ -1407,7 +1434,7 @@ func _station_hover(id: String, on: bool) -> void:
 
 func _label_on(id: String) -> void:
 	_hover_station = id
-	_station_label.text = _station_label_text.get(id, STATIONS[id]["name"])
+	_station_label.text = _station_label_text.get(id, STATIONS[id]["name"] if STATIONS.has(id) else id.capitalize())   # --- R4 RAVEN
 	var n: Node3D = station_nodes[id]
 	_station_label.global_position = n.global_position + Vector3(0, STATION_LABEL_Y.get(id, 1.8), 0.35)
 	_station_label.visible = true
@@ -1438,7 +1465,332 @@ func snap_camera() -> void:
 
 ## Objetos de las estaciones para el cursor del mando (LB / RB): [[Node3D, altura], ...].
 func pad_picks() -> Array:
-	return [[station_nodes["biblioteca"], 0.95], [station_nodes["mostrador"], 0.9], [station_nodes["puerta"], 1.3]]
+	var out := [[station_nodes["biblioteca"], 0.95], [station_nodes["mostrador"], 0.9], [station_nodes["puerta"], 1.3]]   # --- R4 RAVEN (antes: return [...])
+	if krapido_node and krapido_node.visible:   # --- R4 RAVEN: la bola de Krápido
+		out.append([krapido_ball, 0.9])
+	return out
 # --- end WORLD
 
 # --- R3 MAGIC3: aquí estaba el estante 3D de pergaminos (MAGIC, ronda 2): ya no hay pergaminos.
+
+# --- R4 PACE: la fila dentro de la tienda, del lado de los clientes -------------------------------------------------
+# Quien está en el mostrador espera en P_CUSTOMER; detrás, la fila: QUEUE_SPOTS, en una diagonal suave hacia la puerta
+# (desde el lado de ella se ven todos). Entran por la puerta (P_DOOR_IN), van a su sitio, avanzan cuando el de delante
+# pasa al mostrador y salen por detrás de la fila (P_EXIT_BACK). Si la fila está llena, quien llega se asoma (P_PEEK),
+# suspira y se va. main.gd los mueve (bloque R4 PACE); aquí están los sitios, la puerta compartida, el reloj de arena
+# sobre la cabeza de quien espera y las frases cortas que sueltan al irse.
+const QUEUE_SPOTS := [Vector3(2.6, 0, -1.3), Vector3(3.38, 0, -1.44), Vector3(4.14, 0, -1.58), Vector3(4.88, 0, -1.72)]
+const P_PEEK := Vector3(3.76, 0, -2.86)          # recién entrado (entre dos de la fila, para que se le vea)
+const P_EXIT_BACK := Vector3(2.2, 0, -2.3)      # quien deja el mostrador da un paso atrás y sale por detrás de la fila
+const P_WALL_CLOCK := Vector3(4.0, 3.0, -3.93)  # el reloj de la pared (lo miran mientras esperan)
+
+var _door_tw: Tween
+var _door_users := 0
+var _door_open := false
+var _hourglass_tex: Array = []
+
+## Alguien va a pasar por la puerta: se abre (una sola vez aunque pasen varios seguidos).
+func door_hold() -> void:
+	_door_users += 1
+	if not _door_open:
+		_door_open = true
+		open_door()
+
+## Ya pasó. Cuando no queda nadie en la puerta, se cierra un momento después.
+func door_release() -> void:
+	_door_users = maxi(0, _door_users - 1)
+	if _door_users > 0:
+		return
+	get_tree().create_timer(0.5).timeout.connect(func():
+		if _door_users == 0 and _door_open:
+			_door_open = false
+			close_door())
+
+## La puerta, cerrada y sin nadie (fin del día, vuelta al título).
+func door_reset() -> void:
+	_door_users = 0
+	if _door_open:
+		_door_open = false
+		close_door()
+
+## El reloj de arena de quien espera, sobre su cabeza (se esconde mientras muestra una emoción, que sale ahí mismo).
+func hourglass_for(a: Actor) -> Sprite3D:
+	if _hourglass_tex.is_empty():
+		for k in 5:
+			_hourglass_tex.append(load("res://assets/icons/emote_hourglass_%d.png" % k))
+	var s := Sprite3D.new()
+	s.texture = _hourglass_tex[4]
+	s.pixel_size = 0.028
+	s.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	s.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	s.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+	s.shaded = false
+	s.no_depth_test = true
+	s.render_priority = 9
+	s.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var top: float = a.top_height() if a.has_method("top_height") else a.height()
+	s.position = Vector3(0.0, top + 0.3, 0.08)
+	s.set_meta("base", s.position)
+	a.add_child(s)
+	return s
+
+## La arena que le queda (p: 0..1). Con menos de la mitad se pone ámbar; con menos de un cuarto, roja y tiembla.
+func set_hourglass(s: Sprite3D, p: float, t: float) -> void:
+	if not is_instance_valid(s) or _hourglass_tex.is_empty():
+		return
+	var a := s.get_parent() as Actor
+	if a and a.emote_sprite:
+		s.modulate.a = 0.0 if a.emote_sprite.visible else 1.0
+	s.texture = _hourglass_tex[clampi(int(ceil(p * 4.0 - 0.001)), 0, 4)]
+	var base: Vector3 = s.get_meta("base", s.position)
+	var alpha := s.modulate.a
+	if p < 0.25:
+		s.modulate = Color(1.4, 0.55, 0.45, alpha)
+		s.position = base + Vector3(sin(t * 38.0) * 0.022, 0.0, 0.0)
+	elif p < 0.5:
+		s.modulate = Color(1.3, 0.98, 0.55, alpha)
+		s.position = base
+	else:
+		s.modulate = Color(1, 1, 1, alpha)
+		s.position = base
+
+## Una frase corta sobre la cabeza de alguien, que sube y se desvanece (quien se va enfadado, quien ve la fila llena,
+## quien se va a casa al cerrar).
+func blurt(a: Node3D, text: String, col := Color(1.0, 0.93, 0.82)) -> void:
+	if not is_instance_valid(a) or text == "":
+		return
+	UIKit.load_fonts()
+	var l := Label3D.new()
+	l.text = text
+	l.font = UIKit.font_bold
+	l.font_size = 40
+	l.pixel_size = 0.0045
+	l.outline_size = 12
+	l.outline_modulate = Color(0.08, 0.05, 0.12)
+	l.modulate = Color(col.r, col.g, col.b, 0.0)
+	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	l.no_depth_test = true
+	l.render_priority = 9
+	l.shaded = false
+	l.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	a.add_child(l)
+	var head: float = a.call("top_height") if a.has_method("top_height") else 1.6
+	var y0 := head + 0.62
+	l.position = Vector3(0.0, y0, 0.12)
+	var tw := l.create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(l, "modulate:a", 1.0, 0.2)
+	tw.tween_property(l, "position:y", y0 + 0.25, 2.4)
+	tw.tween_property(l, "modulate:a", 0.0, 0.45).set_delay(1.95)
+	tw.chain().tween_callback(l.queue_free)
+# --- end R4 PACE
+
+# --- R4 RAVEN: Krápido: la ventanilla, la percha, el letrero y la bola de cristal ----------------------------------
+# Todo cuelga de krapido_node (una mejora más: "krapido", se ve al comprarla en el puesto de Mabel). El tapón de pared
+# (_krapido_plug) se ve mientras NO se tenga. La bola es la estación "ventanilla" (la agrega _krapido_refresh al carril
+# de la alquimista, quitándole ese trozo a la zona del caldero). scripts/krapido.gd maneja a Graznido y los pedidos.
+var krapido_node: Node3D          # todo lo de la ventanilla (se registra como mejora "krapido")
+var krapido_ball: Node3D          # la bola (estación "ventanilla"; lo que se toca y lo que señala el mando)
+var _krapido_plug: MeshInstance3D
+var _krapido_glow: Sprite3D
+var _krapido_light: OmniLight3D
+var _krapido_hatch: Node3D        # bisagra de la tapa (arriba del hueco): 0 = cerrada, KRAPIDO_HATCH_OPEN = abierta
+var _krapido_hatch_a := 0.0
+var _krapido_hatch_goal := 0.0
+var _krapido_t := 0.0
+var krapido_glow_level := 0.0     # 0: tranquila; 1: hay pedidos nuevos (late); 2: el cuervo espera (late rápido, ámbar)
+var _krapido_moved: Array = []    # el barril y el saco de ese rincón: con Krápido se corren bajo el estante (no la tapan)
+const KRAPIDO_MOVED_TO := [Vector3(-5.85, 0, -3.3), Vector3(-5.2, 0, -3.15)]
+const KRAPIDO_MOVED_FROM := [Vector3(-6.6, 0, -1.2), Vector3(-6.0, 0, -0.9)]
+const KRAPIDO_HATCH_OPEN := 1.3   # radianes: la tapa se abre hacia afuera y arriba
+
+func _build_krapido() -> void:
+	krapido_node = Node3D.new()
+	krapido_node.name = "Krapido"
+	krapido_node.position = Vector3(-6.8, 0.0, -3.6)   # al revelar la mejora crece desde aquí (reveal_upgrade)
+	add_child(krapido_node)
+	var kroot := Node3D.new()                          # dentro, todo en coordenadas de la tienda
+	kroot.position = -krapido_node.position
+	krapido_node.add_child(kroot)
+	var wood_d := _mat("res://assets/tex/wood_dark.png", "res://assets/tex/wood_dark_n.png", 1.0, 0.8)
+	var wood_l := _mat("res://assets/tex/wood_light.png", "res://assets/tex/wood_light_n.png", 1.0, 0.6)
+	var z1 := WALL_Z
+	var x0 := KRAPIDO_X0
+	var x1 := KRAPIDO_X1
+	var y0 := KRAPIDO_Y0
+	var y1 := KRAPIDO_Y1
+	var cx := (x0 + x1) / 2.0
+	# marco: alféizar ancho (sale hacia la tienda), dintel y jambas
+	_box_b(x0 - 0.09, x1 + 0.09, y0 - 0.1, y0 + 0.02, z1 - 0.05, z1 + 0.2, wood_d, kroot)
+	_box_b(x0 - 0.09, x1 + 0.09, y1, y1 + 0.11, z1 - 0.05, z1 + 0.09, wood_d, kroot)
+	_box_b(x0 - 0.09, x0, y0, y1, z1 - 0.05, z1 + 0.09, wood_d, kroot)
+	_box_b(x1, x1 + 0.09, y0, y1, z1 - 0.05, z1 + 0.09, wood_d, kroot)
+	# la percha: una barra redonda de madera clara sobre el alféizar, con dos soportes
+	var perch := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.022
+	cyl.bottom_radius = 0.022
+	cyl.height = (x1 - x0) - 0.06
+	cyl.radial_segments = 8
+	perch.mesh = cyl
+	perch.material_override = wood_l
+	perch.rotation_degrees = Vector3(0, 0, 90)
+	perch.position = Vector3(cx, KRAPIDO_PERCH.y - 0.022, KRAPIDO_PERCH.z)
+	kroot.add_child(perch)
+	for sx in [x0 + 0.05, x1 - 0.05]:
+		_box_b(sx - 0.018, sx + 0.018, y0 + 0.02, KRAPIDO_PERCH.y - 0.01, KRAPIDO_PERCH.z - 0.03, KRAPIDO_PERCH.z + 0.03, wood_d, kroot)
+	# la tapa: cuelga del dintel y se abre hacia afuera cuando viene Graznido
+	_krapido_hatch = Node3D.new()
+	_krapido_hatch.position = Vector3(cx, y1, z1 - 0.18)
+	kroot.add_child(_krapido_hatch)
+	var hm := StandardMaterial3D.new()
+	hm.albedo_texture = _tex("res://assets/props/krapido_hatch.png")
+	hm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	hm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	hm.roughness = 0.85
+	var hq := _quad(Vector2(x1 - x0 + 0.02, y1 - y0 + 0.02), Vector3(0, -(y1 - y0) / 2.0, 0), hm, _krapido_hatch)
+	hq.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# un farolito colgado del poste, a la izquierda: alumbra a Graznido y la bola
+	var lamp := _sprite("res://assets/props/lantern.png", 0.04, Vector3(-7.35, 2.62, z1 + 0.16), kroot, "top")
+	lamp.shaded = false
+	lamp.modulate = Color(1.35, 1.2, 1.0)
+	lamp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var ll := _omni(Vector3(-7.15, 2.1, z1 + 0.65), Color(1.0, 0.76, 0.48), 0.9, 3.0, false, kroot)
+	ll.light_volumetric_fog_energy = 0.35
+	# el letrero sobre la ventanilla
+	var sign := _sprite("res://assets/props/krapido_sign.png", 0.019, Vector3(cx, y1 + 0.16, z1 + 0.035), kroot)
+	sign.name = "KrapidoSign"
+	# la bola de cristal en su pie de latón (y su brillo, que late cuando llegan pedidos)
+	krapido_ball = Node3D.new()
+	krapido_ball.name = "KrapidoBall"
+	krapido_ball.position = KRAPIDO_BALL
+	kroot.add_child(krapido_ball)
+	var bs := _sprite("res://assets/props/krapido_ball.png", 0.022, Vector3.ZERO, krapido_ball)
+	bs.name = "Ball"
+	_krapido_glow = _sprite("res://assets/props/krapido_ball_glow.png", 0.022, Vector3(0, 0, 0.02), krapido_ball)
+	_krapido_glow.shaded = false
+	_krapido_glow.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
+	_krapido_glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_krapido_glow.modulate = Color(1, 1, 1, 0.0)
+	_krapido_light = OmniLight3D.new()
+	_krapido_light.position = Vector3(0, 0.95, 0.35)
+	_krapido_light.light_color = Color(0.62, 0.55, 1.0)
+	_krapido_light.light_energy = 0.0
+	_krapido_light.omni_range = 2.2
+	_krapido_light.omni_attenuation = 1.6
+	_krapido_light.light_volumetric_fog_energy = 0.5
+	krapido_ball.add_child(_krapido_light)
+	# lo que se toca: la bola y la ventanilla (la estación "ventanilla")
+	_pick(krapido_ball, Vector3(1.0, 2.6, 0.9), Vector3(0.12, 1.3, -0.25), func(): _station_press("ventanilla"),
+		func(): _station_hover("ventanilla", true), func(): _station_hover("ventanilla", false))
+	station_nodes["ventanilla"] = krapido_ball
+	_station_label_text["ventanilla"] = "Krápido"
+	_register_upgrade("krapido", krapido_node)
+
+## Muestra u oculta la ventanilla según la mejora, tapa el hueco si no está y pone o quita la estación de la bola.
+func _krapido_refresh() -> void:
+	var on := Game.has_upgrade("krapido")
+	if _krapido_plug:
+		_krapido_plug.visible = not on
+	for i in _krapido_moved.size():
+		_krapido_moved[i].position = KRAPIDO_MOVED_TO[i] if on else KRAPIDO_MOVED_FROM[i]
+	if walker == null:
+		return
+	if on:
+		walker.stations["ventanilla"] = KRAPIDO_STATION.duplicate(true)
+		walker.stations["caldero"]["zone"] = KRAPIDO_CALDERO_ZONE
+	else:
+		walker.stations.erase("ventanilla")
+		walker.stations["caldero"]["zone"] = STATIONS["caldero"]["zone"]
+		krapido_glow_level = 0.0
+		krapido_hatch(false)
+
+## Abre (true) o cierra la tapa de la ventanilla.
+func krapido_hatch(open: bool) -> void:
+	if open and _krapido_hatch_goal == 0.0:
+		Sfx.play_pitched("door", 1.45, -12.0)
+	_krapido_hatch_goal = KRAPIDO_HATCH_OPEN if open else 0.0
+
+## Chispitas sobre la bola (llegó un pedido).
+func krapido_sparkle() -> void:
+	if krapido_ball:
+		spawn_sparkles(krapido_ball.global_position + Vector3(0, 0.95, 0.1), Color(1.2, 1.1, 2.0), 18)
+
+func _krapido_process(delta: float) -> void:
+	if krapido_node == null or not krapido_node.visible:
+		return
+	_krapido_t += delta
+	# la tapa
+	if not is_equal_approx(_krapido_hatch_a, _krapido_hatch_goal):
+		_krapido_hatch_a = move_toward(_krapido_hatch_a, _krapido_hatch_goal, delta * (3.2 if _krapido_hatch_goal > 0.0 else 2.4))
+		_krapido_hatch.rotation.x = _krapido_hatch_a
+	# el brillo de la bola: tenue en reposo; late violeta con pedidos nuevos; ámbar y rápido si el cuervo espera
+	var a := 0.1 + 0.05 * sin(_krapido_t * 1.3)
+	var col := Color(1, 1, 1)
+	var e := 0.25
+	if krapido_glow_level >= 2.0:
+		var k := 0.5 + 0.5 * sin(_krapido_t * 7.0)
+		a = 0.3 + 0.3 * k
+		col = Color(1.0, 0.82, 0.55)
+		e = 0.7 + 0.9 * k
+	elif krapido_glow_level >= 1.0:
+		var k2 := 0.5 + 0.5 * sin(_krapido_t * 3.4)
+		a = 0.22 + 0.33 * k2
+		e = 0.5 + 0.8 * k2
+	_krapido_glow.modulate = Color(col.r * 1.15, col.g * 1.15, col.b * 1.15, a)
+	_krapido_light.light_color = Color(0.62, 0.55, 1.0).lerp(Color(1.0, 0.72, 0.4), 1.0 if krapido_glow_level >= 2.0 else 0.0)
+	_krapido_light.light_energy = e
+# --- end R4 RAVEN
+
+# --- R4 EVENTS: el estante de trofeos (las medallas de los eventos) -------------------------------------------------
+## Una repisa en la pared de los clientes, a la derecha de la puerta (sobre el tablón): los trofeos ganados en los
+## eventos (Game.ev_trophies), del más nuevo al más viejo, hasta TROPHY_MAX. Copa (concurso), sombrero de mago
+## (academia) o escudo (torneo), en oro, plata o bronce (assets/props/evui_trophy_<evento>_<medalla>.png).
+const TROPHY_X0 := 5.42
+const TROPHY_X1 := 7.3
+const TROPHY_Y := 2.42
+const TROPHY_Z := -3.86
+const TROPHY_MAX := 6
+var trophy_shelf: Node3D
+var trophy_sprites: Array = []
+
+func _build_trophies() -> void:
+	var wood := _mat("res://assets/tex/wood_dark.png", "res://assets/tex/wood_dark_n.png", 1.0, 0.8)
+	trophy_shelf = Node3D.new()
+	trophy_shelf.name = "TrophyShelf"
+	add_child(trophy_shelf)
+	_box_b(TROPHY_X0, TROPHY_X1, TROPHY_Y - 0.07, TROPHY_Y, -3.99, -3.66, wood, trophy_shelf)
+	for x in [TROPHY_X0 + 0.16, TROPHY_X1 - 0.24]:
+		_box_b(x, x + 0.08, TROPHY_Y - 0.3, TROPHY_Y - 0.07, -3.99, -3.8, wood, trophy_shelf)
+	var step := (TROPHY_X1 - TROPHY_X0) / float(TROPHY_MAX)
+	for i in TROPHY_MAX:
+		var s := _sprite("res://assets/props/evui_trophy_concurso_gold.png", 0.026, Vector3(TROPHY_X0 + step * (i + 0.5), TROPHY_Y, TROPHY_Z), trophy_shelf)
+		s.visible = false
+		trophy_sprites.append(s)
+	refresh_trophies()
+
+## Pone los trofeos ganados; reveal = el más nuevo aparece con un brillo (la noche del evento).
+func refresh_trophies(reveal := false) -> void:
+	if trophy_shelf == null:
+		return
+	var list: Array = Game.ev_trophies.duplicate()
+	list.reverse()
+	trophy_shelf.visible = not list.is_empty()
+	for i in trophy_sprites.size():
+		var s: Sprite3D = trophy_sprites[i]
+		if i < list.size():
+			var t: Dictionary = list[i]
+			var path := "res://assets/props/evui_trophy_%s_%s.png" % [String(t.get("kind", "concurso")), String(t.get("medal", "bronze"))]
+			if ResourceLoader.exists(path):
+				s.texture = _tex(path)
+			s.visible = true
+		else:
+			s.visible = false
+	if reveal and not list.is_empty():
+		var s0: Sprite3D = trophy_sprites[0]
+		s0.scale = Vector3.ONE * 0.2
+		var tw := create_tween()
+		tw.tween_property(s0, "scale", Vector3.ONE * 1.15, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.tween_property(s0, "scale", Vector3.ONE, 0.12)
+		spawn_sparkles(s0.global_position + Vector3(0, 0.25, 0.1), Color(1.7, 1.5, 0.9), 20)
+# --- end R4 EVENTS

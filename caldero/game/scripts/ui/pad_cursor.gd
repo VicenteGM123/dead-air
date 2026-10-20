@@ -25,6 +25,8 @@ var ov: Overlays
 var world: ShopWorld
 var market: MarketWorld   # --- WORLD: el mercado (sus puestos son tocables cuando está a la vista)
 var brew: BrewUI          # --- R3 BENCH: el banco del caldero (sus frascos y botones son tocables cuando está abierto)
+var ball: BallUI          # --- R4 RAVEN: la bola de Krápido (sus tarjetas, su estante y cerrar, cuando está abierta)
+var events_ui: EventUI    # --- R4 EVENTS: las tarjetas del evento (jurado, resultados) y el botón «Caldero»
 var needs_gesture := false   # web: el navegador no deja sonar nada hasta un clic o una tecla
 var _sprite: Sprite2D
 var _pos := Vector2(960, 540)
@@ -92,7 +94,7 @@ func _on_button(b: int, pressed: bool) -> void:
 				else:
 					_mouse_button(false)
 		JOY_BUTTON_B:
-			if pressed and (ov.is_open() or _bench_open()):   # --- R3 BENCH: B también cierra el banco
+			if pressed and (ov.is_open() or _bench_open() or _ball_open()):   # --- R3 BENCH: B también cierra el banco (R4 RAVEN: y la bola)
 				_tap(KEY_ESCAPE)
 		JOY_BUTTON_X:
 			_key(KEY_SPACE, pressed)
@@ -264,11 +266,24 @@ func _a_advances_dialog() -> bool:
 ## Botones visibles y activos de la capa que manda (la ventana abierta, o si no hay, la interfaz del juego).
 func _buttons() -> Array:
 	var out := []
+	# --- R4 EVENTS: la tarjeta abierta del evento manda; sin tarjeta, el botón «Caldero» del HUD del evento
+	if events_ui != null and not ov.is_open():
+		var er: Control = events_ui.pad_root()
+		if events_ui.modal_open():
+			_collect(er, out)
+			return out
+		if er != null and not _bench_open() and not ui.dialog_open():
+			_collect(er, out)
+	# --- end R4 EVENTS
 	# --- R3 BENCH: con el banco del caldero abierto (y sin ventana ni diálogo encima), sus frascos y botones
 	if not ov.is_open() and _bench_open() and not ui.dialog_open():
 		_collect(brew.root, out)
 		return out
 	# --- end R3 BENCH
+	# --- R4 RAVEN: con la bola de Krápido abierta: sus tarjetas, las pociones de su estante y cerrar
+	if not ov.is_open() and _ball_open() and not ui.dialog_open():
+		_collect(ball.root, out)
+		return out
 	_collect(ov.root if ov.is_open() else ui.root, out)
 	return out
 
@@ -276,6 +291,9 @@ func _buttons() -> Array:
 func _bench_open() -> bool:
 	return brew != null and brew.is_open()
 # --- end R3 BENCH
+
+func _ball_open() -> bool:   # --- R4 RAVEN
+	return ball != null and ball.is_open()
 
 func _collect(n: Node, out: Array) -> void:
 	for c in n.get_children():
@@ -291,7 +309,7 @@ func _targets() -> Array:
 	var out := []
 	for b in _buttons():
 		out.append(b.get_global_rect())
-	if world == null or ov.is_open() or _bench_open():   # --- R3 BENCH: el banco tapa la tienda
+	if world == null or ov.is_open() or _bench_open() or _ball_open():   # --- R3 BENCH: el banco tapa la tienda (R4 RAVEN: y la bola)
 		return out
 	# --- WORLD: en el mercado, los puestos y la puerta de la tienda; en la tienda, también las estaciones.
 	# Solo cuenta lo que está en pantalla (la tienda y el mercado son más anchos que ella).

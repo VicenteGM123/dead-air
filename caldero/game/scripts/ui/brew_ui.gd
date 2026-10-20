@@ -142,6 +142,7 @@ func _build_backdrop() -> void:
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(dim)
+	_dim = dim   # --- R4 EVENTS
 	# viñeta y una luz cálida detrás del caldero (degradados radiales: sin shaders)
 	var vg := TextureRect.new()
 	var gt := GradientTexture2D.new()
@@ -528,7 +529,7 @@ func _update_buttons() -> void:
 	var can_stir: bool = not ready and r.get("potion", "") != "" and not busy and _pending == 0
 	_enable("stir", can_stir, can_stir)
 	_enable("bottle", ready and not busy, ready)
-	btns["ink"].visible = magic
+	btns["ink"].visible = magic and not event_mode   # --- R4 EVENTS: en un evento no hay «Tinta»
 	_enable("ink", magic and not ready and not ink.is_empty() and not busy and _pending == 0, false)
 	if not ink.is_empty():
 		var p := "res://assets/icons/%s.png" % ink["ink"]
@@ -919,14 +920,20 @@ func _process(delta: float) -> void:
 	s.modulate = Color(1, 1, 1).lerp(Color(1.2, 1.12, 0.92), 0.5 + 0.5 * sin(_t * 4.0)) if not s.disabled else Color.WHITE
 
 func _unhandled_input(ev: InputEvent) -> void:
-	if not _open or ov.is_open() or ui.dialog_open():
+	if not _open or ov.is_open():
 		return
 	if not (ev is InputEventKey and ev.pressed and not ev.echo):
 		return
 	var k: int = ev.keycode
+	# --- R4 SHIP: Esc / E cierran el banco también con el diálogo de un cliente encima (con la fila de PACE pasa a
+	# menudo; antes el banco lo ignoraba y Esc abría los ajustes)
 	if k == KEY_ESCAPE or k == KEY_E:
 		close()
-	elif k == KEY_SPACE or k == KEY_ENTER:
+		get_viewport().set_input_as_handled()
+		return
+	if ui.dialog_open():
+		return
+	if k == KEY_SPACE or k == KEY_ENTER:
 		if _stir:
 			_stir.press()
 		elif not btns["bottle"].disabled:
@@ -944,6 +951,20 @@ func _unhandled_input(ev: InputEvent) -> void:
 	else:
 		return
 	get_viewport().set_input_as_handled()
+
+# --- R4 EVENTS: el banco en un evento ------------------------------------------------------------------------------
+## main.gd lo enciende el día de un evento: el fondo se oscurece menos (detrás se ve el escenario del evento) y no hay
+## botón «Tinta» (la despensa del evento no se convierte en tinta para casa).
+var event_mode := false
+var _dim: ColorRect
+
+func set_event_mode(on: bool) -> void:
+	event_mode = on
+	if _dim:
+		_dim.color = Color(0.03, 0.02, 0.06, 0.42 if on else 0.8)
+	if _open:
+		_update_buttons()
+# --- end R4 EVENTS
 
 # ================================================================== dibujo: el caldero
 

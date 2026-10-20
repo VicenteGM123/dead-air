@@ -138,6 +138,7 @@ func _build_hud() -> void:
 	level_bar.show_percentage = false
 	level_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	r.add_child(level_bar)
+	_pace_build_clock(v)   # --- R4 PACE: el reloj del día y la fila, bajo «Día n»
 
 func refresh_hud() -> void:
 	day_label.text = "Día %d" % Game.day
@@ -163,12 +164,12 @@ func bump_gold() -> void:
 # --- R3 BENCH: el menú, 4 botones de icono
 func _build_menu() -> void:
 	menu_box = UIKit.hbox(10)
-	UIKit.place(menu_box, Vector2(1, 0), Vector2(-320, 22), Vector2(298, 64), Control.GROW_DIRECTION_BEGIN, Control.GROW_DIRECTION_END)
+	UIKit.place(menu_box, Vector2(1, 0), Vector2(-394, 22), Vector2(372, 64), Control.GROW_DIRECTION_BEGIN, Control.GROW_DIRECTION_END)   # --- R4 RANK: 5 botones
 	menu_box.alignment = BoxContainer.ALIGNMENT_END
 	menu_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(menu_box)
 	for m in [["book", "Recetas", "hud_book"], ["journal", "Diario", "hud_journal"],
-			["market", "Mercado", "hud_market"], ["settings", "Ajustes", "hud_settings"]]:
+			["market", "Mercado", "hud_market"], ["rank", "Escalafón", "hud_rank"], ["settings", "Ajustes", "hud_settings"]]:   # --- R4 RANK: el Escalafón del Gremio
 		var b := UIKit.button("", func(): menu_pressed.emit(m[0]), 22)
 		b.custom_minimum_size = Vector2(64, 64)
 		b.tooltip_text = m[1]
@@ -180,6 +181,8 @@ func _build_menu() -> void:
 		ic.offset_bottom = -8
 		b.add_child(ic)
 		menu_box.add_child(b)
+		if m[0] == "rank":
+			rank_btn = b   # --- R4 RANK
 		# --- R3 MERGE: de día el mercado es el encargo de Pip y cuesta el doble: un sellito rojo «x2» en la esquina
 		if m[0] == "market":
 			PaperKit.load_fonts()
@@ -203,6 +206,17 @@ func _build_menu() -> void:
 			b.add_child(tag)
 			market_x2 = tag
 		# --- end R3 MERGE
+
+## --- R4 RANK: el botón del Escalafón brilla un momento (la primera línea del Escalafón en el correo).
+var rank_btn: Button
+func pulse_rank_button() -> void:
+	if not is_instance_valid(rank_btn):
+		return
+	var tw := rank_btn.create_tween()
+	for i in 4:
+		tw.tween_property(rank_btn, "modulate", Color(1.7, 1.45, 0.8), 0.28)
+		tw.tween_property(rank_btn, "modulate", Color.WHITE, 0.34)
+# --- end R4 RANK
 
 ## --- R3 MERGE: muestra el «x2» del botón Mercado (main.gd: true con la tienda abierta, false por la mañana).
 func set_day_market(on: bool) -> void:
@@ -268,6 +282,7 @@ func _build_order_card() -> void:
 	bottom.add_child(order_hint)
 	order_mods = UIKit.hbox(6)
 	bottom.add_child(order_mods)
+	_pace_ticket_row(v)   # --- R4 PACE: la paciencia de quien espera (reloj de arena + barra)
 	var pin := TextureRect.new()
 	pin.texture = load("res://assets/ui/ticket_pin.png")
 	pin.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -496,6 +511,7 @@ func _process(delta: float) -> void:
 		dialog_more.modulate.a = 0.5 + 0.5 * sin(Time.get_ticks_msec() / 200.0)
 	if tooltip.visible:
 		_place_tooltip()
+	_pace_process_ui(delta)   # --- R4 PACE: el reloj late en la última hora; la barra, cuando se acaba la paciencia
 
 # ------------------------------------------------------------------ caldero (compatibilidad)
 
@@ -798,6 +814,11 @@ func toast(text: String, color := UIKit.TEXT, duration := 2.6) -> void:
 		toast_box.get_child(0).queue_free()
 		break
 
+## --- R4 MERGE: quita los avisos que queden (p. ej. «¡Inscrita!» al aceptar la invitación, justo antes del correo).
+func clear_toasts() -> void:
+	for c in toast_box.get_children():
+		c.queue_free()
+
 func _build_banner() -> void:
 	banner = UIKit.shadow(UIKit.label("", 54, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold, HORIZONTAL_ALIGNMENT_CENTER), 3)
 	UIKit.place(banner, Vector2(0.5, 0.5), Vector2(-700, -300), Vector2(1400, 140), Control.GROW_DIRECTION_BOTH, Control.GROW_DIRECTION_BOTH)
@@ -877,3 +898,192 @@ func scroll_slot_center(_index: int) -> Vector2:
 func show_scroll_tooltip(_idx: int) -> void:
 	pass
 # --- end R3 BENCH
+
+# --- R4 PACE: el reloj del día en la placa del HUD, cuántos esperan en la fila y la paciencia del ticket -------------
+# Bajo «Día n»: una esfera de reloj (assets/ui/hud_clock.png con las agujas dibujadas encima), la hora de 5 en 5
+# minutos (9:00 a 18:00; en la última hora se pone roja y late; a las 18:00, «Cerrado») y una personita con cuántos
+# esperan en la fila (ámbar o rojo si alguien está por irse). El ticket del pedido lleva un reloj de arena y una barra
+# con la paciencia de quien espera en el mostrador. main.gd lo llama (bloque R4 PACE): set_clock, set_clock_visible,
+# set_queue, set_order_patience.
+var clock_row: HBoxContainer
+var clock_face: Control
+var clock_label: Label
+var queue_box: HBoxContainer
+var queue_icon: TextureRect
+var queue_label: Label
+var order_patience_row: HBoxContainer
+var order_pbar: ProgressBar
+var order_pglass: TextureRect
+var _pbar_fill: StyleBoxFlat
+var _clock_tex: Texture2D
+var _clock_min := 540
+var _clock_state := ""
+var _queue_worst := 1.0
+var _queue_n := 0
+var _order_p := 1.0
+var _pace_t := 0.0
+
+func _pace_build_clock(v: VBoxContainer) -> void:
+	_clock_tex = load("res://assets/ui/hud_clock.png")
+	clock_row = UIKit.hbox(8)
+	clock_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(clock_row)
+	v.move_child(clock_row, 1)   # justo debajo de «Día n»
+	clock_face = Control.new()
+	clock_face.custom_minimum_size = Vector2(39, 39)
+	clock_face.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	clock_face.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	clock_face.draw.connect(_draw_clock)
+	clock_row.add_child(clock_face)
+	clock_label = UIKit.shadow(UIKit.label("9:00", 30, UIKit.GOLD_BRIGHT, UIKit.font_bold))
+	clock_label.custom_minimum_size = Vector2(78, 0)
+	clock_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	clock_row.add_child(clock_label)
+	queue_box = UIKit.hbox(4)
+	queue_box.mouse_filter = Control.MOUSE_FILTER_PASS
+	queue_box.tooltip_text = "En la fila"
+	clock_row.add_child(queue_box)
+	queue_icon = UIKit.icon("res://assets/ui/hud_queue.png", 3.0)
+	queue_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	queue_box.add_child(queue_icon)
+	queue_label = UIKit.shadow(UIKit.label("0", 28, UIKit.TEXT, UIKit.font_bold))
+	queue_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	queue_box.add_child(queue_label)
+	clock_row.visible = false
+
+## La esfera (13x13 a x3) y las agujas, píxel a píxel.
+func _draw_clock() -> void:
+	if _clock_tex:
+		clock_face.draw_texture_rect(_clock_tex, Rect2(Vector2.ZERO, Vector2(39, 39)), false)
+	var h := fmod(float(_clock_min) / 60.0, 12.0) / 12.0
+	var m := float(_clock_min % 60) / 60.0
+	_clock_hand(m * TAU, 4.2, Color("6b4a30"))
+	_clock_hand(h * TAU, 2.7, Color("2e1d12"))
+	clock_face.draw_rect(Rect2(Vector2(18, 18), Vector2(3, 3)), Color("b8862f"))
+
+func _clock_hand(a: float, length: float, col: Color) -> void:
+	var dir := Vector2(sin(a), -cos(a))
+	var t := 0.7
+	while t <= length:
+		var p := (Vector2(6.0, 6.0) + dir * t).round()
+		clock_face.draw_rect(Rect2(p * 3.0, Vector2(3, 3)), col)
+		t += 0.5
+
+func set_clock_visible(on: bool) -> void:
+	if clock_row:
+		clock_row.visible = on
+		_clock_state = ""
+		hud_panel.reset_size()
+
+## La hora del HUD. minutes: desde la medianoche (540 = 9:00 ... 1080 = 18:00), se muestra de 5 en 5. state: "open",
+## "late" (la última hora: roja y latiendo), "closed" (cerrado) o "paused" (un menú de lectura detiene el reloj).
+func set_clock(minutes: int, state := "open") -> void:
+	if clock_row == null:
+		return
+	var shown := (minutes / 5) * 5
+	if shown != _clock_min or state != _clock_state:
+		_clock_min = shown
+		_clock_state = state
+		if state == "closed":
+			clock_label.text = "Cerrado"
+			clock_label.add_theme_font_size_override("font_size", 24)
+		else:
+			clock_label.text = "%d:%02d" % [shown / 60, shown % 60]
+			clock_label.add_theme_font_size_override("font_size", 30)
+		var col := UIKit.GOLD_BRIGHT
+		if state == "late":
+			col = Color(1.0, 0.56, 0.42)
+		elif state == "closed":
+			col = Color(0.86, 0.72, 0.62)
+		clock_label.add_theme_color_override("font_color", col)
+		clock_face.queue_redraw()
+	clock_row.modulate.a = 0.6 if state == "paused" else 1.0
+
+## Cuántos esperan en la fila y la paciencia del que está peor (0..1): ámbar con menos de la mitad, rojo con menos de
+## un cuarto.
+func set_queue(n: int, worst: float) -> void:
+	if queue_box == null:
+		return
+	if n == _queue_n and absf(worst - _queue_worst) < 0.01:
+		return
+	_queue_n = n
+	_queue_worst = worst
+	queue_label.text = str(n)
+	var col := UIKit.TEXT
+	if n == 0:
+		col = UIKit.MUTED
+	elif worst < 0.25:
+		col = Color(1.0, 0.5, 0.42)
+	elif worst < 0.5:
+		col = Color(1.0, 0.8, 0.45)
+	queue_label.add_theme_color_override("font_color", col)
+	queue_icon.modulate = Color(1, 1, 1, 0.45) if n == 0 else Color(1, 1, 1, 1)
+
+func _pace_ticket_row(v: VBoxContainer) -> void:
+	order_patience_row = UIKit.hbox(8)
+	order_patience_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(order_patience_row)
+	order_pglass = PaperKit.pic("paper_i_hourglass", 2.0)
+	order_pglass.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	order_pglass.pivot_offset = order_pglass.custom_minimum_size / 2.0
+	order_patience_row.add_child(order_pglass)
+	order_pbar = ProgressBar.new()
+	order_pbar.custom_minimum_size = Vector2(320, 12)
+	order_pbar.max_value = 1.0
+	order_pbar.step = 0.0
+	order_pbar.show_percentage = false
+	order_pbar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	order_pbar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.37, 0.28, 0.2, 0.16)
+	bg.border_color = Color(0.23, 0.15, 0.09, 0.6)
+	bg.set_border_width_all(2)
+	bg.set_corner_radius_all(4)
+	_pbar_fill = StyleBoxFlat.new()
+	_pbar_fill.bg_color = PaperKit.HERB
+	_pbar_fill.set_corner_radius_all(3)
+	order_pbar.add_theme_stylebox_override("background", bg)
+	order_pbar.add_theme_stylebox_override("fill", _pbar_fill)
+	order_patience_row.add_child(order_pbar)
+	order_patience_row.visible = false
+
+## La paciencia de quien espera en el mostrador (0..1). p < 0: no se muestra (aún no pidió, o ya se le atendió).
+func set_order_patience(p: float) -> void:
+	if order_patience_row == null:
+		return
+	if p < 0.0:
+		if order_patience_row.visible:
+			order_patience_row.visible = false
+			order_paper.reset_size()
+		return
+	if not order_patience_row.visible:
+		order_patience_row.visible = true
+		order_paper.reset_size()
+	_order_p = p
+	order_pbar.value = p
+	var col := PaperKit.HERB
+	if p < 0.25:
+		col = PaperKit.RED_INK
+	elif p < 0.5:
+		col = Color("c27a2c")
+	_pbar_fill.bg_color = col
+
+func _pace_process_ui(delta: float) -> void:
+	_pace_t += delta
+	if clock_row and clock_row.visible:
+		if _clock_state == "late":
+			clock_label.modulate.a = 0.72 + 0.28 * sin(_pace_t * 6.0)
+		else:
+			clock_label.modulate.a = 1.0
+		if _queue_n > 0 and _queue_worst < 0.25:
+			queue_label.modulate.a = 0.78 + 0.22 * sin(_pace_t * 9.0)   # --- R4 MERGE: late, pero nunca casi invisible (antes 0.2..1)
+		else:
+			queue_label.modulate.a = 1.0
+	if order_patience_row and order_patience_row.visible:
+		if _order_p < 0.25:
+			order_pglass.modulate = Color(1.0, 0.6 + 0.4 * sin(_pace_t * 10.0), 0.6 + 0.4 * sin(_pace_t * 10.0))
+			order_pglass.rotation = sin(_pace_t * 18.0) * 0.12
+		else:
+			order_pglass.modulate = Color.WHITE
+			order_pglass.rotation = 0.0
+# --- end R4 PACE

@@ -13,6 +13,7 @@ signal open_shop
 signal sleep
 signal stir_done(perfect: bool)
 signal to_title
+signal invite_answered(accept: bool)   # --- R4 EVENTS: la invitación a un evento (Aceptar / Rechazar)
 
 var root: Control
 var current := ""
@@ -67,6 +68,8 @@ func _open(id: String, panel: Control, dim := true) -> Control:
 func _unhandled_input(ev: InputEvent) -> void:
 	if current == "" or current == "title" or current == "stir" or current == "summary" or current == "levelup":
 		return
+	if current == "invite":   # --- R4 EVENTS: la invitación se acepta o se rechaza (Esc / B no la cierran)
+		return
 	if ev is InputEventKey and ev.pressed and ev.keycode == KEY_ESCAPE:
 		if current == "confirm":
 			show_title(true)
@@ -74,6 +77,12 @@ func _unhandled_input(ev: InputEvent) -> void:
 			close()
 		get_viewport().set_input_as_handled()
 		return
+	# --- R4 RANK: la Gaceta y los créditos también se cierran con Espacio o Intro (como su botón)
+	if (current == "gaceta" or current == "credits") and ev is InputEventKey and ev.pressed and not ev.echo and (ev.keycode == KEY_SPACE or ev.keycode == KEY_ENTER):
+		close()
+		get_viewport().set_input_as_handled()
+		return
+	# --- end R4 RANK
 	# --- R3 PAPER: pasar la hoja con el teclado
 	if (current == "book" or current == "journal") and ev is InputEventKey and ev.pressed and not ev.echo:
 		var dir := 0
@@ -696,6 +705,7 @@ const UPGRADE_SHORT := {
 	"campanilla": "+1 cliente al día",
 	"farolillos": "+15% propina",
 	"caldero_cobre": "+1 potencia",
+	"krapido": "Pedidos por cuervo",   # --- R4 RAVEN
 }
 
 func show_market(mode := "day", vendor := "") -> void:
@@ -874,6 +884,9 @@ func _ingredient_good(id: String, refresh: Callable, day_order: bool) -> Control
 func _market_upgrades(refresh: Callable) -> Control:
 	var g := GridContainer.new()
 	g.columns = 4
+	var five := Data.UPGRADE_ORDER.size() > 8   # --- R4 RAVEN: con la 9.ª mejora (Krápido) van 5 por fila (si no, no cabe)
+	if five:
+		g.columns = 5
 	g.add_theme_constant_override("h_separation", 18)
 	g.add_theme_constant_override("v_separation", 14)
 	g.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -882,7 +895,7 @@ func _market_upgrades(refresh: Callable) -> Control:
 		var owned := Game.has_upgrade(id)
 		var locked: bool = Game.level() < int(u["level"])
 		var box := UIKit.vbox(4)
-		box.custom_minimum_size = Vector2(262, 0)
+		box.custom_minimum_size = Vector2(262 if not five else 214, 0)   # --- R4 RAVEN
 		g.add_child(box)
 		var ic := PaperKit.pic("paper_up_%s" % id, 4.0)
 		ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -895,8 +908,8 @@ func _market_upgrades(refresh: Callable) -> Control:
 		box.add_child(card)
 		var cv := UIKit.vbox(0)
 		card.add_child(cv)
-		cv.add_child(PaperKit.hand(String(u["name"]), 28, PaperKit.INK if not locked else PaperKit.INK_FAINT, true, HORIZONTAL_ALIGNMENT_CENTER, 226))
-		cv.add_child(PaperKit.hand(String(UPGRADE_SHORT.get(id, u.get("desc", ""))), 27, PaperKit.INK_SOFT, false, HORIZONTAL_ALIGNMENT_CENTER, 220))
+		cv.add_child(PaperKit.hand(String(u["name"]), 28, PaperKit.INK if not locked else PaperKit.INK_FAINT, true, HORIZONTAL_ALIGNMENT_CENTER, 226 if not five else 182))   # --- R4 RAVEN
+		cv.add_child(PaperKit.hand(String(UPGRADE_SHORT.get(id, u.get("desc", ""))), 27, PaperKit.INK_SOFT, false, HORIZONTAL_ALIGNMENT_CENTER, 220 if not five else 178))   # --- R4 RAVEN
 		var b: Button
 		if owned:
 			b = PaperKit.button("Comprada", func(): pass, 28)
@@ -1118,6 +1131,7 @@ const INK := Color(0.27, 0.19, 0.13)
 
 var _mail_letters: Array = []
 var _mail_rumors: Array = []
+var _rank_strip: Control   # --- R4 RANK
 var _mail_body: VBoxContainer
 var _mail_nav: HBoxContainer
 
@@ -1138,6 +1152,11 @@ func show_mail(letters: Array, rumors: Array = [], _first_time := false) -> void
 	env.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	hd.add_child(env)
 	hd.add_child(_title_row("Correo", 46))
+	# --- R4 RANK: la línea del Escalafón del Gremio (puesto, flecha, a quién pasó), en la primera página
+	_rank_strip = RankUI.mail_strip() if Ranking.has_morning_news() else null
+	if _rank_strip:
+		box.add_child(_rank_strip)
+	# --- end R4 RANK
 	_mail_body = UIKit.vbox(12)
 	box.add_child(_mail_body)
 	_mail_nav = UIKit.hbox(18)
@@ -1158,6 +1177,8 @@ func _mail_page(i: int) -> void:
 		return
 	_clear_children(_mail_body)
 	_clear_children(_mail_nav)
+	if is_instance_valid(_rank_strip):
+		_rank_strip.visible = i == 0   # --- R4 RANK
 	var n := _mail_letters.size()
 	if i < n:
 		_mail_body.add_child(_mail_letter(_mail_letters[i]))
@@ -1243,72 +1264,394 @@ func _mail_rumor_box() -> Control:
 	return n
 # --- end STORY
 
+# --- R4 EVENTS: la invitación a un evento (llega con el correo de la mañana) ----------------------------------------
+## Una invitación de papel grueso: el retrato de quien invita clavado a la izquierda, su sello de lacre, el saludo, dos
+## líneas y la firma; debajo, en una tira, el evento, el día, la dificultad, la inscripción, el premio (con medalla de
+## oro) y el riesgo (sin medalla), en iconos y números. Aceptar paga la inscripción. Emite invite_answered(acepta).
+## inv: Game.ev_invite (ver Events.make_invite). No se cierra con Esc: hay que elegir.
+func show_invitation(inv: Dictionary) -> void:
+	var kind := String(inv.get("kind", "academia"))
+	var c: Dictionary = Events.info(kind)
+	var tier := int(inv.get("tier", 0))
+	Sfx.play("page", 0.05, -3.0)
+	var box := UIKit.vbox(10)
+	box.custom_minimum_size = Vector2(1100, 0)
+	var hd := UIKit.hbox(12)
+	hd.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(hd)
+	var env := PaperKit.pic("paper_i_envelope", 4.0)
+	env.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	hd.add_child(env)
+	hd.add_child(_title_row("Invitación", 46))
+	var paper := PaperKit.panel("sheet", Vector2(56, 34))
+	paper.custom_minimum_size = Vector2(1080, 0)
+	paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(paper)
+	var col := UIKit.vbox(10)
+	paper.add_child(col)
+	var row := UIKit.hbox(26)
+	col.add_child(row)
+	var card := PaperKit.pinned_portrait(Story.sprite_id(String(c["host"])), 2.0, "paper_pin_brass")
+	card.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	row.add_child(card)
+	var pv := UIKit.vbox(6)
+	pv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(pv)
+	var top := UIKit.hbox(10)
+	pv.add_child(top)
+	var hello := PaperKit.hand(String(c["hello"]), 36, PaperKit.INK, true)
+	hello.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hello.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	top.add_child(hello)
+	var seal := PaperKit.pic(String(c["seal"]), 3.5)
+	seal.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	seal.tooltip_text = String(c["host_name"])
+	seal.mouse_filter = Control.MOUSE_FILTER_PASS
+	top.add_child(seal)
+	var body := PaperKit.rich(33, PaperKit.INK)
+	body.custom_minimum_size = Vector2(780, 0)
+	body.text = String(c["body"])
+	pv.add_child(body)
+	pv.add_child(PaperKit.hand("— " + String(c["sign"]), 30, PaperKit.INK_SOFT, true, HORIZONTAL_ALIGNMENT_RIGHT))
+	col.add_child(PaperKit.ink_rule(900, Color(0.37, 0.28, 0.2, 0.35)))
+	# el evento y sus datos (iconos y números)
+	var name_l := PaperKit.head(Events.ev_name(kind, true), 40, Color("7a1d18"), HORIZONTAL_ALIGNMENT_CENTER)
+	col.add_child(name_l)
+	col.add_child(PaperKit.hand(Events.line(kind, "what", inv), 30, PaperKit.INK_SOFT, false, HORIZONTAL_ALIGNMENT_CENTER))
+	var facts := UIKit.hbox(34)
+	facts.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_child(facts)
+	facts.add_child(PaperKit.icon_text("evui_calendar", Events.when_text(int(inv.get("day", Game.day + 2))), 30, PaperKit.INK, 3.5))
+	var dif := UIKit.hbox(4)
+	dif.tooltip_text = "Dificultad"
+	dif.mouse_filter = Control.MOUSE_FILTER_PASS
+	dif.add_child(PaperKit.hand("Dificultad", 30, PaperKit.INK, true))
+	dif.add_child(PaperKit.gap(0, 6))
+	var nd := int(inv.get("difficulty", 1))
+	for i in 3:
+		var st := UIKit.icon("res://assets/icons/emote_star.png" if i < nd else "res://assets/icons/emote_star_empty.png", 2.2)
+		st.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		dif.add_child(st)
+	facts.add_child(dif)
+	var feeb := UIKit.hbox(6)
+	feeb.add_child(PaperKit.hand("Inscripción", 30, PaperKit.INK, true))
+	feeb.add_child(PaperKit.coins(int(inv.get("fee", 0)), 30, PaperKit.RED_INK))
+	facts.add_child(feeb)
+	# premio (con oro) y riesgo (sin medalla)
+	var win: Dictionary = Events.reward(kind, "gold", tier)
+	var lose: Dictionary = Events.reward(kind, "none", tier)
+	var strip := PaperKit.panel("wood", Vector2(30, 8))
+	strip.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(strip)
+	var rw := UIKit.rich(34)
+	rw.fit_content = true
+	rw.autowrap_mode = TextServer.AUTOWRAP_OFF
+	rw.add_theme_font_override("normal_font", UIKit.font_bold)
+	var coin := "[img=40]res://assets/icons/emote_coin.png[/img]"
+	var gem := "[img=40]res://assets/icons/emote_gem.png[/img]"
+	var t := "[img=36]res://assets/ui/evui_tick_gold.png[/img] %s [color=#ffd987]+%d[/color]   %s [color=#d9c8ff]+%d[/color]   [img=40]res://assets/ui/evui_trophy.png[/img]" % [coin, int(win["gold"]), gem, int(win["renombre"])]
+	if kind == "torneo":
+		t += "  [color=#f2e2bc]+ propinas[/color]"
+	t += "        [color=#c8b9a4]Sin medalla:[/color] %s [color=#ff9b9b]%d[/color]" % [gem, int(lose["renombre"])]
+	rw.text = "[center]%s[/center]" % t
+	strip.add_child(rw)
+	# Aceptar / Rechazar
+	var nav := UIKit.hbox(26)
+	nav.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(nav)
+	var fee := int(inv.get("fee", 0))
+	var acc := PaperKit.wood_button("Aceptar", func():
+		if Game.gold < fee:
+			return
+		close(false)
+		invite_answered.emit(true), 34)
+	acc.custom_minimum_size = Vector2(280, 70)
+	acc.name = "Aceptar"
+	nav.add_child(acc)
+	var rej := PaperKit.wood_button("Rechazar", func():
+		close(false)
+		invite_answered.emit(false), 34)
+	rej.custom_minimum_size = Vector2(280, 70)
+	rej.name = "Rechazar"
+	nav.add_child(rej)
+	if Game.gold < fee:
+		acc.disabled = true
+		acc.modulate = Color(0.7, 0.68, 0.66)
+		nav.add_child(UIKit.shadow(PaperKit.hand("Faltan %d" % (fee - Game.gold), 32, Color("ff9b9b"), true), 2))
+	_open("invite", box)
+
+## La invitación abierta: Aceptar (true) o Rechazar (false), como un clic (el bot y las pruebas).
+func answer_invitation(accept: bool) -> bool:
+	if current != "invite" or not is_instance_valid(current_node):
+		return false
+	var b := current_node.find_child("Aceptar" if accept else "Rechazar", true, false)
+	if b is Button and not b.disabled:
+		b.pressed.emit()
+		return true
+	return false
+
+## La fila del evento en las cuentas de la noche: la medalla, el nombre del evento y la medalla en palabras.
+func _event_row(e: Dictionary) -> Control:
+	var medal := String(e.get("medal", "none"))
+	var h := UIKit.hbox(14)
+	h.custom_minimum_size = Vector2(0, 66)
+	var ic := PaperKit.pic("evui_medal_%s" % medal, 2.0)
+	ic.custom_minimum_size = Vector2(52, 66)
+	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(ic)
+	var l := PaperKit.hand(Events.ev_name(String(e.get("kind", "academia"))), 32, PaperKit.INK_SOFT)
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(l)
+	var word := String(Events.MEDAL_WORD.get(medal, medal)).capitalize() if medal != "none" else "Sin medalla"
+	var vl := PaperKit.hand(word, 36, Color("7a1d18") if medal == "none" else PaperKit.INK, true, HORIZONTAL_ALIGNMENT_RIGHT)
+	vl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(vl)
+	return h
+# --- end R4 EVENTS
+
 # ------------------------------------------------------------------ resumen del día
 
-## --- R3 PAPER: una hoja de cuentas: iconos y números, una fila por cosa, y Dormir.
+## --- R4 PACE: el libro de cuentas de la noche (como en Papers, Please): una hoja con renglones, una fila por cosa
+## (icono, concepto, una línea de puntos y la cifra a mano) que se van escribiendo de una en una, y al final el sello
+## del día. Los números salen de Game.today (main.gd, bloque R4 PACE): atendidos, se cansaron de esperar, fila llena,
+## a casa al cerrar, sin atender, espera media (en horas del reloj de la tienda), lo ganado, las propinas por rapidez y
+## el renombre (lo ganado y lo perdido). Debajo, en una sola línea: recetas nuevas, noticias por llegar y el diario.
+## _ledger_extra(v, today) queda para filas de otras partes (el escalafón). Se cierra con «Dormir».
+## (Antes, R3 PAPER: una hoja de cuentas con oro, renombre y ventas.)
 func show_summary(day: int, today: Dictionary) -> void:
-	var p := PaperKit.panel("sheet", Vector2(70, 46))
-	p.custom_minimum_size = Vector2(760, 0)
-	var v := UIKit.vbox(6)
+	var p := PaperKit.panel("sheet", Vector2(66, 36))
+	p.custom_minimum_size = Vector2(800, 0)
+	var v := UIKit.vbox(0)
 	p.add_child(v)
 	var hd := UIKit.hbox(14)
 	hd.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_child(hd)
-	var moon := PaperKit.pic("paper_i_moon", 5.0)
+	var moon := PaperKit.pic("paper_i_moon", 4.0)
 	moon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	hd.add_child(moon)
-	hd.add_child(PaperKit.head("Fin del día %d" % day, 50))
-	v.add_child(PaperKit.ink_rule(560, Color(0.37, 0.28, 0.2, 0.35)))
-	v.add_child(_stat_row("res://assets/icons/emote_coin.png", "Oro", "+%d" % int(today["earned"])))
-	v.add_child(_stat_row("res://assets/icons/emote_gem.png", "Renombre", "+%d" % int(today["renombre"])))
-	v.add_child(_stat_row("paper_i_bag", "Ventas", str(int(today["sold"]))))   # --- STORY: pociones y pergaminos
-	if today["new_recipes"].size() > 0:
-		var h2 := UIKit.hbox(8)
-		h2.custom_minimum_size = Vector2(0, 70)
-		v.add_child(h2)
-		var pg := PaperKit.pic("paper_i_page", 3.0)
-		pg.custom_minimum_size = Vector2(44, 44)
-		pg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		h2.add_child(pg)
-		var l2 := PaperKit.hand("Recetas nuevas", 32, PaperKit.INK_SOFT)
-		l2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		l2.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		h2.add_child(l2)
+	hd.add_child(PaperKit.head("Cuentas del día %d" % day, 44))
+	v.add_child(PaperKit.gap(4))
+	v.add_child(_ledger_rule(Color(0.62, 0.16, 0.12, 0.5)))   # la doble raya roja de los libros de cuentas
+	v.add_child(PaperKit.gap(3))
+	v.add_child(_ledger_rule(Color(0.62, 0.16, 0.12, 0.5)))
+	var lines: Array = []   # lo que se va escribiendo, en orden
+	var served := int(today.get("served", 0))
+	var tired := int(today.get("lost_tired", 0))
+	var full := int(today.get("lost_full", 0))
+	var closed := int(today.get("lost_closed", 0))
+	var declined := int(today.get("declined", 0))
+	var ev_day: bool = today.get("event", null) is Dictionary   # --- R4 EVENTS (merge): día de evento: la tienda no abrió
+	if ev_day:   # --- R4 EVENTS (merge): primero la medalla del evento; en lugar de las filas de la tienda, una sola línea
+		lines.append(_event_row(today["event"]))
+		lines.append(_ledger_row("paper_i_lock", "Tienda cerrada: día de evento", _ledger_num("—", PaperKit.INK_SOFT)))
+	else:
+		lines.append(_ledger_row("paper_i_person", "Atendidos", _ledger_num(str(served))))
+		lines.append(_ledger_row("res://assets/icons/emote_hourglass_0.png", "Se cansaron de esperar",
+			_ledger_num(str(tired), PaperKit.RED_INK if tired > 0 else PaperKit.INK_SOFT)))
+		lines.append(_ledger_row("paper_i_door", "Fila llena: no entraron",
+			_ledger_num(str(full), PaperKit.RED_INK if full > 0 else PaperKit.INK_SOFT)))
+		if closed > 0:
+			lines.append(_ledger_row("paper_i_moon", "A casa al cerrar", _ledger_num(str(closed), PaperKit.INK_SOFT)))
+		if declined > 0:
+			lines.append(_ledger_row("paper_i_lock", "Sin atender", _ledger_num(str(declined), PaperKit.INK_SOFT)))
+		if served > 0:
+			lines.append(_ledger_row("res://assets/ui/hud_clock.png", "Espera media", _ledger_num(_ledger_wait(float(today.get("avg_wait", 0.0))))))
+		# --- R4 RAVEN (merge: the Krápido row moved from the old summary into PACE's ledger): entregas por cuervo
+		if Game.krapido_on() or int(today.get("deliveries", 0)) > 0:
+			var dl := int(today.get("deliveries_lost", 0))
+			lines.append(_ledger_row("res://assets/ui/raven_head.png", "Krápido",
+				_ledger_num(str(int(today.get("deliveries", 0))) + ("  (−%d)" % dl if dl > 0 else ""))))
+		# --- end R4 RAVEN
+	lines.append(_ledger_rule(Color(0.37, 0.28, 0.2, 0.35)))
+	lines.append(_ledger_row("res://assets/icons/emote_coin.png", "Ganado", _ledger_num("+%d" % int(today.get("earned", 0)))))
+	var tips := int(today.get("speed_tips", 0))
+	if tips > 0:
+		lines.append(_ledger_row("res://assets/icons/emote_hourglass_4.png", "Propinas por rapidez", _ledger_num("+%d" % tips, PaperKit.HERB)))
+	var lost := int(today.get("renombre_lost", 0))
+	lines.append(_ledger_row("res://assets/icons/emote_gem.png", "Renombre", _ledger_renown(int(today.get("renombre", 0)) + lost, lost)))
+	var rank_row := _ledger_rank_row()   # --- R4 RANK (merge): el puesto en el Escalafón, un renglón más del libro de cuentas
+	if rank_row:
+		lines.append(rank_row)
+	for c in lines:
+		v.add_child(c)
+	_ledger_extra(v, today)
+	# lo de las historias, en una sola línea: recetas nuevas, noticias por llegar y páginas del diario
+	var ex := UIKit.hbox(12)
+	ex.alignment = BoxContainer.ALIGNMENT_CENTER
+	ex.custom_minimum_size = Vector2(0, 58)
+	if today.get("new_recipes", []).size() > 0:
+		ex.add_child(_ledger_icon("paper_i_bottle", "Recetas nuevas"))
 		for pid in today["new_recipes"]:
 			var sk := PaperKit.sketch("pot", pid, 2.0)
 			sk.tooltip_text = String(Data.POTIONS.get(pid, {}).get("name", pid))
 			sk.mouse_filter = Control.MOUSE_FILTER_PASS
-			h2.add_child(sk)
-	# --- STORY: las noticias que faltan (llegan por carta o en persona)
-	var waiting := Game.pending.size()
+			sk.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			ex.add_child(sk)
+	var waiting := Game.pending.size()   # --- STORY: las noticias que faltan (llegan por carta o en persona)
 	if waiting > 0:
-		v.add_child(_stat_row("paper_i_envelope", "Noticias por llegar", str(waiting)))
-	# --- end STORY
-	if today["journal"].size() > 0:
-		var h3 := UIKit.hbox(8)
-		h3.custom_minimum_size = Vector2(0, 70)
-		v.add_child(h3)
-		var jp := PaperKit.pic("paper_i_page", 3.0)
-		jp.custom_minimum_size = Vector2(44, 44)
-		jp.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		h3.add_child(jp)
-		var l3 := PaperKit.hand("Diario", 32, PaperKit.INK_SOFT)
-		l3.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		l3.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		h3.add_child(l3)
+		if ex.get_child_count() > 0:
+			ex.add_child(PaperKit.gap(0, 18))
+		ex.add_child(_ledger_icon("paper_i_envelope", "Noticias por llegar"))
+		ex.add_child(_ledger_num(str(waiting), PaperKit.INK_SOFT))
+	if today.get("journal", []).size() > 0:
+		if ex.get_child_count() > 0:
+			ex.add_child(PaperKit.gap(0, 18))
+		ex.add_child(_ledger_icon("paper_i_page", "Diario"))
 		for e in today["journal"]:
 			var who := String(e["hero"])
-			var pt := PaperKit.portrait(Story.sprite_id(who), 1.0)
+			var pt := PaperKit.portrait(Story.sprite_id(who), 0.8)
 			pt.tooltip_text = String(Data.CHARACTERS.get(who, {}).get("name", who))
 			pt.mouse_filter = Control.MOUSE_FILTER_PASS
-			h3.add_child(pt)
-	v.add_child(PaperKit.gap(12))
+			ex.add_child(pt)
+	if ex.get_child_count() > 0:
+		lines.append(ex)
+		v.add_child(PaperKit.gap(4))
+		v.add_child(ex)
+	v.add_child(PaperKit.gap(16))   # --- R4 MERGE: algo más de aire: el sello (torcido) no pisa el último renglón (el Escalafón)
 	var b := PaperKit.button("Dormir", func(): close(false); sleep.emit(), 38, "card", "paper_i_moon")
-	b.custom_minimum_size = Vector2(300, 66)
+	b.custom_minimum_size = Vector2(300, 64)
 	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	v.add_child(b)
 	PaperKit.decor(p, "paper_tape", Vector2(0.5, 0.0), Vector2(-36, -12), 3.0, false, Color.WHITE, 0.04)
+	# el sello del día: según cuántos de los que vinieron se fueron atendidos
+	var came := served + tired + full
+	var stamp: Control = null
+	if ev_day:   # --- R4 EVENTS (merge): el sello del día de evento es la medalla
+		var md := String((today["event"] as Dictionary).get("medal", "none"))
+		var good := md == "gold" or md == "silver"
+		stamp = _ledger_stamp({"gold": "¡Oro!", "silver": "Plata", "bronze": "Bronce"}.get(md, "Sin medalla"),
+			PaperKit.HERB if good else (PaperKit.INK if md == "bronze" else PaperKit.RED_INK))
+		PaperKit.attach(p, stamp, Vector2(1, 1), Vector2(-236, -98), false, -0.12)   # --- R4 MERGE: junto a «Dormir» (antes -116)
+		stamp.modulate.a = 0.0
+	elif came > 0:
+		var rate := float(served) / float(came)
+		var verdict := "Día flojo"
+		if rate >= 0.9 and served >= 3:
+			verdict = "¡Gran día!"
+		elif rate >= 0.7:
+			verdict = "Buen día"
+		elif rate >= 0.45:
+			verdict = "Día duro"
+		stamp = _ledger_stamp(verdict, PaperKit.HERB if rate >= 0.7 else PaperKit.RED_INK)
+		PaperKit.attach(p, stamp, Vector2(1, 1), Vector2(-236, -98), false, -0.12)   # --- R4 MERGE: junto a «Dormir» (antes -116)
+		stamp.modulate.a = 0.0
 	_open("summary", p)
+	# se escribe renglón por renglón (la pluma), y al final cae el sello
+	for c in lines:
+		c.modulate.a = 0.0
+	var snd := AudioStreamPlayer.new()
+	snd.bus = "SFX"
+	snd.stream = load("res://assets/audio/pace_stamp.ogg") if ResourceLoader.exists("res://assets/audio/pace_stamp.ogg") else null
+	snd.volume_db = -3.0
+	p.add_child(snd)
+	var tw := p.create_tween()
+	tw.tween_interval(0.4)
+	for c in lines:
+		tw.tween_callback(func(): Sfx.play_pitched("quill", randf_range(0.92, 1.12), -14.0))
+		tw.tween_property(c, "modulate:a", 1.0, 0.14)
+		tw.tween_interval(0.06)
+	if stamp:
+		tw.tween_interval(0.25)
+		tw.tween_callback(func():
+			if snd.stream:
+				snd.play())
+		tw.tween_property(stamp, "modulate:a", 0.92, 0.07)
+
+## Más filas del libro de cuentas para otras partes del juego (el escalafón del gremio: RANK). Vacío por ahora.
+func _ledger_extra(_v: VBoxContainer, _today: Dictionary) -> void:
+	pass
+
+## --- R4 RANK (merge): el renglón del Escalafón (Ranking.commit_day ya sumó el día): escudo del Gremio, flecha y puesto.
+## (Lo que era RankUI.summary_row() en el resumen viejo, con el formato del libro de cuentas de PACE.)
+func _ledger_rank_row() -> Control:
+	var mv: Dictionary = Ranking.last_move
+	if mv.is_empty() or int(mv.get("day", 0)) != Game.day:
+		return null
+	var val := UIKit.hbox(8)
+	val.add_child(RankUI.arrow(int(mv.get("delta", 0)), 30, false))
+	val.add_child(_ledger_num("%dº" % int(mv.get("pos", 30))))
+	return _ledger_row("rank_crest_gremio", "Escalafón", val)
+# --- end R4 RANK
+
+## Un renglón: icono, concepto, una línea de puntos y la cifra.
+func _ledger_row(icon: String, label: String, value: Control) -> Control:
+	var h := UIKit.hbox(10)
+	h.custom_minimum_size = Vector2(0, 44)
+	h.add_child(_ledger_icon(icon, label))
+	var l := PaperKit.hand(label, 30, PaperKit.INK_SOFT)
+	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(l)
+	var dots := Control.new()
+	dots.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	dots.custom_minimum_size = Vector2(40, 30)
+	dots.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dots.draw.connect(func():
+		var y := dots.size.y * 0.74
+		var x := 6.0
+		while x < dots.size.x - 6.0:
+			dots.draw_rect(Rect2(x, y, 3, 3), Color(0.37, 0.28, 0.2, 0.42))
+			x += 11.0)
+	h.add_child(dots)
+	value.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(value)
+	return h
+
+func _ledger_icon(icon: String, tip := "") -> TextureRect:
+	var t := PaperKit.tex(icon)
+	var i := PaperKit.pic(icon, maxf(1.0, roundf(34.0 / float(t.get_height()))) if t else 2.0)
+	i.custom_minimum_size = Vector2(40, 40)
+	i.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if tip != "":
+		i.tooltip_text = tip
+		i.mouse_filter = Control.MOUSE_FILTER_PASS
+	return i
+
+func _ledger_num(text: String, color := PaperKit.INK) -> Label:
+	return PaperKit.hand(text, 36, color, true)
+
+## El renombre del día: lo ganado y, en rojo, lo que se perdió con quienes se cansaron de esperar.
+func _ledger_renown(gain: int, lost: int) -> Control:
+	var h := UIKit.hbox(12)
+	h.add_child(_ledger_num("+%d" % maxi(0, gain)))
+	if lost > 0:
+		h.add_child(_ledger_num("−%d" % lost, PaperKit.RED_INK))
+	return h
+
+## Lo que esperaron, en horas del reloj de la tienda (5 minutos reales = de 9:00 a 18:00).
+func _ledger_wait(secs: float) -> String:
+	var m := int(round(secs * float(Game.PACE_CLOSE_MIN - Game.PACE_OPEN_MIN) / Game.PACE_DAY_SECONDS))
+	if m >= 60:
+		return "%d h %02d min" % [m / 60, m % 60]
+	return "%d min" % m
+
+func _ledger_rule(col: Color) -> Control:
+	var c := ColorRect.new()
+	c.color = col
+	c.custom_minimum_size = Vector2(640, 2)
+	c.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return c
+
+## El sello de goma del día (tinta verde o roja), un poco torcido.
+func _ledger_stamp(text: String, col: Color) -> Control:
+	var pc := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(col.r, col.g, col.b, 0.06)
+	sb.border_color = col
+	sb.set_border_width_all(4)
+	sb.set_corner_radius_all(10)
+	sb.content_margin_left = 16
+	sb.content_margin_right = 16
+	sb.content_margin_top = 2
+	sb.content_margin_bottom = 4
+	pc.add_theme_stylebox_override("panel", sb)
+	pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var l := UIKit.label(text, 34, col, UIKit.font_sc_bold, HORIZONTAL_ALIGNMENT_CENTER)
+	pc.add_child(l)
+	return pc
+# --- end R4 PACE
 
 # ------------------------------------------------------------------ subida de nivel
 
@@ -1482,3 +1825,24 @@ func _input(ev: InputEvent) -> void:
 	if current == "stir" and ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_SPACE:
 		stir_key()
 		get_viewport().set_input_as_handled()
+
+# --- R4 RANK: el Escalafón del Gremio de Boticarios de Arvendal (los papeles están en scripts/ui/rank_ui.gd) --------
+## El tablón del Gremio: las 30 tiendas, su fila subrayada, flechas y la ficha de cada tienda (botón del HUD o G).
+func show_ranking() -> void:
+	Sfx.play("page", 0.05, -4.0)
+	_open("ranking", RankUI.fit(RankUI.board(self)))
+
+## La Gaceta del Gremio (llega cada 5 días con el correo). main.gd espera a que se cierre.
+func show_gaceta() -> void:
+	Sfx.play("page", 0.05, -3.0)
+	_open("gaceta", RankUI.fit(RankUI.gaceta(self)))
+
+## Los créditos del final del puesto 1. done: lo que pasa con «Seguir jugando» (Esc, Espacio o Intro también cierran;
+## quien espera mira que current deje de ser "credits").
+func show_credits(done := Callable()) -> void:
+	_open("credits", RankUI.fit(RankUI.credits(self, func():
+		if done.is_valid():
+			done.call())))
+	if current_node and current_node.get_child_count() > 0 and current_node.get_child(0) is ColorRect:
+		current_node.get_child(0).color = Color(0.02, 0.01, 0.05, 0.9)
+# --- end R4 RANK

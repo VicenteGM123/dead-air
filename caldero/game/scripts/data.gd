@@ -95,9 +95,12 @@ const UPGRADES := {
 		"desc": "Luz cálida para las noches y +15% de propina."},
 	"caldero_cobre": {"name": "Caldero de cobre", "cost": 140, "level": 2,
 		"desc": "Calienta parejo: +1 de potencia en todas tus pociones."},
+	# --- R4 RAVEN: Krápido, el reparto a domicilio por cuervo (ver el bloque R4 RAVEN al final)
+	"krapido": {"name": "Ventanilla Krápido", "cost": 120, "level": 1,
+		"desc": "Una ventanilla con percha y una bola de cristal: llegan pedidos a domicilio y Graznido, el cuervo, viene a buscarlos."},
 }
 
-const UPGRADE_ORDER := ["cojin", "alfombra", "caldero_ancho", "huerto", "estante", "campanilla", "farolillos", "caldero_cobre"]
+const UPGRADE_ORDER := ["cojin", "alfombra", "caldero_ancho", "huerto", "estante", "campanilla", "farolillos", "caldero_cobre", "krapido"]   # --- R4 RAVEN: + krapido
 
 # --- STORY: personajes (sprite + nombre visible) --------------------------------------------------------------
 # "pixel": tamaño de un píxel para un cuadro de 48 px de alto (actor.gd lo ajusta a la resolución del sprite).
@@ -1451,3 +1454,101 @@ const RUNE_REQUESTS := [
 		"fail": "No hubo humo a tiempo. Escapé por la chimenea. Otra vez."},
 ]
 # --- end R3 MAGIC3
+
+# --- R4 RAVEN: Krápido («¡Kraa!» + «rápido»: pociones a pico y pluma) ------------------------------------------------
+## El reparto a domicilio por cuervo. Se compra en el puesto de Mabel ("krapido" en UPGRADES): una ventanilla con percha
+## y una bola de cristal junto a ella, del lado de la alquimista. Los pedidos llegan PRIMERO a la bola (quién pide, la
+## poción en una línea corta, a veces una runa, cuánto falta para que pase el cuervo); Graznido llega DESPUÉS, espera
+## un minuto en la percha y se lleva la botella (o se va enojado). Lógica: scripts/krapido.gd; bola: scripts/ui/ball_ui.gd;
+## el cuervo: scripts/world/raven.gd; reseñas y guardado: el bloque R4 RAVEN de scripts/game.gd.
+const KRAPIDO := {"name": "Krápido", "tagline": "pociones a pico y pluma", "courier": "Graznido"}
+
+## Pedidos a domicilio. "line": lo que pide, en una línea corta y graciosa (la tarjeta de la bola; la poción se deduce
+## como en el mostrador, y la pista va en iconos). "good" / "fail": lo que cuenta su carta (funcionó / no era la poción).
+## Solo salen los de quien ya llegó al pueblo ("arrives" en CHARACTERS) y con una poción que se pueda preparar.
+const KRAPIDO_ORDERS := [
+	{"who": "granjero", "potion": "sueno_profundo", "line": "¡Mi gallo canta a las tres!",
+		"good": "Dormí hasta el mediodía. El gallo, ofendido, ahora canta a las diez.", "fail": "El gallo cantó y yo, con los ojos abiertos, contando vigas."},
+	{"who": "anciano", "potion": "sueno_profundo", "line": "Cuento ovejas. Ya voy por mil.",
+		"good": "Me dormí en la oveja doce. Las otras se fueron a su casa.", "fail": "Llegué a dos mil ovejas. Ahora tengo un rebaño y nada de sueño."},
+	{"who": "marta", "potion": "sueno_profundo", "line": "Cinco niños. Cero siestas.",
+		"good": "¡Durmieron los cinco! Y yo también. Fue un milagro con tapa de corcho.", "fail": "Nadie durmió. Los niños, menos que nadie."},
+	{"who": "grumm", "potion": "balsamo_helado", "line": "¡Me senté en la estufa!",
+		"good": "Ya me puedo sentar. En sillas frías, eso sí.", "fail": "Sigo sin poder sentarme. Cocino de pie, como un héroe."},
+	{"who": "pip", "potion": "balsamo_helado", "line": "Fiebre. Y mañana hay feria.",
+		"good": "¡Fui a la feria y gané un pez! Se llama Bálsamo.", "fail": "Me perdí la feria. Mi pez imaginario está triste."},
+	{"who": "panadera", "potion": "balsamo_helado", "line": "¡Horno a tope, manos ardiendo!",
+		"good": "Manos fresquitas y pan dorado. ¡Gracias, vecina!", "fail": "Las manos me siguen ardiendo. Y el pan, quemado."},
+	{"who": "granjero", "potion": "vigor_verde", "line": "Mi buey se jubiló. Aro yo.",
+		"good": "Aré el campo entero. El buey miró desde la sombra.", "fail": "Aré un surco. Uno. Torcido."},
+	{"who": "mabel", "potion": "vigor_verde", "line": "¡Mudanza! Y el piano es mío.",
+		"good": "Subí el piano sola. Los vecinos aplaudieron.", "fail": "El piano sigue en la escalera. Y yo, debajo. Casi."},
+	{"who": "brann", "potion": "vigor_verde", "line": "Guardia doble en la muralla.",
+		"good": "Tres rondas sin parar. Detuve a un ladrón y a dos gallinas.", "fail": "A la segunda vuelta me dormí parado. Me ganó una gallina."},
+	{"who": "borin", "potion": "vigor_verde", "line": "Martillo nuevo. Pesa como un buey.",
+		"good": "¡Ya lo levanto con una mano! Con la otra, la jarra.", "fail": "El martillo me levantó a mí."},
+	{"who": "anciano", "potion": "ojo_nocturno", "line": "Busco mis anteojos. A oscuras.",
+		"good": "¡Los encontré! Estaban en mi frente. Y vi todo, de noche.", "fail": "Pisé los anteojos. Ahora veo doble y a oscuras."},
+	{"who": "lupo", "potion": "ojo_nocturno", "line": "Pesca de noche, ojos de día.",
+		"good": "Vi cada pez del lago. Ellos también me vieron a mí.", "fail": "Pesqué una bota. Creo. No vi nada."},
+	{"who": "ilse", "potion": "ojo_nocturno", "line": "Hongos que salen solo de noche.",
+		"good": "Encontré hongos que brillan. Ya están en mi puesto.", "fail": "Pisé todos los hongos. Y una rana."},
+	{"who": "tobias", "potion": "ojo_nocturno", "line": "Leo de noche. Sin velas. Ahorro.",
+		"good": "Leí tres novelas sin gastar una vela.", "fail": "Sigo leyendo a oscuras. Ya me inventé el final."},
+	{"who": "pip", "potion": "tonico_brio", "line": "¡Carrera de sacos mañana!",
+		"good": "¡Gané! El saco llegó al molino. Yo también, casi.", "fail": "Me dormí dentro del saco. Me despertó una cabra."},
+	{"who": "grumm", "potion": "tonico_brio", "line": "Tres bodas. Un solo cocinero.",
+		"good": "Tres banquetes y una tarta de cinco pisos. Nadie se quejó.", "fail": "La tercera boda comió pan. Solo pan."},
+	{"who": "nyra", "potion": "tonico_brio", "line": "Feria de tres días, nya.",
+		"good": "Vendí todo y regateé hasta dormida. ¡Socia!", "fail": "Me dormí sobre el mostrador. Me robaron un ovillo."},
+	{"who": "ragnar", "potion": "velo_invernal", "line": "Paso junto a un oso dormido.",
+		"good": "El oso ni se enteró. Yo tampoco, de lo nervioso.", "fail": "El oso despertó. Corrimos los dos. Él más rápido."},
+	{"who": "vianne", "potion": "velo_invernal", "line": "Fiesta sorpresa. Shhh.",
+		"good": "¡Nadie me oyó llegar! La sorpresa fue total.", "fail": "Tropecé con la tarta. La sorpresa fue para mí."},
+	{"who": "sylwen", "potion": "velo_invernal", "line": "Cazo un ciervo muy orejudo.",
+		"good": "Me acerqué tanto que le hice una trenza.", "fail": "El ciervo me oyó a una legua. Se rió."},
+	{"who": "isolde", "potion": "elixir_alba", "line": "Me congelé en la montaña.",
+		"good": "Calor de pies a cabeza. La armadura, tibia como pan.", "fail": "Sigo helada. Tirito y la armadura suena como campana."},
+	{"who": "hassim", "potion": "elixir_alba", "line": "Rasguño de camello. Ofendido.",
+		"good": "Herida cerrada. El camello y yo, amigos otra vez.", "fail": "El rasguño sigue. El camello también, ofendido."},
+	{"who": "anselmo", "potion": "elixir_alba", "line": "El templo está helado.",
+		"good": "Misa calentita. Los fieles se quedaron hasta el final.", "fail": "Recé tiritando. Los fieles, también."},
+	{"who": "nyra", "potion": "humo_furtivo", "line": "Viene el cobrador, nya.",
+		"good": "¡Puf! Humo. El cobrador todavía me busca.", "fail": "Me encontró. Pagué. Lloré un poquito."},
+	{"who": "roxa", "potion": "humo_furtivo", "line": "Necesito una salida… teatral.",
+		"good": "Desaparecí en una nube violeta. Aplausos.", "fail": "Salí por la puerta. Como cualquiera. Qué vergüenza."},
+	{"who": "fizz", "potion": "humo_furtivo", "line": "No es para mí. Es para un amigo.",
+		"good": "Mi «amigo» escapó del experimento. Nada que ver conmigo.", "fail": "El experimento explotó igual. Mi amigo quedó chamuscado."},
+	{"who": "hassim", "potion": "brebaje_lucido", "line": "Las cuentas del viaje no cuadran.",
+		"good": "Cuadraron. Y descubrí que el camello me cobraba de más.", "fail": "Ahora no me cuadran ni los dedos."},
+	{"who": "anselmo", "potion": "brebaje_lucido", "line": "Sermón para mañana. Sin ideas.",
+		"good": "Sermón brillante. Hasta yo lo entendí.", "fail": "Me dormí en la segunda línea. Los fieles, en la primera."},
+	{"who": "zaria", "potion": "brebaje_lucido", "line": "Aprendo idioma humano. Difícil.",
+		"good": "Ahora hablo bien. Bueno, mejor. Gracias.", "fail": "Sigo confundida. ¿Por qué «bota» y «bote»?"},
+	{"who": "hassim", "potion": "pocion_clima", "line": "Del desierto a la nieve. Hoy.",
+		"good": "Ni el sol ni la nieve me tocaron. Viajé feliz.", "fail": "Me quemé al mediodía y me congelé a la tarde."},
+	{"who": "lupo", "potion": "pocion_clima", "line": "¡Tormenta en el lago!",
+		"good": "La tormenta pasó y yo ni me mojé.", "fail": "Me mojé hasta los huesos. Y el bote, más."},
+	{"who": "isolde", "potion": "pocion_clima", "line": "Torneo bajo el granizo.",
+		"good": "Granizo, sol y lluvia: ni me inmuté. Gané.", "fail": "El granizo sonaba en mi casco como un tambor."},
+]
+
+## Lo que dice Graznido (cuervo chulo, rimas de rapero). "take": al recibir la botella (8-10 rimas); "arrive": al
+## llegar a la percha; "hurry": cuando le queda poco; "angry": cuando se va sin nada; "closed": si la tienda cierra.
+const RAVEN_LINES := {
+	"take": ["¡Kraa! Pico y pluma: entrego en una.", "Del caldero a la puerta, ¡con la tapa bien cubierta!",
+		"Ni lluvia ni viento: llego en un momento.", "Graznido no se demora: ¡en el aire a toda hora!",
+		"Si la poción es de calidad, ¡vuelo a toda velocidad!", "Yo no camino, yo vuelo: ¡la entrega cae del cielo!",
+		"Pociones a pico y pluma: ¡Krápido no se esfuma!", "¡Agárrate el sombrero, que se va el mensajero!",
+		"Botella en la cartera, ¡y me voy a la carrera!", "Más puntual que el gallo, ¡más rápido que un rayo!"],
+	"arrive": ["¡Kraa! Krápido en la ventana.", "¿Hay paquete? ¡Que vuele el cohete!", "Llegó el cuervo. ¿Y lo mío?"],
+	"hurry": ["¡Kraa! El reloj no espera.", "¿Para hoy o para el jueves?", "¡Que se me enfría el vuelo!"],
+	"angry": ["¿Nada? Pues me voy. ¡Una pluma por hoy!", "Sin poción no hay canción. ¡Kraa!",
+		"Esperé un minuto entero… ¡ni que fuera tu cartero!", "Me voy de vacío. ¡Kraa, qué lío!"],
+	"closed": ["¿Cerrado? Pues mañana, ¡a la ventana!"],
+}
+
+## La posdata de las cartas de quien pidió por Krápido.
+const KRAPIDO_PD := ["P.D.: El cuervo me guiñó un ojo. Creo.", "P.D.: Tu cuervo me cantó un rap. No pregunté.",
+	"P.D.: Llegó rapidísimo. Y con gorra.", "P.D.: El cuervo me pidió propina. Le di una nuez."]
+# --- end R4 RAVEN

@@ -3,6 +3,7 @@ extends Node
 
 const SOUNDS := ["brew", "bubble_0", "bubble_1", "bubble_2", "click", "coin", "door", "doorbell", "hover",
 	"levelup", "page", "plop", "purr", "sad", "sparkle", "step_0", "step_1", "step_2", "stir"]
+const RAVEN_SOUNDS := ["kraa", "ball_chime", "wings"]   # --- R4 RAVEN: el graznido, la bola y el aleteo
 
 var _streams := {}
 var _pool: Array[AudioStreamPlayer] = []
@@ -17,6 +18,9 @@ func _ready() -> void:
 	_setup_buses()
 	for s in SOUNDS:
 		_streams[s] = load("res://assets/audio/%s.ogg" % s)
+	for s in RAVEN_SOUNDS:   # --- R4 RAVEN: Krápido (tools/arte/raven_audio.py)
+		if ResourceLoader.exists("res://assets/audio/%s.ogg" % s):
+			_streams[s] = load("res://assets/audio/%s.ogg" % s)
 	for i in 12:
 		var p := AudioStreamPlayer.new()
 		p.bus = "SFX"
