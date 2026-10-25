@@ -10,6 +10,7 @@
 #
 # Variables: GODOT=<ejecutable de Godot 4.7.x con las plantillas de exportación web instaladas> (por defecto: godot)
 #            FORCE=1  exporta aunque falle la comprobación del paso 0 (solo para pruebas; no publicar)
+#            WEB_TITLE=<título de la pestaña> (por defecto: Midnight Cauldron)
 #
 # 0. No exporta si el código usa AudioServer.add_bus(): en la web desordena los buses y no se oye nada
 #    (para crear un bus: AudioServer.bus_count = n + 1, ver scripts/sfx.gd).
@@ -20,12 +21,14 @@
 #       vez de reiniciarse desde el hilo principal: sin hueco en cada vuelta y sin silencio cuando el juego va lento;
 #       al pausar un bucle, la posición se guarda dentro del sonido;
 #    b) cada sonido decodificado se comparte en vez de copiarse en cada play() (menos tirones y menos memoria).
+# 3b. El <title> de index.html dice el nombre del juego en inglés (WEB_TITLE): Godot escribe ahí config/name, que
+#    sigue siendo «Caldero Nocturno» porque nombra la carpeta de las partidas guardadas (también en el navegador).
 set -eu
 
 PRESET="Web"
 case "${1:-}" in
 	-h|--help)
-		sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
+		sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
 		exit 0
 		;;
 esac
@@ -35,6 +38,7 @@ PROJ=${1:-$TOOLS_DIR/../game}
 OUT=${2:-$TOOLS_DIR/../web}
 GODOT=${GODOT:-godot}
 FORCE=${FORCE:-0}
+WEB_TITLE=${WEB_TITLE:-Midnight Cauldron}
 
 if [ ! -f "$PROJ/project.godot" ]; then
 	echo "export_web: no hay project.godot en '$PROJ'" >&2
@@ -78,7 +82,7 @@ LOG=$(mktemp "${TMPDIR:-/tmp}/caldero-export.XXXXXX")
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/caldero-web.XXXXXX")
 trap 'rm -rf "$LOG" "$STAGE"' EXIT
 VERSION=$("$GODOT" --version 2>/dev/null | head -n 1)
-echo "== Caldero Nocturno, versión web: preset \"$PRESET\", Godot $VERSION"
+echo "== $WEB_TITLE (Caldero Nocturno), versión web: preset \"$PRESET\", Godot $VERSION"
 echo "   proyecto: $PROJ"
 echo "   salida:   $OUT"
 
@@ -128,6 +132,16 @@ patch_js "un bucle en pausa puede volver al principio" \
 patch_js "cada play() sigue copiando el sonido decodificado" \
 	'getAudioBuffer(){return this._duplicateAudioBuffer()}' \
 	'getAudioBuffer(){return this._audioBuffer}'
+
+# 3b. El título de la pestaña (y de los marcadores): el <title> que Godot escribió con config/name.
+if grep -q '<title>[^<]*</title>' "$STAGE/index.html"; then
+	T="$WEB_TITLE" awk 'BEGIN { t = ENVIRON["T"] } { sub(/<title>[^<]*<\/title>/, "<title>" t "</title>"); print }' \
+		"$STAGE/index.html" >"$STAGE/index.html.tmp"
+	mv "$STAGE/index.html.tmp" "$STAGE/index.html"
+fi
+if ! grep -qF "<title>$WEB_TITLE</title>" "$STAGE/index.html"; then
+	echo "export_web: aviso: index.html sin <title>$WEB_TITLE</title>" >&2
+fi
 
 # 4. Reemplazar la versión anterior (solo index.*).
 rm -f "$OUT"/index.*
