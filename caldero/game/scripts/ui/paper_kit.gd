@@ -234,7 +234,7 @@ static func coins(n: int, size := 30, color := INK, scale := 2.0) -> HBoxContain
 	var c := pic("res://assets/icons/emote_coin.png", scale)
 	c.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(c)
-	var l := hand(str(n), size, color, true)
+	var l := hand(UIKit.num(n), size, color, true)   # --- R5 EN-UI: «1,241»
 	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(l)
 	return h

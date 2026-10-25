@@ -555,19 +555,27 @@ WOOD_L = ramp('#4a2c16', '#6e4424', '#93603a', '#b47d4e', '#d39c66')
 WOOD_LINE = rgb('#170c05')
 CREAM = rgb('#f2e2b8')
 
+# --- R5 WORLD: letras de 5 px de alto para CROW DELIVERY (antes solo las de KRÁPIDO, que siguen aquí)
 PIX_FONT = {
     'K': ['X..X', 'X.X.', 'XX..', 'X.X.', 'X..X'],
     'R': ['XXX.', 'X..X', 'XXX.', 'X.X.', 'X..X'],
     'A': ['.XX.', 'X..X', 'XXXX', 'X..X', 'X..X'],
     'P': ['XXX.', 'X..X', 'XXX.', 'X...', 'X...'],
-    'I': ['XXX', '.X.', '.X.', '.X.', 'XXX'],
+    'I': ['X', 'X', 'X', 'X', 'X'],   # --- R5 WORLD: (era de 3 px, con remates) para que DELIVERY quepa con aire
     'D': ['XXX.', 'X..X', 'X..X', 'X..X', 'XXX.'],
     'O': ['.XX.', 'X..X', 'X..X', 'X..X', '.XX.'],
+    'C': ['.XXX', 'X...', 'X...', 'X...', '.XXX'],
+    'W': ['X...X', 'X...X', 'X.X.X', 'X.X.X', '.X.X.'],
+    'E': ['XXX', 'X..', 'XX.', 'X..', 'XXX'],
+    'L': ['X..', 'X..', 'X..', 'X..', 'XXX'],
+    'V': ['X...X', 'X...X', '.X.X.', '.X.X.', '..X..'],
+    'Y': ['X.X', 'X.X', '.X.', '.X.', '.X.'],
+    ' ': ['..', '..', '..', '..', '..'],
 }
 
 
 def pix_text(cv, text, x, y, col, shadow=None):
-    """Letras de 5 px de alto (solo las de KRÁPIDO). 'Á' = A con tilde."""
+    """Letras de 5 px de alto (las de KRÁPIDO y CROW DELIVERY). 'Á' = A con tilde."""
     for ch in text:
         accent = ch == 'Á'
         g = PIX_FONT['A' if accent else ch]
@@ -780,26 +788,34 @@ def krapido_logo():
 
 
 def krapido_sign():
-    """El letrero sobre la ventanilla (52x17): tabla oscura con borde dorado, el logo y KRÁPIDO."""
-    w, h = 52, 17
+    """--- R5 WORLD: el letrero sobre la ventanilla (44x21): tabla oscura con borde dorado y CROW DELIVERY en dos
+    renglones, con el logo (la cabeza del cuervo en su disco dorado) delante de CROW. Era de 52x17 con KRÁPIDO: ahora
+    es más alto y más angosto, para que quepa entre el poste y el estante de la tienda (0,84 m a 0,019 m/px) y se lea."""
+    w, h = 44, 21
     cv = Canvas(w, h)
-    m = poly_mask(w, h, [(1, 2), (51, 2), (51, 15), (1, 15)])
+    m = poly_mask(w, h, [(1, 2), (43, 2), (43, 20), (1, 20)])
     n = pillow_normals(m, 0.8)
     cols, lv = shaded(n, m, WOOD_D)
     cv.paint(m, cols, WOOD_LINE)
-    for x in range(2, 50):
+    for x in range(2, 42):
         cv.dot(x, 3, GOLD[2])
-        cv.dot(x, 13, GOLD[1])
-    for y in range(3, 14):
+        cv.dot(x, 18, GOLD[1])
+    for y in range(3, 19):
         cv.dot(2, y, GOLD[2])
-        cv.dot(49, y, GOLD[1])
+        cv.dot(41, y, GOLD[1])
+    # primer renglón: el logo y CROW, centrados juntos
+    lw = 9
+    tw1 = text_w('CROW')
+    x1 = 3 + (38 - (lw + 2 + tw1)) // 2
     lc = Canvas(w, h)
-    _logo(lc, 8.5, 8.5, 4.6)
+    _logo(lc, x1 + 4.0, 8.0, 3.9)
     cv.col[lc.a] = lc.col[lc.a]
-    tw = text_w('KRÁPIDO')
-    pix_text(cv, 'KRÁPIDO', 16 + (31 - tw) // 2 + 1, 7, CREAM, shadow=rgb('#1a0e06'))
+    pix_text(cv, 'CROW', x1 + lw + 2, 6, CREAM, shadow=rgb('#1a0e06'))
+    # segundo renglón: DELIVERY
+    tw2 = text_w('DELIVERY')
+    pix_text(cv, 'DELIVERY', 3 + (38 - tw2) // 2, 12, CREAM, shadow=rgb('#1a0e06'))
     # argollas de las cadenas
-    for x in (8, 43):
+    for x in (8, 35):
         cv.dot(x, 1, rgb('#6a6676'), rgb('#1a1920'))
         cv.dot(x, 0, rgb('#45424f'), rgb('#1a1920'))
     cv.outline()

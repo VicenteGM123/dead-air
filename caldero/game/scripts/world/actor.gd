@@ -24,6 +24,16 @@ var _hop_tween: Tween
 var _emote_tween: Tween
 
 static var _shadow_mat: StandardMaterial3D
+# --- R5 WORLD: dos personajes nunca en el mismo plano. Los sprites miran todos a la cámara; si dos quedan a la misma
+# profundidad y se tapan (la fila de alumnos, el jurado, la gente del mercado en su carril), el búfer de profundidad
+# no sabe cuál va delante y su borde tiembla (z-fighting). Cada personaje nuevo corre su dibujo unos milímetros hacia
+# atrás (-z, lejos de la cámara), distinto del anterior: de 0 a 3,5 cm en pasos de 7 mm. La sombra sigue en los pies.
+const Z_BIAS := [0.0, -0.021, -0.007, -0.028, -0.014, -0.035]
+static var _z_seq := 0
+## La sombra de mancha va 2,4 cm sobre el suelo (era 1,2 cm: la misma altura que las alfombras y las manchas de luz
+## del suelo, y temblaba sobre ellas).
+const SHADOW_Y := 0.024
+# --- end R5 WORLD
 
 func setup(id: String, pixel := 0.04) -> void:
 	char_id = id
@@ -36,6 +46,8 @@ func setup(id: String, pixel := 0.04) -> void:
 	sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	sprite.double_sided = true
+	sprite.position.z = Z_BIAS[_z_seq % Z_BIAS.size()]   # --- R5 WORLD
+	_z_seq += 1   # --- R5 WORLD
 	add_child(sprite)
 	sprite.play("idle")
 	sprite.speed_scale = randf_range(0.9, 1.1)
@@ -53,7 +65,7 @@ func setup(id: String, pixel := 0.04) -> void:
 		_shadow_mat.albedo_color = Color(1, 1, 1, 0.85)
 	shadow.material_override = _shadow_mat
 	shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	shadow.position = Vector3(0, 0.012, 0.02)
+	shadow.position = Vector3(0, SHADOW_Y, 0.02)   # --- R5 WORLD: (era 0.012)
 	add_child(shadow)
 
 	emote_sprite = Sprite3D.new()

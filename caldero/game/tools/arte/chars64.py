@@ -722,23 +722,24 @@ for _k, _v in POSES.items():
 ORDER = ['alquimista', 'lirien', 'bram', 'elda', 'kit', 'aldric', 'wren', 'granjero', 'panadera', 'anciano', 'miga',
          'sylwen', 'nyra', 'ragnar', 'isolde', 'roxa', 'anselmo', 'marta', 'lupo', 'vianne', 'hassim', 'pip', 'grumm',
          'zaria', 'fizz', 'brann', 'borin', 'ilse', 'tobias', 'mabel']
+# --- R5 EN-UI: la hoja del elenco (solo para el equipo, no se publica) en inglés, con los nombres del glosario
 TITLES = {
-    'alquimista': ('La alquimista', 'la jugadora'), 'lirien': ('Lirien', 'maga elfa'), 'bram': ('Bram', 'guerrero enano'),
-    'elda': ('Sor Elda', 'sacerdotisa'), 'kit': ('Kit', 'ladrona mediana'), 'aldric': ('Sir Aldric', 'caballero novato'),
-    'wren': ('Wren', 'exploradora'), 'granjero': ('Tomás', 'granjero'), 'panadera': ('Greta', 'panadera'),
-    'anciano': ('Don Ruperto', 'vecino jubilado'), 'miga': ('Miga', 'la gata de la tienda'),
-    'sylwen': ('Sylwen', 'arquera elfa'), 'nyra': ('Nyra', 'comerciante gata'), 'ragnar': ('Ragnar', 'mercenario lobo'),
-    'isolde': ('Isolde', 'capitana'), 'roxa': ('Roxa', 'maga viajera'), 'anselmo': ('Padre Anselmo', 'sacerdote'),
-    'marta': ('Marta', 'campesina'), 'lupo': ('Lupo', 'pescador'), 'vianne': ('Lady Vianne', 'dama noble'),
-    'hassim': ('Hassim', 'mercader viajero'), 'pip': ('Pip', 'niño del pueblo'), 'grumm': ('Grumm', 'cocinero semiorco'),
-    'zaria': ('Zaria', 'viajera demonio'), 'fizz': ('Fizz', 'alquimista gnomo'), 'brann': ('Brann', 'guardia del pueblo'),
-    'borin': ('Borin', 'joyero enano'), 'ilse': ('Ilse', 'herbolaria elfa'), 'tobias': ('Tobías', 'librero y tintero'),
-    'mabel': ('Doña Mabel', 'cojines y farolillos'),
+    'alquimista': ('The alchemist', 'the player'), 'lirien': ('Lirien', 'elf mage'), 'bram': ('Bram', 'dwarf warrior'),
+    'elda': ('Sister Elda', 'priestess'), 'kit': ('Kit', 'halfling thief'), 'aldric': ('Sir Aldric', 'rookie knight'),
+    'wren': ('Wren', 'explorer'), 'granjero': ('Tomas', 'farmer'), 'panadera': ('Greta', 'baker'),
+    'anciano': ('Mr. Ruperto', 'retired neighbor'), 'miga': ('Miga', 'the shop cat'),
+    'sylwen': ('Sylwen', 'elf archer'), 'nyra': ('Nyra', 'catfolk merchant'), 'ragnar': ('Ragnar', 'wolf mercenary'),
+    'isolde': ('Dame Isolde', 'knight captain'), 'roxa': ('Roxa', 'wandering mage'), 'anselmo': ('Father Anselmo', 'temple priest'),
+    'marta': ('Marta', 'mother of five'), 'lupo': ('Lupo', 'fisherman'), 'vianne': ('Lady Vianne', 'noble lady'),
+    'hassim': ('Hassim', 'traveling merchant'), 'pip': ('Pip', 'errand boy'), 'grumm': ('Grumm', 'half-orc cook'),
+    'zaria': ('Zaria', 'demon-kin traveler'), 'fizz': ('Fizz', 'gnome alchemist'), 'brann': ('Brann', 'town guard'),
+    'borin': ('Borin', 'dwarf jeweler'), 'ilse': ('Ilse', 'elf herbalist'), 'tobias': ('Tobias', 'books and inks'),
+    'mabel': ('Mrs. Mabel', 'pretty things for the home'),
 }
 
 
 def cast_sheet(res, path, scale=3, cols=10, walkers=('lirien', 'alquimista', 'ragnar', 'miga'),
-               title='Caldero Nocturno · elenco estilo HD-2D (cuadros de 64x96, quieto, x%d)'):
+               title='Midnight Cauldron · HD-2D cast (64x96 frames, idle, x%d)'):
     from PIL import ImageDraw, ImageFont
     fdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'assets', 'fonts')
     f_name = ImageFont.truetype(os.path.join(fdir, 'Alegreya-Bold.ttf'), 22)
@@ -773,7 +774,7 @@ def cast_sheet(res, path, scale=3, cols=10, walkers=('lirien', 'alquimista', 'ra
         name, title = TITLES.get(cid, (cid, ''))
         cell(x, y, res[cid][0][0], name, '%s · %s' % (cid, title))
     y0 = head + rows * (chh + lab + 8) + 6
-    d.text((14, y0), 'Ciclo de caminar (4 cuadros)', font=f_name, fill=(236, 214, 160))
+    d.text((14, y0), 'Walk cycle (4 frames)', font=f_name, fill=(236, 214, 160))
     y0 += 34
     for k, cid in enumerate(walkers):
         if cid not in res:
@@ -781,7 +782,7 @@ def cast_sheet(res, path, scale=3, cols=10, walkers=('lirien', 'alquimista', 'ra
         for i, fr in enumerate(res[cid][1]):
             x = 12 + ((k % 2) * 4 + i) * cw + (k % 2) * 8
             y = y0 + (k // 2) * (chh + lab + 8)
-            cell(x, y, fr, TITLES.get(cid, (cid,))[0] if i == 0 else None, 'cuadro %d' % (i + 1))
+            cell(x, y, fr, TITLES.get(cid, (cid,))[0] if i == 0 else None, 'frame %d' % (i + 1))
     im.save(path)
     return path
 

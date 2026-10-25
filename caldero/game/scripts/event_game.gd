@@ -19,6 +19,10 @@ signal _round_done
 
 const WALK_SPEED := 2.4
 const LINE_MAX := 6
+# --- R5 EN-UI: en el concurso, la clave de ella en totals es un id (antes la palabra «Tú»); ME_NAME es lo que se lee
+const ME := "me"
+const ME_NAME := "You"
+# --- end R5 EN-UI
 
 var main                      # main.gd
 var eui: EventUI
@@ -54,7 +58,7 @@ var _wants: Array = []        # feria: los pedidos posibles ["vigor", "curacion"
 var themes: Array = []
 var round_i := 0
 var presented := {}
-var totals := {}              # nombre -> estrellas
+var totals := {}              # nombre -> estrellas (ella: la clave ME)
 var rivals: Array = []        # Fizz y dos puestos (Events.rivals_for: con los letreros del escenario si los trae)
 var history: Array = []       # por ronda: {"theme", "potion", "scores"}
 var judges: Array = []        # Actor de cada jurado
@@ -399,7 +403,7 @@ func on_bottled(pid: String, potency: int, perfect: bool) -> void:
 		"concurso":
 			if _first_present_tip and running:
 				_first_present_tip = false
-				main._bench_say("Tócala en el estante para presentarla", UIKit.GOLD_BRIGHT)
+				main._bench_say("Tap it on the shelf to present it", UIKit.GOLD_BRIGHT)
 
 ## main.gd: tocó la poción i del estante.
 func on_shelf_click(i: int) -> void:
@@ -425,13 +429,13 @@ func _give_away(i: int) -> void:
 	if p.is_empty():
 		return
 	Sfx.play("plop", 0.05, -6.0)
-	main.ui.toast("%s: para el público" % Events.potion_name(String(p["id"])), UIKit.TEXT, 1.8)
+	main.ui.toast("%s: for the crowd" % Events.potion_name(String(p["id"])), UIKit.TEXT, 1.8)
 
 # ------------------------------------------------------------------ academia
 
 func _academia_bottled(pid: String, potency: int) -> void:
 	if pid != String(plan.get("potion", "")):
-		main._bench_say("¡Esa no es la del examen!", UIKit.BAD)
+		main._bench_say("That's not the exam potion!", UIKit.BAD)
 		Sfx.play("sad", 0.05, -8.0)
 		return
 	if line.is_empty() or delivered >= int(plan.get("n", 6)):
@@ -459,7 +463,7 @@ func _academia_bottled(pid: String, potency: int) -> void:
 		bonus = int(floor(time_left / 10.0))
 		score += bonus
 		if bonus > 0:
-			eui.pop("+%d tiempo" % bonus, Color("8fe08a"))
+			eui.pop("+%d time" % bonus, Color("8fe08a"))
 		_end_play()
 
 # ------------------------------------------------------------------ feria del torneo
@@ -478,7 +482,7 @@ func _tick_torneo(delta: float) -> void:
 			to_spawn -= 1
 			spawned += 1
 			lost += 1
-			main.ui.toast("Fila llena: alguien se fue", UIKit.BAD, 1.6)
+			main.ui.toast("Line full: someone left", UIKit.BAD, 1.6)
 		else:
 			_spawn_visitor(pid, pat)
 	# la paciencia baja (desde que llegó a la fila)
@@ -523,7 +527,7 @@ func _serve_torneo(v: Dictionary, idx: int) -> void:
 	v["state"] = "served"
 	_fly3d(String(p["id"]), v["a"])
 	Sfx.play("coin", 0.05, -5.0)
-	eui.pop("+%d%s" % [pts, " ¡rápido!" if fast else ""], UIKit.GOLD_BRIGHT if fast else UIKit.TEXT)
+	eui.pop("+%d%s" % [pts, " fast!" if fast else ""], UIKit.GOLD_BRIGHT if fast else UIKit.TEXT)
 	_leave(v, true)
 	_update_hud()
 
@@ -531,7 +535,7 @@ func _serve_torneo(v: Dictionary, idx: int) -> void:
 
 func _run_concurso() -> void:
 	themes = Events.pick_themes(int(plan.get("rounds", 3)))
-	totals = {"Tú": 0}
+	totals = {ME: 0}
 	for r in rivals:
 		totals[String(r["name"])] = 0
 	for i in themes.size():
@@ -562,12 +566,12 @@ func _run_concurso() -> void:
 		for j in Events.JUDGES:
 			var sc := Events.judge(String(j["id"]), th, presented)
 			scores.append(sc)
-			lines.append(String(Events.JUDGE_LINES[String(j["id"])][maxi(0, sc - 1)]) if sc > 0 else "Nada que probar…")
+			lines.append(String(Events.JUDGE_LINES[String(j["id"])][maxi(0, sc - 1)]) if sc > 0 else "Nothing to taste…")
 		var mine := 0
 		for sc in scores:
 			mine += int(sc)
-		totals["Tú"] = int(totals["Tú"]) + mine
-		var table := [{"name": "Tú", "round": mine, "total": int(totals["Tú"]), "me": true}]
+		totals[ME] = int(totals[ME]) + mine
+		var table := [{"name": ME_NAME, "round": mine, "total": int(totals[ME]), "me": true}]
 		var fizz_round := 0
 		for r in rivals:
 			var rs: Array = Events.rival_round(r, tier)
@@ -604,7 +608,7 @@ func _present(i: int) -> void:
 	presented = {"id": String(p["id"]), "potency": int(p["potency"]), "perfect": bool(p.get("perfect", false))}
 	running = false
 	Sfx.play("sparkle", 0.05, -4.0)
-	main.ui.toast("Presentas: %s %s" % [Events.potion_name(String(p["id"])), "★".repeat(Game.stars_for(int(p["potency"])))], UIKit.GOLD_BRIGHT, 2.0)
+	main.ui.toast("You present: %s %s" % [Events.potion_name(String(p["id"])), "★".repeat(Game.stars_for(int(p["potency"])))], UIKit.GOLD_BRIGHT, 2.0)
 	_round_done.emit()
 
 ## Se acabó el tiempo de la ronda: se presenta sola la que mejor encaje (o nada).
@@ -625,19 +629,19 @@ func _auto_present() -> void:
 	else:
 		presented = {}
 		running = false
-		main.ui.toast("¡Tiempo! No presentaste nada", UIKit.BAD, 2.0)
+		main.ui.toast("Time! You presented nothing", UIKit.BAD, 2.0)
 		_round_done.emit()
 
 func _contestant_entries() -> Array:
 	var out := []
-	out.append({"who": "alquimista", "name": "Tú", "label": "%d ★" % int(totals.get("Tú", 0)), "state": "wait", "pat": -1.0})
+	out.append({"who": "alquimista", "name": ME_NAME, "label": "%d ★" % int(totals.get(ME, 0)), "state": "wait", "pat": -1.0})
 	for r in rivals:
 		out.append({"who": String(r["sprite"]), "name": String(r["name"]), "label": "%d ★" % int(totals.get(String(r["name"]), 0)),
 			"state": "wait", "pat": -1.0})
 	return out
 
 func place() -> int:
-	var mine := int(totals.get("Tú", 0))
+	var mine := int(totals.get(ME, 0))
 	var p := 1
 	for r in rivals:
 		if int(totals.get(String(r["name"]), 0)) > mine:
@@ -660,7 +664,7 @@ func _finish() -> void:
 	if main._brew_open():
 		main.brew_ready = {}
 		main.brew.close_now()
-	eui.shout("¡Tiempo!" if (kind != "concurso" and time_left <= 0.0) else "¡Listo!", UIKit.GOLD_BRIGHT, 0.9)
+	eui.shout("Time!" if (kind != "concurso" and time_left <= 0.0) else "Done!", UIKit.GOLD_BRIGHT, 0.9)
 	await get_tree().create_timer(1.3).timeout
 	# los que quedaron en la fila se van
 	for v in line.duplicate():
@@ -681,28 +685,29 @@ func result() -> Dictionary:
 			var n := int(plan.get("n", 6))
 			res["medal"] = Events.medal_for(score, cuts)
 			res["delivered"] = delivered
-			res["rows"] = [["res://assets/icons/pot_%s.png" % String(plan.get("potion", "sueno_profundo")), "Pociones entregadas", "%d / %d" % [delivered, n]],
-				["res://assets/icons/emote_star.png", "Puntos (estrellas)", "%d / %d" % [score, int(cuts.get("max", 3 * n))]]]
+			res["rows"] = [["res://assets/icons/pot_%s.png" % String(plan.get("potion", "sueno_profundo")), "Potions delivered", "%d / %d" % [delivered, n]],
+				["res://assets/icons/emote_star.png", "Points (stars)", "%d / %d" % [score - bonus, int(cuts.get("max", 3 * n))]]]   # --- R5 SHIP: sin la propina de tiempo (va en su fila): antes «25 / 24»
 			if bonus > 0:
-				res["rows"].append(["paper_i_hourglass", "Terminaste antes", "+%d" % bonus])
+				res["rows"].append(["paper_i_hourglass", "Finished early", "+%d" % bonus])
 		"torneo":
 			res["medal"] = Events.medal_for(score, cuts)
 			res["served"] = served
 			res["lost"] = lost
-			res["rows"] = [["paper_i_person", "Atendidos", "%d / %d" % [served, int(plan.get("k", 10))]],
-				["res://assets/icons/emote_sweat.png", "Se fueron", str(lost)],
-				["res://assets/icons/emote_coin.png", "Propinas", "+%d" % tips]]
+			res["rows"] = [["paper_i_person", "Served", "%d / %d" % [served, int(plan.get("k", 10))]],
+				["res://assets/icons/emote_sweat.png", "Walked out", str(lost)],
+				["res://assets/icons/emote_coin.png", "Tips", "+%d" % tips]]
 		"concurso":
 			var pl := place()
 			res["place"] = pl
 			res["medal"] = Events.medal_for_place(pl)
-			res["score"] = int(totals.get("Tú", 0))
+			res["score"] = int(totals.get(ME, 0))
 			var rows := []
 			var order: Array = totals.keys()
-			order.sort_custom(func(a, b): return int(totals[a]) > int(totals[b]) or (int(totals[a]) == int(totals[b]) and a == "Tú"))
+			order.sort_custom(func(a, b): return int(totals[a]) > int(totals[b]) or (int(totals[a]) == int(totals[b]) and a == ME))
 			for k in order.size():
 				var nm: String = order[k]
-				rows.append(["res://assets/icons/emote_star.png" if nm == "Tú" else "", "%dº  %s" % [k + 1, nm], "%d ★" % int(totals[nm])])
+				# --- R5 EN-UI: «1st  You», «2nd  Fizz» (UIKit.ordinal); ella se lee «You»
+				rows.append(["res://assets/icons/emote_star.png" if nm == ME else "", "%s  %s" % [UIKit.ordinal(k + 1), ME_NAME if nm == ME else nm], "%d ★" % int(totals[nm])])
 			res["rows"] = rows
 	res["line"] = String(Events.info(kind)["end"][String(res["medal"])])
 	return res
@@ -714,10 +719,10 @@ func _set_board() -> void:
 		"academia":
 			var pid := String(plan.get("potion", ""))
 			var ing := String(plan.get("ing", ""))
-			eui.set_board("[b]Receta del examen[/b]\n%s = %s + %s" % [_img("res://assets/icons/pot_%s.png" % pid, 44),
+			eui.set_board("[b]Exam recipe[/b]\n%s = %s + %s" % [_img("res://assets/icons/pot_%s.png" % pid, 44),
 				_img("res://assets/icons/ing_%s.png" % ing, 40), _img("res://assets/icons/ing_%s.png" % ing, 40)])
 		"torneo":
-			var rows := ["[b]El puesto[/b]"]
+			var rows := ["[b]Your stall[/b]"]
 			for w in ["vigor", "curacion", "valor"]:
 				var pid := Events.torneo_potion(w, tier)
 				var rec: Array = Events.SIMPLE_RECIPE.get(pid, [])
@@ -728,7 +733,7 @@ func _set_board() -> void:
 			eui.set_board("\n".join(rows))
 		"concurso":
 			if round_i >= 1 and round_i <= themes.size():
-				eui.set_board("[b]Ronda %d de %d[/b]\n[font_size=40]«%s»[/font_size]\n[color=#5e4632]Para presentarla: tócala en el estante[/color]" % [round_i, themes.size(), String(themes[round_i - 1]["text"])])
+				eui.set_board("[b]Round %d of %d[/b]\n[font_size=40]“%s”[/font_size]\n[color=#5e4632]Tap it on the shelf to present it[/color]" % [round_i, themes.size(), String(themes[round_i - 1]["text"])])
 
 func _img(path: String, h: int) -> String:
 	return "[img=%d]%s[/img]" % [h, path] if ResourceLoader.exists(path) else ""
@@ -745,7 +750,7 @@ func _update_hud() -> void:
 				_img("res://assets/icons/emote_star.png", 34), score, _img("res://assets/icons/emote_coin.png", 34), tips])
 			eui.set_score(score, cuts)
 		"concurso":
-			eui.set_goal("[b]Ronda %d / %d[/b]    %s [b]%d[/b]" % [maxi(1, round_i), int(plan.get("rounds", 3)), _img("res://assets/icons/emote_star.png", 34), int(totals.get("Tú", 0))])
+			eui.set_goal("[b]Round %d / %d[/b]    %s [b]%d[/b]" % [maxi(1, round_i), int(plan.get("rounds", 3)), _img("res://assets/icons/emote_star.png", 34), int(totals.get(ME, 0))])
 			eui.set_score(0, {})
 	_update_line_hud()
 

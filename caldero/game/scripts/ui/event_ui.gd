@@ -27,7 +27,7 @@ const MAP_ROUTES := {
 	"torneo": [Vector2(70, 104), Vector2(96, 114), Vector2(122, 122), Vector2(146, 128), Vector2(176, 140), Vector2(210, 146),
 		Vector2(240, 146), Vector2(270, 140)],
 }
-const PLACE_LABEL := {"casa": "Tu tienda", "academia": "Valmora", "concurso": "Robledal", "torneo": "Brisaclara"}
+const PLACE_LABEL := {"casa": "Your shop", "academia": "Valmora", "concurso": "Oakdale", "torneo": "Clearbreeze"}
 
 var main
 var root: Control             # el HUD del evento (no bloquea el ratón salvo sus botones)
@@ -116,6 +116,7 @@ func _build_plate() -> void:
 	goal_txt = PaperKit.rich(34, INK)
 	goal_txt.fit_content = true
 	goal_txt.autowrap_mode = TextServer.AUTOWRAP_OFF
+	goal_txt.clip_contents = false   # --- R5 EN-UI: el último número (Caveat en negrita) ya no sale cortado («0» -> «c»)
 	goal_card.add_child(goal_txt)
 	bar = _ScoreBar.new()
 	bar.custom_minimum_size = Vector2(460, 54)
@@ -142,7 +143,7 @@ func _build_line() -> void:
 	root.add_child(line_box)
 
 func _build_bench_button() -> void:
-	bench_btn = PaperKit.wood_button("Caldero", func(): bench_pressed.emit(), 34)
+	bench_btn = PaperKit.wood_button("Cauldron", func(): bench_pressed.emit(), 34)
 	bench_btn.custom_minimum_size = Vector2(300, 72)
 	bench_btn.icon = PaperKit.scaled("res://assets/ui/act_stir.png", 2)
 	UIKit.place(bench_btn, Vector2(0.5, 1), Vector2(-150, -112), Vector2(300, 72), Control.GROW_DIRECTION_BOTH, Control.GROW_DIRECTION_BEGIN)
@@ -372,7 +373,7 @@ func countdown() -> void:
 		shout(n, CREAM, 0.45)
 		Sfx.play("click", 0.0, -2.0)
 		await get_tree().create_timer(0.75).timeout
-	shout("¡Ya!", UIKit.GOLD_BRIGHT, 0.5)
+	shout("Go!", UIKit.GOLD_BRIGHT, 0.5)
 	Sfx.play("sparkle", 0.0, -3.0)
 
 func _fit(c: Control) -> void:
@@ -445,8 +446,8 @@ func show_theme(round_i: int, total: int, text: String) -> void:
 	var p := PaperKit.panel("card", Vector2(70, 34))
 	var v := UIKit.vbox(6)
 	p.add_child(v)
-	v.add_child(PaperKit.head("Ronda %d de %d" % [round_i, total], 40, Color("7a1d18"), HORIZONTAL_ALIGNMENT_CENTER))
-	v.add_child(PaperKit.hand("«%s»" % text, 66, INK, true, HORIZONTAL_ALIGNMENT_CENTER))
+	v.add_child(PaperKit.head("Round %d of %d" % [round_i, total], 40, Color("7a1d18"), HORIZONTAL_ALIGNMENT_CENTER))
+	v.add_child(PaperKit.hand("“%s”" % text, 66, INK, true, HORIZONTAL_ALIGNMENT_CENTER))
 	var h := UIKit.hbox(14)
 	h.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_child(h)
@@ -472,20 +473,20 @@ func show_jury(d: Dictionary) -> void:
 	p.custom_minimum_size = Vector2(1180, 0)
 	var v := UIKit.vbox(10)
 	p.add_child(v)
-	v.add_child(PaperKit.head("Ronda %d · «%s»" % [int(d.get("round", 1)), String(d.get("theme", ""))], 38, Color("7a1d18"), HORIZONTAL_ALIGNMENT_CENTER))
+	v.add_child(PaperKit.head("Round %d · “%s”" % [int(d.get("round", 1)), String(d.get("theme", ""))], 38, Color("7a1d18"), HORIZONTAL_ALIGNMENT_CENTER))
 	var pot: Dictionary = d.get("potion", {})
 	var ph := UIKit.hbox(12)
 	ph.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_child(ph)
 	if pot.is_empty():
-		ph.add_child(PaperKit.hand("No presentaste nada.", 34, PaperKit.RED_INK, true))
+		ph.add_child(PaperKit.hand("You presented nothing.", 34, PaperKit.RED_INK, true))
 	else:
 		var pid := String(pot["id"])
 		ph.add_child(UIKit.icon("res://assets/icons/pot_%s.png" % pid, 3.0))
 		ph.add_child(PaperKit.hand(Events.potion_name(pid), 36, INK, true))
 		ph.add_child(UIKit.stars(Game.stars_for(int(pot.get("potency", 4))), 2.0))
 		if bool(pot.get("perfect", false)):
-			ph.add_child(PaperKit.hand("· removido perfecto", 30, PaperKit.HERB, true))
+			ph.add_child(PaperKit.hand("· perfect stir", 30, PaperKit.HERB, true))
 	var row := UIKit.hbox(24)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_child(row)
@@ -511,7 +512,7 @@ func show_jury(d: Dictionary) -> void:
 		var nv := UIKit.vbox(0)
 		top.add_child(nv)
 		nv.add_child(PaperKit.head(String(j["name"]), 30, INK))
-		nv.add_child(PaperKit.hand("jurado invitado" if j.get("guest", false) else "jurado", 24, PaperKit.INK_SOFT))
+		nv.add_child(PaperKit.hand("guest judge" if j.get("guest", false) else "judge", 24, PaperKit.INK_SOFT))
 		var sr := UIKit.hbox(2)
 		sr.alignment = BoxContainer.ALIGNMENT_CENTER
 		cv.add_child(sr)
@@ -519,7 +520,7 @@ func show_jury(d: Dictionary) -> void:
 			var st := UIKit.icon("res://assets/icons/emote_star_empty.png", 2.4)
 			sr.add_child(st)
 		star_rows.append(sr)
-		var bub := PaperKit.hand("«%s»" % String(lines[i]) if i < lines.size() else "", 27, INK, false, HORIZONTAL_ALIGNMENT_CENTER, 300)
+		var bub := PaperKit.hand("“%s”" % String(lines[i]) if i < lines.size() else "", 27, INK, false, HORIZONTAL_ALIGNMENT_CENTER, 300)
 		bub.modulate.a = 0.0
 		bub.name = "Line"
 		cv.add_child(bub)
@@ -536,8 +537,8 @@ func show_jury(d: Dictionary) -> void:
 		tb.add_child(cell)
 	var fl := String(d.get("fizz_line", ""))
 	if fl != "":
-		v.add_child(PaperKit.hand("Fizz: «%s»" % fl, 28, PaperKit.INK_SOFT, false, HORIZONTAL_ALIGNMENT_CENTER))
-	var b := PaperKit.wood_button("Ver resultado" if d.get("last", false) else "Siguiente ronda", func():
+		v.add_child(PaperKit.hand("Fizz: “%s”" % fl, 28, PaperKit.INK_SOFT, false, HORIZONTAL_ALIGNMENT_CENTER))
+	var b := PaperKit.wood_button("See results" if d.get("last", false) else "Next round", func():
 		_close_modal()
 		jury_closed.emit(), 32)
 	b.custom_minimum_size = Vector2(320, 66)
@@ -604,7 +605,7 @@ func show_results(d: Dictionary) -> void:
 	var title := PaperKit.hand(String(Events.MEDAL_TITLE[medal]), 58, Color("7a1d18") if medal == "none" else Color("5b3a8c"), true, HORIZONTAL_ALIGNMENT_CENTER)
 	v.add_child(title)
 	if String(d.get("line", "")) != "":
-		v.add_child(PaperKit.hand("«%s»" % String(d["line"]), 30, PaperKit.INK_SOFT, false, HORIZONTAL_ALIGNMENT_CENTER, 720))
+		v.add_child(PaperKit.hand("“%s”" % String(d["line"]), 30, PaperKit.INK_SOFT, false, HORIZONTAL_ALIGNMENT_CENTER, 720))
 	v.add_child(PaperKit.ink_rule(620, Color(0.37, 0.28, 0.2, 0.35)))
 	for r in d.get("rows", []):
 		v.add_child(_result_row(String(r[0]), String(r[1]), String(r[2])))
@@ -620,7 +621,7 @@ func show_results(d: Dictionary) -> void:
 	rt.add_theme_font_override("normal_font", UIKit.font_bold)
 	rt.text = "[center]%s[/center]" % reward_bb(rw)
 	strip.add_child(rt)
-	var b := PaperKit.wood_button("Volver a casa", func():
+	var b := PaperKit.wood_button("Head home", func():
 		_close_modal()
 		results_closed.emit(), 34)
 	b.custom_minimum_size = Vector2(340, 70)
@@ -670,7 +671,7 @@ static func reward_bb(rw: Dictionary) -> String:
 	elif r < 0:
 		bits.append("%s [color=#ff9b9b]%d[/color]" % [gem, r])
 	if bool(rw.get("trophy", false)):
-		bits.append("[img=40]res://assets/ui/evui_trophy.png[/img] [color=#f2e2bc]Trofeo[/color]")
+		bits.append("[img=40]res://assets/ui/evui_trophy.png[/img] [color=#f2e2bc]Trophy[/color]")
 	for it in rw.get("items", []):
 		var id := String(it["id"])
 		bits.append("[img=40]res://assets/icons/ing_%s.png[/img] [color=#9eea9f]+%d[/color]" % [id, int(it["qty"])])
@@ -680,11 +681,11 @@ static func reward_bb(rw: Dictionary) -> String:
 		bits.append("%s [color=#c9b6ff]%s[/color]" % ["[img=40]%s[/img]" % ic if ResourceLoader.exists(ic) else "", Story.rune_name(page)])
 	var pts := int(rw.get("points", 0))
 	if pts > 0:
-		bits.append("[color=#f2e2bc]Gremio +%d[/color]" % pts)
+		bits.append("[color=#f2e2bc]Guild +%d[/color]" % pts)
 	elif pts < 0:
-		bits.append("[color=#ff9b9b]Gremio %d[/color]" % pts)
+		bits.append("[color=#ff9b9b]Guild %d[/color]" % pts)
 	if bits.is_empty():
-		bits.append("[color=#c8b9a4]Nada esta vez.[/color]")
+		bits.append("[color=#c8b9a4]Nothing this time.[/color]")
 	return "    ".join(bits)
 
 # ------------------------------------------------------------------ recordatorio (días de tienda)
@@ -698,7 +699,7 @@ func refresh_reminder(on := true) -> void:
 		var kind := String(bk.get("kind", "academia"))
 		reminder_seal.texture = PaperKit.tex(String(Events.info(kind)["seal"]))
 		var d := int(bk.get("day", 0)) - Game.day
-		var when := "hoy" if d <= 0 else ("mañana" if d == 1 else "día %d" % int(bk["day"]))
+		var when := "today" if d <= 0 else ("tomorrow" if d == 1 else "Day %d" % int(bk["day"]))
 		reminder_txt.text = "%s: %s" % [when.capitalize(), Events.ev_name(kind)]
 		reminder.tooltip_text = Events.ev_name(kind, true)
 		await _fit(reminder)
@@ -830,14 +831,17 @@ class _MapView extends Control:
 				pos = p + Vector2(-w - 24, 10)
 			_halo(pos, w, fs)
 			draw_string(font, pos, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+			TextLog.note("map", txt)   # --- R5 MERGE: el registro de textos de prueba (solo con --textlog)
 		# Montaña Gris y el título del mapa
 		var mg := off + Vector2(36, 18) * k
-		_halo(mg, font.get_string_size("Montaña Gris", HORIZONTAL_ALIGNMENT_LEFT, -1, 36).x, 36)
-		draw_string(font, mg, "Montaña Gris", HORIZONTAL_ALIGNMENT_LEFT, -1, 36, Color(ink, 0.85))
+		_halo(mg, font.get_string_size("Grey Mountain", HORIZONTAL_ALIGNMENT_LEFT, -1, 36).x, 36)
+		draw_string(font, mg, "Grey Mountain", HORIZONTAL_ALIGNMENT_LEFT, -1, 36, Color(ink, 0.85))
+		TextLog.note("map", "Grey Mountain")   # --- R5 MERGE
 		var tf: Font = UIKit.font_sc_bold
 		var tt := "Arvendal"
 		var tw := tf.get_string_size(tt, HORIZONTAL_ALIGNMENT_LEFT, -1, 64).x
 		draw_string(tf, off + Vector2(EventUI.MAP_ART.x * k - tw - 40 * k / 6.0 - 60, EventUI.MAP_ART.y * k - 46), tt, HORIZONTAL_ALIGNMENT_LEFT, -1, 64, Color(ink, 0.85))
+		TextLog.note("map", tt)   # --- R5 MERGE
 		if title != "":
 			var sw := font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 56).x
 			var sp := Vector2(size.x / 2.0 - sw / 2.0, off.y + 20 * k)
@@ -846,6 +850,7 @@ class _MapView extends Control:
 			draw_rect(cr, Color("7a1d18"), false, 3.0)
 			draw_rect(cr.grow(-6), Color(0.48, 0.11, 0.09, 0.5), false, 1.0)
 			draw_string(font, sp, title, HORIZONTAL_ALIGNMENT_LEFT, -1, 56, Color("7a1d18"))
+			TextLog.note("map", title)   # --- R5 MERGE
 		# el camino recorrido: puntos de tinta
 		var total := _length()
 		var done := total * progress

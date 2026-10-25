@@ -458,7 +458,7 @@ func _build_buttons() -> void:
 	btn_row.position = Vector2(POT_POS.x + 160 - 360, BTN_Y)
 	btn_row.size = Vector2(720, BTN_SIZE.y)
 	stage.add_child(btn_row)
-	for spec in [["stir", "Remover"], ["bottle", "Embotellar"], ["ink", "Tinta"], ["empty", "Vaciar"]]:
+	for spec in [["stir", "Stir"], ["bottle", "Bottle"], ["ink", "Ink"], ["empty", "Empty"]]:
 		var id: String = spec[0]
 		var b := Button.new()
 		b.custom_minimum_size = BTN_SIZE
@@ -561,7 +561,7 @@ func _build_close() -> void:
 	close_btn.offset_bottom = 96
 	close_btn.focus_mode = Control.FOCUS_NONE
 	close_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	close_btn.tooltip_text = "Cerrar"
+	close_btn.tooltip_text = "Close"
 	close_btn.pressed.connect(func():
 		Sfx.play("click", 0.05, -4.0)
 		close())
@@ -659,13 +659,13 @@ func refresh() -> void:
 			_set_forecast("", "", 0, Color.WHITE)
 		elif r.get("potion", "") == "":
 			fc_icon.modulate = Color(0.55, 0.52, 0.6)
-			_set_forecast("res://assets/icons/pot_desconocida.png", "No cuaja", 0, Color(0.6, 0.6, 0.7))
+			_set_forecast("res://assets/icons/pot_desconocida.png", "Won't brew", 0, Color(0.6, 0.6, 0.7))
 		else:
 			var pid: String = r["potion"]
 			var known: bool = Game.discovered.has(pid)
 			var pot_n := Game.potency_bonus() + int(r["potency"])
 			_set_forecast("res://assets/icons/pot_%s.png" % (pid if known else "desconocida"),
-				Data.POTIONS[pid]["name"] if known else "¿Nueva receta?", Game.stars_for(pot_n), Data.POTIONS[pid]["color"])
+				Data.POTIONS[pid]["name"] if known else "New recipe?", Game.stars_for(pot_n), Data.POTIONS[pid]["color"])
 	_update_buttons()
 
 # ------------------------------------------------------------------ echar, sacar, vaciar
@@ -680,7 +680,7 @@ func throw(id: String) -> void:
 	var jt: TextureRect = jar_tex[id]
 	if why != "":
 		_shake(jt)
-		say({"lleno": "Caldero lleno", "agotado": "Agotado", "listo": "¡Embotella primero!"}.get(why, ""), UIKit.BAD)
+		say({"lleno": "Cauldron full", "agotado": "None left", "listo": "Bottle it first!"}.get(why, ""), UIKit.BAD)
 		Sfx.play("sad", 0.05, -10.0)
 		return
 	_guide.erase(id)
@@ -802,11 +802,11 @@ func stir(difficulty := 1.0, kind := "potion") -> bool:
 	_stir = g
 	_catcher.visible = true
 	pot.stirring = true
-	say("¡Pulsa en el oro!", UIKit.TEXT, 6.0)
+	say("Tap on the gold!", UIKit.TEXT, 6.0)
 	var perfect: bool = await g.finished
 	_catcher.visible = false
 	pot.stirring = false
-	say("¡Perfecto!  +1" if perfect else "¡Bien removido!", UIKit.GOLD_BRIGHT if perfect else UIKit.TEXT, 1.4)
+	say("Perfect!  +1" if perfect else "Nicely stirred!", UIKit.GOLD_BRIGHT if perfect else UIKit.TEXT, 1.4)
 	await get_tree().create_timer(0.7).timeout
 	if is_instance_valid(g):
 		g.queue_free()

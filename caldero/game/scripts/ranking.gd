@@ -25,103 +25,111 @@ const FIZZ_CHASE := 0.90       # desde ese día suma al menos esta parte del dí
 const FIZZ_DEBUT := 35.0       # la inauguración de su laboratorio
 ## Puntos de una medalla de evento (Game.today["event"]["medal"]); "oro"/"gold", "plata"/"silver", "bronce"/"bronze".
 const MEDAL_POINTS := {"oro": 100, "plata": 65, "bronce": 35, "ninguna": -10}   # --- R4 MERGE: antes 150 / 95 / 50 / -10 (ver day_points)
-const MEDAL_NAMES := {"oro": "oro", "plata": "plata", "bronce": "bronce"}
+const MEDAL_NAMES := {"oro": "Gold", "plata": "Silver", "bronce": "Bronze"}   # --- R5 EN-UI: lo que se lee («Gold Medal for ...»); las claves son ids
 
 ## Pueblos de Arvendal que aparecen en el Escalafón (una línea cada uno).
 const TOWNS := {
-	"valdelago": {"name": "Valdelago", "lore": "Tu pueblo, al pie de la Montaña Gris, junto al lago."},
-	"valmora": {"name": "Valmora", "lore": "La capital, de torres blancas. Allí está la sede del Gremio."},
-	"brisaclara": {"name": "Brisaclara", "lore": "El puerto. Barcos de todo el mar y olor a sal."},
-	"robledal": {"name": "Robledal", "lore": "Robles y trigales, a veinte kilómetros. Allí es el Concurso de Pociones."},
-	"alvenmoor": {"name": "Alvenmoor", "lore": "Páramo de niebla junto a unas ruinas élficas."},
-	"montana": {"name": "la Montaña Gris", "lore": "Salones enanos bajo la nieve; forjas que nunca se apagan."},
-	"hojaplata": {"name": "Hojaplata", "lore": "El bosque de los elfos. Hojas de plata y mucho silencio."},
-	"rosalba": {"name": "Rosalba", "lore": "Ciudad de jardines, damas nobles y perfumistas."},
-	"vadoviejo": {"name": "Vadoviejo", "lore": "Un pueblo de paso, junto al vado del río."},
-	"molinos": {"name": "Los Molinos", "lore": "Harina, viento y un río lento."},
-	"cuatrocaminos": {"name": "Cuatrocaminos", "lore": "Una posada donde se cruzan los caminos del reino."},
+	"valdelago": {"name": "Lakevale", "lore": "Your town, at the foot of the Grey Mountain, by the lake."},
+	"valmora": {"name": "Valmora", "lore": "The capital, all white towers. The Guild's hall is there."},
+	"brisaclara": {"name": "Clearbreeze", "lore": "The port. Ships from every sea and the smell of salt."},
+	"robledal": {"name": "Oakdale", "lore": "Oaks and wheat fields, twelve miles away. Home of the Potion Contest."},
+	"alvenmoor": {"name": "Alvenmoor", "lore": "Misty moors beside old elven ruins."},
+	"montana": {"name": "the Grey Mountain", "lore": "Dwarven halls under the snow; forges that never go out."},
+	"hojaplata": {"name": "Silverleaf", "lore": "The elves' forest. Silver leaves and lots of quiet."},
+	"rosalba": {"name": "Rosalba", "lore": "A city of gardens, noble ladies and perfumers."},
+	"vadoviejo": {"name": "Oldford", "lore": "A stopover town by the river ford."},
+	"molinos": {"name": "Millbrook", "lore": "Flour, wind and a slow river."},
+	"cuatrocaminos": {"name": "Fourways", "lore": "An inn where the kingdom's roads meet."},
 }
 
 ## Las tiendas, ordenadas por sus puntos al empezar. score: puntos al empezar; pace: lo que suma un día normal;
 ## trend: cuánto cambia ese ritmo cada día (+ crece, - decae); wobble: lo que varía de un día a otro; luck: probabilidad
 ## diaria de ganar una medalla en una feria; risk: de tener un tropiezo. Escudos: assets/ui/rank_crest_<id>.png.
 const SHOPS := [
-	{"id": "alambique", "name": "El Alambique de Oro", "owner": "Maestra Ágata Velnor", "note": "antigua rival de tu maestra",
+	{"id": "alambique", "name": "The Golden Still", "owner": "Master Agata Velnor", "note": "your teacher's old rival",
 		"town": "valmora", "score": 1040, "pace": 50.0, "trend": 0.0, "wobble": 0.06, "luck": 0.010, "risk": 0.0},
-	{"id": "academia", "name": "Laboratorio de la Academia", "owner": "Archimago Teodric", "note": "examina a los aprendices",
+	{"id": "academia", "name": "The Academy Lab", "owner": "Archmage Teodric", "note": "tests the apprentices",
 		"town": "valmora", "score": 975, "pace": 49.0, "trend": 0.10, "wobble": 0.07, "luck": 0.012, "risk": 0.0},
-	{"id": "monasterio", "name": "Botica del Monasterio", "owner": "Hermano Celestino", "note": "amigo de Sor Elda",
+	{"id": "monasterio", "name": "The Monastery Apothecary", "owner": "Brother Celestino", "note": "Sister Elda's friend",
 		"town": "robledal", "score": 925, "pace": 47.0, "trend": -0.12, "wobble": 0.06, "luck": 0.008, "risk": 0.0},
-	{"id": "rosalba", "name": "Perfumería Rosalba", "owner": "Madame Odalys", "note": "perfumista de Lady Vianne",
+	{"id": "rosalba", "name": "Rosalba Perfumery", "owner": "Madame Odalys", "note": "Lady Vianne's perfumer",
 		"town": "rosalba", "score": 875, "pace": 46.0, "trend": 0.0, "wobble": 0.16, "luck": 0.012, "risk": 0.004},
-	{"id": "milfrascos", "name": "Bazar de los Mil Frascos", "owner": "Karim", "note": "hermano de Hassim",
+	{"id": "milfrascos", "name": "The Thousand Flasks Bazaar", "owner": "Karim", "note": "Hassim's brother",
 		"town": "brisaclara", "score": 815, "pace": 43.0, "trend": 0.30, "wobble": 0.10, "luck": 0.010, "risk": 0.002},
-	{"id": "martillo", "name": "Martillo y Matraz", "owner": "Dorna", "note": "prima de Borin",
+	{"id": "martillo", "name": "Forge & Flask", "owner": "Dorna", "note": "Borin's cousin",
 		"town": "montana", "score": 780, "pace": 44.0, "trend": 0.0, "wobble": 0.07, "luck": 0.010, "risk": 0.0},
-	{"id": "sauce", "name": "El Sauce de Plata", "owner": "Aelin", "note": "hermana de Ilse",
+	{"id": "sauce", "name": "The Silver Willow", "owner": "Aelin", "note": "Ilse's sister",
 		"town": "hojaplata", "score": 650, "pace": 41.0, "trend": 0.22, "wobble": 0.09, "luck": 0.012, "risk": 0.0},
-	{"id": "redoma", "name": "La Redoma Azul", "owner": "Maese Corvino", "note": "",
+	{"id": "redoma", "name": "The Blue Vial", "owner": "Master Corvino", "note": "",
 		"town": "valmora", "score": 610, "pace": 40.0, "trend": -0.25, "wobble": 0.08, "luck": 0.006, "risk": 0.004},
-	{"id": "puerto", "name": "Ungüentos del Puerto", "owner": "Viuda Marela", "note": "",
+	{"id": "puerto", "name": "Harbor Salves", "owner": "Widow Marela", "note": "",
 		"town": "brisaclara", "score": 560, "pace": 37.0, "trend": 0.05, "wobble": 0.09, "luck": 0.008, "risk": 0.002},
-	{"id": "lechuza", "name": "La Lechuza Sabia", "owner": "Hermanas Brun", "note": "",
+	{"id": "lechuza", "name": "The Wise Owl", "owner": "The Brun Sisters", "note": "",
 		"town": "alvenmoor", "score": 525, "pace": 36.0, "trend": 0.0, "wobble": 0.10, "luck": 0.008, "risk": 0.002},
-	{"id": "piedrahierro", "name": "Tónicos Piedrahierro", "owner": "Thrain Piedrahierro", "note": "",
+	{"id": "piedrahierro", "name": "Ironstone Tonics", "owner": "Thrain Ironstone", "note": "",
 		"town": "montana", "score": 480, "pace": 34.0, "trend": 0.18, "wobble": 0.09, "luck": 0.008, "risk": 0.002},
-	{"id": "caminoreal", "name": "Elixires del Camino Real", "owner": "Jacobo Ruiseñor", "note": "",
+	{"id": "caminoreal", "name": "King's Road Elixirs", "owner": "Jacobo Nightingale", "note": "",
 		"town": "cuatrocaminos", "score": 375, "pace": 32.0, "trend": 0.0, "wobble": 0.10, "luck": 0.006, "risk": 0.003},
-	{"id": "mandragora", "name": "La Mandrágora Feliz", "owner": "Tía Petronila", "note": "",
+	{"id": "mandragora", "name": "The Happy Mandrake", "owner": "Aunt Petronila", "note": "",
 		"town": "molinos", "score": 340, "pace": 30.0, "trend": -0.20, "wobble": 0.10, "luck": 0.004, "risk": 0.004},
-	{"id": "paramo", "name": "Destilería del Páramo", "owner": "Ulric Brumagris", "note": "",
+	{"id": "paramo", "name": "Moorland Distillery", "owner": "Ulric Greymist", "note": "",
 		"town": "alvenmoor", "score": 305, "pace": 29.0, "trend": 0.05, "wobble": 0.12, "luck": 0.006, "risk": 0.004},
-	{"id": "plazamayor", "name": "Botica de la Plaza Mayor", "owner": "Doña Inés Valcárcel", "note": "",
+	{"id": "plazamayor", "name": "Main Square Apothecary", "owner": "Mrs. Ines Valcarcel", "note": "",
 		"town": "valmora", "score": 275, "pace": 28.0, "trend": 0.0, "wobble": 0.10, "luck": 0.006, "risk": 0.003},
-	{"id": "gruka", "name": "Brebajes Gruka", "owner": "Gruka", "note": "prima de Grumm",
+	{"id": "gruka", "name": "Gruka's Brews", "owner": "Gruka", "note": "Grumm's cousin",
 		"town": "brisaclara", "score": 205, "pace": 24.0, "trend": 0.30, "wobble": 0.14, "luck": 0.006, "risk": 0.006},
-	{"id": "tiobolo", "name": "Remedios del Tío Bolo", "owner": "Tío Bolo", "note": "tío de Kit",
+	{"id": "tiobolo", "name": "Uncle Bolo's Remedies", "owner": "Uncle Bolo", "note": "Kit's uncle",
 		"town": "alvenmoor", "score": 185, "pace": 25.0, "trend": -0.18, "wobble": 0.25, "luck": 0.004, "risk": 0.030},
-	{"id": "fizz", "name": "Fizz y Chispa", "owner": "Fizz Chispaenvuelta", "note": "y Chispa, su salamandra",
+	{"id": "fizz", "name": "Fizz & Spark", "owner": "Fizz Sparklespin", "note": "and Spark, his salamander",
 		"town": "robledal", "score": 160, "pace": 16.0, "trend": 0.25, "wobble": 0.20, "luck": 0.0, "risk": 0.0, "rival": true},
-	{"id": "raicesrocio", "name": "Raíces y Rocío", "owner": "Fray Tadeo", "note": "",
+	{"id": "raicesrocio", "name": "Roots & Dew", "owner": "Friar Tadeo", "note": "",
 		"town": "robledal", "score": 145, "pace": 22.0, "trend": 0.05, "wobble": 0.10, "luck": 0.004, "risk": 0.003},
-	{"id": "cantor", "name": "El Caldero Cantor", "owner": "Juglar Amadeo", "note": "les canta a sus pociones",
+	{"id": "cantor", "name": "The Singing Cauldron", "owner": "Minstrel Amadeo", "note": "sings to his potions",
 		"town": "vadoviejo", "score": 125, "pace": 21.0, "trend": 0.0, "wobble": 0.22, "luck": 0.006, "risk": 0.006},
-	{"id": "retorta", "name": "La Retorta de Cobre", "owner": "Maestro Lisandro", "note": "",
+	{"id": "retorta", "name": "The Copper Retort", "owner": "Master Lisandro", "note": "",
 		"town": "rosalba", "score": 105, "pace": 19.0, "trend": 0.10, "wobble": 0.10, "luck": 0.004, "risk": 0.003},
-	{"id": "vado", "name": "Hierbas del Vado", "owner": "Abuela Remedios", "note": "",
+	{"id": "vado", "name": "Fordside Herbs", "owner": "Granny Remedy", "note": "",
 		"town": "vadoviejo", "score": 88, "pace": 18.0, "trend": -0.15, "wobble": 0.10, "luck": 0.002, "risk": 0.003},
-	{"id": "encina", "name": "Pociones La Encina", "owner": "Mateo Encinar", "note": "",
+	{"id": "encina", "name": "Little Oak Potions", "owner": "Mateo Oakes", "note": "",
 		"town": "molinos", "score": 55, "pace": 13.0, "trend": 0.0, "wobble": 0.12, "luck": 0.002, "risk": 0.003},
-	{"id": "molino", "name": "Jarabes del Molino", "owner": "Rosa Harinera", "note": "",
+	{"id": "molino", "name": "Millhouse Syrups", "owner": "Rosa Miller", "note": "",
 		"town": "molinos", "score": 42, "pace": 12.0, "trend": 0.0, "wobble": 0.12, "luck": 0.002, "risk": 0.003},
-	{"id": "torcido", "name": "El Frasco Torcido", "owner": "Hugo el Tuerto", "note": "",
+	{"id": "torcido", "name": "The Crooked Flask", "owner": "One-Eyed Hugo", "note": "",
 		"town": "cuatrocaminos", "score": 30, "pace": 11.0, "trend": -0.05, "wobble": 0.18, "luck": 0.002, "risk": 0.010},
-	{"id": "lunaticos", "name": "Ungüentos Lunáticos", "owner": "Selene y Selma", "note": "",
+	{"id": "lunaticos", "name": "Moonstruck Salves", "owner": "Selene & Selma", "note": "",
 		"town": "alvenmoor", "score": 20, "pace": 10.0, "trend": 0.0, "wobble": 0.20, "luck": 0.002, "risk": 0.005},
-	{"id": "ortiz", "name": "Mercería y Pócimas Ortiz", "owner": "Don Fermín Ortiz", "note": "vende botones y pócimas",
+	{"id": "ortiz", "name": "Ortiz Buttons & Brews", "owner": "Mr. Fermin Ortiz", "note": "sells buttons and brews",
 		"town": "vadoviejo", "score": 12, "pace": 8.0, "trend": 0.0, "wobble": 0.12, "luck": 0.0, "risk": 0.003},
-	{"id": "gotadorada", "name": "La Gota Dorada", "owner": "Clarisa Miel", "note": "",
+	{"id": "gotadorada", "name": "The Golden Drop", "owner": "Clarisa Honey", "note": "",
 		"town": "robledal", "score": 7, "pace": 7.0, "trend": 0.05, "wobble": 0.12, "luck": 0.002, "risk": 0.002},
-	{"id": "remiendos", "name": "Remiendos y Remedios", "owner": "Sastre Benigno", "note": "",
+	{"id": "remiendos", "name": "Patches & Potions", "owner": "Benigno the Tailor", "note": "",
 		"town": "valdelago", "score": 3, "pace": 4.0, "trend": 0.0, "wobble": 0.20, "luck": 0.0, "risk": 0.002},
-	{"id": "caldero", "name": "Caldero Nocturno", "owner": "Tú y Miga", "note": "", "town": "valdelago", "score": 0,
+	{"id": "caldero", "name": "Midnight Cauldron", "owner": "You & Miga", "note": "", "town": "valdelago", "score": 0,
 		"pace": 0.0, "me": true},
 ]
 
 ## Dónde ganan medallas las rivales (las noticias de la Gaceta).
-const FAIRS := ["la Feria de Brisaclara", "el Concurso de Robledal", "la Feria del Torneo", "el Mercado de Hojaplata",
-	"la Feria del Solsticio en Valmora"]
+const FAIRS := ["the Clearbreeze Fair", "the Oakdale Contest", "the Tournament Fair", "the Silverleaf Market",
+	"the Solstice Fair in Valmora"]
+## --- R5 EN-UI: las partidas de las rondas 3 y 4 guardaron en rank.news[].where estas frases en castellano (FAIRS y
+## _event_where): al cargar se cambian por las de ahora. Son claves de migración, no texto que se vea.
+const OLD_WHERE := {
+	"la Feria de Brisaclara": "the Clearbreeze Fair", "el Concurso de Robledal": "the Oakdale Contest",
+	"la Feria del Torneo": "the Tournament Fair", "el Mercado de Hojaplata": "the Silverleaf Market",
+	"la Feria del Solsticio en Valmora": "the Solstice Fair in Valmora", "el Examen de la Academia": "the Academy Exam",
+	"un evento del Gremio": "a Guild event", "un evento": "an event",
+}
 ## Tropiezos ({s}: la tienda, {o}: su dueño, {t}: su pueblo). Algunas tiendas tienen el suyo (SCANDALS_BY).
-const SCANDALS := ["{s}: un caldero reventó y se perdió una semana de trabajo.",
-	"Clientes con hipo en {t}: {s} pide disculpas.",
-	"{s} cerró unos días por una plaga de ratones.",
-	"Lío en {t}: {s} confundió dos etiquetas."]
+const SCANDALS := ["{s}: a cauldron burst and a week of work was lost.",
+	"Customers with hiccups in {t}: {s} says sorry.",
+	"{s} closed for a few days: mice everywhere.",
+	"Mix-up in {t}: {s} swapped two labels."]
 const SCANDALS_BY := {
-	"tiobolo": ["El Tío Bolo vendió jarabe de arce como «elixir de juventud».", "El Tío Bolo, pillado vendiendo agua de charco embotellada."],
-	"cantor": ["Juglar Amadeo, afónico: sus pociones no cuajan sin canción."],
-	"torcido": ["El Frasco Torcido vendió frascos… torcidos. Y vacíos."],
-	"rosalba": ["Un perfume de Madame Odalys dejó a una condesa oliendo a col."],
-	"redoma": ["La Redoma Azul se queda sin su mejor aprendiz."],
+	"tiobolo": ["Uncle Bolo sold maple syrup as “elixir of youth.”", "Uncle Bolo, caught selling bottled puddle water."],
+	"cantor": ["Minstrel Amadeo lost his voice: no song, no potions."],
+	"torcido": ["The Crooked Flask sold flasks… crooked ones. And empty."],
+	"rosalba": ["A Madame Odalys perfume left a countess smelling of cabbage."],
+	"redoma": ["The Blue Vial loses its best apprentice."],
 }
 
 # ------------------------------------------------------------------ estado
@@ -385,12 +393,12 @@ func _event_where() -> String:
 	var kind := String(ev.get("kind", "")) if ev is Dictionary else ""
 	match kind:
 		"academia":
-			return "el Examen de la Academia"
+			return "the Academy Exam"
 		"concurso":
-			return "el Concurso de Robledal"
+			return "the Oakdale Contest"
 		"torneo":
-			return "la Feria del Torneo"
-	return "un evento del Gremio"
+			return "the Tournament Fair"
+	return "a Guild event"
 
 # ------------------------------------------------------------------ el correo de la mañana
 
@@ -455,25 +463,25 @@ func headlines(n := 2) -> Array:
 	# 1) ella: el puesto 1, una medalla, lo que subió en estos días
 	for e in recent:
 		if e["id"] == ME and e["kind"] == "first":
-			mine.append({"title": "¡Caldero Nocturno, primera del Escalafón!", "text": "El Gremio de Boticarios de Arvendal ya prepara el caldero de oro.", "who": "alquimista", "crest": ME, "w": 100})
+			mine.append({"title": "Midnight Cauldron Tops the Rankings!", "text": "The Arvendal Apothecaries' Guild is already polishing the golden cauldron.", "who": "alquimista", "crest": ME, "w": 100})
 		elif e["id"] == ME and e["kind"] == "medal":
-			mine.append({"title": "Medalla de %s para Caldero Nocturno" % MEDAL_NAMES.get(e["medal"], e["medal"]), "text": "Fue en %s. En Valdelago no se habla de otra cosa." % String(e.get("where", "un evento")), "who": "alquimista", "crest": ME, "w": 80})
+			mine.append({"title": "%s Medal for Midnight Cauldron" % MEDAL_NAMES.get(e["medal"], e["medal"]), "text": "It was at %s. Lakevale talks of nothing else." % String(e.get("where", "an event")), "who": "alquimista", "crest": ME, "w": 80})
 	var risers := _risers(GACETA_EVERY)
 	if not risers.is_empty() and risers[0][0] == ME and int(risers[0][1]) >= 3:
-		var rt: Array = ["Caldero Nocturno, la que más sube", "Caldero Nocturno no para de subir", "¿Quién es la de Caldero Nocturno?", "Caldero Nocturno, imparable"]
-		mine.append({"title": rt[ed % rt.size()], "text": "%d puestos en %d días. Ya es la %dª de Arvendal." % [int(risers[0][1]), GACETA_EVERY, me_pos], "who": "alquimista", "crest": ME, "w": 60})
+		var rt: Array = ["Midnight Cauldron Climbs Fastest", "Midnight Cauldron Keeps Climbing", "Who's Behind Midnight Cauldron?", "Midnight Cauldron, Unstoppable"]
+		mine.append({"title": rt[ed % rt.size()], "text": "Up %d places in %d days. Now %s in Arvendal." % [int(risers[0][1]), GACETA_EVERY, UIKit.ordinal(me_pos)], "who": "alquimista", "crest": ME, "w": 60})
 	# 2) Fizz: se muda, explota o le pisa los talones
 	var fizz_pos := position("fizz")
 	for e in recent:
 		if e["id"] == "fizz" and e["kind"] == "move":
-			others.append({"title": "Fizz y Chispa se muda a Valdelago", "text": "«Vengo a ganarle a la de las pociones», dice el gnomo.", "who": "fizz", "crest": "fizz", "w": 90})
+			others.append({"title": "Fizz & Spark Moves to Lakevale", "text": "“I'm here to beat the potion lady,” says the gnome.", "who": "fizz", "crest": "fizz", "w": 90})
 		elif e["id"] == "fizz" and e["kind"] == "boom":
-			others.append({"title": "Otra explosión en Fizz y Chispa", "text": "«Fue a propósito», asegura Fizz, con las cejas chamuscadas.", "who": "fizz", "crest": "fizz", "w": 55})
+			others.append({"title": "Another Explosion at Fizz & Spark", "text": "“It was on purpose,” Fizz insists, eyebrows singed.", "who": "fizz", "crest": "fizz", "w": 55})
 	if absi(fizz_pos - me_pos) <= 2 and d >= FIZZ_ARRIVES:
 		if fizz_pos > me_pos:
-			others.append({"title": "Fizz y Chispa le pisa los talones a Caldero Nocturno", "text": "«Esta semana la paso», promete el gnomo.", "who": "fizz", "crest": "fizz", "w": 50})
+			others.append({"title": "Fizz & Spark Hot on Midnight Cauldron's Heels", "text": "“I'll pass her this week,” the gnome promises.", "who": "fizz", "crest": "fizz", "w": 50})
 		else:
-			others.append({"title": "Fizz y Chispa, por delante de Caldero Nocturno", "text": "«Que se acostumbre», dice Fizz. Chispa no opina.", "who": "fizz", "crest": "fizz", "w": 50})
+			others.append({"title": "Fizz & Spark Ahead of Midnight Cauldron", "text": "“Get used to it,” says Fizz. Spark says nothing.", "who": "fizz", "crest": "fizz", "w": 50})
 	# 3) las rivales: medallas y tropiezos
 	for e in recent:
 		var id := String(e["id"])
@@ -481,20 +489,20 @@ func headlines(n := 2) -> Array:
 			continue
 		var s := shop(id)
 		if e["kind"] == "medal":
-			others.append({"title": "Medalla de %s para %s" % [MEDAL_NAMES.get(e["medal"], e["medal"]), s["name"]], "text": "Fue en %s. %s lo celebra en %s." % [String(e.get("where", "")), String(s["owner"]), town_name(town_of(id))], "who": "", "crest": id, "w": 40 + (20 if e["medal"] == "oro" else 0)})
+			others.append({"title": "%s Medal for %s" % [MEDAL_NAMES.get(e["medal"], e["medal"]), s["name"]], "text": "It was at %s. Party time for %s in %s." % [String(e.get("where", "")), String(s["owner"]), town_name(town_of(id))], "who": "", "crest": id, "w": 40 + (20 if e["medal"] == "oro" else 0)})
 		elif e["kind"] == "scandal":
 			var lines: Array = SCANDALS_BY.get(id, SCANDALS)
 			var text := String(lines[int(e.get("n", 0)) % lines.size()]).replace("{s}", String(s["name"])).replace("{o}", String(s["owner"])).replace("{t}", town_name(town_of(id)))
-			others.append({"title": "Tropiezo en %s" % s["name"], "text": text, "who": "", "crest": id, "w": 45})
+			others.append({"title": "Mishap at %s" % s["name"], "text": text, "who": "", "crest": id, "w": 45})
 	if not risers.is_empty():
 		for r in risers:
 			if r[0] != ME and r[0] != "fizz" and int(r[1]) >= 2:
-				others.append({"title": "%s sube como la espuma" % shop_name(r[0]), "text": "%d puestos en %d días." % [int(r[1]), GACETA_EVERY], "who": "", "crest": r[0], "w": 30})
+				others.append({"title": "%s on the Rise" % shop_name(r[0]), "text": "Up %d places in %d days." % [int(r[1]), GACETA_EVERY], "who": "", "crest": r[0], "w": 30})
 				break
 	# 4) si no pasó nada: la de siempre en la cima
 	var top: String = order()[0]
 	if top != ME:
-		var tt: Array = ["%s sigue en lo más alto", "Nadie le quita la cima a %s", "%s, primera otra semana más"]
+		var tt: Array = ["%s Stays on Top", "No One Can Topple %s", "%s, Number One for Another Week"]
 		others.append({"title": String(tt[ed % tt.size()]) % shop_name(top), "text": _top_quote(top), "who": "", "crest": top, "w": 10})
 	mine.sort_custom(func(a, b): return int(a["w"]) > int(b["w"]))
 	others.sort_custom(func(a, b): return int(a["w"]) > int(b["w"]))
@@ -513,8 +521,8 @@ func headlines(n := 2) -> Array:
 
 func _top_quote(id: String) -> String:
 	if id == "alambique":
-		return "«El primer puesto no se hereda: se gana», dice la Maestra Ágata Velnor."
-	return "%s, de %s, no suelta el primer puesto." % [String(shop(id).get("owner", "")), town_name(town_of(id))]
+		return "“First place isn't inherited, it's earned,” says Master Agata Velnor."
+	return "%s of %s won't let go of first place." % [String(shop(id).get("owner", "")), town_name(town_of(id))]
 
 ## Las que más subieron en los últimos `days` días: [[id, puestos], ...] de más a menos.
 func _risers(days: int) -> Array:
@@ -593,6 +601,8 @@ func load_data(d) -> void:
 		if e is Dictionary and e.has("id") and e.has("kind"):
 			var ne: Dictionary = e.duplicate()
 			ne["day"] = int(ne.get("day", 0))
+			if ne.has("where"):   # --- R5 EN-UI: una partida de antes guardó el lugar en castellano
+				ne["where"] = String(OLD_WHERE.get(String(ne["where"]), ne["where"]))
 			if ne.has("n"):
 				ne["n"] = int(ne["n"])
 			news.append(ne)

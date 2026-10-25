@@ -24,7 +24,7 @@ const CAM_X1 := 24.2
 const CROWD := ["lirien", "bram", "elda", "kit", "aldric", "wren", "granjero", "panadera", "anciano", "sylwen", "nyra",
 	"ragnar", "isolde", "roxa", "anselmo", "marta", "vianne", "hassim", "pip", "grumm", "zaria", "fizz", "brann"]
 const CROWD_MAX := 10
-const NPC_LANES := [-1.15, 0.25, 0.85]
+const NPC_LANES := [-1.1, 0.25, 0.85]   # --- R5 WORLD: (era -1.15) 5 cm más adelante: con los desvíos de profundidad de la gente, nadie se mete en los postes de los puestos
 
 var camera: Camera3D
 var env: Environment
@@ -316,7 +316,7 @@ func _build_label() -> void:
 const HOUSES := [
 	# x0, ancho, alto de pared, color, tejado, ventanas, letrero colgante, puerta
 	[-11.1, 5.5, 4.6, Color(0.96, 0.9, 0.78), "roof_red", "window_green", "", "door_brown"],
-	[-0.5, 4.2, 4.9, Color(0.97, 0.8, 0.76), "roof_slate", "window_blue", "pan", "door_blue"],
+	# --- R5 WORLD: aquí estaba la panadería [-0.5, 4.2...] con su puerta azul: ahora ese tramo es de la tienda
 	[3.7, 3.4, 4.5, Color(0.97, 0.92, 0.8), "roof_red", "window_green", "", ""],
 	[7.1, 3.2, 5.0, Color(0.78, 0.86, 0.96), "roof_plum", "window_red", "jarra", "door_brown"],
 	[15.6, 3.6, 4.7, Color(0.82, 0.92, 0.8), "roof_red", "window_red", "bota", "door_green"],
@@ -344,9 +344,11 @@ func _house(x0: float, w: float, h: float, col: Color, roof: String, win: String
 	# entramado de madera
 	var bz0 := fz
 	var bz1 := fz + 0.07
+	# --- R5 WORLD: las vigas van de poste a poste (antes llegaban a la esquina y su canto quedaba a 1 cm del del poste)
 	for y in [0.62, 2.62]:
-		_box_b(x0, x1, y, y + 0.14, bz0, bz1, beam)
-	_box_b(x0, x1, h - 0.14, h, bz0, bz1 + 0.03, beam)
+		_box_b(x0 + 0.07, x1 - 0.07, y, y + 0.14, bz0, bz1, beam)
+	_box_b(x0 + 0.07, x1 - 0.07, h - 0.14, h, bz0, bz1 + 0.03, beam)
+	# --- end R5 WORLD
 	for x in [x0 + 0.07, x1 - 0.07]:
 		_box_b(x - 0.08, x + 0.08, 0.62, h, bz0, bz1, beam)
 	# tejado a dos aguas (cumbrera paralela a la calle) y chimenea
@@ -374,26 +376,48 @@ func _house(x0: float, w: float, h: float, col: Color, roof: String, win: String
 				d.rotation_degrees = Vector3(0, 0, 32.0 * sgn)
 	# puerta y letrero colgante
 	if door != "":
-		_sprite("res://assets/props/%s.png" % door, 0.05, Vector3(x0 + w * 0.3, 0.0, fz + 0.08))
+		_sprite("res://assets/props/%s.png" % door, 0.05, Vector3(x0 + w * 0.3, 0.0, fz + 0.1))   # --- R5 WORLD: (era fz + 0.08: 1 cm delante de la viga de abajo)
 	if sign != "":
 		_sprite("res://assets/props/hsign_%s.png" % sign, 0.042, Vector3(x0 + w * 0.3 + 1.0, 2.05, fz + 0.3))
 
-## La fachada de su tienda, al principio de la calle: escaparate con pociones, la puerta y el letrero del caldero.
+## --- R5 WORLD: la fachada de su tienda, al principio de la calle. Antes la tienda ocupaba 5 m (x -5,6..-0,5) y a su
+## lado había otra casa (la panadería, con su puerta azul): parecía una segunda puerta de la tienda, que por dentro no
+## existe. Ahora toda esa fachada (x -5,6..3,7) es la tienda, un solo edificio con su tejado morado, y se lee como lo
+## de dentro: su única puerta (por donde entra y sale ella), el escaparate de pociones, el letrero con el nombre, la
+## ventana con jardinera y, si tiene Crow Delivery (la mejora "krapido"), la ventanilla del cuervo con su percha y su
+## letrero; si no, una ventana con flores en ese sitio. Ninguna cara comparte plano con otra (ver zcheck.gd).
+const SHOP_X0 := -5.6
+const SHOP_X1 := 3.7
+const SHOP_H := 4.8
+const CROW_WIN_X := 1.55        # centro de la ventanilla del cuervo (entre el farol de la calle y el puesto de Ilse)
+const DOOR_LABEL_H := 2.74      # altura del letrero de la puerta al pasar el cursor (bajo el tablero del nombre)
+var _crow_nodes: Array = []     # se ven con la mejora "krapido"
+var _crow_plain: Array = []     # se ven sin ella (una ventana con flores)
+
 func _build_shop_facade() -> void:
-	var x0 := -5.6
-	var x1 := -0.5
-	var h := 4.8
+	var x0 := SHOP_X0
+	var x1 := SHOP_X1
+	var h := SHOP_H
 	var plaster := _mat("res://assets/tex/plaster.png", "res://assets/tex/plaster_n.png", 0.25, 0.95, Color(0.84, 0.78, 0.95))
 	var stone := _mat("res://assets/tex/stone.png", "res://assets/tex/stone_n.png", 0.5, 0.9)
 	var beam := _mat("res://assets/tex/wood_dark.png", "res://assets/tex/wood_dark_n.png", 1.0, 0.8)
+	var wood := _mat("res://assets/tex/wood.png", "res://assets/tex/wood_n.png", 1.0, 0.8)
 	var fz := FACADE_Z
+	var dl := SHOP_DOOR_X - 0.81   # el marco de la puerta (de canto a canto)
+	var dr := SHOP_DOOR_X + 0.81
+	# la pared y el zócalo de piedra (el zócalo no pasa por la puerta: antes tapaba sus 60 cm de abajo)
 	_box_b(x0, x1, 0.0, h, fz - 3.6, fz, plaster)
-	_box_b(x0 - 0.02, x1 + 0.02, 0.0, 0.62, fz - 3.6, fz + 0.05, stone)
-	for y in [0.62, 2.7]:
-		_box_b(x0, x1, y, y + 0.14, fz, fz + 0.07, beam)
-	_box_b(x0, x1, h - 0.14, h, fz, fz + 0.1, beam)
-	for x in [x0 + 0.07, x1 - 0.07, -3.0]:
+	_box_b(x0 + 0.02, dl, 0.0, 0.62, fz - 0.3, fz + 0.05, stone)
+	_box_b(dr, x1 - 0.02, 0.0, 0.62, fz - 0.3, fz + 0.05, stone)
+	# entramado: postes en las esquinas y entre los tramos; vigas de poste a poste (la de abajo no cruza la puerta)
+	var posts := [x0 + 0.07, -3.0, -0.55, x1 - 0.07]
+	for x in posts:
 		_box_b(x - 0.08, x + 0.08, 0.62, h, fz, fz + 0.07, beam)
+	_box_b(x0 + 0.07, dl, 0.62, 0.76, fz, fz + 0.07, beam)
+	_box_b(dr, x1 - 0.07, 0.62, 0.76, fz, fz + 0.07, beam)
+	_box_b(x0 + 0.07, x1 - 0.07, 2.7, 2.84, fz, fz + 0.07, beam)
+	_box_b(x0 + 0.07, x1 - 0.07, h - 0.14, h, fz, fz + 0.1, beam)
+	# el tejado (uno solo, de punta a punta) y la chimenea, que humea (el fuego del caldero nunca se apaga)
 	var pr := PrismMesh.new()
 	pr.size = Vector3(4.4, 2.6, x1 - x0 + 0.4)
 	var rm := MeshInstance3D.new()
@@ -402,10 +426,8 @@ func _build_shop_facade() -> void:
 	rm.position = Vector3((x0 + x1) / 2.0, h + 1.3, fz - 1.8)
 	rm.rotation_degrees = Vector3(0, 90, 0)
 	add_child(rm)
-	_box_b(-5.0, -4.5, h, h + 2.2, fz - 2.4, fz - 1.9, stone)
-	_sprite("res://assets/props/window_shop.png", 0.045, Vector3(-4.3, 0.75, fz + 0.09))
-	_sprite("res://assets/props/window_plum.png", 0.034, Vector3(-4.3, 3.0, fz + 0.09))
-	_sprite("res://assets/props/window_plum.png", 0.034, Vector3(-1.75, 3.0, fz + 0.09))
+	_box_b(-4.85, -4.25, h + 1.0, h + 3.25, fz - 1.75, fz - 1.15, stone)
+	# la puerta (sin nada que la cruce), su marco, el farol y las macetas
 	var dm := StandardMaterial3D.new()
 	dm.albedo_texture = _tex("res://assets/tex/door.png")
 	dm.normal_enabled = true
@@ -413,21 +435,130 @@ func _build_shop_facade() -> void:
 	dm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	dm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
 	_quad(Vector2(1.38, 2.48), Vector3(SHOP_DOOR_X, 1.24, fz + 0.04), dm)
+	_box_b(SHOP_DOOR_X - 0.69, SHOP_DOOR_X + 0.69, 0.0, 2.5, fz - 0.3, fz + 0.02, _flat_mat(Color(0.09, 0.07, 0.08)))   # detrás de la puerta (se ve por su ventanita)
 	for x in [SHOP_DOOR_X - 0.75, SHOP_DOOR_X + 0.75]:
 		_box_b(x - 0.06, x + 0.06, 0.0, 2.62, fz, fz + 0.12, beam)
-	_box_b(SHOP_DOOR_X - 0.81, SHOP_DOOR_X + 0.81, 2.5, 2.62, fz, fz + 0.12, beam)
-	_sprite("res://assets/props/hsign_caldero.png", 0.05, Vector3(SHOP_DOOR_X + 1.25, 2.1, fz + 0.3))
+	_box_b(dl, dr, 2.5, 2.62, fz, fz + 0.12, beam)
 	var lantern := _sprite("res://assets/props/lantern.png", 0.04, Vector3(SHOP_DOOR_X - 1.05, 1.85, fz + 0.12))
 	lantern.shaded = false
 	_sprite("res://assets/props/flowerpot_red.png", 0.035, Vector3(SHOP_DOOR_X - 1.0, 0.0, fz + 0.35))
-	_sprite("res://assets/props/flowerpot_yellow.png", 0.035, Vector3(SHOP_DOOR_X + 1.0, 0.0, fz + 0.35))
+	_sprite("res://assets/props/flowerpot_yellow.png", 0.035, Vector3(SHOP_DOOR_X + 1.0, 0.0, fz + 0.36))
+	# el letrero colgado del caldero, junto a la puerta
+	_sprite("res://assets/props/hsign_caldero.png", 0.05, Vector3(SHOP_DOOR_X + 1.25, 2.1, fz + 0.3))
+	# el escaparate de pociones, a la izquierda de la puerta, con su jardinera
+	_sprite("res://assets/props/window_shop.png", 0.045, Vector3(-4.3, 0.75, fz + 0.1))
+	_flower_box(-4.3, 1.5, 0.62, fz)
+	# el nombre de la tienda en un tablero sobre el escaparate y la puerta
+	_box_b(-5.25, -1.25, 2.88, 3.24, fz + 0.07, fz + 0.12, wood)
+	var name_l := Label3D.new()
+	name_l.font = _font_sc
+	name_l.text = "Midnight Cauldron"
+	name_l.font_size = 46
+	name_l.pixel_size = 0.0062
+	name_l.outline_size = 9
+	name_l.outline_modulate = Color(0.12, 0.07, 0.06)
+	name_l.modulate = Color(1.0, 0.86, 0.5)
+	name_l.position = Vector3(-3.25, 3.06, fz + 0.135)
+	name_l.shaded = false
+	name_l.alpha_cut = Label3D.ALPHA_CUT_DISABLED
+	add_child(name_l)
+	# a la derecha de la puerta: una ventana con jardinera (el farol de la calle queda entre ella y la del cuervo)
+	_sprite("res://assets/props/window_plum.png", 0.034, Vector3(0.0, 1.0, fz + 0.1))
+	_flower_box(0.0, 1.05, 0.88, fz)
+	# arriba, el piso de la maestra: cinco ventanas
+	for wx in [-4.3, -2.0, 0.0, CROW_WIN_X, 3.0]:
+		_sprite("res://assets/props/window_plum.png", 0.034, Vector3(wx, 3.38, fz + 0.1))
+	# la ventanilla del cuervo (Crow Delivery) o, sin la mejora, una ventana con flores
+	_build_crow_window(CROW_WIN_X, fz)
+	_refresh_facade()
+	if not Game.upgrades_changed.is_connected(_refresh_facade):
+		Game.upgrades_changed.connect(_refresh_facade)
 	# la puerta es una estación: entrar = volver a la tienda
 	var door := Node3D.new()
 	door.position = Vector3(SHOP_DOOR_X, 0, fz)
 	add_child(door)
 	station_nodes["tienda"] = door
+	# (el letrero «Back to the shop» sale entre el marco de la puerta y el tablero del nombre, sin taparlo: era 2.9)
 	_pick(door, Vector3(1.6, 2.7, 0.8), Vector3(0, 1.35, 0.3), func(): _station_press("tienda"),
-		func(): _hover_on("tienda", door, 2.9), func(): _hover_off("tienda"))
+		func(): _hover_on("tienda", door, DOOR_LABEL_H), func(): _hover_off("tienda"))
+
+## Un color liso (para lo oscuro de detrás de la puerta).
+func _flat_mat(col: Color) -> StandardMaterial3D:
+	var key := "flat:" + col.to_html()
+	if _mats.has(key):
+		return _mats[key]
+	var m := StandardMaterial3D.new()
+	m.albedo_color = col
+	m.roughness = 1.0
+	_mats[key] = m
+	return m
+
+## Una jardinera de madera con flores bajo una ventana (cx: centro; w: ancho; y: su borde de arriba).
+func _flower_box(cx: float, w: float, y: float, fz: float, parent: Node3D = null) -> void:
+	var wood_d := _mat("res://assets/tex/wood_dark.png", "res://assets/tex/wood_dark_n.png", 1.0, 0.8)
+	_box_b(cx - w / 2.0, cx + w / 2.0, y - 0.2, y, fz + 0.11, fz + 0.36, wood_d, parent)
+	var f := _sprite("res://assets/props/flowers.png", 0.034 * minf(1.0, w / 1.5), Vector3(cx, y - 0.04, fz + 0.24), parent)
+	f.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+## La ventanilla del cuervo, como la de dentro (marco, tapa con el logo pintado, percha y el letrero CROW DELIVERY), y
+## la ventana con flores que ocupa su sitio mientras no se compre.
+func _build_crow_window(cx: float, fz: float) -> void:
+	var wood_d := _mat("res://assets/tex/wood_dark.png", "res://assets/tex/wood_dark_n.png", 1.0, 0.8)
+	var wood_l := _mat("res://assets/tex/wood_light.png", "res://assets/tex/wood_light_n.png", 1.0, 0.6)
+	var crow := Node3D.new()
+	crow.name = "CrowWindow"
+	add_child(crow)
+	var hw := 0.31          # medio ancho del hueco
+	var y0 := 1.45          # alféizar
+	var y1 := 2.37          # dintel
+	# la tapa (cerrada) con el logo, 3 cm delante de la pared, dentro del marco
+	var hm := StandardMaterial3D.new()
+	hm.albedo_texture = _tex("res://assets/props/krapido_hatch.png")
+	hm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	hm.roughness = 0.85
+	var hq := _quad(Vector2(2.0 * hw, y1 - y0), Vector3(cx, (y0 + y1) / 2.0, fz + 0.03), hm, crow)
+	hq.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# el marco: alféizar ancho, dintel y jambas (de 7 a 12 cm delante de la pared: la tapa queda hundida)
+	_box_b(cx - hw - 0.1, cx + hw + 0.1, y0 - 0.1, y0, fz, fz + 0.2, wood_d, crow)
+	_box_b(cx - hw - 0.1, cx + hw + 0.1, y1, y1 + 0.11, fz, fz + 0.09, wood_d, crow)
+	_box_b(cx - hw - 0.1, cx - hw, y0, y1, fz, fz + 0.09, wood_d, crow)
+	_box_b(cx + hw, cx + hw + 0.1, y0, y1, fz, fz + 0.09, wood_d, crow)
+	# la percha: una barra redonda delante del alféizar, con dos soportes
+	var perch := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.022
+	cyl.bottom_radius = 0.022
+	cyl.height = 2.0 * hw - 0.1   # las puntas, dentro de los soportes
+	cyl.radial_segments = 8
+	perch.mesh = cyl
+	perch.material_override = wood_l
+	perch.rotation_degrees = Vector3(0, 0, 90)
+	perch.position = Vector3(cx, y0 + 0.1, fz + 0.15)
+	crow.add_child(perch)
+	for sx in [cx - hw + 0.04, cx + hw - 0.04]:
+		_box_b(sx - 0.018, sx + 0.018, y0, y0 + 0.09, fz + 0.12, fz + 0.18, wood_d, crow)
+	# el letrero sobre la ventanilla, delante de la viga
+	var crow_sign := _sprite("res://assets/props/krapido_sign.png", 0.019, Vector3(cx, y1 + 0.14, fz + 0.14), crow)
+	crow_sign.name = "CrowSign"
+	_crow_nodes.append(crow)
+	# sin la mejora: una ventana con flores
+	var plain := Node3D.new()
+	plain.name = "PlainWindow"
+	add_child(plain)
+	_sprite("res://assets/props/window_red.png", 0.034, Vector3(cx, 1.15, fz + 0.1), plain)
+	_flower_box(cx, 1.05, 1.0, fz, plain)
+	_crow_plain.append(plain)
+
+## La ventanilla del cuervo se ve si tiene Crow Delivery (se llama al construir, al entrar al mercado y al comprar).
+func _refresh_facade() -> void:
+	var on := Game.has_upgrade("krapido")
+	for n in _crow_nodes:
+		if is_instance_valid(n):
+			n.visible = on
+	for n in _crow_plain:
+		if is_instance_valid(n):
+			n.visible = not on
+# --- end R5 WORLD
 
 ## La placita: fuente con agua que cae, un árbol, bancos, un carro de verduras y flores.
 func _build_plaza() -> void:
@@ -759,7 +890,7 @@ func _build_decor() -> void:
 	# banderines sobre los puestos y estandartes en las fachadas
 	var bx := [0.6, 6.8, 19.8, 26.4]
 	for i in bx.size():
-		var b := _sprite("res://assets/props/bunting_%s.png" % ("a" if i % 2 == 0 else "b"), 0.05, Vector3(bx[i], 4.6, -3.6), null, "top")
+		var b := _sprite("res://assets/props/bunting_%s.png" % ("a" if i % 2 == 0 else "b"), 0.05, Vector3(bx[i], 4.6, -3.6 + 0.02 * (i % 2)), null, "top")   # --- R5 WORLD: (z alterna: los vecinos se tapan)
 		b.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for p in [[5.4, "banner_blue"], [17.1, "banner_red"], [24.9, "banner_blue"], [33.0, "banner_red"]]:
 		_sprite("res://assets/props/%s.png" % p[1], 0.045, Vector3(p[0], 4.45, FACADE_Z + 0.12), null, "top")
@@ -778,8 +909,8 @@ func _build_decor() -> void:
 	_sprite("res://assets/props/crate.png", 0.036, Vector3(20.05, 0.47, -2.6))
 	_sprite("res://assets/props/sack.png", 0.036, Vector3(24.0, 0.0, -2.4))
 	_sprite("res://assets/props/barrel.png", 0.036, Vector3(29.6, 0.0, -2.7))
-	_sprite("res://assets/props/crate_apples.png", 0.034, Vector3(28.8, 0.0, -2.2))
-	# humo de la chimenea de la panadería
+	_sprite("res://assets/props/crate_apples.png", 0.034, Vector3(28.8, 0.0, -2.15))   # --- R5 WORLD: (era -2.2: el mismo plano que el barril del puesto de Lupo)
+	# humo de la chimenea de la tienda   # --- R5 WORLD: (era la de la panadería, que ya no está)
 	var smoke := GPUParticles3D.new()
 	smoke.amount = 10
 	smoke.lifetime = 4.0
@@ -796,7 +927,7 @@ func _build_decor() -> void:
 	pm.color_ramp = _fade_ramp()
 	smoke.process_material = pm
 	smoke.draw_pass_1 = _particle_quad("res://assets/fx/smoke.png", 0.05)
-	smoke.position = Vector3(2.95, 8.0, FACADE_Z - 2.0)
+	smoke.position = Vector3(-4.55, SHOP_H + 3.3, FACADE_Z - 1.45)   # --- R5 WORLD: (era Vector3(2.95, 8.0, FACADE_Z - 2.0))
 	smoke.visibility_aabb = AABB(Vector3(-3, -1, -3), Vector3(6, 8, 6))
 	smoke.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(smoke)
@@ -812,7 +943,7 @@ func _build_alchemist() -> void:
 	add_child(walker)
 	walker.speed = 3.0
 	walker.auto_speed = 3.6
-	var st := {"tienda": {"x": SHOP_DOOR_X, "face": -1, "zone": Vector2(X0 - 1.0, -0.6), "name": "Volver a la tienda"}}
+	var st := {"tienda": {"x": SHOP_DOOR_X, "face": -1, "zone": Vector2(X0 - 1.0, -0.6), "name": "Back to the shop"}}
 	for v in STALL_X:
 		var sx: float = STALL_X[v]
 		st[v] = {"x": sx + 1.3, "face": -1, "zone": Vector2(sx - 1.4, sx + 2.0), "name": Data.VENDORS[v]["stall"]}
@@ -842,6 +973,7 @@ func _pick_floor() -> void:
 ## Llega desde la tienda: aparece en su puerta y baja a la calle.
 func enter(intro := true) -> void:
 	camera.current = true
+	_refresh_facade()   # --- R5 WORLD
 	walker.frozen = intro
 	walker.teleport(SHOP_DOOR_X + 0.7, 1)
 	if intro:
@@ -951,8 +1083,12 @@ func _build_crowd() -> void:
 		a.setup(pool[i])
 		a.quiet = true
 		var passer := i % 3 == 2
+		# --- R5 WORLD: cada vecino tiene su propia profundidad dentro del carril, de 2,4 en 2,4 cm (-10,8..+10,8 cm),
+		# contando el desvío de 0-3,5 cm que Actor ya le da al dibujo: dos que se paran o caminan por el mismo carril
+		# nunca quedan en el mismo plano (al cruzarse, su borde temblaba). Antes iban al carril ± 10-12 cm al azar.
+		var dz: float = (i - (CROWD_MAX - 1) / 2.0) * 0.024 - a.sprite.position.z
 		var n := {"a": a, "x": 0.0, "z": 0.0, "tx": 0.0, "tz": 0.0, "speed": randf_range(1.0, 1.5),
-			"wait": 0.0, "pass": passer, "greet": randf_range(2.0, 6.0)}
+			"wait": 0.0, "pass": passer, "greet": randf_range(2.0, 6.0), "dz": dz}
 		npcs.append(n)
 	_scatter_crowd()
 
@@ -969,7 +1105,7 @@ func _scatter_crowd() -> void:
 		n["tz"] = n["z"]
 		n["wait"] = randf_range(0.0, 3.0)
 		var a: Actor = n["a"]
-		a.position = Vector3(n["x"], 0, n["z"])
+		a.position = Vector3(n["x"], 0, n["z"] + n.get("dz", 0.0))   # --- R5 WORLD: (+ dz)
 		a.face(1 if randf() < 0.5 else -1)
 		a.set_walking(false)
 
@@ -987,10 +1123,10 @@ func _npc_next(n: Dictionary) -> void:
 		# a mirar un puesto
 		var v: String = STALL_X.keys().pick_random()
 		n["tx"] = float(STALL_X[v]) + randf_range(-0.9, 0.9)
-		n["tz"] = NPC_LANES[0] + randf_range(-0.1, 0.1)
+		n["tz"] = NPC_LANES[0]   # --- R5 WORLD: (era + randf_range(-0.1, 0.1): ahora la variedad la pone "dz")
 	else:
 		n["tx"] = clampf(n["x"] + randf_range(-8.0, 8.0), X0 + 1.5, X1 + 1.0)
-		n["tz"] = NPC_LANES[randi() % NPC_LANES.size()] + randf_range(-0.12, 0.12)
+		n["tz"] = NPC_LANES[randi() % NPC_LANES.size()]   # --- R5 WORLD: (era + randf_range(-0.12, 0.12))
 
 func _npc_arrive(n: Dictionary) -> void:
 	var a: Actor = n["a"]
@@ -1046,7 +1182,7 @@ func _update_crowd(delta: float) -> void:
 			if absf(to.x) > 0.05:
 				a.face(1 if to.x > 0.0 else -1)
 			a.set_walking(true)
-		a.position = Vector3(n["x"], 0, n["z"])
+		a.position = Vector3(n["x"], 0, n["z"] + n.get("dz", 0.0))   # --- R5 WORLD: (+ dz)
 
 # ------------------------------------------------------------------ palomas y golondrinas
 

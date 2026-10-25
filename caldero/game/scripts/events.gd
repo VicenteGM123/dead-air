@@ -19,8 +19,8 @@ const GAP_MAX := 6
 
 ## Medallas: el id va en Game.today["event"]["medal"] (contrato con RANK); el nombre es lo que se lee.
 const MEDALS := ["gold", "silver", "bronze", "none"]
-const MEDAL_WORD := {"gold": "oro", "silver": "plata", "bronze": "bronce", "none": "sin medalla"}
-const MEDAL_TITLE := {"gold": "Medalla de oro", "silver": "Medalla de plata", "bronze": "Medalla de bronce", "none": "Sin medalla"}
+const MEDAL_WORD := {"gold": "gold", "silver": "silver", "bronze": "bronze", "none": "no medal"}
+const MEDAL_TITLE := {"gold": "Gold Medal", "silver": "Silver Medal", "bronze": "Bronze Medal", "none": "No Medal"}
 const MEDAL_COLOR := {"gold": Color("e8b74a"), "silver": Color("c9d3e0"), "bronze": Color("c98a52"), "none": Color("8f8698")}
 
 ## El catálogo. "host": quién invita y presenta (su sprite); "seal": el sello de lacre de la carta (assets/ui);
@@ -28,44 +28,44 @@ const MEDAL_COLOR := {"gold": Color("e8b74a"), "silver": Color("c9d3e0"), "bronz
 ## del oro de la medalla (la feria ya paga propinas); "hard": +1 a la dificultad. Textos cortos (dieta de la ronda 3).
 const CATALOG := {
 	"academia": {
-		"name": "Examen de la Academia", "long": "Examen de la Academia de Magia", "place": "Valmora",
-		"host": "roxa", "host_name": "Roxa", "host_title": "profesora de la Academia", "seal": "evui_seal_academia",
+		"name": "Academy Exam", "long": "The Academy of Magic Exam", "place": "Valmora",
+		"host": "roxa", "host_name": "Roxa", "host_title": "Academy teacher", "seal": "evui_seal_academia",
 		"min_renombre": 0, "min_day": 2, "fee": [10, 8], "gold_k": 1.0, "hard": 0,
-		"what": "{n} pociones iguales, a contrarreloj.",
-		"hello": "Estimada colega:",
-		"body": "Mis alumnos tienen examen y cada uno necesita una poción. ¿Te animas a prepararlas a contrarreloj?",
-		"sign": "Roxa, profesora (suplente) de la Academia",
-		"intro": "¡Bienvenida! {n} alumnos, {n} pociones de {p}. ¡Que no se enfríe el caldero!",
-		"end": {"gold": "¡Matrícula de honor!", "silver": "¡Aprobados todos!", "bronze": "Aprobado… por los pelos.",
-			"none": "Uy. Mis alumnos se quedaron sin examen."},
+		"what": "{n} identical potions, against the clock.",
+		"hello": "Dear colleague,",
+		"body": "My students have an exam, and each one needs a potion. Up for brewing them against the clock?",
+		"sign": "Roxa, (substitute) teacher at the Academy",
+		"intro": "Welcome! {n} students, {n} potions of {p}. Don't let the cauldron go cold!",
+		"end": {"gold": "Top marks!", "silver": "Everyone passed!", "bronze": "A pass… by a whisker.",
+			"none": "Oops. My students missed their exam."},
 		"crowd": ["roxa", "tobias", "anselmo", "anciano", "lirien", "elda"],
 		"visitors": ["pip", "kit", "wren", "sylwen", "zaria", "nyra", "marta", "aldric"],
 	},
 	"concurso": {
-		"name": "Concurso de Robledal", "long": "Concurso de Pociones de Robledal", "place": "Robledal",
-		"host": "elda", "host_name": "Sor Elda", "host_title": "jurado del concurso", "seal": "evui_seal_concurso",
+		"name": "Oakdale Contest", "long": "The Oakdale Potion Contest", "place": "Oakdale",
+		"host": "elda", "host_name": "Sister Elda", "host_title": "contest judge", "seal": "evui_seal_concurso",
 		"min_renombre": 12, "min_day": 5, "fee": [14, 9], "gold_k": 1.15, "hard": 1,
-		"what": "3 rondas, 3 temas y un jurado. Fizz compite.",
-		"hello": "Querida hermana:",
-		"body": "Robledal celebra su Concurso de Pociones: tres rondas, un tema en cada una. Lirien es jurado invitado. Fizz ya se inscribió…",
-		"sign": "Sor Elda, de Robledal",
-		"intro": "¡Bienvenidas al Concurso! Tres rondas, un tema por ronda. Presenta tu mejor poción.",
-		"end": {"gold": "¡Primer puesto! Robledal entero aplaude.", "silver": "¡Segundo puesto! Muy cerca.",
-			"bronze": "Tercer puesto. ¡Bien hecho!", "none": "Este año no hubo suerte, hija."},
+		"what": "3 rounds, 3 themes, 3 judges. Fizz is in.",
+		"hello": "Dear sister,",
+		"body": "Oakdale is holding its Potion Contest: three rounds, one theme each. Lirien is a guest judge. Fizz has already signed up…",
+		"sign": "Sister Elda, of Oakdale",
+		"intro": "Welcome to the Contest! Three rounds, one theme per round. Present your best potion.",
+		"end": {"gold": "First place! All of Oakdale is cheering.", "silver": "Second place! So close.",
+			"bronze": "Third place. Well done!", "none": "No luck this year, child."},
 		"crowd": ["fizz", "panadera", "granjero", "anciano", "marta", "mabel", "vianne", "hassim", "borin", "pip"],
 		"visitors": [],
 	},
 	"torneo": {
-		"name": "Feria del Torneo", "long": "Feria del Torneo de Brisaclara", "place": "Brisaclara",
-		"host": "isolde", "host_name": "Dama Isolde", "host_title": "capitana de la Orden del Alba", "seal": "evui_seal_torneo",
+		"name": "Tournament Fair", "long": "The Clearbreeze Tournament Fair", "place": "Clearbreeze",
+		"host": "isolde", "host_name": "Dame Isolde", "host_title": "captain of the Order of Dawn", "seal": "evui_seal_torneo",
 		"min_renombre": 6, "min_day": 5, "fee": [16, 10], "gold_k": 0.6, "hard": 1,
-		"what": "Un puesto en la feria: caballeros con prisa.",
-		"hello": "A la honorable alquimista:",
-		"body": "La Orden del Alba celebra su torneo y te ofrece un puesto en la feria. Mis caballeros pagan bien… si no esperan.",
-		"sign": "Isolde de Brisaclara, capitana de la Orden del Alba",
-		"intro": "¡Tu puesto está listo! Piden vigor, curación y valor. No los hagas esperar.",
-		"end": {"gold": "¡La Orden del Alba te da las gracias!", "silver": "¡Buen trabajo! Mis caballeros, contentos.",
-			"bronze": "Cumpliste. Algunos esperaron demasiado.", "none": "Mis caballeros se fueron con sed."},
+		"what": "A stall at the fair: knights in a hurry.",
+		"hello": "To the honorable alchemist,",
+		"body": "The Order of Dawn is holding its tournament and offers you a stall at the fair. My knights pay well… if they don't have to wait.",
+		"sign": "Isolde of Clearbreeze, captain of the Order of Dawn",
+		"intro": "Your stall is ready! They want vigor, healing and courage. Don't keep them waiting.",
+		"end": {"gold": "The Order of Dawn thanks you!", "silver": "Good work! My knights are happy.",
+			"bronze": "You did it. Some waited too long.", "none": "My knights left thirsty."},
 		"crowd": ["isolde", "vianne", "hassim", "mabel", "anselmo", "panadera", "granjero", "nyra", "borin"],
 		"visitors": ["aldric", "brann", "ragnar", "bram", "pip", "kit", "wren", "sylwen"],
 	},
@@ -80,47 +80,47 @@ const ACADEMIA_RECIPES := [
 
 ## Los temas del concurso: "fit" = qué tan bien encaja cada poción (2 = justo lo que pide el tema, 1 = se acerca).
 const THEMES := [
-	{"id": "dormir", "text": "Algo para dormir", "fit": {"sueno_profundo": 2, "balsamo_helado": 1}},
-	{"id": "valiente", "text": "Algo valiente", "fit": {"tonico_brio": 2, "elixir_alba": 1, "vigor_verde": 1}},
-	{"id": "dulce", "text": "Algo dulce", "fit": {"tonico_brio": 2, "vigor_verde": 1, "ojo_nocturno": 1}},
-	{"id": "noche", "text": "Algo para la noche", "fit": {"ojo_nocturno": 2, "velo_invernal": 1, "sueno_profundo": 1}},
-	{"id": "fresco", "text": "Algo fresco", "fit": {"balsamo_helado": 2, "brebaje_lucido": 1, "velo_invernal": 1}},
-	{"id": "pensar", "text": "Algo para pensar", "fit": {"brebaje_lucido": 2, "ojo_nocturno": 1}},
-	{"id": "viaje", "text": "Algo para un viaje largo", "fit": {"vigor_verde": 2, "tonico_brio": 1, "elixir_alba": 1}},
-	{"id": "frio", "text": "Algo contra el frío", "fit": {"elixir_alba": 2, "pocion_clima": 2, "tonico_brio": 1}},
-	{"id": "sigilo", "text": "Algo para no ser vista", "fit": {"velo_invernal": 2, "humo_furtivo": 2, "ojo_nocturno": 1}},
-	{"id": "sanar", "text": "Algo para sanar", "fit": {"elixir_alba": 2, "balsamo_helado": 2, "vigor_verde": 1}},
+	{"id": "dormir", "text": "Something sleepy", "fit": {"sueno_profundo": 2, "balsamo_helado": 1}},
+	{"id": "valiente", "text": "Something brave", "fit": {"tonico_brio": 2, "elixir_alba": 1, "vigor_verde": 1}},
+	{"id": "dulce", "text": "Something sweet", "fit": {"tonico_brio": 2, "vigor_verde": 1, "ojo_nocturno": 1}},
+	{"id": "noche", "text": "Something for the night", "fit": {"ojo_nocturno": 2, "velo_invernal": 1, "sueno_profundo": 1}},
+	{"id": "fresco", "text": "Something cool", "fit": {"balsamo_helado": 2, "brebaje_lucido": 1, "velo_invernal": 1}},
+	{"id": "pensar", "text": "Something clever", "fit": {"brebaje_lucido": 2, "ojo_nocturno": 1}},
+	{"id": "viaje", "text": "Something for a long trip", "fit": {"vigor_verde": 2, "tonico_brio": 1, "elixir_alba": 1}},
+	{"id": "frio", "text": "Something for the cold", "fit": {"elixir_alba": 2, "pocion_clima": 2, "tonico_brio": 1}},
+	{"id": "sigilo", "text": "Something to stay unseen", "fit": {"velo_invernal": 2, "humo_furtivo": 2, "ojo_nocturno": 1}},
+	{"id": "sanar", "text": "Something healing", "fit": {"elixir_alba": 2, "balsamo_helado": 2, "vigor_verde": 1}},
 ]
 
 ## El jurado del concurso (en los marcadores Judge0..Judge2 del escenario). "likes": lo que más le importa.
 const JUDGES := [
-	{"id": "elda", "name": "Sor Elda", "likes": "tema"},
+	{"id": "elda", "name": "Sister Elda", "likes": "tema"},
 	{"id": "lirien", "name": "Lirien", "likes": "removido", "guest": true},
 	{"id": "grumm", "name": "Grumm", "likes": "potencia"},
 ]
 ## Lo que dice cada jurado según las estrellas que da (1..5).
 const JUDGE_LINES := {
-	"elda": ["Esto no tiene nada que ver, hija.", "No es del todo el tema…", "Cumple, sin más.", "Bien pensada.", "¡Justo lo que pedía el tema!"],
-	"lirien": ["No era lo que pedimos, querida.", "Removida con prisa.", "Correcta. Le falta alma.", "Muy fina. Casi élfica.", "Exquisita. Brilla como la luna."],
-	"grumm": ["Grumm no entiende esto.", "Sosa. Le falta fuerza.", "Se deja beber.", "Rica. Grumm repetiría.", "¡Uf! ¡Esto sí tiene sabor!"],
+	"elda": ["This is off-theme, child.", "Not quite the theme…", "It'll do. Barely.", "Smart choice.", "Just what the theme asked for!"],
+	"lirien": ["Not what we asked for, dear.", "Stirred in a hurry.", "Correct. It lacks soul.", "Very fine. Almost elven.", "Exquisite. It shines like the moon."],
+	"grumm": ["Grumm doesn't get this.", "Bland. Needs more kick.", "Drinkable.", "Tasty. Grumm wants more.", "Whoa! Now THAT has flavor!"],
 }
 ## Los rivales del concurso (la media de estrellas por jurado: base + por nivel). Fizz es el rival de siempre: con un
 ## nivel 1 saca ~37 de 45 (para ganarle hay que presentar la poción del tema, bien removida, casi en cada ronda). Los otros dos son tiendas
 ## del Escalafón (RANK); si el escenario trae sus propios letreros (EventScenes.CON_RIVALS), se usan esos nombres.
 const RIVALS := [
 	{"id": "fizz", "name": "Fizz", "sprite": "fizz", "base": 3.85, "per_tier": 0.3},
-	{"id": "raicesrocio", "name": "Raíces y Rocío", "sprite": "", "base": 2.9, "per_tier": 0.3},
-	{"id": "vado", "name": "Hierbas del Vado", "sprite": "", "base": 2.5, "per_tier": 0.3},
+	{"id": "raicesrocio", "name": "Roots & Dew", "sprite": "", "base": 2.9, "per_tier": 0.3},
+	{"id": "vado", "name": "Fordside Herbs", "sprite": "", "base": 2.5, "per_tier": 0.3},
 ]
-const FIZZ_LINES := {"high": ["¡Ja! ¡Supera ESO!", "¡Ciencia gnoma, señoras!", "¡Toma ya!"],
-	"low": ["Bah. El jurado no entiende de ciencia.", "¡Era una poción experimental!", "Mi caldero estaba de mal humor."]}
+const FIZZ_LINES := {"high": ["Ha! Beat THAT!", "Gnome science, ladies!", "Take that!"],
+	"low": ["Bah. The judges don't understand science.", "It was an experimental potion!", "My cauldron was in a bad mood."]}
 
 ## La feria del torneo: lo que piden los caballeros (y la poción que lo cura). Curación es Bálsamo Helado al principio
 ## y Elixir del Alba cuando ya hay plumas de fénix.
 const TORNEO_WANTS := {
 	"vigor": {"name": "Vigor", "potion": "vigor_verde"},
-	"curacion": {"name": "Curación", "potion": "balsamo_helado", "potion_up": "elixir_alba"},
-	"valor": {"name": "Valor", "potion": "tonico_brio"},
+	"curacion": {"name": "Healing", "potion": "balsamo_helado", "potion_up": "elixir_alba"},
+	"valor": {"name": "Courage", "potion": "tonico_brio"},
 }
 ## La receta más simple de cada poción (el cartel del puesto en la feria, la pizarra de la Academia).
 const SIMPLE_RECIPE := {
@@ -492,8 +492,8 @@ static func line(kind: String, key: String, ev: Dictionary = {}) -> String:
 ## «Día 4 · pasado mañana».
 static func when_text(day: int) -> String:
 	var d := day - Game.day
-	var rel := "hoy" if d <= 0 else ("mañana" if d == 1 else ("pasado mañana" if d == 2 else "en %d días" % d))
-	return "Día %d · %s" % [day, rel]
+	var rel := "today" if d <= 0 else ("tomorrow" if d == 1 else ("in 2 days" if d == 2 else "in %d days" % d))
+	return "Day %d · %s" % [day, rel]
 
 static func stars_text(n: int, of := 3) -> String:
 	return "★".repeat(clampi(n, 0, of)) + "☆".repeat(maxi(0, of - n))

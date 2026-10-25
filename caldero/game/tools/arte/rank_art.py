@@ -661,8 +661,9 @@ def trophy():
 # ------------------------------------------------------------------ la cabecera de la Gaceta
 
 def masthead():
-    """«La Gaceta del Gremio» en versalitas de pixel (Alegreya SC sin suavizado), filetes dobles y dos escuditos."""
-    title = 'La Gaceta del Gremio'
+    """«The Guild Gazette» en versalitas de pixel (Alegreya SC sin suavizado), filetes dobles y dos escuditos.
+    --- R5 EN-UI: el título en inglés (antes «La Gaceta del Gremio»)."""
+    title = 'The Guild Gazette'
     font = ImageFont.truetype(FONT_SC, 30)
     tmp = Image.new('L', (600, 80), 0)
     d = ImageDraw.Draw(tmp)

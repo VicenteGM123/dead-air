@@ -25,6 +25,16 @@ static func load_fonts() -> void:
 	font_italic = load("res://assets/fonts/Alegreya-MediumItalic.ttf")
 	font_sc = load("res://assets/fonts/AlegreyaSC-Medium.ttf")
 	font_sc_bold = load("res://assets/fonts/AlegreyaSC-Bold.ttf")
+	# --- R5 MERGE: ★ ☆ ▲ ▼ ✓ ✗ ← → ♥ no están en Alegreya ni en Caveat: en el escritorio salían de una fuente del
+	# sistema, pero en la web (sin fuentes del sistema) eran una cajita con el código («25BC»). «Caldero Symbols» trae
+	# solo esos símbolos (tools/arte/symbols_font.py) y queda de respaldo de las cinco Alegreya; las Caveat de PaperKit
+	# caen en Alegreya, así que también la alcanzan.
+	var sym: Font = load("res://assets/fonts/CalderoSymbols.ttf")
+	if sym:
+		for f in [font_regular, font_bold, font_italic, font_sc, font_sc_bold]:
+			if f and not f.fallbacks.has(sym):
+				f.fallbacks = f.fallbacks + [sym]
+	# --- end R5 MERGE
 
 static func panel_style(bg := BG, border := GOLD, bw := 2, radius := 6, margin := 18) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
@@ -341,3 +351,49 @@ static func style_tooltips(t: Theme) -> void:
 	t.set_font("font", "TooltipLabel", font_bold)
 	t.set_font_size("font_size", "TooltipLabel", 21)
 # --- end R3 BENCH
+
+# --- R5 EN-UI: números, ordinales, plurales y la hora a la inglesa (un solo sitio para todo el juego) --------------
+## «1,241»: los miles con coma (los negativos con «-»).
+static func num(n: int) -> String:
+	var s := str(absi(n))
+	var out := ""
+	while s.length() > 3:
+		out = "," + s.right(3) + out
+		s = s.left(s.length() - 3)
+	return ("-" if n < 0 else "") + s + out
+
+## «1st», «2nd», «3rd», «4th», «11th», «12th», «13th», «21st», «22nd», «23rd», «101st».
+static func ordinal(n: int) -> String:
+	var s := "th"
+	var t := absi(n) % 100
+	if t < 11 or t > 13:
+		match absi(n) % 10:
+			1:
+				s = "st"
+			2:
+				s = "nd"
+			3:
+				s = "rd"
+	return "%d%s" % [n, s]
+
+## «1 customer», «2 customers». many: el plural cuando no es solo +s («1 day» / «3 days» ya sale solo).
+static func plural(n: int, one: String, many := "") -> String:
+	return "%s %s" % [num(n), one if n == 1 else (many if many != "" else one + "s")]
+
+## La hora del HUD, corta y de 12 horas sin AM/PM (la tienda abre de 9 a 6): 540 -> «9:00», 780 -> «1:00».
+static func clock(minutes: int) -> String:
+	var h := (minutes / 60) % 12
+	if h == 0:
+		h = 12
+	return "%d:%02d" % [h, minutes % 60]
+
+## La hora dentro de una frase: 1080 -> «6 PM», 570 -> «9:30 AM».
+static func clock_words(minutes: int) -> String:
+	var h24 := (minutes / 60) % 24
+	var h := h24 % 12
+	if h == 0:
+		h = 12
+	var m := minutes % 60
+	var ampm := "AM" if h24 < 12 else "PM"
+	return ("%d %s" % [h, ampm]) if m == 0 else ("%d:%02d %s" % [h, m, ampm])
+# --- end R5 EN-UI

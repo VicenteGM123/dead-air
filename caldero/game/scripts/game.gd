@@ -434,6 +434,7 @@ func story_load(d: Dictionary) -> void:
 				if e.has(k):
 					e[k] = int(e[k])
 			e["ok"] = bool(e.get("ok", false))
+			migrate_outcome_text(e)   # --- R5 EN-DATA: lo que contará la noticia, en el idioma de ahora
 			pending.append(e)
 	for k in d.get("away", {}):
 		away[k] = int(d["away"][k])
@@ -443,6 +444,7 @@ func story_load(d: Dictionary) -> void:
 		met[k] = true
 	for k in d.get("recent", []):
 		recent_requests.append(String(k))
+	migrate_recent()   # --- R5 EN-DATA: las claves llevan el hash del texto del pedido
 	for k in d.get("hero_retry", {}):
 		hero_retry[k] = true
 	mail_seen = bool(d.get("mail_seen", false))
@@ -685,6 +687,107 @@ func _note_request(r: Dictionary) -> void:
 	last_seen[String(r.get("who", ""))] = day
 # --- end STORY
 
+# --- R5 EN-DATA: los textos que guarda la partida, en el idioma de ahora ---------------------------------------------
+# La partida guarda tal cual algunos textos: la página del diario (journal[].text) y lo que contará cada noticia que
+# falta (story.pending[].good / .fail: la carta de mañana o la visita). Las partidas de las rondas 3 y 4 los tienen en
+# español. Al cargar se vuelven a sacar de Data por sus ids, así salen siempre en el idioma actual:
+#   diario: HEROES[hero][chapter]["journal"];
+#   noticia de un aventurero: su capítulo ("thanks" / "fail"); de Krápido: KRAPIDO_ORDERS por quién + poción;
+#   de un vecino: VILLAGER_REQUESTS + RUNE_REQUESTS por quién + poción + runas pedidas (el tutorial, por su día 1).
+# Si no se encuentra (noticias de pergaminos de la ronda 2), un texto que no parece inglés pasa a ser el genérico de
+# Data.LETTERS. Las claves de los pedidos recientes (story.recent) llevan el hash del texto del pedido: una clave que ya
+# no existe se cambia por las de los pedidos actuales de esa persona con esa poción.
+
+var _foreign_re: RegEx = null
+
+## La página del diario de ese capítulo (o el texto guardado, si el aventurero o el capítulo ya no existen).
+func journal_text(hero: String, chapter: int, saved := "") -> String:
+	var chs = Data.HEROES.get(hero, [])
+	if chs is Array and chapter >= 0 and chapter < chs.size():
+		return String(chs[chapter].get("journal", saved))
+	return saved
+
+## El pedido del que salió una noticia ({} si ya no existe).
+func outcome_source(o: Dictionary) -> Dictionary:
+	var who := String(o.get("who", ""))
+	var potion := String(o.get("wanted", ""))
+	if String(o.get("req_kind", "")) == "hero":
+		var c := int(o.get("chapter", -1))
+		if Data.HEROES.has(who) and c >= 0 and c < Data.HEROES[who].size():
+			return Data.HEROES[who][c]
+		return {}
+	if bool(o.get("krapido", false)):
+		for r in Data.KRAPIDO_ORDERS:
+			if String(r["who"]) == who and String(r["potion"]) == potion:
+				return r
+		return {}
+	var want: Array = []
+	for x in o.get("rune_want", []):
+		want.append(String(x))
+	want.sort()
+	var tut: Dictionary = Data.TUTORIAL_REQUEST
+	if who == String(tut["who"]) and potion == String(tut["potion"]) and want.is_empty() and int(o.get("day", 0)) == 1:
+		return tut   # el primer cliente del día 1 (su carta llega el día 2)
+	for r in Story.request_pool():
+		if String(r.get("who", "")) != who or String(r.get("potion", "")) != potion:
+			continue
+		var rr: Array = []
+		for x in r.get("runes", []):
+			rr.append(String(x))
+		rr.sort()
+		if rr == want:
+			return r
+	return {}
+
+## Lo que contará una noticia ("good" o "fail"), sacado de su pedido ("" si no se encuentra).
+func outcome_text(o: Dictionary, field: String) -> String:
+	var src := outcome_source(o)
+	if src.is_empty():
+		return ""
+	if field == "good":
+		return String(src.get("good", src.get("thanks", "")))
+	return String(src.get("fail", ""))
+
+## true si un texto guardado no parece inglés (letras y signos del español, o palabras muy suyas).
+func text_foreign(t: String) -> bool:
+	if _foreign_re == null:
+		_foreign_re = RegEx.create_from_string("[áéíóúñ¿¡«»]|\\b(que|de|del|la|las|los|el|con|por|para|una|pero|muy|mi|tu|su)\\b")
+	return _foreign_re.search(t.to_lower()) != null
+
+## Una noticia cargada: su "good" / "fail" vuelve a salir de su pedido (o el genérico, si era de otro idioma).
+func migrate_outcome_text(o: Dictionary) -> void:
+	for field in ["good", "fail"]:
+		if not o.has(field):
+			continue
+		var t := outcome_text(o, field)
+		if t != "":
+			o[field] = t
+		elif text_foreign(String(o[field])):
+			o[field] = Story.pick(Data.LETTERS[field + "_default"])
+
+## Las claves de los pedidos recientes que ya no existen pasan a las de los pedidos actuales de esa persona y poción.
+func migrate_recent() -> void:
+	var keys := {}
+	var by_pre := {}
+	for r in Story.request_pool():
+		var k := Story.request_key(r)
+		keys[k] = true
+		var pre := k.substr(0, k.rfind(":") + 1)
+		if not by_pre.has(pre):
+			by_pre[pre] = []
+		by_pre[pre].append(k)
+	var out: Array = []
+	for k in recent_requests:
+		if keys.has(k):
+			out.append(k)
+			continue
+		var pre := String(k).substr(0, String(k).rfind(":") + 1)
+		for nk in by_pre.get(pre, []):
+			if not out.has(nk):
+				out.append(nk)
+	recent_requests = out.slice(maxi(0, out.size() - 40))
+# --- end R5 EN-DATA
+
 # ------------------------------------------------------------------ guardado
 
 func has_save() -> bool:
@@ -742,8 +845,13 @@ func load_game() -> bool:
 	for k in d.get("hero_last_day", {}):
 		hero_last_day[k] = int(d["hero_last_day"][k])
 	journal = []
+	var jn := {}   # --- R5 EN-DATA: la página sale de Data (idioma actual); sin "chapter" (muy viejas): la n-ésima de ese aventurero
 	for e in d.get("journal", []):
-		journal.append({"day": int(e["day"]), "hero": String(e["hero"]), "chapter": int(e.get("chapter", 0)), "text": String(e["text"])})
+		var jh := String(e["hero"])
+		var jc := int(e.get("chapter", jn.get(jh, 0)))
+		jn[jh] = maxi(int(jn.get(jh, 0)), jc + 1)
+		journal.append({"day": int(e["day"]), "hero": jh, "chapter": jc, "text": journal_text(jh, jc, String(e["text"]))})
+	# --- end R5 EN-DATA
 	lucky = bool(d.get("lucky", false))
 	cat_petted_day = int(d.get("cat_petted_day", 0))
 	var st: Dictionary = d.get("stats", {})

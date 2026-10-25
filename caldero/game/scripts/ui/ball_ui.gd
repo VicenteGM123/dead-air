@@ -224,7 +224,7 @@ func _build_ball() -> void:
 	stage.add_child(empty_box)
 	var logo := _art("res://assets/ui/krapido_logo.png", BALL_C - Vector2(56, 96), empty_box)
 	logo.modulate = Color(1, 1, 1, 0.35)
-	var el := PaperKit.hand("Sin pedidos", 44, Color(0.78, 0.72, 0.98, 0.8), true, HORIZONTAL_ALIGNMENT_CENTER)
+	var el := PaperKit.hand("No orders", 44, Color(0.78, 0.72, 0.98, 0.8), true, HORIZONTAL_ALIGNMENT_CENTER)
 	el.position = BALL_C + Vector2(-200, 30)
 	el.size = Vector2(400, 60)
 	empty_box.add_child(el)
@@ -239,7 +239,7 @@ func _build_side() -> void:
 	var x0 := 1150.0
 	var logo := _art("res://assets/ui/krapido_logo.png", Vector2(x0 + 6, 66), stage)
 	logo.pivot_offset = logo.size / 2.0
-	var title := UIKit.shadow(UIKit.label("Krápido", 76, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold), 3)
+	var title := UIKit.shadow(UIKit.label("Crow Delivery", 76, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold), 3)
 	title.position = Vector2(x0 + 140, 56)
 	stage.add_child(title)
 	var tag := PaperKit.hand(String(Data.KRAPIDO["tagline"]), 38, CREAM, false)
@@ -297,7 +297,7 @@ func _build_side() -> void:
 	plumas_num.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	plumas_row.add_child(PaperKit.gap(0, 10))
 	plumas_row.add_child(plumas_num)
-	var pl := PaperKit.hand("plumas", 36, CREAM, false)
+	var pl := PaperKit.hand("feathers", 36, CREAM, false)   # --- R5 EN-UI
 	pl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	plumas_row.add_child(pl)
 
@@ -409,7 +409,7 @@ func _build_close() -> void:
 	close_btn.offset_bottom = 96
 	close_btn.focus_mode = Control.FOCUS_NONE
 	close_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	close_btn.tooltip_text = "Cerrar"
+	close_btn.tooltip_text = "Close"
 	close_btn.pressed.connect(func():
 		Sfx.play("click", 0.05, -4.0)
 		close())
@@ -425,7 +425,7 @@ func _build_badge() -> void:
 	for st in ["normal", "hover", "pressed", "disabled", "focus", "hover_pressed"]:
 		badge.add_theme_stylebox_override(st, StyleBoxEmpty.new())
 	UIKit.place(badge, Vector2(0, 1), Vector2(26, -132), Vector2(108, 108), Control.GROW_DIRECTION_END, Control.GROW_DIRECTION_BEGIN)
-	badge.tooltip_text = "Krápido"
+	badge.tooltip_text = "Crow Delivery"
 	badge.pressed.connect(func():
 		Sfx.play("click", 0.05, -4.0)
 		if main._brew_open():   # --- R4 MERGE: con el banco abierto, primero se cierra (embotella lo removido)
@@ -532,10 +532,27 @@ func _make_card(o: Dictionary) -> Button:
 	face.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	frame.add_child(face)
 	var cname := Story.char_name(String(o["who"]))
-	var nm := UIKit.label(cname, 24 if cname.length() <= 8 else 20, Color("7a1d18"), UIKit.font_sc_bold)
-	nm.position = Vector2(94, 16 if cname.length() <= 8 else 18)
-	nm.size = Vector2(118, 30)
-	nm.clip_text = true
+	# --- R5 MERGE: el nombre se achica (hasta 18 px) para caber en su caja de 118 px; si aun así no cabe («Father
+	# Anselmo» se cortaba a 20 px), va en dos renglones a 20 px. El reloj de la esquina no deja ensanchar la caja.
+	UIKit.load_fonts()
+	var nfont: Font = UIKit.font_sc_bold
+	var nsize := 24 if cname.length() <= 8 else 20
+	while nsize > 18 and nfont.get_string_size(cname, HORIZONTAL_ALIGNMENT_LEFT, -1, nsize).x > 116.0:
+		nsize -= 1
+	var two := cname.contains(" ") and nfont.get_string_size(cname, HORIZONTAL_ALIGNMENT_LEFT, -1, nsize).x > 116.0
+	if two:
+		nsize = 20
+	var nm := UIKit.label(cname, nsize, Color("7a1d18"), nfont)
+	if two:
+		nm.autowrap_mode = TextServer.AUTOWRAP_WORD
+		nm.add_theme_constant_override("line_spacing", -9)
+		nm.position = Vector2(94, 0)
+		nm.size = Vector2(118, 50)
+	else:
+		nm.position = Vector2(94, 16 if nsize >= 24 else 18)
+		nm.size = Vector2(118, 30)
+		nm.clip_text = true
+	# --- end R5 MERGE
 	b.add_child(nm)
 	# lo que pide (a mano, dos líneas)
 	var line := PaperKit.hand(String(o["line"]), 27, INK, false, HORIZONTAL_ALIGNMENT_LEFT, 226.0)
@@ -813,8 +830,8 @@ func _refresh_side() -> void:
 		status_ring.frac = f
 		status_ring.color = _wait_color(f)
 		status_time.text = str(int(ceil(k.raven_left)))
-		status_text.text = "¡En la ventanilla!"
-		status_sub.text = "Dale una poción"
+		status_text.text = "At the window!"
+		status_sub.text = "Give him a potion"
 	else:
 		status_icon.modulate = Color(0.55, 0.5, 0.62, 0.8)
 		status_icon.position.y = 0.0
@@ -830,19 +847,19 @@ func _refresh_side() -> void:
 			status_ring.frac = 1.0
 			status_ring.color = Color(1.0, 0.9, 0.55)
 			status_time.text = "…"
-			status_text.text = "¡Ya viene!"
+			status_text.text = "On his way!"
 			status_sub.text = ""
 		elif next < INF:
 			status_ring.frac = next / lead
 			status_ring.color = Color(0.56, 0.85, 1.0)
 			status_time.text = str(int(ceil(next))) if next > 0.0 else "…"
-			status_text.text = "Graznido llega en"
-			status_sub.text = "segundos" if next > 0.0 else "un momento"
+			status_text.text = "Squawk arrives in"
+			status_sub.text = ("second" if int(ceil(next)) == 1 else "seconds") if next > 0.0 else "a moment"   # --- R5 EN-UI: plural
 		else:
 			status_ring.frac = 0.0
 			status_ring.color = Color(0.5, 0.45, 0.6)
 			status_time.text = "–"
-			status_text.text = "Sin pedidos" if main.is_open_phase() else "Abre la tienda"
+			status_text.text = "No orders" if main.is_open_phase() else "Open the shop"
 			status_sub.text = ""
 	status_ring.queue_redraw()
 	# plumas
@@ -852,7 +869,7 @@ func _refresh_side() -> void:
 		var v := p - float(i)
 		var kind := "full" if v >= 0.75 else ("half" if v >= 0.25 else "empty")
 		tr.texture = load("res://assets/ui/pluma_%s.png" % kind)
-	plumas_num.text = ("%.1f" % p).replace(".", ",")
+	plumas_num.text = "%.1f" % p   # --- R5 EN-UI: «4.0» (punto decimal)
 	# el estante: brilla y la flecha baila si Graznido espera
 	tray_glow.color.a = (0.18 + 0.12 * sin(_t * 5.0)) if waiting else 0.0
 	tray_arrow.visible = waiting and not Game.potions.is_empty()
@@ -989,7 +1006,7 @@ func _build_counter_chip() -> void:
 	counter_chip = PaperKit.panel("card", Vector2(14, 6))
 	counter_chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	UIKit.place(counter_chip, Vector2(0, 0), Vector2(22, 226), Vector2(212, 0))
-	counter_chip.tooltip_text = "Mostrador"
+	counter_chip.tooltip_text = "Counter"
 	var h := UIKit.hbox(8)
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	counter_chip.add_child(h)

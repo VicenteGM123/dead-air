@@ -40,6 +40,10 @@ static func wanted_kind(_req: Dictionary) -> String:
 static func item_name(_kind: String, id: String) -> String:
 	if Data.POTIONS.has(id):
 		return String(Data.POTIONS[id]["name"])
+	# --- R5 EN-DATA: un pergamino de una partida vieja se nombra por la runa en la que se convirtió («Haste rune»)
+	if Game.LEGACY_SPELL_RUNE.has(id):
+		return "%s rune" % rune_name(String(Game.LEGACY_SPELL_RUNE[id]))
+	# --- end R5 EN-DATA
 	return id.replace("_", " ").capitalize()   # (noticias viejas de pergaminos)   # --- R3 MAGIC3
 
 ## --- R3 MAGIC3: nombre de una runa ("Prisa").
@@ -222,7 +226,7 @@ static func letter(o: Dictionary, res: Dictionary) -> Dictionary:
 		elif g == "ok":
 			body += " " + pick(Data.LETTERS["ok"])
 		if String(res.get("gift_text", "")) != "":
-			body += "\n\nP.D.: " + String(res["gift_text"])
+			body += "\n\nP.S. " + String(res["gift_text"])
 	else:
 		var fail := String(o.get("fail", ""))
 		if fail == "":
@@ -294,13 +298,14 @@ static func reward_line(res: Dictionary, who := "") -> String:
 		else:
 			bits.append("[color=#9eea9f]+%d %s[/color]" % [int(it["qty"]), thing_name(id)])
 	if res.get("journal", false):
-		bits.append("%s [color=#ffd987]Diario[/color]" % _ic("res://assets/ui/paper_i_page.png", 30))
+		bits.append("%s [color=#ffd987]Journal[/color]" % _ic("res://assets/ui/paper_i_page.png", 30))
 	if int(res.get("refund", 0)) > 0:
 		bits.append("%s [color=#ff9b9b]-%d[/color]" % [coin, int(res["refund"])])
 	if int(res.get("renombre", 0)) < 0:
 		bits.append("%s [color=#ff9b9b]%d[/color]" % [gem, int(res["renombre"])])
 	if int(res.get("away", 0)) > 0 and who != "":
-		bits.append("%s [color=#b8aecb]%d días[/color]" % [_ic("res://assets/ui/paper_i_door.png", 27), int(res["away"])])
+		var nd := int(res["away"])   # --- R5 EN-DATA: «1 day» / «3 days»
+		bits.append("%s [color=#b8aecb]%d %s[/color]" % [_ic("res://assets/ui/paper_i_door.png", 27), nd, "day" if nd == 1 else "days"])
 	return "     ".join(bits)
 # --- end R3 PAPER
 

@@ -56,10 +56,10 @@ const LANE := [
 ## Estaciones: x del punto donde se para, hacia dónde mira, su sector [x0, x1] y su nombre.
 ## --- R3 WORLD3: el mostrador se atiende desde su lado (x 0.03); el sector de la puerta empieza en la trampilla.
 const STATIONS := {
-	"biblioteca": {"x": -10.2, "face": -1, "zone": Vector2(-15.8, -7.6), "name": "Biblioteca · grimorio"},
-	"caldero": {"x": -2.35, "face": -1, "zone": Vector2(-7.6, -1.1), "name": "Caldero"},
-	"mostrador": {"x": 0.03, "face": 1, "zone": Vector2(-1.1, 0.46), "name": "Mostrador"},
-	"puerta": {"x": 3.95, "face": 1, "zone": Vector2(0.46, 7.6), "name": "Puerta"},
+	"biblioteca": {"x": -10.2, "face": -1, "zone": Vector2(-15.8, -7.6), "name": "Library · grimoire"},
+	"caldero": {"x": -2.35, "face": -1, "zone": Vector2(-7.6, -1.1), "name": "Cauldron"},
+	"mostrador": {"x": 0.03, "face": 1, "zone": Vector2(-1.1, 0.46), "name": "Counter"},
+	"puerta": {"x": 3.95, "face": 1, "zone": Vector2(0.46, 7.6), "name": "Door"},
 }
 const STATION_LABEL_Y := {"biblioteca": 1.75, "caldero": 1.75, "mostrador": 1.75, "puerta": 2.85}
 const CAM_X0 := -10.0           # la cámara sigue a la alquimista entre estos límites
@@ -75,9 +75,17 @@ const KRAPIDO_Y1 := 2.44         # dintel
 const KRAPIDO_PERCH := Vector3(-6.8, 1.615, -3.93)   # donde apoya las patas Graznido
 const KRAPIDO_BALL := Vector3(-6.98, 0.0, -3.3)      # la bola de cristal en su pie
 ## La estación de la bola: ella se para a la derecha de la bola, mirándola (la zona se le quita al caldero).
-const KRAPIDO_STATION := {"x": -6.15, "face": -1, "zone": Vector2(-7.6, -5.45), "name": "Krápido"}
+const KRAPIDO_STATION := {"x": -6.15, "face": -1, "zone": Vector2(-7.6, -5.45), "name": "Crow Delivery"}
 const KRAPIDO_CALDERO_ZONE := Vector2(-5.45, -1.1)
 # --- end R4 RAVEN
+# --- R5 WORLD: las paredes que temblaban (z-fighting). Dos caras en el mismo plano que se tapan (dos cajas que
+# comparten una cara, un marco metido en el hueco de la pared, dos sprites a la misma profundidad) no las sabe ordenar
+# el búfer de profundidad: con el leve vaivén de la cámara el píxel ganador cambia de un cuadro a otro y la pared
+# «tiembla». Regla de esta tienda: ninguna cara visible comparte plano con otra. Los marcos de puertas y ventanas
+# asoman FRAME_LIP hacia dentro del hueco (tapan el canto de la pared en vez de coincidir con él). Comprobador:
+# --demo=zcheck (scripts/world/zcheck.gd).
+const FRAME_LIP := 0.012
+# --- end R5 WORLD
 
 var camera: Camera3D
 var env: Environment
@@ -407,10 +415,14 @@ func _build_room() -> void:
 	_box_b(ROOM_X0 - 0.6, 8.2, H, H + 0.3, -4.6, 14.0, ceil_m)
 	# paredes laterales
 	# --- WORLD: donde estaba la pared izquierda queda un tabique corto: detrás, la biblioteca
-	_box_b(-7.9, -7.6, 0.0, H, -4.3, -3.05, plaster)
+	# --- R5 WORLD: el yeso de las paredes laterales empieza sobre el zócalo (antes bajaba hasta el suelo y la cara de
+	# la piedra coincidía con la del yeso en x = 7,6: el metro de abajo de la pared derecha temblaba). El zócalo de la
+	# pared derecha sobresale 4 cm, como el del fondo, y empieza donde acaba ese (z = WALL_Z + 0,04).
+	_box_b(-7.9, -7.6, 1.0, H, -4.3, -3.05, plaster)
 	_box_b(-7.92, -7.58, 0.0, 1.0, -4.3, -3.05, stone)
-	_box_b(7.6, 7.9, 0.0, H, -4.3, 3.6, plaster)
-	_box_b(7.6, 7.88, 0.0, 1.0, -4.3, 3.6, stone)
+	_box_b(7.6, 7.9, 1.0, H, -4.3, 3.6, plaster)
+	_box_b(7.56, 7.88, 0.0, 1.0, z1 + 0.04, 3.6, stone)
+	# --- end R5 WORLD
 	# vigas y postes
 	_box_b(-7.6, 3.25, 1.0, 1.14, z1, z1 + 0.09, wood_d)
 	_box_b(4.75, 7.6, 1.0, 1.14, z1, z1 + 0.09, wood_d)
@@ -421,9 +433,9 @@ func _build_room() -> void:
 	_box_b(ROOM_X0 - 0.2, 8.0, 4.1, 4.36, 2.4, 2.7, wood_d)
 	# marco de la ventana
 	_box_b(0.38, 2.62, 1.3, 1.42, z1 - 0.05, z1 + 0.26, wood_d)   # alféizar
-	_box_b(0.38, 2.62, 3.1, 3.22, z1 - 0.05, z1 + 0.1, wood_d)
-	_box_b(0.38, 0.5, 1.4, 3.1, z1 - 0.05, z1 + 0.1, wood_d)
-	_box_b(2.5, 2.62, 1.4, 3.1, z1 - 0.05, z1 + 0.1, wood_d)
+	_box_b(0.38, 2.62, 3.1 - FRAME_LIP, 3.22, z1 - 0.05, z1 + 0.1, wood_d)   # --- R5 WORLD: (FRAME_LIP) el marco asoma
+	_box_b(0.38, 0.5 + FRAME_LIP, 1.4, 3.1, z1 - 0.05, z1 + 0.1, wood_d)     # dentro del hueco: no comparte cara con
+	_box_b(2.5 - FRAME_LIP, 2.62, 1.4, 3.1, z1 - 0.05, z1 + 0.1, wood_d)     # el canto de la pared
 	_box_b(1.47, 1.53, 1.4, 3.1, -4.2, -4.1, wood_d)
 	_box_b(0.5, 2.5, 2.22, 2.28, -4.2, -4.1, wood_d)
 	var glass := StandardMaterial3D.new()
@@ -435,9 +447,9 @@ func _build_room() -> void:
 	var g := _quad(Vector2(2.0, 1.7), Vector3(1.5, 2.25, -4.15), glass)
 	g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# marco de la puerta
-	_box_b(3.18, 3.3, 0.0, 2.62, z1 - 0.03, z1 + 0.1, wood_d)
-	_box_b(4.7, 4.82, 0.0, 2.62, z1 - 0.03, z1 + 0.1, wood_d)
-	_box_b(3.18, 4.82, 2.5, 2.62, z1 - 0.03, z1 + 0.1, wood_d)
+	_box_b(3.18, 3.3 + FRAME_LIP, 0.0, 2.62, z1 - 0.03, z1 + 0.1, wood_d)   # --- R5 WORLD: (FRAME_LIP, como la ventana)
+	_box_b(4.7 - FRAME_LIP, 4.82, 0.0, 2.62, z1 - 0.03, z1 + 0.1, wood_d)
+	_box_b(3.18, 4.82, 2.5 - FRAME_LIP, 2.62, z1 - 0.03, z1 + 0.1, wood_d)
 	# puerta con bisagra
 	door_pivot = Node3D.new()
 	door_pivot.position = Vector3(3.31, 0, -4.12)
@@ -535,7 +547,7 @@ func _build_shelves() -> void:
 			for b in brackets:
 				_register_upgrade("estante", b)
 		for c in 6:
-			var s := _sprite("res://assets/icons/pot_elixir_alba.png", 0.03, Vector3(-1.95 + c * 0.39, y, -3.8))
+			var s := _sprite("res://assets/icons/pot_elixir_alba.png", 0.03, Vector3(-1.95 + c * 0.39, y, -3.8 + 0.014 * (c % 2)))   # --- R5 WORLD: (z alterna: los vecinos se tapan)
 			s.visible = false
 			rack_sprites.append(s)
 	var rack_holder := Node3D.new()
@@ -628,17 +640,18 @@ func _build_counter() -> void:
 	var zc := (COUNTER_Z1 + FLAP_Z1) / 2.0
 	var ph := top - 0.2                      # alto de los paneles (entre el zócalo y la moldura)
 	var py := 0.07 + ph / 2.0
+	var pd := 0.009   # --- R5 WORLD: los paneles a 9 mm de la caja (eran 4 mm: muy justo para el búfer de profundidad a 13 m)
 	_panel("res://assets/tex/counter_front.png", "res://assets/tex/counter_front_n.png", Vector2(body_len - 0.04, ph),
-		Vector3(cx + bw + 0.004, py, zc), Vector3.RIGHT, Vector2(body_len / 2.0, 1.0))
+		Vector3(cx + bw + pd, py, zc), Vector3.RIGHT, Vector2(body_len / 2.0, 1.0))
 	_panel("res://assets/tex/counter_side.png", "", Vector2(body_len - 0.04, ph),
-		Vector3(cx - bw - 0.004, py, zc), Vector3.LEFT, Vector2(body_len / 2.0, 1.0))
+		Vector3(cx - bw - pd, py, zc), Vector3.LEFT, Vector2(body_len / 2.0, 1.0))
 	_panel("res://assets/tex/counter_front.png", "res://assets/tex/counter_front_n.png", Vector2(2.0 * bw, ph),
-		Vector3(cx, py, COUNTER_Z1 + 0.004), Vector3.BACK, Vector2(0.5, 1.0))
+		Vector3(cx, py, COUNTER_Z1 + pd), Vector3.BACK, Vector2(0.5, 1.0))
 	var post_len := FLAP_Z0 - COUNTER_Z0
 	_panel("res://assets/tex/counter_side.png", "", Vector2(post_len - 0.04, ph),
-		Vector3(cx - bw - 0.004, py, (COUNTER_Z0 + FLAP_Z0) / 2.0), Vector3.LEFT, Vector2(post_len / 2.0, 1.0))
+		Vector3(cx - bw - pd, py, (COUNTER_Z0 + FLAP_Z0) / 2.0), Vector3.LEFT, Vector2(post_len / 2.0, 1.0))
 	_panel("res://assets/tex/counter_front.png", "res://assets/tex/counter_front_n.png", Vector2(post_len - 0.04, ph),
-		Vector3(cx + bw + 0.004, py, (COUNTER_Z0 + FLAP_Z0) / 2.0), Vector3.RIGHT, Vector2(post_len / 2.0, 1.0))
+		Vector3(cx + bw + pd, py, (COUNTER_Z0 + FLAP_Z0) / 2.0), Vector3.RIGHT, Vector2(post_len / 2.0, 1.0))
 	# la trampilla: una tabla con bisagras de hierro y una argolla de latón; se levanta hacia la pared cuando ella pasa
 	flap_pivot = Node3D.new()
 	flap_pivot.name = "Flap"
@@ -653,7 +666,7 @@ func _build_counter() -> void:
 	for hx in [-0.24, 0.24]:
 		_box(Vector3(0.07, 0.014, 0.2), Vector3(hx, 0.007, 0.08), iron, flap_pivot)        # bisagra (arriba)
 		_box(Vector3(0.06, 0.012, 0.62), Vector3(hx, -0.086, 0.34), iron, flap_pivot)      # cincho de hierro (abajo: se ve al levantarla)
-		_box(Vector3(0.09, 0.03, 0.03), Vector3(hx, 0.0, 0.0), iron, flap_pivot)
+		_box(Vector3(0.09, 0.04, 0.03), Vector3(hx, 0.0, 0.0), iron, flap_pivot)   # --- R5 WORLD: (alto 0.03: su cara de arriba quedaba a 1 mm de la de la chapa)
 	var brass := StandardMaterial3D.new()
 	brass.albedo_color = Color(0.86, 0.66, 0.32)
 	brass.metallic = 0.75
@@ -1082,14 +1095,14 @@ func set_time(t: float, animate := true) -> void:
 
 func time_label() -> String:
 	if time_t < 0.15:
-		return "Mañana"
+		return "Morning"
 	if time_t < 0.45:
-		return "Mediodía"
+		return "Midday"
 	if time_t < 0.68:
-		return "Tarde"
+		return "Afternoon"
 	if time_t < 0.88:
-		return "Atardecer"
-	return "Noche"
+		return "Dusk"
+	return "Night"
 
 func _process(delta: float) -> void:
 	_t += delta
@@ -1142,25 +1155,33 @@ func _build_library() -> void:
 	var wx1 := -10.5
 	var wy0 := 1.3
 	var wy1 := 3.5
-	for p in [[ROOM_X0, wx0, 0.0, H], [wx0, wx1, 0.0, wy0], [wx0, wx1, wy1, H], [wx1, LIB_X1, 0.0, H]]:
+	# --- R5 WORLD: el último tramo acaba en el tabique (x = LIB_X1 - 0,3), no dentro de él: su canto coincidía con la
+	# cara del tabique que da a la tienda
+	for p in [[ROOM_X0, wx0, 0.0, H], [wx0, wx1, 0.0, wy0], [wx0, wx1, wy1, H], [wx1, LIB_X1 - 0.3, 0.0, H]]:
 		var ya: float = p[2]
 		var yb: float = p[3]
 		if ya < 1.0:
-			_box_b(p[0], p[1], ya, minf(yb, 1.0), z0, z1 + 0.04, panel)
+			# --- R5 WORLD: el friso del último tramo acaba en la piedra del tabique (2 cm más ancha que el yeso)
+			var xpe: float = p[1] - (0.02 if p[1] > LIB_X1 - 0.31 else 0.0)
+			_box_b(p[0], xpe, ya, minf(yb, 1.0), z0, z1 + 0.04, panel)
 		if yb > 1.0:
 			_box_b(p[0], p[1], maxf(ya, 1.0), yb, z0, z1, plaster_l)
-	_box_b(ROOM_X0 - 0.3, ROOM_X0, 0.0, H, -4.3, 3.6, plaster_l)
-	_box_b(ROOM_X0 - 0.28, ROOM_X0, 0.0, 1.0, -4.3, 3.6, panel)
-	_box_b(ROOM_X0, LIB_X1, 1.0, 1.1, z1, z1 + 0.08, wood_d)
-	for x in [-15.62, -9.95, -7.75]:
+	# --- R5 WORLD: como la pared derecha de la tienda: el yeso empieza sobre el friso de madera y el friso sobresale
+	# 4 cm (antes compartían la cara x = ROOM_X0 en todo el metro de abajo y temblaba); la viga acaba en el tabique y
+	# sobra el poste de x = -7,75 (quedaba entero dentro del tabique)
+	_box_b(ROOM_X0 - 0.3, ROOM_X0, 1.0, H, -4.3, 3.6, plaster_l)
+	_box_b(ROOM_X0 - 0.28, ROOM_X0 + 0.04, 0.0, 1.0, z1 + 0.04, 3.6, panel)
+	_box_b(ROOM_X0, LIB_X1 - 0.3, 1.0, 1.1, z1, z1 + 0.08, wood_d)
+	for x in [-15.62, -9.95]:
 		_box_b(x - 0.12, x + 0.12, 1.1, 4.55, z1, z1 + 0.12, wood_d)
+	# --- end R5 WORLD
 	# poste del tabique (lado de la biblioteca)
 	_box_b(-7.98, -7.52, 0.0, 4.55, -3.12, -2.95, wood_d)
 	# ventanal
 	_box_b(wx0 - 0.12, wx1 + 0.12, wy0 - 0.1, wy0 + 0.02, z1 - 0.05, z1 + 0.26, wood_d)
-	_box_b(wx0 - 0.12, wx1 + 0.12, wy1, wy1 + 0.12, z1 - 0.05, z1 + 0.1, wood_d)
-	_box_b(wx0 - 0.12, wx0, wy0, wy1, z1 - 0.05, z1 + 0.1, wood_d)
-	_box_b(wx1, wx1 + 0.12, wy0, wy1, z1 - 0.05, z1 + 0.1, wood_d)
+	_box_b(wx0 - 0.12, wx1 + 0.12, wy1 - FRAME_LIP, wy1 + 0.12, z1 - 0.05, z1 + 0.1, wood_d)   # --- R5 WORLD: (FRAME_LIP)
+	_box_b(wx0 - 0.12, wx0 + FRAME_LIP, wy0, wy1, z1 - 0.05, z1 + 0.1, wood_d)
+	_box_b(wx1 - FRAME_LIP, wx1 + 0.12, wy0, wy1, z1 - 0.05, z1 + 0.1, wood_d)
 	var mx := (wx0 + wx1) / 2.0
 	_box_b(mx - 0.03, mx + 0.03, wy0, wy1, -4.2, -4.1, wood_d)
 	for yy in [2.05, 2.8]:
@@ -1622,15 +1643,15 @@ func _build_krapido() -> void:
 	var cx := (x0 + x1) / 2.0
 	# marco: alféizar ancho (sale hacia la tienda), dintel y jambas
 	_box_b(x0 - 0.09, x1 + 0.09, y0 - 0.1, y0 + 0.02, z1 - 0.05, z1 + 0.2, wood_d, kroot)
-	_box_b(x0 - 0.09, x1 + 0.09, y1, y1 + 0.11, z1 - 0.05, z1 + 0.09, wood_d, kroot)
-	_box_b(x0 - 0.09, x0, y0, y1, z1 - 0.05, z1 + 0.09, wood_d, kroot)
-	_box_b(x1, x1 + 0.09, y0, y1, z1 - 0.05, z1 + 0.09, wood_d, kroot)
+	_box_b(x0 - 0.09, x1 + 0.09, y1 - FRAME_LIP, y1 + 0.11, z1 - 0.05, z1 + 0.09, wood_d, kroot)   # --- R5 WORLD: (FRAME_LIP)
+	_box_b(x0 - 0.09, x0 + FRAME_LIP, y0, y1, z1 - 0.05, z1 + 0.09, wood_d, kroot)
+	_box_b(x1 - FRAME_LIP, x1 + 0.09, y0, y1, z1 - 0.05, z1 + 0.09, wood_d, kroot)
 	# la percha: una barra redonda de madera clara sobre el alféizar, con dos soportes
 	var perch := MeshInstance3D.new()
 	var cyl := CylinderMesh.new()
 	cyl.top_radius = 0.022
 	cyl.bottom_radius = 0.022
-	cyl.height = (x1 - x0) - 0.06
+	cyl.height = (x1 - x0) - 0.1   # --- R5 WORLD: (era - 0.06) las puntas quedan dentro de los soportes, no a 2 mm de su cara
 	cyl.radial_segments = 8
 	perch.mesh = cyl
 	perch.material_override = wood_l
@@ -1684,7 +1705,7 @@ func _build_krapido() -> void:
 	_pick(krapido_ball, Vector3(1.0, 2.6, 0.9), Vector3(0.12, 1.3, -0.25), func(): _station_press("ventanilla"),
 		func(): _station_hover("ventanilla", true), func(): _station_hover("ventanilla", false))
 	station_nodes["ventanilla"] = krapido_ball
-	_station_label_text["ventanilla"] = "Krápido"
+	_station_label_text["ventanilla"] = "Crow Delivery"
 	_register_upgrade("krapido", krapido_node)
 
 ## Muestra u oculta la ventanilla según la mejora, tapa el hueco si no está y pone o quita la estación de la bola.
@@ -1764,7 +1785,7 @@ func _build_trophies() -> void:
 		_box_b(x, x + 0.08, TROPHY_Y - 0.3, TROPHY_Y - 0.07, -3.99, -3.8, wood, trophy_shelf)
 	var step := (TROPHY_X1 - TROPHY_X0) / float(TROPHY_MAX)
 	for i in TROPHY_MAX:
-		var s := _sprite("res://assets/props/evui_trophy_concurso_gold.png", 0.026, Vector3(TROPHY_X0 + step * (i + 0.5), TROPHY_Y, TROPHY_Z), trophy_shelf)
+		var s := _sprite("res://assets/props/evui_trophy_concurso_gold.png", 0.026, Vector3(TROPHY_X0 + step * (i + 0.5), TROPHY_Y, TROPHY_Z + 0.016 * (i % 2)), trophy_shelf)   # --- R5 WORLD: (z alterna: los vecinos se tapan)
 		s.visible = false
 		trophy_sprites.append(s)
 	refresh_trophies()

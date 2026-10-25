@@ -100,7 +100,7 @@ func on_close() -> void:
 	orders_changed.emit()
 	raven_changed.emit()
 	if had > 0:
-		main.ui.toast("Krápido: pedidos cancelados", UIKit.MUTED, 2.6)
+		main.ui.toast("Crow Delivery: orders canceled", UIKit.MUTED, 2.6)
 
 ## Todo a cero (empieza la mañana, vuelve al título, demos).
 func reset_day() -> void:
@@ -248,7 +248,7 @@ func _spawn(t: float) -> void:
 	Sfx.play("ball_chime", 0.03, -5.0)
 	world.krapido_sparkle()
 	if not Game.krapido_seen:
-		main.ui.show_tip("¡Un pedido en la [b]bola de cristal[/b]!", 8.0)
+		main.ui.show_tip("An order in the [b]crystal ball[/b]!", 8.0)
 	orders_changed.emit()
 
 ## El pedido que Graznido viene a buscar ahora (el de recogida más temprana que ya tocó).
@@ -287,7 +287,7 @@ func _visit(o: Dictionary) -> void:
 	_hurried = false
 	Sfx.play("kraa", 0.06, -4.0)
 	raven.say(Story.pick(Data.RAVEN_LINES["arrive"]), 2.4)
-	main.ui.toast("¡Graznido en la ventanilla!", UIKit.GOLD_BRIGHT, 2.6)
+	main.ui.toast("Squawk is at the window!", UIKit.GOLD_BRIGHT, 2.6)
 	orders_changed.emit()
 	raven_changed.emit()
 
@@ -303,7 +303,7 @@ func _lost() -> void:
 	raven.set_wait(-1.0)
 	raven.angry()
 	raven.say(Story.pick(Data.RAVEN_LINES["angry"]), 2.6)
-	main.ui.toast("Pedido perdido · 1 pluma", UIKit.BAD, 2.8)
+	main.ui.toast("Order lost · 1 feather", UIKit.BAD, 2.8)
 	orders_changed.emit()
 	raven_changed.emit()
 	Game.save_game()
@@ -416,7 +416,7 @@ func wait_orders() -> void:
 	for o in incoming:
 		o["pickup"] = minf(float(o["pickup"]), t)
 		t = float(o["pickup"]) + 2.0
-	main.ui.toast("Krápido: faltan pedidos", UIKit.GOLD, 2.6)
+	main.ui.toast("Crow Delivery: orders pending", UIKit.GOLD, 2.6)
 	orders_changed.emit()
 	while _active and main.is_open_phase() and (not orders.is_empty() or raven_state != "away"):
 		await get_tree().create_timer(0.3).timeout

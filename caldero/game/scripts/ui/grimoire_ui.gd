@@ -180,7 +180,7 @@ func _build_book() -> void:
 	# marcapáginas (asoman por arriba; las tapas tapan su base)
 	_tabs.clear()
 	var tx := 150.0
-	for t in [["browse", "Runas", "res://assets/icons/rune_prisa.png"], ["enchant", "Encantar", "res://assets/icons/pot_sueno_profundo.png"]]:
+	for t in [["browse", "Runes", "res://assets/icons/rune_prisa.png"], ["enchant", "Enchant", "res://assets/icons/pot_sueno_profundo.png"]]:
 		var b := TextureButton.new()
 		b.ignore_texture_size = true
 		b.stretch_mode = TextureButton.STRETCH_SCALE
@@ -230,7 +230,7 @@ func _build_book() -> void:
 	close.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	close.size = Vector2(54, 54)
 	close.position = Vector2(BOOK.x - 40, -24)
-	close.tooltip_text = "Cerrar (Esc)"
+	close.tooltip_text = "Close (Esc)"
 	close.focus_mode = Control.FOCUS_ALL
 	close.add_theme_stylebox_override("focus", _focus_sb)
 	close.set_meta("fk", "close")
@@ -620,7 +620,7 @@ func _shake(c: Control) -> void:
 # ------------------------------------------------------------------ RUNAS (hojear)
 
 func _browse_left() -> void:
-	_text(_left, "Runas", 6, 46, INK, UIKit.font_sc_bold)
+	_text(_left, "Runes", 6, 46, INK, UIKit.font_sc_bold)
 	_text(_left, "%d / %d" % [Game.known_runes().size(), Data.RUNE_ORDER.size()], 60, 24, INK_SOFT, UIKit.font_italic)
 	for i in Data.RUNE_ORDER.size():
 		var id: String = Data.RUNE_ORDER[i]
@@ -650,7 +650,7 @@ func _browse_right() -> void:
 	var d: Dictionary = Data.RUNES[_sel]
 	var known := Game.rune_known(_sel)
 	if not known:
-		_text(_right, "Página en blanco", 14, 44, INK_FAINT, UIKit.font_sc_bold)
+		_text(_right, "Blank page", 14, 44, INK_FAINT, UIKit.font_sc_bold)
 		_put(_glyph(_sel, 300.0, true), _right, Vector2(150, 110))
 		var y := 450.0
 		for way in _unlock_ways(_sel):
@@ -675,7 +675,7 @@ func _browse_right() -> void:
 	h2.add_child(_lbl("×%d" % Game.item_count(ink), 30, INK if Game.item_count(ink) > 0 else WAX))
 	_put(h2, _right, Vector2(0, 440), Vector2(600, 70))
 	_text(_right, String(d["effect"]), 528, 34, INK, UIKit.font_italic, 540.0, 30.0)
-	var go := _leather("go_enchant", "Encantar", func():
+	var go := _leather("go_enchant", "Enchant", func():
 		_sel = _sel
 		_set_mode("enchant"), "gold", "res://assets/icons/pot_sueno_profundo.png")
 	_center_x(go, _right, 640, 300)
@@ -686,12 +686,12 @@ func _unlock_ways(id: String) -> Array:
 	var out := []
 	if d.has("shop"):
 		var item: Dictionary = Data.MAGIC_ITEMS.get(String(d["shop"]), {})
-		out.append([_portrait("tobias", 96.0), "Tobías · %d oro" % int(item.get("price", 0))])
+		out.append([_portrait("tobias", 96.0), "Tobias · %d gold" % int(item.get("price", 0))])
 	if d.has("gift"):
 		var g: Dictionary = d["gift"]
-		out.append([_portrait(String(g["hero"]), 96.0), "Regalo de %s" % Story.char_name(String(g["hero"]))])
+		out.append([_portrait(String(g["hero"]), 96.0), "Gift from %s" % Story.char_name(String(g["hero"]))])
 	if int(d.get("level", 99)) < Data.LEVELS.size():
-		out.append([UIKit.icon("res://assets/icons/emote_gem.png", 4.0), "Renombre: %s" % Game.level_name(int(d["level"]))])
+		out.append([UIKit.icon("res://assets/icons/emote_gem.png", 4.0), "Renown: %s" % Game.level_name(int(d["level"]))])
 	return out
 
 func _pick_rune(id: String) -> void:
@@ -737,12 +737,12 @@ func pick_ink(ink: String) -> void:
 	if Game.item_count(ink) <= 0:
 		Sfx.play("sad", 0.0, -8.0)
 		_shake(b)
-		_flash_msg("Sin tinta: Tobías o el caldero")
+		_flash_msg("No ink: Tobias or the cauldron")
 		return
 	if ink != Game.rune_ink(_sel):
 		Sfx.play("sad", 0.0, -8.0)
 		_shake(b)
-		_flash_msg("Esa tinta no prende en esta runa")
+		_flash_msg("That ink won't take on this rune")
 		return
 	Sfx.play("plop", 0.08, -4.0)
 	_ink = ink
@@ -758,10 +758,10 @@ func _find_button(key: String) -> Control:
 	return null
 
 func _enchant_left() -> void:
-	_text(_left, "Encantar", 6, 46, INK, UIKit.font_sc_bold)
+	_text(_left, "Enchant", 6, 46, INK, UIKit.font_sc_bold)
 	var idx := _pot_index()
 	if Game.potions.is_empty():
-		_text(_left, "El estante está vacío.", 200, 32, INK_SOFT, UIKit.font_italic)
+		_text(_left, "The shelf is empty.", 200, 32, INK_SOFT, UIKit.font_italic)
 		_put(UIKit.icon("res://assets/icons/pot_desconocida.png", 8.0), _left, Vector2(236, 270))
 		_order_card(_left, Vector2(90, 600), 420.0, {})
 		return
@@ -797,7 +797,7 @@ func _enchant_left() -> void:
 	var req := _order()
 	if not req.is_empty():
 		var ready: bool = p["id"] == Story.wanted(req) and Game.next_rune_for(p, req) == ""
-		var give := _leather("give", "Entregar", func(): _deliver(), "gold" if ready else "", "res://assets/icons/pot_%s.png" % p["id"])
+		var give := _leather("give", "Hand over", func(): _deliver(), "gold" if ready else "", "res://assets/icons/pot_%s.png" % p["id"])
 		_put(give, _left, Vector2(330, by + 168))
 		give.size = Vector2(250, 66)
 	_order_card(_left, Vector2(90, 600), 420.0, p)
@@ -878,9 +878,9 @@ func _enchant_right() -> void:
 		_game.custom_minimum_size = Vector2(460, 460)
 		_put(_game, _right, Vector2(70, 142), Vector2(460, 460))
 		_game.finished.connect(_on_trace_finished)
-		var how := "Une los puntos en orden"
+		var how := "Join the dots in order"
 		_status = _text(_right, how, 612, 28, INK_SOFT, UIKit.font_italic)
-		var cancel := _leather("cancel", "Soltar", func(): _cancel_trace())
+		var cancel := _leather("cancel", "Put down", func(): _cancel_trace())
 		cancel.focus_mode = Control.FOCUS_NONE
 		_center_x(cancel, _right, 662, 220)
 		return
@@ -893,15 +893,15 @@ func _enchant_right() -> void:
 		_put(b2, _right, Vector2(26 + k * 112, 494))
 	# trazar, o por qué todavía no
 	var why := Game.enchant_problem(idx, _sel) if idx >= 0 else "none"
-	var reason := {"none": "Prepara una poción", "same": "Ya la lleva", "full": "Etiqueta llena", "ink": "Sin tinta: Tobías o el caldero",
-		"page": "Página en blanco"}
+	var reason := {"none": "Brew a potion first", "same": "Already has it", "full": "Label full", "ink": "No ink: Tobias or the cauldron",
+		"page": "Blank page"}
 	if why == "" and _ink == "":
-		_status = _text(_right, "Moja la pluma", 614, 30, INK_SOFT, UIKit.font_italic)
+		_status = _text(_right, "Dip the quill", 614, 30, INK_SOFT, UIKit.font_italic)
 	elif why != "":
 		_status = _text(_right, String(reason.get(why, why)), 614, 30, WAX, UIKit.font_italic)
 	else:
 		_status = _text(_right, "", 614, 30, INK_SOFT, UIKit.font_italic)
-	var go := _leather("trace", "Trazar", func(): start_trace(), "gold", "res://assets/icons/%s.png" % ink)
+	var go := _leather("trace", "Trace", func(): start_trace(), "gold", "res://assets/icons/%s.png" % ink)
 	go.disabled = why != "" or _ink == ""
 	_center_x(go, _right, 664, 280)
 
@@ -922,11 +922,11 @@ func start_trace() -> void:
 	var why := Game.enchant_problem(idx, _sel) if idx >= 0 else "none"
 	if why != "":
 		Sfx.play("sad", 0.0, -8.0)
-		_flash_msg("No se puede")
+		_flash_msg("Can't do that")
 		return
 	if _ink != Game.rune_ink(_sel):
 		Sfx.play("sad", 0.0, -8.0)
-		_flash_msg("Moja la pluma")
+		_flash_msg("Dip the quill")
 		return
 	busy = true
 	_trace_done = false
@@ -965,7 +965,7 @@ func _cancel_trace() -> void:
 	if world.grimoire_sprite:
 		world.grimoire_sprite.modulate = Color.WHITE
 	_refresh()
-	_flash_msg("No se gastó nada", INK_SOFT)
+	_flash_msg("Nothing was used up", INK_SOFT)
 
 func _on_trace_finished(_perfect: bool) -> void:
 	if not busy or _trace_done or not is_instance_valid(_game):
@@ -990,7 +990,7 @@ func _on_trace_finished(_perfect: bool) -> void:
 	Sfx.play("sparkle", 0.0, -3.0)
 	if world.grimoire_sprite:
 		world.spawn_sparkles(world.grimoire_sprite.global_position + Vector3(0, 0.45, 0.2), Color(1.6, 1.4, 2.0), 22)
-	_flash_msg(["", "La runa quedó débil", "¡Runa inscrita!", "¡Trazo perfecto!"][clampi(stars, 1, 3)], GREEN if stars >= 2 else INK_SOFT)
+	_flash_msg(["", "The rune came out weak", "Rune inscribed!", "Perfect stroke!"][clampi(stars, 1, 3)], GREEN if stars >= 2 else INK_SOFT)
 	enchanted.emit(p, stars)
 
 ## Al cerrar el libro: si la poción encantada ya es lo que pide el cliente, Miga ronronea (la corazonada).
@@ -1022,7 +1022,7 @@ func _on_closed() -> void:
 		return
 	if Game.magic_stats["runes"] == 1 and _order().is_empty() and not _tip_done:
 		_tip_done = true
-		ui.show_tip("Ya lleva su runa: entrégala desde el [b]estante[/b].")   # --- R3 MERGE: corto
+		ui.show_tip("It has its rune: hand it over from the [b]shelf[/b].")   # --- R3 MERGE: corto
 
 # ------------------------------------------------------------------ la nota de la maestra (la primera vez)
 
@@ -1049,7 +1049,7 @@ func _show_note() -> void:
 	card.position = Vector2(RIGHT.position.x + 20, 170)
 	var v := UIKit.vbox(14)
 	card.add_child(v)
-	v.add_child(_lbl("De tu maestra", 30, INK_SOFT, UIKit.font_sc_bold))
+	v.add_child(_lbl("From your teacher", 30, INK_SOFT, UIKit.font_sc_bold))
 	var t := _lbl(String(Data.RUNE_TEXT["note"]), 30, INK, UIKit.font_italic)
 	t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	t.custom_minimum_size = Vector2(500, 0)
@@ -1062,7 +1062,7 @@ func _show_note() -> void:
 	for id in Game.MAGIC_STARTER:
 		h.add_child(UIKit.icon("res://assets/icons/%s.png" % id, 4.0))
 		h.add_child(_lbl("×%d" % int(Game.MAGIC_STARTER[id]), 30, INK))
-	var ok := _leather("note_ok", "Entendido", func(): dismiss_note(), "gold")
+	var ok := _leather("note_ok", "Got it", func(): dismiss_note(), "gold")
 	ok.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	v.add_child(ok)
 	var pin := UIKit.icon("res://assets/ui/grimoire_pin.png", 3.0)
@@ -1144,8 +1144,8 @@ func _announce_pages() -> void:
 		if not g.is_empty() and Game.level() < int(Data.RUNES[id].get("level", 99)) and int(Game.hero_progress.get(g["hero"], 0)) >= int(g["chapter"]):
 			ui.toast(String(g["text"]), UIKit.GOLD_BRIGHT, 4.5)
 	var names: Array = news.map(func(id): return String(Data.RUNES[id]["name"]))
-	var what: String = names[0] if names.size() == 1 else ", ".join(names.slice(0, names.size() - 1)) + " y " + names[-1]
-	ui.toast("Nueva runa en el grimorio: %s" % what, UIKit.GOLD_BRIGHT, 4.0)
+	var what: String = names[0] if names.size() == 1 else ", ".join(names.slice(0, names.size() - 1)) + " and " + names[-1]
+	ui.toast("New rune in the grimoire: %s" % what, UIKit.GOLD_BRIGHT, 4.0)
 	if world and world.grimoire_sprite:
 		world.spawn_sparkles(world.grimoire_sprite.global_position + Vector3(0, 0.4, 0.15), Color(1.4, 1.2, 1.9), 20)
 

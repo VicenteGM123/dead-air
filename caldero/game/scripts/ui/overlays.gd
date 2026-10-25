@@ -25,7 +25,7 @@ var _market_vendor := ""    # --- WORLD: puesto del mercado cuyo panel está abi
 var pad_hint := ""          # controles del mando ("" = ratón y teclado); lo pone PadCursor
 var _hint_label: Label
 
-const MOUSE_HINT := "Clic: todo   ·   Espacio: avanzar"   # --- R3 PAPER: más corto
+const MOUSE_HINT := "Click to play   ·   Space: next"   # --- R3 PAPER: más corto
 
 func _ready() -> void:
 	layer = 10
@@ -117,7 +117,7 @@ func _process(_delta: float) -> void:
 func _title_row(text: String, size := 40) -> Label:
 	return UIKit.shadow(UIKit.label(text, size, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold, HORIZONTAL_ALIGNMENT_CENTER), 3)
 
-func _close_button(text := "Cerrar") -> Button:
+func _close_button(text := "Close") -> Button:
 	var b := PaperKit.button(text, func(): close(), 32)   # --- R3 PAPER
 	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	return b
@@ -151,27 +151,27 @@ func show_title(has_save: bool) -> void:
 	em.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	v.add_child(em)
 	v.add_child(PaperKit.gap(6))
-	var t := UIKit.shadow(UIKit.label("Caldero", 120, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold), 4)
+	var t := UIKit.shadow(UIKit.label("Midnight", 120, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold), 4)
 	t.custom_minimum_size = Vector2(0, 118)
 	v.add_child(t)
-	var t2 := UIKit.shadow(UIKit.label("Nocturno", 120, Color(0.82, 0.78, 1.0), UIKit.font_sc_bold), 4)
+	var t2 := UIKit.shadow(UIKit.label("Cauldron", 120, Color(0.82, 0.78, 1.0), UIKit.font_sc_bold), 4)
 	t2.custom_minimum_size = Vector2(0, 118)
 	v.add_child(t2)
-	var tag := UIKit.shadow(PaperKit.hand("una tiendita de pociones", 44, Color("eadbb8")), 3)
+	var tag := UIKit.shadow(PaperKit.hand("a little potion shop", 44, Color("eadbb8")), 3)
 	v.add_child(tag)
 	v.add_child(PaperKit.gap(34))
 	var btns := UIKit.vbox(14)
 	v.add_child(btns)
 	if has_save:
-		var c := PaperKit.wood_button("Continuar", func(): close(false); continue_game.emit(), 36)
+		var c := PaperKit.wood_button("Continue", func(): close(false); continue_game.emit(), 36)
 		c.custom_minimum_size = Vector2(360, 74)
 		c.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		btns.add_child(c)
-	var n := PaperKit.wood_button("Nueva partida" if has_save else "Empezar", func(): _confirm_new(has_save), 36)
+	var n := PaperKit.wood_button("New game" if has_save else "Start", func(): _confirm_new(has_save), 36)
 	n.custom_minimum_size = Vector2(360, 74)
 	n.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	btns.add_child(n)
-	var q := PaperKit.wood_button("Salir", func(): get_tree().quit(), 30)
+	var q := PaperKit.wood_button("Quit", func(): get_tree().quit(), 30)
 	q.custom_minimum_size = Vector2(360, 62)
 	q.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	btns.add_child(q)
@@ -201,13 +201,13 @@ func _confirm_new(has_save: bool) -> void:
 	var p := PaperKit.panel("card", Vector2(60, 36))
 	var v := UIKit.vbox(18)
 	p.add_child(v)
-	v.add_child(PaperKit.head("¿Empezar de nuevo?", 42, PaperKit.INK, HORIZONTAL_ALIGNMENT_CENTER))
-	v.add_child(PaperKit.hand("Se borra la partida guardada.", 34, PaperKit.INK_SOFT, false, HORIZONTAL_ALIGNMENT_CENTER))
+	v.add_child(PaperKit.head("Start over?", 42, PaperKit.INK, HORIZONTAL_ALIGNMENT_CENTER))
+	v.add_child(PaperKit.hand("Your saved game will be erased.", 34, PaperKit.INK_SOFT, false, HORIZONTAL_ALIGNMENT_CENTER))
 	var h := UIKit.hbox(18)
 	h.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_child(h)
-	h.add_child(PaperKit.button("Sí, borrar", func(): close(false); new_game.emit(), 34))
-	h.add_child(PaperKit.button("Volver", func(): show_title(true), 34))
+	h.add_child(PaperKit.button("Yes, erase", func(): close(false); new_game.emit(), 34))
+	h.add_child(PaperKit.button("Back", func(): show_title(true), 34))
 	PaperKit.decor(p, "paper_pin_red", Vector2(0.5, 0.0), Vector2(-10, -14))
 	# --- end R3 PAPER
 	_open("confirm", p)
@@ -249,7 +249,7 @@ func _paper_desk(kind: String, tabs: Array, tab_pages: Array) -> Control:
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	top.add_child(sp)
-	var cb := PaperKit.button("Cerrar", func(): close(), 30)
+	var cb := PaperKit.button("Close", func(): close(), 30)
 	cb.custom_minimum_size = Vector2(0, 52)
 	top.add_child(cb)
 	_spread = Control.new()
@@ -258,10 +258,10 @@ func _paper_desk(kind: String, tabs: Array, tab_pages: Array) -> Control:
 	v.add_child(_spread)
 	_sheet_l = _make_sheet("paper_sheet_a", Vector2(0, 0), kind)
 	_sheet_r = _make_sheet("paper_sheet_b", Vector2(SHEET.x + SHEET_GAP, 0), kind)
-	_fold_prev = PaperKit.image_button("paper_fold_prev", "paper_fold_prev_hover", func(): _turn(-1), 3.0, "Anterior")
+	_fold_prev = PaperKit.image_button("paper_fold_prev", "paper_fold_prev_hover", func(): _turn(-1), 3.0, "Previous")
 	_fold_prev.position = Vector2(12, SHEET.y - 14 - 54)
 	_spread.add_child(_fold_prev)
-	_fold_next = PaperKit.image_button("paper_fold_next", "paper_fold_next_hover", func(): _turn(1), 3.0, "Siguiente")
+	_fold_next = PaperKit.image_button("paper_fold_next", "paper_fold_next_hover", func(): _turn(1), 3.0, "Next")
 	_fold_next.position = Vector2(SHEET.x * 2.0 + SHEET_GAP - 12 - 54, SHEET.y - 14 - 54)
 	_spread.add_child(_fold_next)
 	var dots := UIKit.hbox(10)
@@ -411,7 +411,7 @@ func show_book() -> void:
 		{"l": func(v): _book_ingredients(v, 0), "r": func(v): _book_ingredients(v, 1), "tab": 1},
 	]
 	_page = clampi(_book_page, 0, _pages.size() - 1)
-	var desk := _paper_desk("wood", ["Pociones", "Ingredientes"], [0, 1])
+	var desk := _paper_desk("wood", ["Potions", "Ingredients"], [0, 1])
 	_fill_spread()
 	_open("book", desk)
 
@@ -419,7 +419,7 @@ func show_book() -> void:
 func _book_potions(v: VBoxContainer, half: int) -> void:
 	v.add_theme_constant_override("separation", 2)
 	if half == 0:
-		v.add_child(PaperKit.head("Pociones", 40))
+		v.add_child(PaperKit.head("Potions", 40))
 	else:
 		v.add_child(_rule_note())   # la regla de las esencias, arriba de la segunda hoja
 	var brewable := Game.brewable_potions()
@@ -449,7 +449,7 @@ func _potion_row(pid: String, can_brew: bool) -> Control:
 	if not can_brew:
 		var lk := PaperKit.pic("paper_i_lock", 3.0)
 		lk.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		lk.tooltip_text = "Faltan ingredientes en el mercado"
+		lk.tooltip_text = "Ingredients not at the market yet"
 		lk.mouse_filter = Control.MOUSE_FILTER_PASS
 		nm.add_child(lk)
 	var ef := PaperKit.hand(String(d["effect"]), 25, PaperKit.INK_SOFT if known else PaperKit.INK_FAINT, false, HORIZONTAL_ALIGNMENT_LEFT, 226)
@@ -488,11 +488,11 @@ func _rule_note() -> Control:
 	var l1 := UIKit.hbox(6)
 	l1.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_child(l1)
-	l1.add_child(PaperKit.hand("Mandan las 2 esencias más fuertes", 28, PaperKit.INK, true))
+	l1.add_child(PaperKit.hand("The 2 strongest essences decide", 28, PaperKit.INK, true))
 	var l2 := UIKit.hbox(4)
 	l2.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_child(l2)
-	l2.add_child(PaperKit.hand("Si empatan:", 26, PaperKit.INK_SOFT))
+	l2.add_child(PaperKit.hand("If tied:", 26, PaperKit.INK_SOFT))
 	for i in Data.ESSENCE_ORDER.size():
 		var ic := PaperKit.ess_icon(Data.ESSENCE_ORDER[i], 3.0)
 		ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -504,7 +504,7 @@ func _rule_note() -> Control:
 
 ## Cuatro ingredientes por hoja: boceto, nombre y sus esencias (iconos repetidos: 2 de vida = dos hojas).
 func _book_ingredients(v: VBoxContainer, half: int) -> void:
-	v.add_child(PaperKit.head("Ingredientes" if half == 0 else "", 40))
+	v.add_child(PaperKit.head("Ingredients" if half == 0 else "", 40))
 	var ids: Array = Data.INGREDIENT_ORDER.slice(half * 4, half * 4 + 4)
 	for i in ids.size():
 		v.add_child(_ingredient_row(ids[i]))
@@ -575,14 +575,14 @@ func _journal_hero(v: VBoxContainer, hid: String) -> void:
 	info.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(info)
-	info.add_child(PaperKit.head(String(ch["name"]) if known else "¿?", 44, PaperKit.INK if known else PaperKit.INK_FAINT))
+	info.add_child(PaperKit.head(String(ch["name"]) if known else "?", 44, PaperKit.INK if known else PaperKit.INK_FAINT))
 	if known:
 		info.add_child(PaperKit.hand(String(ch["title"]), 32, PaperKit.INK_SOFT))
 	var st := UIKit.stars(done, 2.0)
 	info.add_child(st)
 	if done >= 3:
 		var sl := PaperKit.seal(String(ch["name"]).left(1), "paper_seal_gold", 3.0)
-		sl.tooltip_text = "Historia completa"
+		sl.tooltip_text = "Story complete"
 		info.add_child(sl)
 	v.add_child(PaperKit.gap(6))
 	v.add_child(PaperKit.ink_rule(460, Color(0.37, 0.28, 0.2, 0.3)))
@@ -590,13 +590,13 @@ func _journal_hero(v: VBoxContainer, hid: String) -> void:
 		if e["hero"] == hid:
 			var row := UIKit.hbox(10)
 			v.add_child(row)
-			var dl := PaperKit.hand("Día %d" % int(e["day"]), 28, PaperKit.RED_INK, true)
+			var dl := PaperKit.hand("Day %d" % int(e["day"]), 28, PaperKit.RED_INK, true)
 			dl.custom_minimum_size = Vector2(76, 0)
 			dl.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 			row.add_child(dl)
 			row.add_child(PaperKit.hand(String(e["text"]), 29, PaperKit.INK, false, HORIZONTAL_ALIGNMENT_LEFT, 384))
 	if known and done < 3:
-		v.add_child(PaperKit.hand("Continuará…", 30, PaperKit.INK_FAINT))
+		v.add_child(PaperKit.hand("To be continued…", 30, PaperKit.INK_FAINT))
 
 ## Lo que se llevaron los clientes y todavía no se sabe cómo les fue.
 func _journal_pending(v: VBoxContainer) -> void:
@@ -605,7 +605,7 @@ func _journal_pending(v: VBoxContainer) -> void:
 	var hg := PaperKit.pic("paper_i_hourglass", 4.0)
 	hg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	hd.add_child(hg)
-	hd.add_child(PaperKit.head("Esperando noticias", 38))
+	hd.add_child(PaperKit.head("Waiting for news", 38))
 	v.add_child(PaperKit.ink_rule(460, Color(0.37, 0.28, 0.2, 0.3)))
 	if Game.pending.is_empty():
 		v.add_child(PaperKit.gap(30))
@@ -613,7 +613,7 @@ func _journal_pending(v: VBoxContainer) -> void:
 		en.modulate = Color(1, 1, 1, 0.5)
 		en.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		v.add_child(en)
-		v.add_child(PaperKit.hand("Nada por ahora", 32, PaperKit.INK_FAINT, false, HORIZONTAL_ALIGNMENT_CENTER))
+		v.add_child(PaperKit.hand("Nothing yet", 32, PaperKit.INK_FAINT, false, HORIZONTAL_ALIGNMENT_CENTER))
 		return
 	var shown := 0
 	for o in Game.pending:
@@ -643,28 +643,28 @@ func _journal_pending(v: VBoxContainer) -> void:
 				var ri := PaperKit.pic(rp, 1.0)
 				ri.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 				il.add_child(ri)
-		row.add_child(PaperKit.hand("día %d" % int(o.get("day", 0)), 28, PaperKit.RED_INK, true))
+		row.add_child(PaperKit.hand("Day %d" % int(o.get("day", 0)), 28, PaperKit.RED_INK, true))
 		shown += 1
 
 ## Las cuentas de la tienda: iconos y números.
 func _journal_stats(v: VBoxContainer) -> void:
-	v.add_child(PaperKit.head("Cuentas", 40))
+	v.add_child(PaperKit.head("Shop stats", 40))
 	v.add_child(PaperKit.ink_rule(460, Color(0.37, 0.28, 0.2, 0.3)))
 	v.add_child(PaperKit.gap(8))
 	var rows := [
-		["paper_i_bottle", "Preparadas", str(int(Game.stats.get("brewed", 0)))],
-		["paper_i_bag", "Ventas", str(int(Game.stats.get("sold", 0)))],
-		["res://assets/icons/emote_coin.png", "Oro ganado", str(int(Game.stats.get("earned", 0)))],
-		["res://assets/icons/emote_star.png", "Remezclas perfectas", str(int(Game.stats.get("perfect", 0)))],
-		["res://assets/icons/emote_gem.png", "Renombre", "%d · %s" % [Game.renombre, Game.level_name()]],
+		["paper_i_bottle", "Brewed", UIKit.num(int(Game.stats.get("brewed", 0)))],   # --- R5 EN-UI: «1,241»
+		["paper_i_bag", "Sold", UIKit.num(int(Game.stats.get("sold", 0)))],
+		["res://assets/icons/emote_coin.png", "Gold earned", UIKit.num(int(Game.stats.get("earned", 0)))],
+		["res://assets/icons/emote_star.png", "Perfect stirs", UIKit.num(int(Game.stats.get("perfect", 0)))],
+		["res://assets/icons/emote_gem.png", "Renown", "%s · %s" % [UIKit.num(Game.renombre), Game.level_name()]],
 	]
 	# runas inscritas (MAGIC3: magic_stats["runes"]); con datos viejos, pergaminos
 	var ms = Game.get("magic_stats")
 	if Game.get("magic_unlocked") and ms is Dictionary:
 		if ms.has("runes"):
-			rows.insert(2, ["res://assets/icons/rune_prisa.png", "Runas", str(int(ms["runes"]))])
+			rows.insert(2, ["res://assets/icons/rune_prisa.png", "Runes", str(int(ms["runes"]))])
 		elif ms.has("scrolls"):
-			rows.insert(2, ["res://assets/icons/rune_prisa.png", "Pergaminos", str(int(ms["scrolls"]))])   # --- R3 MERGE: sin spell_*.png
+			rows.insert(2, ["res://assets/icons/rune_prisa.png", "Scrolls", str(int(ms["scrolls"]))])   # --- R3 MERGE: sin spell_*.png
 	for r in rows:
 		v.add_child(_stat_row(r[0], r[1], r[2]))
 	v.add_child(PaperKit.gap(16))
@@ -697,15 +697,15 @@ func _stat_row(icon: String, label: String, value: String) -> Control:
 ## trae Pip («Encargo al mercado») cuesta el doble: Game.market_price(id, true). Lo que se ve y lo que se cobra sale
 ## de esa misma función (Game.buy_ingredient(id, cantidad, encargo)).
 const UPGRADE_SHORT := {
-	"cojin": "Mimos: +1 potencia",
-	"alfombra": "+10% propina",
-	"caldero_ancho": "3 ingredientes",
-	"huerto": "Cosecha cada mañana",
-	"estante": "12 pociones",
-	"campanilla": "+1 cliente al día",
-	"farolillos": "+15% propina",
-	"caldero_cobre": "+1 potencia",
-	"krapido": "Pedidos por cuervo",   # --- R4 RAVEN
+	"cojin": "Cuddles: +1 potency",
+	"alfombra": "+10% tips",
+	"caldero_ancho": "3 ingredients",
+	"huerto": "Daily harvest",
+	"estante": "12 potions",
+	"campanilla": "+1 customer a day",
+	"farolillos": "+15% tips",
+	"caldero_cobre": "+1 potency",
+	"krapido": "Orders by crow",   # --- R4 RAVEN
 }
 
 func show_market(mode := "day", vendor := "") -> void:
@@ -732,13 +732,13 @@ func show_market(mode := "day", vendor := "") -> void:
 	var hv := UIKit.vbox(0)
 	hv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	head.add_child(hv)
-	hv.add_child(PaperKit.head("Encargo" if day_order else "Mercado", 52))
+	hv.add_child(PaperKit.head("Errand" if day_order else "Market", 52))
 	if day_order:
-		hv.add_child(PaperKit.hand("Pip lo trae corriendo", 32, PaperKit.INK_SOFT))
+		hv.add_child(PaperKit.hand("Pip runs to fetch it", 32, PaperKit.INK_SOFT))
 	if day_order:
 		var x2 := PaperKit.pic("paper_x2", 5.0)
 		x2.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		x2.tooltip_text = "Precio doble"
+		x2.tooltip_text = "Double price"
 		x2.mouse_filter = Control.MOUSE_FILTER_PASS
 		head.add_child(x2)
 	var sp := Control.new()
@@ -753,7 +753,7 @@ func show_market(mode := "day", vendor := "") -> void:
 		v.add_child(tabs_row)
 		for i in 2:
 			var ti := i
-			var tb := PaperKit.button(["Ingredientes", "Mejoras"][i], func(): _refill_market(ti), 30, "tab")
+			var tb := PaperKit.button(["Ingredients", "Upgrades"][i], func(): _refill_market(ti), 30, "tab")
 			tabs_row.add_child(tb)
 	v.add_child(PaperKit.ink_rule(1100, Color(0.37, 0.28, 0.2, 0.3)))
 	var body := UIKit.vbox(0)
@@ -763,9 +763,9 @@ func show_market(mode := "day", vendor := "") -> void:
 	btns.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_child(btns)
 	if mode == "morning":
-		var o := PaperKit.button("Abrir tienda", func(): close(false); open_shop.emit(), 34)
+		var o := PaperKit.button("Open shop", func(): close(false); open_shop.emit(), 34)
 		btns.add_child(o)
-		btns.add_child(PaperKit.button("Preparar", func(): close(), 30))
+		btns.add_child(PaperKit.button("Brew first", func(): close(), 30))
 	else:
 		btns.add_child(_close_button())
 	_mk_body = body
@@ -784,7 +784,7 @@ func _refill_market(tab: int) -> void:
 	_market_tab = tab
 	if not is_instance_valid(_mk_body):
 		return
-	_mk_gold.text = str(Game.gold)
+	_mk_gold.text = UIKit.num(Game.gold)   # --- R5 EN-UI
 	for c in _mk_body.get_children():
 		_mk_body.remove_child(c)
 		c.queue_free()
@@ -862,7 +862,7 @@ func _ingredient_good(id: String, refresh: Callable, day_order: bool) -> Control
 		price.move_child(was, 1)
 	# --- end R3 SHIP
 	var have := PaperKit.icon_text("paper_i_bag", str(int(Game.stock.get(id, 0))), 32, PaperKit.INK_SOFT, 3.0)
-	have.tooltip_text = "Tienes"
+	have.tooltip_text = "You have"
 	have.mouse_filter = Control.MOUSE_FILTER_PASS
 	pr.add_child(have)
 	var bh := UIKit.hbox(10)
@@ -876,7 +876,7 @@ func _ingredient_good(id: String, refresh: Callable, day_order: bool) -> Control
 			refresh.call(), 34)
 		b.custom_minimum_size = Vector2(112, 56)
 		b.disabled = Game.gold < unit * qq
-		b.tooltip_text = "%d oro" % (unit * qq)
+		b.tooltip_text = "%d gold" % (unit * qq)
 		bh.add_child(b)
 	return box
 
@@ -912,7 +912,7 @@ func _market_upgrades(refresh: Callable) -> Control:
 		cv.add_child(PaperKit.hand(String(UPGRADE_SHORT.get(id, u.get("desc", ""))), 27, PaperKit.INK_SOFT, false, HORIZONTAL_ALIGNMENT_CENTER, 220 if not five else 178))   # --- R4 RAVEN
 		var b: Button
 		if owned:
-			b = PaperKit.button("Comprada", func(): pass, 28)
+			b = PaperKit.button("Bought", func(): pass, 28)
 			b.disabled = true
 			b.add_theme_color_override("font_disabled_color", PaperKit.HERB)
 		elif locked:
@@ -926,7 +926,7 @@ func _market_upgrades(refresh: Callable) -> Control:
 			var pr := PaperKit.coins(int(u["cost"]), 36, PaperKit.INK, 2.0)
 			pr.alignment = BoxContainer.ALIGNMENT_CENTER
 			cv.add_child(pr)
-			b = PaperKit.button("Comprar", func():
+			b = PaperKit.button("Buy", func():
 				if Game.buy_upgrade(id):
 					Sfx.play("levelup", 0.02, -6.0)
 				refresh.call(), 30)
@@ -1016,7 +1016,7 @@ func _show_vendor(vendor: String) -> void:
 	var btns := UIKit.hbox(16)
 	btns.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_child(btns)
-	btns.add_child(_close_button("Seguir"))
+	btns.add_child(_close_button("Done"))
 	_mk_body = cloth
 	_mk_gold = purse.get_child(1)
 	_mk_tabs = null
@@ -1110,14 +1110,14 @@ func _item_good(it: Dictionary, refresh: Callable) -> Control:
 	var qs: Array = [1] if cap > 0 else [1, 5]
 	for q in qs:
 		var qq: int = q
-		var b := PaperKit.button("Comprar" if cap > 0 else "+%d" % qq, func():
+		var b := PaperKit.button("Buy" if cap > 0 else "+%d" % qq, func():
 			if Game.has_method("buy_item") and Game.call("buy_item", id, qq):
 				Sfx.play("coin", 0.1, -8.0)
 			refresh.call(), 34)
 		b.custom_minimum_size = Vector2(112, 56)
 		b.disabled = Game.gold < price * qq or not Game.has_method("buy_item") or (cap > 0 and have >= cap)
 		if cap > 0 and have >= cap:   # MAGIC3: la página del grimorio se compra una vez ("max": 1)
-			b.text = "Aprendida" if it.has("rune") else "Comprada"
+			b.text = "Learned" if it.has("rune") else "Bought"
 			b.add_theme_color_override("font_disabled_color", PaperKit.HERB)
 		bh.add_child(b)
 	return box
@@ -1151,7 +1151,7 @@ func show_mail(letters: Array, rumors: Array = [], _first_time := false) -> void
 	var env := PaperKit.pic("paper_i_envelope", 4.0)
 	env.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	hd.add_child(env)
-	hd.add_child(_title_row("Correo", 46))
+	hd.add_child(_title_row("Mail", 46))
 	# --- R4 RANK: la línea del Escalafón del Gremio (puesto, flecha, a quién pasó), en la primera página
 	_rank_strip = RankUI.mail_strip() if Ranking.has_morning_news() else null
 	if _rank_strip:
@@ -1191,13 +1191,13 @@ func _mail_page(i: int) -> void:
 	if n > 1:
 		_mail_nav.add_child(UIKit.shadow(PaperKit.hand("%d / %d" % [i + 1, n], 34, Color("eadbb8"), true), 2))
 	if not last:
-		var b := PaperKit.wood_button("Siguiente", func():
+		var b := PaperKit.wood_button("Next", func():
 			Sfx.play("page", 0.05, -5.0)
 			_mail_page(i + 1), 32)
 		b.custom_minimum_size = Vector2(260, 64)
 		_mail_nav.add_child(b)
 	else:
-		var b2 := PaperKit.wood_button("Listo" if n > 0 else "A trabajar", func(): close(), 32)
+		var b2 := PaperKit.wood_button("Done" if n > 0 else "Get to work", func(): close(), 32)
 		b2.custom_minimum_size = Vector2(260, 64)
 		_mail_nav.add_child(b2)
 	# --- end R3 PAPER
@@ -1259,7 +1259,7 @@ func _mail_rumor_box() -> Control:
 	n.add_child(rb)
 	rb.add_child(PaperKit.head(String(Data.LETTERS["rumors"]), 32, PaperKit.INK, HORIZONTAL_ALIGNMENT_CENTER))
 	for t in _mail_rumors:
-		rb.add_child(PaperKit.hand("«%s»" % t, 30, PaperKit.INK_SOFT, false, HORIZONTAL_ALIGNMENT_CENTER, 820))
+		rb.add_child(PaperKit.hand("“%s”" % t, 30, PaperKit.INK_SOFT, false, HORIZONTAL_ALIGNMENT_CENTER, 820))
 	PaperKit.decor(n, "paper_pin_green", Vector2(0.5, 0.0), Vector2(-10, -12))
 	return n
 # --- end STORY
@@ -1282,7 +1282,7 @@ func show_invitation(inv: Dictionary) -> void:
 	var env := PaperKit.pic("paper_i_envelope", 4.0)
 	env.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	hd.add_child(env)
-	hd.add_child(_title_row("Invitación", 46))
+	hd.add_child(_title_row("Invitation", 46))
 	var paper := PaperKit.panel("sheet", Vector2(56, 34))
 	paper.custom_minimum_size = Vector2(1080, 0)
 	paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1323,9 +1323,9 @@ func show_invitation(inv: Dictionary) -> void:
 	col.add_child(facts)
 	facts.add_child(PaperKit.icon_text("evui_calendar", Events.when_text(int(inv.get("day", Game.day + 2))), 30, PaperKit.INK, 3.5))
 	var dif := UIKit.hbox(4)
-	dif.tooltip_text = "Dificultad"
+	dif.tooltip_text = "Difficulty"
 	dif.mouse_filter = Control.MOUSE_FILTER_PASS
-	dif.add_child(PaperKit.hand("Dificultad", 30, PaperKit.INK, true))
+	dif.add_child(PaperKit.hand("Difficulty", 30, PaperKit.INK, true))
 	dif.add_child(PaperKit.gap(0, 6))
 	var nd := int(inv.get("difficulty", 1))
 	for i in 3:
@@ -1334,7 +1334,7 @@ func show_invitation(inv: Dictionary) -> void:
 		dif.add_child(st)
 	facts.add_child(dif)
 	var feeb := UIKit.hbox(6)
-	feeb.add_child(PaperKit.hand("Inscripción", 30, PaperKit.INK, true))
+	feeb.add_child(PaperKit.hand("Entry fee", 30, PaperKit.INK, true))
 	feeb.add_child(PaperKit.coins(int(inv.get("fee", 0)), 30, PaperKit.RED_INK))
 	facts.add_child(feeb)
 	# premio (con oro) y riesgo (sin medalla)
@@ -1352,8 +1352,8 @@ func show_invitation(inv: Dictionary) -> void:
 	var gem := "[img=40]res://assets/icons/emote_gem.png[/img]"
 	var t := "[img=36]res://assets/ui/evui_tick_gold.png[/img] %s [color=#ffd987]+%d[/color]   %s [color=#d9c8ff]+%d[/color]   [img=40]res://assets/ui/evui_trophy.png[/img]" % [coin, int(win["gold"]), gem, int(win["renombre"])]
 	if kind == "torneo":
-		t += "  [color=#f2e2bc]+ propinas[/color]"
-	t += "        [color=#c8b9a4]Sin medalla:[/color] %s [color=#ff9b9b]%d[/color]" % [gem, int(lose["renombre"])]
+		t += "  [color=#f2e2bc]+ tips[/color]"
+	t += "        [color=#c8b9a4]No medal:[/color] %s [color=#ff9b9b]%d[/color]" % [gem, int(lose["renombre"])]
 	rw.text = "[center]%s[/center]" % t
 	strip.add_child(rw)
 	# Aceptar / Rechazar
@@ -1361,7 +1361,7 @@ func show_invitation(inv: Dictionary) -> void:
 	nav.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_child(nav)
 	var fee := int(inv.get("fee", 0))
-	var acc := PaperKit.wood_button("Aceptar", func():
+	var acc := PaperKit.wood_button("Accept", func():
 		if Game.gold < fee:
 			return
 		close(false)
@@ -1369,7 +1369,7 @@ func show_invitation(inv: Dictionary) -> void:
 	acc.custom_minimum_size = Vector2(280, 70)
 	acc.name = "Aceptar"
 	nav.add_child(acc)
-	var rej := PaperKit.wood_button("Rechazar", func():
+	var rej := PaperKit.wood_button("Decline", func():
 		close(false)
 		invite_answered.emit(false), 34)
 	rej.custom_minimum_size = Vector2(280, 70)
@@ -1378,7 +1378,7 @@ func show_invitation(inv: Dictionary) -> void:
 	if Game.gold < fee:
 		acc.disabled = true
 		acc.modulate = Color(0.7, 0.68, 0.66)
-		nav.add_child(UIKit.shadow(PaperKit.hand("Faltan %d" % (fee - Game.gold), 32, Color("ff9b9b"), true), 2))
+		nav.add_child(UIKit.shadow(PaperKit.hand("Need %d more" % (fee - Game.gold), 32, Color("ff9b9b"), true), 2))
 	_open("invite", box)
 
 ## La invitación abierta: Aceptar (true) o Rechazar (false), como un clic (el bot y las pruebas).
@@ -1404,7 +1404,7 @@ func _event_row(e: Dictionary) -> Control:
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(l)
-	var word := String(Events.MEDAL_WORD.get(medal, medal)).capitalize() if medal != "none" else "Sin medalla"
+	var word := String(Events.MEDAL_WORD.get(medal, medal)).capitalize() if medal != "none" else "No medal"
 	var vl := PaperKit.hand(word, 36, Color("7a1d18") if medal == "none" else PaperKit.INK, true, HORIZONTAL_ALIGNMENT_RIGHT)
 	vl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(vl)
@@ -1431,7 +1431,7 @@ func show_summary(day: int, today: Dictionary) -> void:
 	var moon := PaperKit.pic("paper_i_moon", 4.0)
 	moon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	hd.add_child(moon)
-	hd.add_child(PaperKit.head("Cuentas del día %d" % day, 44))
+	hd.add_child(PaperKit.head("Day %d Ledger" % day, 44))
 	v.add_child(PaperKit.gap(4))
 	v.add_child(_ledger_rule(Color(0.62, 0.16, 0.12, 0.5)))   # la doble raya roja de los libros de cuentas
 	v.add_child(PaperKit.gap(3))
@@ -1445,32 +1445,32 @@ func show_summary(day: int, today: Dictionary) -> void:
 	var ev_day: bool = today.get("event", null) is Dictionary   # --- R4 EVENTS (merge): día de evento: la tienda no abrió
 	if ev_day:   # --- R4 EVENTS (merge): primero la medalla del evento; en lugar de las filas de la tienda, una sola línea
 		lines.append(_event_row(today["event"]))
-		lines.append(_ledger_row("paper_i_lock", "Tienda cerrada: día de evento", _ledger_num("—", PaperKit.INK_SOFT)))
+		lines.append(_ledger_row("paper_i_lock", "Shop closed: event day", _ledger_num("—", PaperKit.INK_SOFT)))
 	else:
-		lines.append(_ledger_row("paper_i_person", "Atendidos", _ledger_num(str(served))))
-		lines.append(_ledger_row("res://assets/icons/emote_hourglass_0.png", "Se cansaron de esperar",
+		lines.append(_ledger_row("paper_i_person", "Served", _ledger_num(str(served))))
+		lines.append(_ledger_row("res://assets/icons/emote_hourglass_0.png", "Got tired of waiting",
 			_ledger_num(str(tired), PaperKit.RED_INK if tired > 0 else PaperKit.INK_SOFT)))
-		lines.append(_ledger_row("paper_i_door", "Fila llena: no entraron",
+		lines.append(_ledger_row("paper_i_door", "Line full: turned away",
 			_ledger_num(str(full), PaperKit.RED_INK if full > 0 else PaperKit.INK_SOFT)))
 		if closed > 0:
-			lines.append(_ledger_row("paper_i_moon", "A casa al cerrar", _ledger_num(str(closed), PaperKit.INK_SOFT)))
+			lines.append(_ledger_row("paper_i_moon", "Home at closing", _ledger_num(str(closed), PaperKit.INK_SOFT)))
 		if declined > 0:
-			lines.append(_ledger_row("paper_i_lock", "Sin atender", _ledger_num(str(declined), PaperKit.INK_SOFT)))
+			lines.append(_ledger_row("paper_i_lock", "Not served", _ledger_num(str(declined), PaperKit.INK_SOFT)))
 		if served > 0:
-			lines.append(_ledger_row("res://assets/ui/hud_clock.png", "Espera media", _ledger_num(_ledger_wait(float(today.get("avg_wait", 0.0))))))
+			lines.append(_ledger_row("res://assets/ui/hud_clock.png", "Average wait", _ledger_num(_ledger_wait(float(today.get("avg_wait", 0.0))))))
 		# --- R4 RAVEN (merge: the Krápido row moved from the old summary into PACE's ledger): entregas por cuervo
 		if Game.krapido_on() or int(today.get("deliveries", 0)) > 0:
 			var dl := int(today.get("deliveries_lost", 0))
-			lines.append(_ledger_row("res://assets/ui/raven_head.png", "Krápido",
+			lines.append(_ledger_row("res://assets/ui/raven_head.png", "Crow Delivery",
 				_ledger_num(str(int(today.get("deliveries", 0))) + ("  (−%d)" % dl if dl > 0 else ""))))
 		# --- end R4 RAVEN
 	lines.append(_ledger_rule(Color(0.37, 0.28, 0.2, 0.35)))
-	lines.append(_ledger_row("res://assets/icons/emote_coin.png", "Ganado", _ledger_num("+%d" % int(today.get("earned", 0)))))
+	lines.append(_ledger_row("res://assets/icons/emote_coin.png", "Earned", _ledger_num("+%s" % UIKit.num(int(today.get("earned", 0))))))
 	var tips := int(today.get("speed_tips", 0))
 	if tips > 0:
-		lines.append(_ledger_row("res://assets/icons/emote_hourglass_4.png", "Propinas por rapidez", _ledger_num("+%d" % tips, PaperKit.HERB)))
+		lines.append(_ledger_row("res://assets/icons/emote_hourglass_4.png", "Speed tips", _ledger_num("+%d" % tips, PaperKit.HERB)))
 	var lost := int(today.get("renombre_lost", 0))
-	lines.append(_ledger_row("res://assets/icons/emote_gem.png", "Renombre", _ledger_renown(int(today.get("renombre", 0)) + lost, lost)))
+	lines.append(_ledger_row("res://assets/icons/emote_gem.png", "Renown", _ledger_renown(int(today.get("renombre", 0)) + lost, lost)))
 	var rank_row := _ledger_rank_row()   # --- R4 RANK (merge): el puesto en el Escalafón, un renglón más del libro de cuentas
 	if rank_row:
 		lines.append(rank_row)
@@ -1482,7 +1482,7 @@ func show_summary(day: int, today: Dictionary) -> void:
 	ex.alignment = BoxContainer.ALIGNMENT_CENTER
 	ex.custom_minimum_size = Vector2(0, 58)
 	if today.get("new_recipes", []).size() > 0:
-		ex.add_child(_ledger_icon("paper_i_bottle", "Recetas nuevas"))
+		ex.add_child(_ledger_icon("paper_i_bottle", "New recipes"))
 		for pid in today["new_recipes"]:
 			var sk := PaperKit.sketch("pot", pid, 2.0)
 			sk.tooltip_text = String(Data.POTIONS.get(pid, {}).get("name", pid))
@@ -1493,12 +1493,12 @@ func show_summary(day: int, today: Dictionary) -> void:
 	if waiting > 0:
 		if ex.get_child_count() > 0:
 			ex.add_child(PaperKit.gap(0, 18))
-		ex.add_child(_ledger_icon("paper_i_envelope", "Noticias por llegar"))
+		ex.add_child(_ledger_icon("paper_i_envelope", "News on the way"))
 		ex.add_child(_ledger_num(str(waiting), PaperKit.INK_SOFT))
 	if today.get("journal", []).size() > 0:
 		if ex.get_child_count() > 0:
 			ex.add_child(PaperKit.gap(0, 18))
-		ex.add_child(_ledger_icon("paper_i_page", "Diario"))
+		ex.add_child(_ledger_icon("paper_i_page", "Journal"))
 		for e in today["journal"]:
 			var who := String(e["hero"])
 			var pt := PaperKit.portrait(Story.sprite_id(who), 0.8)
@@ -1510,7 +1510,7 @@ func show_summary(day: int, today: Dictionary) -> void:
 		v.add_child(PaperKit.gap(4))
 		v.add_child(ex)
 	v.add_child(PaperKit.gap(16))   # --- R4 MERGE: algo más de aire: el sello (torcido) no pisa el último renglón (el Escalafón)
-	var b := PaperKit.button("Dormir", func(): close(false); sleep.emit(), 38, "card", "paper_i_moon")
+	var b := PaperKit.button("Sleep", func(): close(false); sleep.emit(), 38, "card", "paper_i_moon")
 	b.custom_minimum_size = Vector2(300, 64)
 	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	v.add_child(b)
@@ -1521,19 +1521,19 @@ func show_summary(day: int, today: Dictionary) -> void:
 	if ev_day:   # --- R4 EVENTS (merge): el sello del día de evento es la medalla
 		var md := String((today["event"] as Dictionary).get("medal", "none"))
 		var good := md == "gold" or md == "silver"
-		stamp = _ledger_stamp({"gold": "¡Oro!", "silver": "Plata", "bronze": "Bronce"}.get(md, "Sin medalla"),
+		stamp = _ledger_stamp({"gold": "Gold!", "silver": "Silver", "bronze": "Bronze"}.get(md, "No medal"),
 			PaperKit.HERB if good else (PaperKit.INK if md == "bronze" else PaperKit.RED_INK))
 		PaperKit.attach(p, stamp, Vector2(1, 1), Vector2(-236, -98), false, -0.12)   # --- R4 MERGE: junto a «Dormir» (antes -116)
 		stamp.modulate.a = 0.0
 	elif came > 0:
 		var rate := float(served) / float(came)
-		var verdict := "Día flojo"
+		var verdict := "Slow day"
 		if rate >= 0.9 and served >= 3:
-			verdict = "¡Gran día!"
+			verdict = "Great day!"
 		elif rate >= 0.7:
-			verdict = "Buen día"
+			verdict = "Good day"
 		elif rate >= 0.45:
-			verdict = "Día duro"
+			verdict = "Tough day"
 		stamp = _ledger_stamp(verdict, PaperKit.HERB if rate >= 0.7 else PaperKit.RED_INK)
 		PaperKit.attach(p, stamp, Vector2(1, 1), Vector2(-236, -98), false, -0.12)   # --- R4 MERGE: junto a «Dormir» (antes -116)
 		stamp.modulate.a = 0.0
@@ -1571,8 +1571,8 @@ func _ledger_rank_row() -> Control:
 		return null
 	var val := UIKit.hbox(8)
 	val.add_child(RankUI.arrow(int(mv.get("delta", 0)), 30, false))
-	val.add_child(_ledger_num("%dº" % int(mv.get("pos", 30))))
-	return _ledger_row("rank_crest_gremio", "Escalafón", val)
+	val.add_child(_ledger_num(UIKit.ordinal(int(mv.get("pos", 30)))))   # --- R5 EN-UI: «12th»
+	return _ledger_row("rank_crest_gremio", "Rankings", val)
 # --- end R4 RANK
 
 ## Un renglón: icono, concepto, una línea de puntos y la cifra.
@@ -1665,14 +1665,14 @@ func show_level_up(lv: int) -> void:
 	var gem := UIKit.icon("res://assets/icons/emote_gem.png", 5.0)
 	gem.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	v.add_child(gem)
-	v.add_child(PaperKit.head("¡Renombre!", 42, PaperKit.INK, HORIZONTAL_ALIGNMENT_CENTER))
+	v.add_child(PaperKit.head("Renown!", 42, PaperKit.INK, HORIZONTAL_ALIGNMENT_CENTER))
 	v.add_child(PaperKit.hand(Game.level_name(lv), 60, Color("5b3a8c"), true, HORIZONTAL_ALIGNMENT_CENTER))
 	var rw := _level_rewards(lv)
 	if rw:
 		v.add_child(PaperKit.ink_rule(480, Color(0.37, 0.28, 0.2, 0.3)))
 		v.add_child(rw)
 	v.add_child(PaperKit.gap(6))
-	var b := PaperKit.button("¡Bien!", func(): close(), 36)
+	var b := PaperKit.button("Nice!", func(): close(), 36)
 	b.custom_minimum_size = Vector2(220, 62)
 	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	v.add_child(b)
@@ -1687,8 +1687,8 @@ func _level_rewards(lv: int) -> Control:
 	for id in Data.INGREDIENT_ORDER:
 		if int(Data.INGREDIENTS[id]["level"]) == lv:
 			h.add_child(_reward_item(PaperKit.pic("res://assets/icons/ing_%s.png" % id, 4.0), String(Data.INGREDIENTS[id]["name"])))
-	if String(Data.LEVEL_REWARDS.get(lv, "")).contains("cliente"):
-		h.add_child(_reward_item(PaperKit.pic("paper_i_person", 6.0), "+1 cliente"))
+	if String(Data.LEVEL_REWARDS.get(lv, "")).to_lower().contains("customer"):   # --- R5 EN-UI: contrato C2 con EN-DATA
+		h.add_child(_reward_item(PaperKit.pic("paper_i_person", 6.0), "+1 customer"))
 	for u in Data.UPGRADE_ORDER:
 		if int(Data.UPGRADES[u]["level"]) == lv:
 			h.add_child(_reward_item(PaperKit.pic("paper_up_%s" % u, 4.0), String(Data.UPGRADES[u]["name"])))
@@ -1715,8 +1715,8 @@ func show_settings() -> void:
 	p.custom_minimum_size = Vector2(620, 0)
 	var v := UIKit.vbox(16)
 	p.add_child(v)
-	v.add_child(PaperKit.head("Ajustes", 46, PaperKit.INK, HORIZONTAL_ALIGNMENT_CENTER))
-	for s in [["paper_i_note", "music_volume", "Música"], ["paper_i_speaker", "sfx_volume", "Efectos"]]:
+	v.add_child(PaperKit.head("Settings", 46, PaperKit.INK, HORIZONTAL_ALIGNMENT_CENTER))
+	for s in [["paper_i_note", "music_volume", "Music"], ["paper_i_speaker", "sfx_volume", "Sounds"]]:
 		var h := UIKit.hbox(16)
 		v.add_child(h)
 		var ic := PaperKit.pic(s[0], 5.0)
@@ -1744,7 +1744,7 @@ func show_settings() -> void:
 	si.custom_minimum_size = Vector2(50, 50)
 	fh.add_child(si)
 	var fs := CheckButton.new()
-	fs.text = "Pantalla completa"
+	fs.text = "Full screen"
 	fs.add_theme_font_override("font", PaperKit.font_hand_bold)
 	fs.add_theme_font_size_override("font_size", 34)
 	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color"]:
@@ -1760,10 +1760,10 @@ func show_settings() -> void:
 	var h2 := UIKit.hbox(16)
 	h2.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_child(h2)
-	var home := PaperKit.button("Inicio", func(): close(false); Game.save_game(); to_title.emit(), 32, "card", "paper_i_door")
-	home.tooltip_text = "Guardar y volver al título"
+	var home := PaperKit.button("Home", func(): close(false); Game.save_game(); to_title.emit(), 32, "card", "paper_i_door")
+	home.tooltip_text = "Save and go back to the title"
 	h2.add_child(home)
-	h2.add_child(PaperKit.button("Cerrar", func(): Game.save_game(); close(), 32))
+	h2.add_child(PaperKit.button("Close", func(): Game.save_game(); close(), 32))
 	PaperKit.decor(p, "paper_pin_blue", Vector2(0.5, 0.0), Vector2(-10, -12))
 	_open("settings", p)
 
@@ -1801,15 +1801,15 @@ func show_stir(difficulty := 1.0) -> void:
 	game.speed = 1.6 + 0.3 * difficulty
 	UIKit.place(game, Vector2(0.5, 0.5), Vector2(-180, -250), Vector2(360, 360))
 	holder.add_child(game)
-	var how := "A" if pad_hint != "" else "Clic o Espacio"   # --- R3 PAPER: una línea corta
-	var info := UIKit.shadow(UIKit.label("¡Remueve!   %s en el dorado" % how, 28, UIKit.TEXT, UIKit.font_bold, HORIZONTAL_ALIGNMENT_CENTER))
+	var how := "A" if pad_hint != "" else "Click or Space"   # --- R3 PAPER: una línea corta
+	var info := UIKit.shadow(UIKit.label("Stir!   %s on the gold" % how, 28, UIKit.TEXT, UIKit.font_bold, HORIZONTAL_ALIGNMENT_CENTER))
 	UIKit.place(info, Vector2(0.5, 0.5), Vector2(-600, 130), Vector2(1200, 40))
 	holder.add_child(info)
 	holder.gui_input.connect(func(ev):
 		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
 			game.press())
 	game.finished.connect(func(perfect: bool):
-		info.text = "¡Perfecto! +1 potencia" if perfect else "¡Bien!"   # --- R3 PAPER
+		info.text = "Perfect! +1 potency" if perfect else "Nice!"   # --- R3 PAPER
 		info.add_theme_color_override("font_color", UIKit.GOLD_BRIGHT if perfect else UIKit.TEXT)
 		await get_tree().create_timer(0.7).timeout
 		close(false)

@@ -100,7 +100,8 @@ func _ready() -> void:
 # ------------------------------------------------------------------ HUD (estado)
 
 # --- R3 BENCH: «Día 3 ☀» / monedas / barra de renombre. Sin «oro», sin la hora ni el título en palabras.
-const TOD_ICONS := {"Mañana": "manana", "Mediodía": "mediodia", "Tarde": "tarde", "Atardecer": "atardecer", "Noche": "noche"}
+# --- R5 EN-UI: las palabras en inglés (main.gd llama a set_time_label con ellas; los ids de los iconos no cambian)
+const TOD_ICONS := {"Morning": "manana", "Midday": "mediodia", "Afternoon": "tarde", "Dusk": "atardecer", "Night": "noche"}
 
 func _build_hud() -> void:
 	hud_panel = UIKit.fancy_panel(UIKit.BG, 14)
@@ -111,12 +112,12 @@ func _build_hud() -> void:
 	hud_panel.add_child(v)
 	var top := UIKit.hbox(10)
 	v.add_child(top)
-	day_label = UIKit.shadow(UIKit.label("Día 1", 30, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold))
+	day_label = UIKit.shadow(UIKit.label("Day 1", 30, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold))
 	top.add_child(day_label)
 	time_icon = UIKit.icon("res://assets/ui/tod_manana.png", 3.0)
 	time_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	top.add_child(time_icon)
-	time_label = UIKit.label("Mañana", 20, UIKit.MUTED, UIKit.font_italic)
+	time_label = UIKit.label("Morning", 20, UIKit.MUTED, UIKit.font_italic)
 	time_label.visible = false
 	top.add_child(time_label)
 	var g := UIKit.hbox(8)
@@ -128,7 +129,7 @@ func _build_hud() -> void:
 	var r := UIKit.hbox(8)
 	v.add_child(r)
 	r.add_child(UIKit.icon("res://assets/icons/emote_gem.png", 1.6))
-	level_label = UIKit.label("Aprendiz", 18, Color(0.85, 0.78, 1.0), UIKit.font_bold)
+	level_label = UIKit.label("Apprentice", 18, Color(0.85, 0.78, 1.0), UIKit.font_bold)
 	level_label.visible = false
 	r.add_child(level_label)
 	level_bar = ProgressBar.new()
@@ -141,8 +142,8 @@ func _build_hud() -> void:
 	_pace_build_clock(v)   # --- R4 PACE: el reloj del día y la fila, bajo «Día n»
 
 func refresh_hud() -> void:
-	day_label.text = "Día %d" % Game.day
-	gold_label.text = str(Game.gold)
+	day_label.text = "Day %d" % Game.day
+	gold_label.text = UIKit.num(Game.gold)   # --- R5 EN-UI: «1,241»
 	level_label.text = Game.level_name()
 	hud_panel.tooltip_text = "%s · %s" % [Game.level_name(), time_label.text]
 	var tw := create_tween()
@@ -168,8 +169,8 @@ func _build_menu() -> void:
 	menu_box.alignment = BoxContainer.ALIGNMENT_END
 	menu_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(menu_box)
-	for m in [["book", "Recetas", "hud_book"], ["journal", "Diario", "hud_journal"],
-			["market", "Mercado", "hud_market"], ["rank", "Escalafón", "hud_rank"], ["settings", "Ajustes", "hud_settings"]]:   # --- R4 RANK: el Escalafón del Gremio
+	for m in [["book", "Recipes", "hud_book"], ["journal", "Journal", "hud_journal"],
+			["market", "Market", "hud_market"], ["rank", "Rankings", "hud_rank"], ["settings", "Settings", "hud_settings"]]:   # --- R4 RANK: el Escalafón del Gremio
 		var b := UIKit.button("", func(): menu_pressed.emit(m[0]), 22)
 		b.custom_minimum_size = Vector2(64, 64)
 		b.tooltip_text = m[1]
@@ -355,12 +356,15 @@ func _fill_hint(hint: String) -> void:
 		var l := PaperKit.hand(hint, 24, Color("6e4e2e"), false, HORIZONTAL_ALIGNMENT_LEFT, 380.0)   # --- R3 MERGE: a mano
 		order_hint.add_child(l)
 
-## Las esencias que nombra una pista ("Vida y sombra, para dormir." -> ["vida", "sombra"]).
+## Las esencias que nombra una pista ("Life and shadow, for sleep." -> ["vida", "sombra"]).
+## --- R5 EN-UI: busca el NOMBRE de cada esencia (Data.ESSENCES[e]["name"]: fire, frost, life, shadow, light) como
+## palabra suelta, no su id castellano (contrato C1 con EN-DATA: las pistas usan esas palabras exactas).
 static func hint_essences(hint: String) -> Array:
 	var low := hint.to_lower()
 	var out := []
 	for e in Data.ESSENCE_ORDER:
-		var re := RegEx.create_from_string("(^|[^a-záéíóúñ])%s($|[^a-záéíóúñ])" % e)
+		var word := String(Data.ESSENCES.get(e, {}).get("name", e)).to_lower()
+		var re := RegEx.create_from_string("(^|[^a-z])%s($|[^a-z])" % word)
 		if re.search(low):
 			out.append(e)
 	return out
@@ -455,6 +459,7 @@ func say(who: String, text: String, choices: Array = []) -> void:
 		c.queue_free()
 	for ch in choices:
 		var b := UIKit.button(ch[1], func(): choice_made.emit(ch[0]), 23)
+		b.set_meta("choice", ch[0])   # --- R5 EN-UI: el id de la elección (el bot lo lee: no compara el texto del botón)
 		b.visible = false
 		dialog_choices.add_child(b)
 	dialog_more.visible = false
@@ -941,7 +946,7 @@ func _pace_build_clock(v: VBoxContainer) -> void:
 	clock_row.add_child(clock_label)
 	queue_box = UIKit.hbox(4)
 	queue_box.mouse_filter = Control.MOUSE_FILTER_PASS
-	queue_box.tooltip_text = "En la fila"
+	queue_box.tooltip_text = "In line"
 	clock_row.add_child(queue_box)
 	queue_icon = UIKit.icon("res://assets/ui/hud_queue.png", 3.0)
 	queue_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -985,10 +990,10 @@ func set_clock(minutes: int, state := "open") -> void:
 		_clock_min = shown
 		_clock_state = state
 		if state == "closed":
-			clock_label.text = "Cerrado"
+			clock_label.text = "Closed"
 			clock_label.add_theme_font_size_override("font_size", 24)
 		else:
-			clock_label.text = "%d:%02d" % [shown / 60, shown % 60]
+			clock_label.text = UIKit.clock(shown)   # --- R5 EN-UI: 12 horas, sin AM/PM («1:00» = 13:00)
 			clock_label.add_theme_font_size_override("font_size", 30)
 		var col := UIKit.GOLD_BRIGHT
 		if state == "late":

@@ -14,8 +14,8 @@ const DPAD_STEP := 12.0      # un toque de la cruceta
 const DPAD_SPEED := 480.0    # cruceta mantenida
 const SNAP_DIST := 60.0      # al soltar el stick cerca de algo tocable, el cursor se acerca solo
 const PAD_DEVICE := 77       # marca los eventos que inventa el mando (para no confundirlos con el ratón y el teclado)
-const PAD_HINT := "A tocar · B volver · X avanzar · Y recetas · Vista diario"   # --- R3 MERGE: dieta de texto
-const WEB_SOUND_HINT := "Sonido: un clic o una tecla"   # --- R3 MERGE: dieta de texto
+const PAD_HINT := "A tap · B back · X next · Y recipes · View journal"   # --- R3 MERGE: dieta de texto
+const WEB_SOUND_HINT := "Sound: click or press a key"   # --- R3 MERGE: dieta de texto
 
 static var active := false          # el cursor del mando está a la vista (y el del sistema, escondido)
 static var where := Vector2.ZERO    # dónde está, en coordenadas del lienzo (los tooltips lo usan)

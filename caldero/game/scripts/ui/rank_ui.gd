@@ -52,14 +52,13 @@ static func crest(id: String, scale := 2.0) -> TextureRect:
 	t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	return t
 
-## Miles con punto (1.284).
+## --- R5 EN-UI: miles con coma (1,284): UIKit.num.
 static func fmt(n: int) -> String:
-	var s := str(absi(n))
-	var out := ""
-	while s.length() > 3:
-		out = "." + s.right(3) + out
-		s = s.left(s.length() - 3)
-	return ("-" if n < 0 else "") + s + out
+	return UIKit.num(n)
+
+## --- R5 EN-UI: el pueblo al empezar una casilla o un renglón va con mayúscula («the Grey Mountain» -> «The Grey Mountain»)
+static func cap(s: String) -> String:
+	return s.left(1).to_upper() + s.substr(1)
 
 ## La flecha de cambio: ▲3 verde, ▼2 roja o una raya gris.
 static func arrow(delta: int, size := 24, show_same := true) -> HBoxContainer:
@@ -175,14 +174,14 @@ class Board extends PanelContainer:
 		top.add_child(tv)
 		var plq := PaperKit.pic("rank_plaque", 3.0)
 		tv.add_child(plq)
-		var title := UIKit.label("Escalafón del Gremio", 40, Color("f4e4bd"), UIKit.font_sc_bold, HORIZONTAL_ALIGNMENT_CENTER)
+		var title := UIKit.label("Guild Rankings", 40, Color("f4e4bd"), UIKit.font_sc_bold, HORIZONTAL_ALIGNMENT_CENTER)
 		title.add_theme_color_override("font_outline_color", Color(0.1, 0.04, 0.02, 0.9))
 		title.add_theme_constant_override("outline_size", 6)
 		title.set_anchors_preset(Control.PRESET_FULL_RECT)
 		title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		title.offset_top = -4
 		plq.add_child(title)
-		var sub := UIKit.shadow(PaperKit.hand("Boticarios de Arvendal · día %d" % Game.day, 28, Color("eadbb8")), 2)
+		var sub := UIKit.shadow(PaperKit.hand("Arvendal Apothecaries · Day %d" % Game.day, 28, Color("eadbb8")), 2)
 		sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		tv.add_child(sub)
 		var sp := Control.new()
@@ -193,21 +192,21 @@ class Board extends PanelContainer:
 		var you := UIKit.vbox(-6)
 		you.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		top.add_child(you)
-		var yl := UIKit.shadow(PaperKit.hand("Tu puesto", 26, Color("eadbb8")), 2)
+		var yl := UIKit.shadow(PaperKit.hand("Your place", 26, Color("eadbb8")), 2)
 		yl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		you.add_child(yl)
 		var yh := UIKit.hbox(8)
 		yh.alignment = BoxContainer.ALIGNMENT_END
 		you.add_child(yh)
-		var yp := UIKit.label("%dº" % int(me["pos"]), 52, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold)
+		var yp := UIKit.label(UIKit.ordinal(int(me["pos"])), 52, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold)
 		yp.add_theme_color_override("font_outline_color", Color(0.1, 0.04, 0.02, 0.9))
 		yp.add_theme_constant_override("outline_size", 6)
 		yh.add_child(yp)
-		var yof := UIKit.shadow(PaperKit.hand("de %d" % Ranking.size(), 28, Color("eadbb8")), 2)
+		var yof := UIKit.shadow(PaperKit.hand("of %d" % Ranking.size(), 28, Color("eadbb8")), 2)
 		yof.size_flags_vertical = Control.SIZE_SHRINK_END
 		yh.add_child(yof)
 		top.add_child(PaperKit.gap(0, 12))
-		var cb := PaperKit.button("Cerrar", func(): ov.close(), 30)
+		var cb := PaperKit.button("Close", func(): ov.close(), 30)
 		cb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		top.add_child(cb)
 		# las dos hojas
@@ -267,7 +266,7 @@ class Board extends PanelContainer:
 		nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		nm.size_flags_stretch_ratio = 2.0
 		h.add_child(nm)
-		var tw := PaperKit.hand(String(r["town_name"]), 22, PaperKit.INK_SOFT)
+		var tw := PaperKit.hand(RankUI.cap(String(r["town_name"])), 22, PaperKit.INK_SOFT)   # --- R5 EN-UI: «The Grey Mountain» en su casilla
 		tw.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		tw.size_flags_stretch_ratio = 1.0
 		tw.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -335,13 +334,13 @@ class Board extends PanelContainer:
 		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		v.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		detail.add_child(v)
-		var name := String(r["name"]) + ("  (tú)" if r["me"] else "")
+		var name := String(r["name"]) + ("  (you)" if r["me"] else "")
 		v.add_child(PaperKit.head(name, 32, PaperKit.RED_INK if r["me"] else PaperKit.INK))
 		var who := String(r["owner"])
 		if String(r["note"]) != "":
 			who += ", " + String(r["note"])
 		if r["rival"]:
-			who += " · tu rival"
+			who += " · your rival"
 		v.add_child(PaperKit.hand(who, 27, PaperKit.INK_SOFT))
 		var lore := Ranking.town_lore(String(r["town"]))
 		var tname := String(r["town_name"])
@@ -355,7 +354,7 @@ class Board extends PanelContainer:
 		var ah := UIKit.hbox(6)
 		ah.alignment = BoxContainer.ALIGNMENT_END
 		rv.add_child(ah)
-		ah.add_child(PaperKit.hand("%dº" % int(r["pos"]), 30, PaperKit.INK, true))
+		ah.add_child(PaperKit.hand(UIKit.ordinal(int(r["pos"])), 30, PaperKit.INK, true))
 		ah.add_child(RankUI.arrow(int(r["delta"]), 24, false))
 
 	func _unhandled_input(ev: InputEvent) -> void:
@@ -393,13 +392,13 @@ static func my_path_note() -> Control:
 	n.add_child(v)
 	var hd := UIKit.hbox(8)
 	v.add_child(hd)
-	hd.add_child(PaperKit.head("Tu camino", 28))
+	hd.add_child(PaperKit.head("Your climb", 28))
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hd.add_child(sp)
 	var mv: Dictionary = Ranking.last_move
 	if not mv.is_empty():
-		hd.add_child(PaperKit.hand("ayer +%d" % int(mv.get("points", 0)), 28, UP_COL, true))
+		hd.add_child(PaperKit.hand("yesterday +%d" % int(mv.get("points", 0)), 28, UP_COL, true))
 	var ch := PathChart.new()
 	ch.custom_minimum_size = Vector2(380, 74)
 	v.add_child(ch)
@@ -461,15 +460,15 @@ static func gaceta(ov) -> Control:
 	# las «orejas» del periódico
 	var ears := UIKit.hbox(10)
 	v.add_child(ears)
-	ears.add_child(PaperKit.hand("Arvendal · día %d" % int(g["day"]), 28, PaperKit.INK))
+	ears.add_child(PaperKit.hand("Arvendal · Day %d" % int(g["day"]), 28, PaperKit.INK))
 	var s1 := Control.new()
 	s1.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ears.add_child(s1)
-	ears.add_child(PaperKit.hand("Edición nº %d" % int(g["edition"]), 28, PaperKit.INK, true))
+	ears.add_child(PaperKit.hand("Issue No. %d" % int(g["edition"]), 28, PaperKit.INK, true))
 	var s2 := Control.new()
 	s2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ears.add_child(s2)
-	ears.add_child(PaperKit.hand("Un cobre", 28, PaperKit.INK))
+	ears.add_child(PaperKit.hand("One copper", 28, PaperKit.INK))
 	v.add_child(PaperKit.ink_rule(1260, Color("2a1d14")))
 	var cols := UIKit.hbox(30)
 	v.add_child(cols)
@@ -477,7 +476,7 @@ static func gaceta(ov) -> Control:
 	var left := UIKit.vbox(2)
 	left.custom_minimum_size = Vector2(640, 0)
 	cols.add_child(left)
-	left.add_child(PaperKit.head("Los diez del Escalafón", 32, Color("2a1d14")))
+	left.add_child(PaperKit.head("The Top Ten", 32, Color("2a1d14")))
 	for r in g["top"]:
 		left.add_child(_gaceta_row(r))
 	var me: Dictionary = g["me"]
@@ -520,7 +519,7 @@ static func gaceta(ov) -> Control:
 	var btns := UIKit.hbox(10)
 	btns.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_child(btns)
-	var b := PaperKit.wood_button("Seguir", func(): ov.close(), 32)
+	var b := PaperKit.wood_button("Continue", func(): ov.close(), 32)
 	b.custom_minimum_size = Vector2(260, 64)
 	btns.add_child(b)
 	PaperKit.decor(p, "paper_pin_brass", Vector2(0.5, 0.0), Vector2(-10, -12))
@@ -545,11 +544,11 @@ static func _gaceta_row(r: Dictionary) -> Control:
 	pos.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(pos)
 	h.add_child(crest(String(r["id"]), 2.0))
-	var nm := PaperKit.hand(String(r["name"]) + ("  (tú)" if mine else ""), 27, ink, true)
+	var nm := PaperKit.hand(String(r["name"]) + ("  (you)" if mine else ""), 27, ink, true)
 	nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	nm.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(nm)
-	var tw := PaperKit.hand(String(r["town_name"]), 22, PaperKit.INK_SOFT)
+	var tw := PaperKit.hand(RankUI.cap(String(r["town_name"])), 22, PaperKit.INK_SOFT)   # --- R5 EN-UI: «The Grey Mountain» en su casilla
 	tw.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(tw)
 	var sc := PaperKit.hand(fmt(int(r["score"])), 25, ink, true, HORIZONTAL_ALIGNMENT_RIGHT)
@@ -579,12 +578,12 @@ static func mail_strip() -> Control:
 	var tv := UIKit.vbox(-8)
 	tv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(tv)
-	tv.add_child(PaperKit.head("Escalafón del Gremio", 24, PaperKit.INK_SOFT))
+	tv.add_child(PaperKit.head("Guild Rankings", 24, PaperKit.INK_SOFT))
 	var ph := UIKit.hbox(8)
 	tv.add_child(ph)
 	var pos := int(m["pos"])
-	ph.add_child(PaperKit.hand("%dº" % pos, 44, PaperKit.RED_INK if pos <= 3 else PaperKit.INK, true))
-	var of := PaperKit.hand("de %d" % int(m.get("size", 30)), 26, PaperKit.INK_SOFT)
+	ph.add_child(PaperKit.hand(UIKit.ordinal(pos), 44, PaperKit.RED_INK if pos <= 3 else PaperKit.INK, true))
+	var of := PaperKit.hand("of %d" % int(m.get("size", 30)), 26, PaperKit.INK_SOFT)
 	of.size_flags_vertical = Control.SIZE_SHRINK_END
 	ph.add_child(of)
 	var ar := arrow(int(m["delta"]), 30)
@@ -602,12 +601,12 @@ static func mail_strip() -> Control:
 	if evm in ["oro", "plata", "bronce"]:
 		var em := medal_icon(evm, 2.0)
 		em.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		em.tooltip_text = "Medalla del evento"
+		em.tooltip_text = "Event medal"
 		em.mouse_filter = Control.MOUSE_FILTER_PASS
 		h.add_child(em)
 	var pts := PaperKit.hand("+%d" % int(m.get("points", 0)), 32, UP_COL, true)
 	pts.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	pts.tooltip_text = "Puntos del Gremio de ayer"
+	pts.tooltip_text = "Yesterday's Guild points"
 	pts.mouse_filter = Control.MOUSE_FILTER_PASS
 	h.add_child(pts)
 	PaperKit.decor(p, "paper_pin_brass", Vector2(0.0, 0.0), Vector2(14, -10))
@@ -619,18 +618,18 @@ static func morning_text(m: Dictionary) -> String:
 	var by: Array = m.get("passed_by", [])
 	var pos := int(m.get("pos", 30))
 	if pos == 1 and int(m.get("delta", 0)) > 0:
-		return "¡La mejor tienda de Arvendal!"
+		return "The best shop in Arvendal!"
 	if not passed.is_empty():
 		if passed.size() == 1:
-			return "Pasaste a %s." % passed[0]
+			return "You passed %s." % passed[0]
 		if passed.size() == 2:
-			return "Pasaste a %s y a %s." % [passed[0], passed[1]]
-		return "Pasaste a %s y a %d más." % [passed[0], passed.size() - 1]
+			return "You passed %s and %s." % [passed[0], passed[1]]
+		return "You passed %s and %d more." % [passed[0], passed.size() - 1]
 	if not by.is_empty():
-		return "Te pasó %s." % by[0] if by.size() == 1 else "Te pasaron %s y %d más." % [by[0], by.size() - 1]
+		return "%s passed you." % by[0] if by.size() == 1 else "%s and %d more passed you." % [by[0], by.size() - 1]
 	if pos == 1:
-		return "Sigues en lo más alto."
-	return "Sigues en el puesto %d." % pos
+		return "Still on top."
+	return "Still in %s place." % UIKit.ordinal(pos)   # --- R5 EN-UI: «Still in 12th place.»
 
 ## La fila «Escalafón» de la hoja de cuentas de la noche (lo que acaba de pasar hoy).
 static func summary_row() -> Control:
@@ -642,12 +641,12 @@ static func summary_row() -> Control:
 	var i := crest("gremio", 1.6)
 	i.custom_minimum_size = Vector2(48, 48)
 	h.add_child(i)
-	var l := PaperKit.hand("Escalafón", 32, PaperKit.INK_SOFT)
+	var l := PaperKit.hand("Rankings", 32, PaperKit.INK_SOFT)
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(l)
 	h.add_child(arrow(int(mv.get("delta", 0)), 28, false))
-	var n := PaperKit.hand("%dº" % int(mv.get("pos", 30)), 38, PaperKit.INK, true)
+	var n := PaperKit.hand(UIKit.ordinal(int(mv.get("pos", 30))), 38, PaperKit.INK, true)
 	n.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(n)
 	return h
@@ -664,9 +663,9 @@ static func credits(ov, done: Callable) -> Control:
 	var tr := PaperKit.pic("rank_trophy", 4.0)
 	tr.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	root.add_child(tr)
-	var t := UIKit.shadow(UIKit.label("Caldero Nocturno", 72, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold, HORIZONTAL_ALIGNMENT_CENTER), 4)
+	var t := UIKit.shadow(UIKit.label("Midnight Cauldron", 72, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold, HORIZONTAL_ALIGNMENT_CENTER), 4)
 	root.add_child(t)
-	var st := UIKit.shadow(PaperKit.hand("Primera del Escalafón del Gremio de Boticarios de Arvendal", 40, Color("eadbb8"), false, HORIZONTAL_ALIGNMENT_CENTER), 2)
+	var st := UIKit.shadow(PaperKit.hand("Number One in the Arvendal Apothecaries' Guild Rankings", 40, Color("eadbb8"), false, HORIZONTAL_ALIGNMENT_CENTER), 2)
 	root.add_child(st)
 	var sc := ScrollContainer.new()
 	sc.custom_minimum_size = Vector2(1500, 520)
@@ -687,10 +686,10 @@ static func credits(ov, done: Callable) -> Control:
 	for c in cast_list():
 		grid.add_child(_credit(c[0], c[1], c[2]))
 	inner.add_child(PaperKit.gap(30))
-	var thanks := UIKit.shadow(PaperKit.hand("Gracias por jugar", 52, UIKit.GOLD_BRIGHT, true, HORIZONTAL_ALIGNMENT_CENTER), 3)
+	var thanks := UIKit.shadow(PaperKit.hand("Thanks for playing", 52, UIKit.GOLD_BRIGHT, true, HORIZONTAL_ALIGNMENT_CENTER), 3)
 	inner.add_child(thanks)
 	inner.add_child(PaperKit.gap(300))
-	var b := PaperKit.wood_button("Seguir jugando", func():
+	var b := PaperKit.wood_button("Keep playing", func():
 		ov.close(false)
 		done.call(), 38)
 	b.custom_minimum_size = Vector2(420, 78)
@@ -705,13 +704,13 @@ static func credits(ov, done: Callable) -> Control:
 
 ## El elenco para los créditos: [sprite, nombre, oficio]. Ella y Miga primero; Fizz, al final.
 static func cast_list() -> Array:
-	var out: Array = [["alquimista", "Tú", "alquimista de Valdelago"], ["miga", "Miga", "gata dormilona"]]
+	var out: Array = [["alquimista", "You", "alchemist of Lakevale"], ["miga", "Miga", "sleepy cat"]]
 	for id in Data.CHARACTERS:
 		if id == "fizz":
 			continue
 		var ch: Dictionary = Data.CHARACTERS[id]
 		out.append([Story.sprite_id(id), String(ch.get("name", id)), String(ch.get("title", ""))])
-	out.append(["fizz", "Fizz", "alquimista gnomo, tu rival (y Chispa)"])
+	out.append(["fizz", "Fizz", "gnome alchemist, your rival (and Spark)"])
 	return out
 
 static func _credit(sprite: String, name: String, title: String) -> Control:

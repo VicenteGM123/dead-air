@@ -77,9 +77,9 @@ func play(m) -> void:
 	await pip.walk_to(Vector3(ShopWorld.P_CUSTOMER.x, 0, -1.75), 2.6)
 	pip.face(-1)
 	pip.hop(2)
-	await _line(Story.char_name("pip"), "¡Correo urgente del Gremio! ¡Y pesa una barbaridad!")
+	await _line(Story.char_name("pip"), "Urgent mail from the Guild! And it weighs a ton!")
 	await _place_trophy_from(pip)
-	await _line("", "[color=#ffd987]El Gremio de Boticarios de Arvendal:[/color] «Caldero Nocturno, primera del Escalafón».")
+	await _line("", "[color=#ffd987]The Arvendal Apothecaries' Guild:[/color] “Midnight Cauldron, number one in the Rankings.”")
 	# 2) llega el pueblo a celebrar
 	pip.walk_to(PIP_SPOT, 1.8)
 	_walking = 0
@@ -95,11 +95,11 @@ func play(m) -> void:
 		waited += 0.2
 	world.close_door()
 	_cheer(["panadera"], "heart")
-	await _line(Story.char_name("panadera"), "¡Lo sabía! ¡La mejor tienda de Arvendal es la nuestra!")
+	await _line(Story.char_name("panadera"), "I knew it! The best shop in Arvendal is ours!")
 	_cheer(["bram"], "excl")
-	await _line(Story.char_name("bram"), "¡Ja! ¡Que se entere toda la Montaña Gris!")
+	await _line(Story.char_name("bram"), "Ha! Let the whole Grey Mountain hear it!")
 	_cheer(["fizz"], "sweat")
-	await _line(Story.char_name("fizz"), "Felicidades. Lo digo sin desdén… casi. El año que viene, el caldero es mío.")
+	await _line(Story.char_name("fizz"), "Congratulations. I say that without scorn… almost. Next year, that cauldron is mine.")
 	# 3) la fiesta: confeti, todos saltan, Miga sube al mostrador
 	_confetti()
 	Sfx.play("levelup", 0.0, -2.0)
@@ -115,7 +115,7 @@ func play(m) -> void:
 	_miga_party()
 	world.spawn_sparkles(TROPHY_POS + Vector3(0, 0.45, 0.1), Color(1.8, 1.5, 0.8), 30)
 	await get_tree().create_timer(1.2).timeout
-	await _line("", "[i]Gracias, Valdelago. Gracias, Miga.[/i]")
+	await _line("", "[i]Thank you, Lakevale. Thank you, Miga.[/i]")
 	await get_tree().create_timer(1.0).timeout
 	ui.hide_dialog()
 	# 4) los créditos (el elenco) y «Seguir jugando»
@@ -146,8 +146,8 @@ func _setup() -> void:
 	world.block_hover(true)
 	_cat_pos = world.cat.position
 	# guirnaldas de banderines bajo la viga del fondo
-	for b in [["bunting_a", -0.4], ["bunting_b", 4.0]]:
-		_sprite("res://assets/props/%s.png" % b[0], 0.035, Vector3(b[1], 4.42, -3.86), "top")
+	for b in [["bunting_a", -0.4, -3.84], ["bunting_b", 4.0, -3.82]]:   # --- R5 WORLD: (z distinta: se tapan en el medio; antes las dos en -3.86)
+		_sprite("res://assets/props/%s.png" % b[0], 0.035, Vector3(b[1], 4.42, b[2]), "top")
 	# farolillos de papel rojo con luz cálida
 	for x in [-2.0, 0.2, 2.92, 5.5]:
 		var l := _sprite("res://assets/ui/rank_lantern.png", 0.042, Vector3(x, 3.75, -3.6), "top", false)

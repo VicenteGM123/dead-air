@@ -111,6 +111,7 @@ func set_crowd(ids: Array) -> Array:
 			# sentado tras una mesa o en una grada: sube o baja hasta que la cabeza queda a esa altura (la mesa o la
 			# baranda le tapan las piernas); así los niños y los enanos se ven igual que los altos
 			a.position.y = top - a.top_height()
+			a.shadow.visible = false   # --- R5 WORLD: su sombra quedaba a cualquier altura (pegada al banco: temblaba)
 		a.face(int(sp["face"]))
 		a.set_meta("id", id)
 		crowd.append(a)
@@ -140,6 +141,7 @@ func _fill_extras(from: int) -> void:
 		var top: float = sp.get("top", -1.0)
 		if top > 0.0:
 			a.position.y = top - a.top_height()
+			a.shadow.visible = false   # --- R5 WORLD: (como en set_crowd)
 		a.face(int(sp["face"]))
 		extras.append(a)
 
@@ -425,6 +427,39 @@ func _label(text: String, pos: Vector3, size := 40, px := 0.006, col := Color(1.
 	(parent if parent else self).add_child(l)
 	return l
 
+## --- R5 WORLD: una flecha plana que apunta a la izquierda (-X) y mira a +Z, con la punta en `tip` y `length` de largo
+## (para letreros: las fuentes del juego no tienen «←»). Una sola malla, cabeza y barra sin solaparse.
+func _arrow_left(tip: Vector3, length: float, col: Color, parent: Node3D = null) -> MeshInstance3D:
+	var h := length * 0.42      # largo de la cabeza
+	var hw := length * 0.3      # media altura de la cabeza
+	var st := length * 0.09     # media altura de la barra
+	# triángulos en el sentido de las agujas del reloj vistos desde +Z (la cara de delante en Godot)
+	var p := PackedVector3Array([
+		Vector3(0, 0, 0), Vector3(h, hw, 0), Vector3(h, -hw, 0),
+		Vector3(h, st, 0), Vector3(length, st, 0), Vector3(length, -st, 0),
+		Vector3(h, st, 0), Vector3(length, -st, 0), Vector3(h, -st, 0)])
+	var nrm := PackedVector3Array()
+	for i in p.size():
+		nrm.append(Vector3(0, 0, 1))
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = p
+	arr[Mesh.ARRAY_NORMAL] = nrm
+	var am := ArrayMesh.new()
+	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = col
+	var mi := MeshInstance3D.new()
+	mi.name = "SignArrow"
+	mi.mesh = am
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position = tip
+	(parent if parent else self).add_child(mi)
+	return mi
+# --- end R5 WORLD
+
 # ------------------------------------------------------------------ cámara, entorno y luz
 
 func _camera(pos: Vector3, look: Vector3, fov := 35.0, dof_far := 17.0, dof_near := 7.0) -> void:
@@ -679,7 +714,7 @@ func _long_desk(x0: float, x1: float, z0: float, z1: float, top: float, y_base :
 	var wood_d := _mat("res://assets/tex/wood_dark.png", "res://assets/tex/wood_dark_n.png", 1.0, 0.8)
 	_box_b(x0 - 0.04, x1 + 0.04, y_base + top - 0.07, y_base + top, z0 - 0.04, z1 + 0.05, wood_l)
 	_box_b(x0, x1, y_base + 0.06, y_base + top - 0.07, z0 + 0.1, z1, wood_d)
-	_panel(_tex("res://assets/tex/counter_front.png"), Vector2(x1 - x0 - 0.06, top - 0.2), Vector3((x0 + x1) / 2.0, y_base + 0.07 + (top - 0.2) / 2.0, z1 + 0.004),
+	_panel(_tex("res://assets/tex/counter_front.png"), Vector2(x1 - x0 - 0.06, top - 0.2), Vector3((x0 + x1) / 2.0, y_base + 0.07 + (top - 0.2) / 2.0, z1 + 0.012),   # --- R5 WORLD: (era z1 + 0.004)
 		Vector3.BACK, Vector2((x1 - x0) / 2.0, 1.0), _tex("res://assets/tex/counter_front_n.png"), Color(0.95, 0.85, 0.78))
 	_box_b(x0 - 0.02, x1 + 0.02, y_base, y_base + 0.07, z0 + 0.08, z1 + 0.02, wood_d)
 
@@ -753,13 +788,15 @@ func _aca_room() -> void:
 	_box_b(18.0, 18.5, 0.0, H, z - 0.5, 7.0, wall)
 	# zócalo de paneles de roble y la moldura de arriba
 	var panels := _tex("res://assets/tex/counter_front.png")
-	_panel(panels, Vector2(36.0, 1.25), Vector3(0.0, 0.66, z + 0.006), Vector3.BACK, Vector2(18.0, 1.0), _tex("res://assets/tex/counter_front_n.png"), Color(0.86, 0.74, 0.66))
+	_panel(panels, Vector2(36.0, 1.25), Vector3(0.0, 0.66, z + 0.02), Vector3.BACK, Vector2(18.0, 1.0), _tex("res://assets/tex/counter_front_n.png"), Color(0.86, 0.74, 0.66))   # --- R5 WORLD: (era z + 0.006: a 18 m el búfer de profundidad casi no lo separaba de la pared)
 	_box_b(-18.0, 18.0, 1.28, 1.38, z, z + 0.08, wood_d)
 	_box_b(-18.0, 18.0, 0.0, 0.07, z, z + 0.05, wood_d)
 	# pilastras entre las vidrieras (con basa y capitel) y la cornisa
 	var stone := _mat(ART + "aca_wall.png", ART + "aca_wall_n.png", 0.36, 0.9, Color(1.06, 1.02, 0.96))
 	for px in [-8.25, -2.75, 2.75, 8.25]:
 		_box_b(px - 0.36, px + 0.36, 0.0, H, z, z + 0.3, stone)
+		if px > -1.0 and px < 10.6:
+			continue   # --- R5 WORLD: esta basa quedaba entera dentro de la grada (_aca_desks) y su cara de arriba coincidía con la de la grada
 		_box_b(px - 0.46, px + 0.46, 0.0, 0.5, z, z + 0.4, stone)
 		_box_b(px - 0.48, px + 0.48, 7.55, 7.85, z, z + 0.42, stone)
 	_box_b(-18.0, 18.0, 7.85, 8.15, z, z + 0.32, stone)
@@ -767,7 +804,7 @@ func _aca_room() -> void:
 	for b in [[-11.7, "aca_bookcase_a"], [11.7, "aca_bookcase_b"]]:
 		var bx: float = b[0]
 		_box_b(bx - 1.36, bx + 1.36, 0.0, 7.3, z, z + 0.42, wood_d)
-		_ev(b[1], 0.034, Vector3(bx, 0, z + 0.43))
+		_ev(b[1], 0.034, Vector3(bx, 0, z + 0.45))   # --- R5 WORLD: (era z + 0.43: 1 cm delante de su caja, a 18 m)
 	var lad := _ev("aca_ladder", 0.034, Vector3(10.85, 0, z + 0.75))
 	lad.rotation_degrees = Vector3(-8.0, 0, -4.0)
 
@@ -784,7 +821,7 @@ func _aca_windows() -> void:
 		var g := _sprite(gtex, ACA_WIN_PX, Vector3(wx, ACA_WIN_Y0 + 0.25, z - 0.2), null, "bottom", false)
 		g.modulate = Color(1.25, 1.2, 1.15)
 		g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_ev("aca_window_frame", ACA_WIN_PX, Vector3(wx, ACA_WIN_Y0, z + 0.01))
+		_ev("aca_window_frame", ACA_WIN_PX, Vector3(wx, ACA_WIN_Y0, z + 0.025))   # --- R5 WORLD: (era z + 0.01)
 		# la luz de colores en el suelo y los rayos
 		var gy0 := ACA_WIN_Y0 + 0.25
 		_glass_pool(_art("aca_pool_" + keys[i]), wx - gw / 2.0, wx + gw / 2.0, gy0, gy0 + gh, z - 0.2, ACA_GLASS_DIR.normalized(), 0.7)
@@ -875,10 +912,13 @@ func _aca_desks() -> void:
 	# los sitios de los alumnos: del centro hacia los lados, alternando mesa de delante y de atrás
 	var seats1 := []
 	var seats2 := []
+	# --- R5 WORLD: un asiento sí y otro no, 5 cm más atrás: los alumnos vecinos se tapan un poco (brazos, sombreros) y,
+	# en el mismo plano, ese borde temblaba
 	for i in 8:
-		seats1.append(Vector3(1.25 + i * 1.0, ACA_DESK1["base"], ACA_DESK1["seat_z"]))
+		seats1.append(Vector3(1.25 + i * 1.0, ACA_DESK1["base"], ACA_DESK1["seat_z"] - 0.05 * (i % 2)))
 	for i in 9:
-		seats2.append(Vector3(0.25 + i * 1.05, ACA_DESK2["base"], ACA_DESK2["seat_z"]))
+		seats2.append(Vector3(0.25 + i * 1.05, ACA_DESK2["base"], ACA_DESK2["seat_z"] - 0.05 * (i % 2)))
+	# --- end R5 WORLD
 	var head1: float = ACA_DESK1["base"] + ACA_DESK1["top"] + ACA_HEAD
 	var head2: float = ACA_DESK2["base"] + ACA_DESK2["top"] + ACA_HEAD
 	var order1 := [3, 5, 1, 6, 2, 7, 0, 4]
@@ -965,9 +1005,9 @@ func _aca_details() -> void:
 ## Los puestos rivales y sus letreros: los nombres del Escalafón del Gremio (RANK, ranking.gd). EVENTS-LOGIC los lee de
 ## aquí (Events.rivals_for: lo que va antes de «·», en este orden, sin Fizz) para el marcador del concurso.
 const CON_RIVALS := {
-	"fizz": "Fizz · ¡pociones con chispa!",
-	"raicesrocio": "Raíces y Rocío",
-	"vado": "Hierbas del Vado",
+	"fizz": "Fizz · Potions with a spark!",
+	"raicesrocio": "Roots & Dew",
+	"vado": "Fordside Herbs",
 }
 const CON_STAGE_TOP := 0.55
 const CON_DAIS_TOP := 1.1
@@ -1041,10 +1081,12 @@ func _con_house(x0: float, w: float, h: float, col: Color, roof: String, win: St
 	var stone := _mat("res://assets/tex/stone.png", "res://assets/tex/stone_n.png", 0.5, 0.9)
 	var beam := _mat("res://assets/tex/wood_dark.png", "res://assets/tex/wood_dark_n.png", 1.0, 0.8)
 	_box_b(x0, x1, 0.0, h, fz - depth, fz, plaster)
-	_box_b(x0 - 0.02, x1 + 0.02, 0.0, 0.6, fz - depth, fz + 0.05, stone)
+	_box_b(x0 - 0.04, x1 + 0.04, 0.0, 0.6, fz - depth, fz + 0.05, stone)   # --- R5 WORLD: (era ±0.02: 2 cm a 25 m)
+	# --- R5 WORLD: las vigas van de poste a poste (antes llegaban a la esquina y su canto quedaba a 1 cm del del poste)
 	for y in [0.6, 2.5]:
-		_box_b(x0, x1, y, y + 0.14, fz, fz + 0.07, beam)
-	_box_b(x0, x1, h - 0.14, h, fz, fz + 0.1, beam)
+		_box_b(x0 + 0.07, x1 - 0.07, y, y + 0.14, fz, fz + 0.07, beam)
+	_box_b(x0 + 0.07, x1 - 0.07, h - 0.14, h, fz, fz + 0.1, beam)
+	# --- end R5 WORLD
 	for x in [x0 + 0.07, x1 - 0.07]:
 		_box_b(x - 0.08, x + 0.08, 0.6, h, fz, fz + 0.07, beam)
 	var rh := depth * 0.5 * 1.3
@@ -1063,7 +1105,7 @@ func _con_house(x0: float, w: float, h: float, col: Color, roof: String, win: St
 		for wy in [2.85, 1.0]:
 			if wy < 2.0 and i % 2 == 1:
 				continue
-			var ws := _ev(win, 0.034, Vector3(wx, wy, fz + 0.09))
+			var ws := _ev(win, 0.034, Vector3(wx, wy, fz + 0.075))   # --- R5 WORLD: (era fz + 0.09: a 1 cm de la viga de arriba) dentro del grosor de la viga
 			ws.shaded = false
 			ws.modulate = Color(1.05, 0.95, 0.9)
 
@@ -1073,13 +1115,16 @@ func _con_stage() -> void:
 	var wood_d := _mat("res://assets/tex/wood_dark.png", "res://assets/tex/wood_dark_n.png", 1.0, 0.8)
 	var top := CON_STAGE_TOP
 	_box_b(-6.2, 5.6, 0.0, top, -6.9, -1.2, planks)
-	_panel(_art("con_skirt"), Vector2(11.8, top), Vector3(-0.3, top / 2.0, -1.196), Vector3.BACK, Vector2(11.8 / 2.0, 1.0))
+	_panel(_art("con_skirt"), Vector2(11.8, top), Vector3(-0.3, top / 2.0, -1.19), Vector3.BACK, Vector2(11.8 / 2.0, 1.0))   # --- R5 WORLD: el faldón a 1 cm (era 4 mm)
 	for sx in [-6.2, 5.6]:
-		var side := _panel(_art("con_skirt"), Vector2(5.7, top), Vector3(sx + (-0.004 if sx < 0.0 else 0.004), top / 2.0, -4.05),
+		var side := _panel(_art("con_skirt"), Vector2(5.7, top), Vector3(sx + (-0.01 if sx < 0.0 else 0.01), top / 2.0, -4.05),
 			Vector3.LEFT if sx < 0.0 else Vector3.RIGHT, Vector2(5.7 / 2.0, 1.0))
 	# escalones delante, en el centro
-	_box_b(-0.9, 0.3, 0.0, top * 0.5, -1.2, -0.75, wood_d)
+	# --- R5 WORLD: la huella de tablas y el canto oscuro, uno detrás del otro (antes las dos cajas tenían la misma cara
+	# de arriba entre z -1,2 y -0,95: temblaba entre la madera oscura y las tablas)
+	_box_b(-0.9, 0.3, 0.0, top * 0.5, -0.95, -0.75, wood_d)
 	_box_b(-0.9, 0.3, 0.0, top * 0.5, -1.2, -0.95, planks)
+	# --- end R5 WORLD
 	# el arco sobre el escenario: dos postes, el travesaño, el estandarte y las guirnaldas
 	var post := _mat("res://assets/tex/wood.png", "res://assets/tex/wood_n.png", 1.0, 0.8)
 	for px in [-5.9, 5.3]:
@@ -1087,14 +1132,17 @@ func _con_stage() -> void:
 	_box_b(-6.2, 5.6, 4.72, 4.98, -6.74, -6.48, post)
 	var title := _ev("con_title", 0.048, Vector3(-0.3, 3.55, -6.42))
 	title.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_label("Concurso de Pociones de Robledal", Vector3(-0.3, 4.17, -6.39), 64, 0.0062, Color(0.62, 0.14, 0.18), true).outline_modulate = Color(1.0, 0.95, 0.82)
+	# --- R5 WORLD: capas separadas de delante a atrás (antes las guirnaldas vecinas compartían plano y se tapaban, y el
+	# letrero quedaba a 1 cm): el estandarte, el letrero a 2 cm, las guirnaldas a 4,5 / 6 cm (alternas) y los banderines
+	_label("Oakdale Potion Contest", Vector3(-0.3, 4.17, -6.40), 64, 0.0062, Color(0.62, 0.14, 0.18), true).outline_modulate = Color(1.0, 0.95, 0.82)
 	for i in 5:
-		var g := _ev("con_garland", 0.04, Vector3(-4.9 + i * 2.5, 4.72, -6.38), null, "top")
+		var g := _ev("con_garland", 0.04, Vector3(-4.9 + i * 2.5, 4.72, -6.375 + 0.015 * (i % 2)), null, "top")
 		g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# banderines a los lados del arco
 	for b in [[-4.6, "bunting_a"], [3.9, "bunting_b"]]:
 		var bt := _tex("res://assets/props/%s.png" % b[1])
-		_cloth(bt, 0.024, Vector3(b[0], 4.3, -6.36), {"amp": 0.03, "freq": 0.6, "speed": 2.0, "pin_left": 0.0})
+		_cloth(bt, 0.024, Vector3(b[0], 4.3, -6.33), {"amp": 0.03, "freq": 0.6, "speed": 2.0, "pin_left": 0.0})
+	# --- end R5 WORLD
 
 ## Su puesto: el caldero, una mesa de trabajo (ella a un lado, quien prueba al otro), un toldo morado y su letrero.
 func _con_her_stall() -> void:
@@ -1105,7 +1153,7 @@ func _con_her_stall() -> void:
 	add_child(cauldron)
 	cauldron.build()
 	_worktable(Vector3(-2.75, top, -2.35), 0.62, 1.7, "morado")
-	_stall_frame(-5.45, -2.05, top, -3.55, -1.55, "morado", "Caldero Nocturno")
+	_stall_frame(-5.45, -2.05, top, -3.55, -1.55, "morado", "Midnight Cauldron")
 	_ev("aca_vials", 0.022, Vector3(-2.7, top + 0.9, -2.95))
 	_prop("jar_lagrima_sirena", 0.022, Vector3(-2.8, top + 0.9, -2.2))
 	_prop("bottle_sm_1", 0.03, Vector3(-2.65, top + 0.9, -1.75))
@@ -1220,7 +1268,7 @@ func _con_jury() -> void:
 	var wood_l := _mat("res://assets/tex/wood_light.png", "res://assets/tex/wood_light_n.png", 1.0, 0.55, Color(0.9, 0.82, 0.74))
 	var wood_d := _mat("res://assets/tex/wood_dark.png", "res://assets/tex/wood_dark_n.png", 1.0, 0.8)
 	_box_b(-2.3, 1.7, top, dt, -6.8, -4.35, wood)
-	_panel(_art("con_skirt"), Vector2(4.0, dt - top), Vector3(-0.3, (top + dt) / 2.0, -4.346), Vector3.BACK, Vector2(2.0, 1.0))
+	_panel(_art("con_skirt"), Vector2(4.0, dt - top), Vector3(-0.3, (top + dt) / 2.0, -4.34), Vector3.BACK, Vector2(2.0, 1.0))   # --- R5 WORLD: (era -4.346: 4 mm)
 	_box_b(-0.9, 0.3, top, (top + dt) / 2.0, -4.35, -3.95, wood_d)
 	# mesa
 	var tz0 := -5.45
@@ -1230,7 +1278,7 @@ func _con_jury() -> void:
 	_box_b(-1.9, 1.3, dt, tt - 0.07, tz0 + 0.05, tz1 - 0.02, wood_d)
 	var cloth := _ev("con_jury_cloth", 0.034, Vector3(-0.3, tt, tz1 + 0.03), null, "top")
 	cloth.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_label("Jurado", Vector3(-0.3, tt - 0.62, tz1 + 0.05), 34, 0.005, Color(1.0, 0.88, 0.56))
+	_label("Judges", Vector3(-0.3, tt - 0.62, tz1 + 0.05), 34, 0.005, Color(1.0, 0.88, 0.56))
 	_ev("con_cup", 0.03, Vector3(1.05, tt, tz1 - 0.15))
 	_prop("bottle_sm_3", 0.026, Vector3(-1.75, tt, tz1 - 0.12))
 	_prop("open_book", 0.02, Vector3(-0.8, tt, tz1 - 0.12))
@@ -1238,7 +1286,7 @@ func _con_jury() -> void:
 	for i in 3:
 		var jx := -1.3 + i * 1.0
 		_ev("con_chair", 0.04, Vector3(jx, dt, -6.25))
-		var m := _marker("Judge%d" % i, Vector3(jx, dt, -5.85), -1 if i < 2 else -1)
+		var m := _marker("Judge%d" % i, Vector3(jx, dt, -5.85 - (0.05 if i == 1 else 0.0)), -1 if i < 2 else -1)   # --- R5 WORLD: el del medio 5 cm atrás (los tres en un plano se tapaban)
 		m.set_meta("top", tt + 0.6)
 	_omni(Vector3(-0.3, dt + 2.3, -4.2), Color(1.0, 0.82, 0.58), 0.95, 5.0)
 	# la mesita donde se presentan las pociones al jurado, al pie de la tarima
@@ -1324,7 +1372,7 @@ func _tor_ground() -> void:
 	var grass := _mat(ART + "tor_grass.png", "", 0.5, 1.0, Color(0.86, 0.9, 0.84))
 	var dirt := _mat(ART + "tor_dirt.png", "", 0.5, 1.0, Color(0.82, 0.76, 0.72))
 	_box_b(-40.0, 40.0, -0.2, 0.0, -60.0, 8.0, grass)
-	_box_b(-40.0, 40.0, -0.2, 0.01, -12.6, -7.4, dirt, null, false)       # la pista de las justas
+	_box_b(-40.0, 40.0, -0.2, 0.03, -12.6, -7.4, dirt, null, false)       # la pista de las justas   # --- R5 WORLD: (arriba a 0.01: 1 cm sobre la hierba a 20-40 m, temblaba)
 	# la tierra pisada delante de su puesto y de la fila (mancha de bordes irregulares sobre la hierba)
 	var tm := StandardMaterial3D.new()
 	tm.albedo_texture = _art("tor_trodden")
@@ -1456,9 +1504,9 @@ func _tor_stand() -> void:
 		var zf := -13.4 - i * 0.8
 		_box_b(x0, x1, 0.0, 0.6 + i * 0.6, zf - 0.8, zf, wood)
 	_box_b(x0, x1, 0.0, 4.4, -16.3, -16.0, wood_d)
-	for px in [x0 + 0.1, (x0 + x1) / 2.0, x1 - 0.1]:
+	for px in [x0 + 0.12, (x0 + x1) / 2.0, x1 - 0.12]:   # --- R5 WORLD: (era x0 + 0.1 / x1 - 0.1: su cara quedaba a 2 cm del canto de las gradas)
 		_box_b(px - 0.08, px + 0.08, 0.0, 4.6, -13.5, -13.34, wood_d)
-	_panel(_art("tor_drape"), Vector2(x1 - x0, 0.75), Vector3((x0 + x1) / 2.0, 0.6 - 0.375 + 0.02, -13.38), Vector3.BACK, Vector2((x1 - x0) / 2.0, 1.0))
+	_panel(_art("tor_drape"), Vector2(x1 - x0, 0.75), Vector3((x0 + x1) / 2.0, 0.6 - 0.375 + 0.02, -13.375), Vector3.BACK, Vector2((x1 - x0) / 2.0, 1.0))   # --- R5 WORLD: (era -13.38: a 2 cm de la grada y de los postes, a 23 m) a 2,5 y 3,5 cm
 	# el dosel
 	var aw := MeshInstance3D.new()
 	var pm := PlaneMesh.new()
@@ -1542,7 +1590,7 @@ func _tor_her_stall() -> void:
 	add_child(cauldron)
 	cauldron.build()
 	_worktable(Vector3(-2.75, 0, -2.35), 0.62, 1.7, "morado")
-	_stall_frame(-5.45, -2.05, 0.0, -3.55, -1.55, "morado", "Caldero Nocturno")
+	_stall_frame(-5.45, -2.05, 0.0, -3.55, -1.55, "morado", "Midnight Cauldron")
 	_ev("aca_vials", 0.022, Vector3(-2.7, 0.9, -2.95))
 	_prop("jar_raiz_mandragora", 0.022, Vector3(-2.8, 0.9, -2.2))
 	_prop("bottle_sm_5", 0.03, Vector3(-2.65, 0.9, -1.75))
@@ -1570,7 +1618,18 @@ func _tor_her_stall() -> void:
 	# el letrero al final de la fila, detrás de la cuerda (fuera del camino por el que llegan y se van)
 	_box_b(3.55, 3.63, 0.0, 1.5, -3.25, -3.17, post)
 	_box_b(3.05, 4.15, 1.15, 1.55, -3.16, -3.1, _mat("res://assets/tex/wood_light.png", "", 1.0, 0.8))
-	_label("← Pociones", Vector3(3.6, 1.35, -3.085), 34, 0.0052, Color(0.25, 0.14, 0.1), false).outline_size = 0
+	# --- R5 WORLD: el letrero era «← Pociones», pero ninguna fuente del juego tiene la flecha «←»: en el escritorio la
+	# ponía una fuente del sistema y en la web (sin fuentes del sistema) no salía. Ahora la flecha se dibuja (cabeza y
+	# barra, sin luz, del color del texto) y «Potions» va a su derecha; los dos centrados en la tabla.
+	var sign_col := Color(0.25, 0.14, 0.1)
+	var sl := _label("Potions", Vector3(3.6, 1.35, -3.085), 34, 0.0052, sign_col, false)
+	sl.outline_size = 0
+	var tw: float = _font.get_string_size(sl.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 34).x * 0.0052
+	var arrow_w := 0.2
+	var sx0: float = 3.6 - (arrow_w + 0.05 + tw) / 2.0
+	sl.position.x = sx0 + arrow_w + 0.05 + tw / 2.0
+	_arrow_left(Vector3(sx0, 1.34, -3.09), arrow_w, sign_col)
+	# --- end R5 WORLD
 	# público de espaldas en las esquinas de abajo (desenfocado) y unas flores delante
 	_anim(_art("tor_crowd_back"), 2, 1.3, 0.042, Vector3(-6.6, -0.55, 1.9))
 	var cb := _anim(_art("tor_crowd_back"), 2, 1.1, 0.042, Vector3(6.2, -0.6, 2.0))

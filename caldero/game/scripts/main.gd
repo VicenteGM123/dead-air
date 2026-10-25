@@ -11,18 +11,18 @@ signal shop_closing    # dieron las 18:00: ya no entra nadie (se atiende a quien
 # --- STORY: el mundo es más grande (elfos, enanos, gente bestia, caballeros, magos...) y las pociones hacen efecto después
 # --- R3 MERGE: dieta de texto (una o dos frases cortas por línea)
 const INTRO_LINES := [
-	["", "Al pie de la Montaña Gris, en Arvendal, hay una tiendita de pociones con la chimenea siempre encendida."],   # --- R4 RANK: Arvendal
-	["", "Tu maestra te la dejó al partir: su recetario, su grimorio, un caldero y Miga, una gata dormilona."],
-	["", "Por aquí pasa gente de todo el reino: elfos, enanos, caballeros, magos… Siempre necesitan algo."],
-	["", "Las pociones hacen efecto después: tus clientes te contarán cómo les fue."],
-	["", "El Gremio de Boticarios de Arvendal lleva la lista de las treinta mejores tiendas. La tuya es la última… por ahora."],   # --- R4 RANK
+	["", "At the foot of the Grey Mountain, in Arvendal, there's a little potion shop whose fire never goes out."],   # --- R4 RANK: Arvendal
+	["", "Your teacher left it to you: her recipe book, her grimoire, a cauldron and Miga, a sleepy cat."],
+	["", "Folks from all over the kingdom pass through: elves, dwarves, knights, mages… They always need something."],
+	["", "Potions work later: your customers will tell you how it went."],
+	["", "The Arvendal Apothecaries' Guild ranks the thirty best shops. Yours is dead last… for now."],   # --- R4 RANK
 ]
 # --- end STORY
 
 const THANKS := [
-	["¡Gracias! Es justo lo que necesitaba.", "¡Muchas gracias, vecina!", "Te debo una. ¡Hasta pronto!"],
-	["¡Qué buena pinta tiene! Gracias de verdad.", "Huele de maravilla. ¡Gracias!", "¡Se nota que le pusiste cariño!"],
-	["¡Esto es obra de una maestra! Les hablaré a todos de tu tienda.", "¡Brilla tanto que da pena tomársela! Gracias.", "¡Increíble! Volveré seguro."],
+	["Thank you! Just what I needed.", "Thanks so much, neighbor!", "I owe you one. See you soon!"],
+	["It looks great! Thank you, really.", "It smells wonderful. Thanks!", "You can tell you put love into it!"],
+	["This is a master's work! I'll tell everyone about your shop.", "It shines so much it's a shame to drink it! Thank you.", "Amazing! I'll be back for sure."],
 ]
 
 var world: ShopWorld
@@ -76,7 +76,14 @@ var _demo := ""
 var _autoplay_days := 0
 var _stats := false   # --- R4 SCENES: --stats
 
+## --- R5 EN-UI: el título que se ve (ventana de escritorio y pestaña del navegador). application/config/name sigue
+## siendo «Caldero Nocturno» en project.godot: de ese nombre sale la carpeta user:// de escritorio (las partidas
+## guardadas); la página web lo pone desde el principio con html/head_include (export_presets.cfg).
+const GAME_TITLE := "Midnight Cauldron"
+# --- end R5 EN-UI
+
 func _ready() -> void:
+	get_window().title = GAME_TITLE   # --- R5 EN-UI (en la web también cambia document.title)
 	get_viewport().physics_object_picking = true
 	world = ShopWorld.new()
 	add_child(world)
@@ -189,11 +196,11 @@ func _ready() -> void:
 		_fade_to(0.0, 0.5)     # --- PREP
 
 func _build_open_button() -> void:
-	open_btn = UIKit.button("Abrir", func(): _open_shop(), 28)   # --- R3 BENCH: una palabra
+	open_btn = UIKit.button("Open", func(): _open_shop(), 28)   # --- R3 BENCH: una palabra
 	open_btn.custom_minimum_size = Vector2(340, 64)
 	open_btn.visible = false
 	# --- WORLD: debajo, "Ir al mercado" (o "Volver a la tienda" en el mercado)
-	trip_btn = UIKit.button("Mercado", func(): _on_trip_button(), 23)   # --- R3 BENCH
+	trip_btn = UIKit.button("Market", func(): _on_trip_button(), 23)   # --- R3 BENCH
 	trip_btn.custom_minimum_size = Vector2(280, 50)
 	trip_btn.visible = false
 	top_box = UIKit.vbox(10)
@@ -283,7 +290,7 @@ func _begin_day() -> void:
 	krapido.reset_day()   # --- R4 RAVEN
 	_refresh_all()
 	ui.set_gameplay_visible(true)
-	ui.set_time_label("Mañana")
+	ui.set_time_label("Morning")
 	ui.set_clock_visible(false)   # --- R4 PACE: la mañana no tiene reloj (empieza a correr al abrir)
 	if events_ui:
 		events_ui.refresh_reminder()   # --- R4 SHIP: la etiqueta del evento, recalculada para hoy (el día del evento decía «Mañana» durante el correo)
@@ -294,7 +301,7 @@ func _begin_day() -> void:
 		_switch_place(false)
 	world.walker.teleport(ShopWorld.P_ALCH_COUNTER.x, 1)
 	world.snap_camera()
-	world.set_station_label("puerta", "Puerta · ir al mercado")
+	world.set_station_label("puerta", "Door · to the market")
 	EndingScene.place_trophy(world)   # --- R4 RANK: el caldero de oro del Gremio, si ya llegó al puesto 1
 	_jar_queue.clear()
 	_jar_trip = false   # --- INTEGRATE
@@ -302,13 +309,13 @@ func _begin_day() -> void:
 	Game.save_game()
 	# --- R3 MAGIC3: una partida vieja tenía pergaminos o papel: Tobías los compró (el oro ya está en la bolsa)
 	if Game.legacy_refund > 0:
-		ui.toast("Tus pergaminos viejos: +%d oro" % Game.legacy_refund, UIKit.GOLD_BRIGHT, 4.0)   # --- R3 MERGE: corto
+		ui.toast("Your old scrolls: +%d gold" % Game.legacy_refund, UIKit.GOLD_BRIGHT, 4.0)   # --- R3 MERGE: corto
 		Game.legacy_refund = 0
 	# --- end R3 MAGIC3
-	ui.show_banner("Día %d" % Game.day, "Día de mercado" if Game.pace_market_day() and not Events.today_is_event() else "Mañana")   # --- R4 PACE (R4 MERGE: no el día de un evento)
+	ui.show_banner("Day %d" % Game.day, "Market day" if Game.pace_market_day() and not Events.today_is_event() else "Morning")   # --- R4 PACE (R4 MERGE: no el día de un evento)
 	var got := Game.morning_harvest()
 	if got.size() > 0:
-		ui.toast("Huerto: +2 raíces, +2 lágrimas", UIKit.GOOD, 3.0)   # --- R3 BENCH: aviso corto
+		ui.toast("Garden: +2 roots, +2 tears", UIKit.GOOD, 3.0)   # --- R3 BENCH: aviso corto
 	_update_top_buttons()   # --- WORLD
 	await get_tree().create_timer(1.6).timeout
 	if phase != Phase.MORNING:
@@ -330,9 +337,9 @@ func _begin_day() -> void:
 	# --- WORLD: ya no se abre el panel del mercado: el mercado es un lugar (se va por la puerta)
 	# --- R3 BENCH: consejos de una línea (cada uno sale una vez: día 1 y día 2)
 	if Game.day == 1 and not Game.tutorial_done:
-		ui.show_tip("Camina con [b]A/D[/b] o con un clic. Luego, [b]Abrir[/b].", 14.0)
+		ui.show_tip("Walk with [b]A/D[/b] or a click. Then, [b]Open[/b].", 14.0)
 	elif Game.day == 2 and not in_market:
-		ui.show_tip("Cada mañana: compras en el [b]mercado[/b] (la puerta).", 12.0)
+		ui.show_tip("Every morning: go shopping at the [b]market[/b] (out the door).", 12.0)
 	# --- end R3 BENCH
 	# --- end WORLD
 	# --- R3 MAGIC3: si aún no abrió el grimorio, se lo recuerda desde el día 2 (una línea)
@@ -347,7 +354,7 @@ func _grimoire_tip() -> void:
 	if _grim_tip_shown or Game.magic_unlocked or in_market or phase != Phase.MORNING:
 		return
 	_grim_tip_shown = true
-	ui.show_tip("El grimorio de tu maestra brilla en la [b]biblioteca[/b].", 12.0)
+	ui.show_tip("Your teacher's grimoire is glowing in the [b]library[/b].", 12.0)
 
 func _open_shop() -> void:
 	if phase != Phase.MORNING:
@@ -361,7 +368,7 @@ func _open_shop() -> void:
 	phase = Phase.OPEN
 	# --- WORLD
 	_update_top_buttons()
-	world.set_station_label("puerta", "Puerta")
+	world.set_station_label("puerta", "Door")
 	# --- end WORLD
 	# --- R4 PACE: la gente del día y a qué hora llega cada uno; el reloj empieza en las 9:00 (ver _pace_open)
 	_pace_open()
@@ -388,12 +395,12 @@ func _talk_request() -> void:
 	var who := _char_name(current["who"])
 	var choices := []
 	if current.get("tutorial", false):
-		choices = [["prepare", "¡Enseguida!"]]
+		choices = [["prepare", "Right away!"]]
 	else:
-		choices = [["prepare", "Preparar"]]
+		choices = [["prepare", "Brew it"]]
 		if not hint_given:
-			choices.append(["hint", "¿Una pista?"])   # --- R3 MERGE: botones de dos palabras
-		choices.append(["decline", "No puedo"])
+			choices.append(["hint", "A hint?"])   # --- R3 MERGE: botones de dos palabras
+		choices.append(["decline", "I can't"])
 	var text: String = current["text"]
 	# --- STORY: quien vuelve con otro pedido, el aventurero que lo intenta de nuevo, y la presentación de cada cara nueva
 	if not current.has("_prefix"):
@@ -433,11 +440,11 @@ func _on_choice(id: String) -> void:
 			if current.get("tutorial", false) and tutorial_step < 0:
 				tutorial_step = 0
 				# --- R3 BENCH: una línea; en el banco brillan los dos frascos
-				ui.show_tip("Al [b]caldero[/b]: raíz de mandrágora + hongo violeta.", 0.0)
+				ui.show_tip("To the [b]cauldron[/b]: mandrake root + violet mushroom.", 0.0)
 				brew.guide(["raiz_mandragora", "hongo_violeta"])
 		"hint":
 			hint_given = true
-			ui.say(who, current["hint"], [["prepare", "Entendido"], ["decline", "No puedo"]])   # --- R3 MERGE
+			ui.say(who, current["hint"], [["prepare", "Got it"], ["decline", "I can't"]])   # --- R3 MERGE
 		"decline":
 			var vid := _pace_decline()   # --- R4 PACE: no se cansa mientras se despide (y cuenta como no atendido)
 			ui.say(who, Data.DECLINE_LINES.pick_random())
@@ -502,13 +509,13 @@ func _customer_leave() -> void:
 	_next_customer()
 
 func _update_time_label(t: float) -> void:
-	var lbl := "Mediodía"
+	var lbl := "Midday"
 	if t >= 0.88:
-		lbl = "Noche"
+		lbl = "Night"
 	elif t >= 0.68:
-		lbl = "Atardecer"
+		lbl = "Dusk"
 	elif t >= 0.45:
-		lbl = "Tarde"
+		lbl = "Afternoon"
 	ui.set_time_label(lbl)
 
 func _show_pending_levels() -> void:
@@ -572,7 +579,7 @@ func _go_counter() -> void:
 func _on_jar_clicked(id: String) -> void:
 	if not _can_interact():
 		if ui.dialog_open() and phase == Phase.OPEN:
-			ui.toast("Primero responde a tu cliente.")
+			ui.toast("Answer your customer first.")
 		return
 	# --- WORLD: el estante está junto al caldero: si está lejos, primero camina hasta allí (los frascos que toque
 	# mientras tanto se echan al llegar)
@@ -665,7 +672,7 @@ func brew_add(id: String) -> String:
 	ui.set_cauldron(contents)
 	if tutorial_step == 0 and contents.size() >= 2:
 		tutorial_step = 1
-		ui.show_tip("Las 2 esencias más fuertes deciden. Ahora, [b]Remover[/b].", 0.0)
+		ui.show_tip("The 2 strongest essences decide. Now, [b]Stir[/b].", 0.0)
 	return ""
 
 ## Saca el ingrediente del hueco i (vuelve al estante). Devuelve su id ("" si no se pudo).
@@ -716,10 +723,10 @@ func _on_brew() -> void:
 		return
 	var r := Game.evaluate(contents)
 	if r.get("potion", "") == "":
-		_bench_say("Falta otra esencia")
+		_bench_say("Needs another essence")
 		return
 	if Game.potions_full():
-		_bench_say("Estante lleno")
+		_bench_say("Shelf full")
 		return
 	busy = true
 	ui.hide_tooltip()
@@ -733,7 +740,7 @@ func _on_brew() -> void:
 	if Game.lucky:
 		Game.lucky = false
 		potency += 1
-		ui.toast("Suerte de Miga: +1", UIKit.GOLD_BRIGHT)
+		ui.toast("Miga's luck: +1", UIKit.GOLD_BRIGHT)
 	var col: Color = Data.POTIONS[pid]["color"]
 	world.cauldron.brew_burst(col)
 	Sfx.play("brew", 0.03, -2.0)
@@ -747,7 +754,7 @@ func _on_brew() -> void:
 	if _brew_open():
 		brew.show_ready()
 		if tutorial_step == 1:
-			ui.show_tip("¡Cuajó! Ahora, [b]Embotellar[/b].", 0.0)
+			ui.show_tip("Brewed! Now, [b]Bottle[/b] it.", 0.0)
 	else:
 		await brew_bottle()
 
@@ -777,7 +784,7 @@ func brew_bottle() -> void:
 		await world.fly(load("res://assets/icons/pot_%s.png" % pid), ShopWorld.CAULDRON_POS + Vector3(0, 1.3, 0.1), world.rack_slot_position(idx), 0.7, 1.0, 0.04)
 	world.refresh_rack()
 	if is_new:
-		ui.show_banner("¡Nueva receta!", Data.POTIONS[pid]["name"])
+		ui.show_banner("New recipe!", Data.POTIONS[pid]["name"])
 		Sfx.play("sparkle", 0.0, -2.0)
 	else:
 		ui.toast("%s %s" % [Data.POTIONS[pid]["name"], "★".repeat(Game.stars_for(potency))])
@@ -796,7 +803,7 @@ func brew_bottle() -> void:
 		await _go_counter()
 	if tutorial_step == 1:
 		tutorial_step = 2
-		ui.show_tip("Tócala en el [b]estante[/b] para entregarla.", 0.0)
+		ui.show_tip("Tap it on the [b]shelf[/b] to hand it over.", 0.0)
 # --- end R3 BENCH
 
 # ------------------------------------------------------------------ entregas
@@ -817,7 +824,7 @@ func _on_potion(i: int) -> void:
 	if _brew_open():
 		if brew.is_busy() or not customer_ready:
 			if not customer_ready:
-				_bench_say("No hay cliente", UIKit.TEXT)
+				_bench_say("No customer", UIKit.TEXT)
 			return
 		await brew.close()
 		if not _pace_still(vid):   # --- R4 PACE: se fue mientras cerraba el banco (no se la da al siguiente)
@@ -826,7 +833,7 @@ func _on_potion(i: int) -> void:
 	if not _can_interact():
 		return
 	if not customer_ready or customer == null:
-		ui.toast("No hay cliente")   # --- R3 BENCH
+		ui.toast("No customer")   # --- R3 BENCH
 		return
 	# --- R3 MAGIC3: (se quitó el bloque STORY que rechazaba pociones a quien pedía un pergamino)
 	_deliver(i)
@@ -905,12 +912,12 @@ func _hand_over(item: Dictionary) -> void:
 	else:
 		customer.emote("question", 1.8)   # lee la etiqueta: no es lo que imaginaba (pero confía en ella)
 	# --- R3 SHIP: el recordatorio solo el día 1 (en la entrega del tutorial ya lo dice el consejo de arriba)
-	var note := "" if (Game.day > 1 or tutorial_step == 2) else "   [color=#a99fbf][i]Ya te contará cómo le fue.[/i][/color]"
+	var note := "" if (Game.day > 1 or tutorial_step == 2) else "   [color=#a99fbf][i]You'll hear how it went.[/i][/color]"
 	ui.hide_order()
-	var bye := "¡Buen viaje!" if current.get("kind", "") == "hero" else "¡Que te vaya bien!"
-	var paid := "+%d oro" % price
+	var bye := "Safe travels!" if current.get("kind", "") == "hero" else "Good luck!"
+	var paid := "+%d gold" % price
 	if rune_extra > 0:
-		paid += "  [color=#c9b6ff](runa +%d)[/color]" % rune_extra   # --- R3 MAGIC3
+		paid += "  [color=#c9b6ff](rune +%d)[/color]" % rune_extra   # --- R3 MAGIC3
 	if speed_tip > 0:   # --- R4 PACE: la propina por rapidez, con el reloj de arena
 		paid += "  [img=26]res://assets/icons/emote_hourglass_4.png[/img][color=#9eea9f]+%d[/color]" % speed_tip
 	ui.say(who, "%s\n[color=#ffd987]%s[/color]%s" % [Story.reaction(current, item, ok), paid, note], [["bye", bye]])
@@ -920,7 +927,7 @@ func _hand_over(item: Dictionary) -> void:
 	if tutorial_step == 2:
 		tutorial_step = 3
 		Game.tutorial_done = true
-		ui.show_tip("Mañana sabrás cómo le fue. ¿Difícil? Pide una [b]pista[/b].", 14.0)   # --- R3 BENCH
+		ui.show_tip("You'll hear how it went tomorrow. Stuck? Ask for a [b]hint[/b].", 14.0)   # --- R3 BENCH
 		get_tree().create_timer(16.0).timeout.connect(func():
 			if tutorial_step == 3:
 				ui.hide_tip())
@@ -946,11 +953,11 @@ func _intuition_brew(pid: String, idx: int) -> void:
 			# --- R3 MERGE: con el banco abierto la idea no se ve en la tienda (la tapa el banco): la dice el banco
 			# --- R3 SHIP: y entonces no la piensa además (salía dos veces: el banco y un aviso)
 			if _brew_open():
-				brew.say("Ahora, la runa de %s" % Story.rune_name(need[0]), UIKit.GOLD_BRIGHT, 2.4)
+				brew.say("Now, the %s rune" % Story.rune_name(need[0]), UIKit.GOLD_BRIGHT, 2.4)
 			else:
-				_think("Ahora, la runa de %s…" % Story.rune_name(need[0]))
+				_think("Now, the %s rune…" % Story.rune_name(need[0]))
 			if Game.magic_stats["runes"] == 0:
-				ui.show_tip("La runa, en el [b]grimorio[/b] de la biblioteca.")   # --- R3 MERGE: corto
+				ui.show_tip("Add the rune at the library [b]grimoire[/b].")   # --- R3 MERGE: corto
 			return
 		# --- end R3 MAGIC3
 		_think(Story.pick(Data.INTUITION["brew_match"]).replace("{n}", cname))
@@ -1044,7 +1051,7 @@ func _talk_return() -> void:
 				Sfx.play("coin", 0.05, -4.0)
 				ui.fly_coins(world.screen_pos(customer.global_position + Vector3(0, 1.4, 0)), clampi(gold_in / 3, 3, 10))
 		if res.get("journal", false):
-			ui.toast("Nueva página en el Diario", UIKit.GOLD_BRIGHT, 3.0)   # --- R3 BENCH
+			ui.toast("New page in the Journal", UIKit.GOLD_BRIGHT, 3.0)   # --- R3 BENCH
 		Game.save_game()
 	var line := Story.reward_line(current["result"])
 	var text: String = current["visit_text"] + ("\n" + line if line != "" else "")
@@ -1081,13 +1088,15 @@ func _morning_mail() -> void:
 	# --- end R4 RANK
 	await _show_pending_levels()
 
-## Para las pruebas automáticas: qué elección es cada botón de despedida o de visita.
-func _bot_choice(label: String) -> String:
-	if label in ["¡Buen viaje!", "¡Que te vaya bien!"] or label in Data.RETURN_VISITS["bye"]:
-		return "bye"
-	if label in Data.RETURN_VISITS["next"]:
-		return "return_next"
-	return "prepare"
+## Para las pruebas automáticas: qué elección es cada botón (despedida, visita, pedido).
+## --- R5 EN-UI: game_ui.say() guarda en cada botón su id ("prepare", "hint", "decline", "bye", "return_next"): el bot lo
+## lee de ahí y ya no compara textos (que ahora están en inglés y cambian con los datos). Sin id: "prepare".
+func _bot_choice(b: Control) -> String:
+	if b == null or not b.has_meta("choice"):
+		return "prepare"
+	var id := String(b.get_meta("choice"))
+	return id if id in ["bye", "return_next"] else "prepare"   # (como antes: lo demás se contesta con «prepare»)
+# --- end R5 EN-UI
 # --- end STORY
 
 # ------------------------------------------------------------------ fin del día
@@ -1105,9 +1114,9 @@ func _close_day() -> void:
 	# --- end R3 BENCH
 	phase = Phase.CLOSING
 	ui.hide_order()
-	ui.toast("Tienda cerrada", UIKit.GOLD_BRIGHT)   # --- R3 BENCH
+	ui.toast("Shop closed", UIKit.GOLD_BRIGHT)   # --- R3 BENCH
 	world.set_time(1.0, true)
-	ui.set_time_label("Noche")
+	ui.set_time_label("Night")
 	await _go_counter()
 	world.cat.play("sit")
 	await get_tree().create_timer(2.2).timeout
@@ -1145,9 +1154,9 @@ func _on_cat_clicked() -> void:
 		Game.cat_petted_day = Game.day
 		if Game.has_upgrade("cojin"):
 			Game.lucky = true
-			ui.toast("Miga ronronea: +1 a la próxima poción", UIKit.GOLD_BRIGHT, 3.0)   # --- R3 BENCH
+			ui.toast("Miga purrs: +1 to your next potion", UIKit.GOLD_BRIGHT, 3.0)   # --- R3 BENCH
 		else:
-			ui.toast("Miga ronronea feliz", UIKit.TEXT, 2.4)   # --- R3 BENCH
+			ui.toast("Miga purrs happily", UIKit.TEXT, 2.4)   # --- R3 BENCH
 	get_tree().create_timer(2.6).timeout.connect(func():
 		if phase != Phase.CLOSING:
 			world.cat.play("sleep")
@@ -1165,12 +1174,12 @@ func _on_menu(id: String) -> void:
 			ov.show_journal()
 		"market":
 			if phase == Phase.EVENT:   # --- R4 EVENTS: hoy no hay mercado (el caldero usa la despensa del evento)
-				ui.toast("Hoy no hay mercado")
+				ui.toast("No market today")
 				return
 			# --- WORLD: por la mañana el mercado es un lugar; durante el día, un encargo (Pip trae los ingredientes)
 			if phase == Phase.MORNING:
 				if in_market:
-					ui.toast("Toca un puesto")   # --- R3 BENCH
+					ui.toast("Tap a stall")   # --- R3 BENCH
 				else:
 					_go_market()
 			else:
@@ -1237,7 +1246,7 @@ func _can_use_station(id: String) -> bool:
 	if in_market or _trip_busy or not _can_interact() or _brew_open() or _ball_open():   # --- R3 BENCH (R4 RAVEN: la bola)
 		return false
 	if id == "puerta" and phase == Phase.OPEN:
-		ui.toast("El mercado, mañana")   # --- R3 BENCH
+		ui.toast("Market: tomorrow")   # --- R3 BENCH
 		return false
 	return true
 
@@ -1254,7 +1263,7 @@ func _on_station_clicked(id: String) -> void:
 			if phase == Phase.MORNING:
 				_go_market()
 			elif phase == Phase.OPEN:
-				ui.toast("El mercado, mañana")   # --- R3 BENCH
+				ui.toast("Market: tomorrow")   # --- R3 BENCH
 		"ventanilla":   # --- R4 RAVEN: la bola de cristal de Krápido
 			krapido.open_ball()
 
@@ -1275,7 +1284,7 @@ func _update_top_buttons() -> void:
 	var morning := phase == Phase.MORNING
 	open_btn.visible = morning and not in_market
 	trip_btn.visible = morning
-	trip_btn.text = "Tienda" if in_market else "Mercado"   # --- R3 BENCH
+	trip_btn.text = "Shop" if in_market else "Market"   # --- R3 BENCH
 
 ## Muestra u oculta un escenario 3D (la tienda o el mercado) y lo pausa: sus clics, animaciones y sonidos.
 func _set_place_on(place: Node3D, on: bool) -> void:
@@ -1324,10 +1333,10 @@ func _go_market() -> void:
 	_switch_place(true)
 	await get_tree().create_timer(0.15).timeout
 	await _fade_to(0.0, 0.6)
-	ui.show_banner("Plaza del mercado")   # --- R3 SHIP: sin el subtítulo («Mañana de mercado» repetía lo mismo)
+	ui.show_banner("Market Square")   # --- R3 SHIP: sin el subtítulo («Mañana de mercado» repetía lo mismo)
 	if not _market_tip_shown:
 		_market_tip_shown = true
-		ui.show_tip("Toca un [b]puesto[/b] para comprar.", 10.0)   # --- R3 BENCH
+		ui.show_tip("Tap a [b]stall[/b] to buy.", 10.0)   # --- R3 BENCH
 	_trip_busy = false
 
 ## Vuelve a la tienda: camina hasta su puerta en la calle, fundido, y entra por la puerta de la tienda.
@@ -1431,7 +1440,7 @@ func _on_brew_ink() -> void:
 		return
 	var r := Game.ink_for_mix(contents)
 	if r.is_empty():
-		_bench_say("Faltan ingredientes")   # --- R3 MERGE: en el banco si está abierto, y corto
+		_bench_say("Not enough ingredients")   # --- R3 MERGE: en el banco si está abierto, y corto
 		return
 	busy = true
 	ui.hide_tooltip()
@@ -1608,7 +1617,7 @@ func _magic_test() -> void:
 	for o2 in Game.take_due_letters():
 		letters.append(Story.letter(o2, Game.resolve_outcome(o2)))
 	var body: String = letters[0]["body"] if not letters.is_empty() else ""
-	print("MAGIC carta: «", body, "» menciona la runa=", body.contains("Prisa") or body.contains("runa"), " premio=", letters[0]["reward"] if not letters.is_empty() else "")
+	print("MAGIC carta: «", body, "» menciona la runa=", body.contains("Haste") or body.contains("rune"), " premio=", letters[0]["reward"] if not letters.is_empty() else "")
 	# 7) una runa que falta: la carta lo dice y la propina baja
 	var it_plain := {"kind": "potion", "id": "balsamo_helado", "potency": 6}
 	var o3 := Story.make_outcome(current, it_plain, true, Story.price_of(it_plain, current))
@@ -1708,7 +1717,7 @@ func _ev_morning() -> bool:
 	if phase == Phase.MORNING:
 		events_ui.refresh_reminder()
 		if not Game.ev_booked.is_empty() and int(Game.ev_booked.get("day", 0)) == Game.day + 1:
-			ui.show_tip("Mañana: [b]%s[/b]. Ese día no abres." % Events.ev_name(String(Game.ev_booked["kind"])), 12.0)
+			ui.show_tip("Tomorrow: [b]%s[/b]. No shop that day." % Events.ev_name(String(Game.ev_booked["kind"])), 12.0)
 	_ev_morning_done = true
 	return false
 
@@ -1741,10 +1750,10 @@ func _ev_ask(inv: Dictionary) -> void:
 	if _ev_answer == 1 and Events.accept():
 		Sfx.play("coin", 0.05, -4.0)
 		var bk: Dictionary = Game.ev_booked
-		ui.toast("¡Inscrita! %s, día %d" % [Events.ev_name(String(bk["kind"])), int(bk["day"])], UIKit.GOLD_BRIGHT, 3.2)
+		ui.toast("Signed up! %s, Day %d" % [Events.ev_name(String(bk["kind"])), int(bk["day"])], UIKit.GOLD_BRIGHT, 3.2)
 	else:
 		Events.reject()
-		ui.toast("Quizá la próxima vez", UIKit.TEXT, 2.4)
+		ui.toast("Maybe next time", UIKit.TEXT, 2.4)
 	Game.save_game()
 	ui.refresh_hud()
 
@@ -1757,7 +1766,7 @@ func _ev_run_day() -> void:
 	ui.hide_tip()
 	ui.hide_order()
 	events_ui.refresh_reminder(false)
-	ui.show_banner(Events.ev_name(kind), "Hoy no abres la tienda")
+	ui.show_banner(Events.ev_name(kind), "No shop today")
 	await get_tree().create_timer(1.8).timeout
 	if phase != Phase.EVENT:
 		return
@@ -1788,7 +1797,7 @@ func _ev_enter_scene(ev: Dictionary) -> void:
 	if ev_scene.has_method("set_crowd"):
 		ev_scene.call("set_crowd", Array(Events.info(kind)["crowd"]))
 	Sfx.set_place("market" if kind != "academia" else "shop")
-	ui.set_time_label("Mediodía")
+	ui.set_time_label("Midday")
 	brew.close_now()
 	contents.clear()
 	brew_ready = {}
@@ -1851,7 +1860,7 @@ func _ev_night(from_black := true) -> void:
 	_update_top_buttons()
 	_refresh_all()
 	world.set_time(1.0, false)
-	ui.set_time_label("Noche")
+	ui.set_time_label("Night")
 	world.walker.teleport(ShopWorld.P_ALCH_COUNTER.x, 1)
 	world.snap_camera()
 	world.cat.play("sit")
@@ -1923,7 +1932,7 @@ func _ev_demo_numbers(medal: String) -> void:
 			var rn: Array = []
 			for r in g.rivals:
 				rn.append(String(r["name"]))
-			g.totals = {"Tú": int(mine.get(medal, 30)), rn[0]: 38, rn[1]: 31, rn[2]: 25}
+			g.totals = {EventGame.ME: int(mine.get(medal, 30)), rn[0]: 38, rn[1]: 31, rn[2]: 25}   # --- R5 EN-UI: id, no «Tú»
 
 func _ev_demo_state(renombre := 20) -> void:
 	Game.new_game_state()
@@ -1939,7 +1948,7 @@ func _ev_demo_state(renombre := 20) -> void:
 	_refresh_all()
 	ui.set_gameplay_visible(true)
 	world.set_time(0.0, false)
-	ui.set_time_label("Mañana")
+	ui.set_time_label("Morning")
 
 func _ev_demo(name: String) -> void:
 	var args := _ev_args()
@@ -2030,13 +2039,13 @@ func _ev_demo(name: String) -> void:
 				for r in ev_game.rivals:
 					rn.append(String(r["name"]))
 				var mine: int = int(sc[0]) + int(sc[1]) + int(sc[2])
-				ev_game.totals = {"Tú": mine, rn[0]: 11, rn[1]: 9, rn[2]: 8}
+				ev_game.totals = {EventGame.ME: mine, rn[0]: 11, rn[1]: 9, rn[2]: 8}   # --- R5 EN-UI: id, no «Tú»
 				ev_game._update_line_hud()
 				await get_tree().create_timer(0.4).timeout
 				events_ui.show_jury({"round": 1, "theme": String(th["text"]), "potion": pot, "scores": sc, "lines": lines,
-					"table": [{"name": "Tú", "round": mine, "total": mine, "me": true}, {"name": rn[0], "round": 11, "total": 11},
+					"table": [{"name": EventGame.ME_NAME, "round": mine, "total": mine, "me": true}, {"name": rn[0], "round": 11, "total": 11},
 						{"name": rn[1], "round": 9, "total": 9}, {"name": rn[2], "round": 8, "total": 8}],
-					"last": false, "fizz_line": "Bah. El jurado no entiende de ciencia."})
+					"last": false, "fizz_line": "Bah. The judges don't understand science."})
 			else:
 				var medal := String(args.get("evmedal", "gold"))
 				_ev_demo_numbers(medal)
@@ -2142,7 +2151,7 @@ func _ev_padtest() -> void:
 	_ev_key(KEY_ESCAPE)
 	await get_tree().create_timer(0.2).timeout
 	print("PADTEST invitación: botones=", names, " tras Esc sigue=", ov.current)
-	ok = ok and names.has("Aceptar") and names.has("Rechazar") and ov.current == "invite"
+	ok = ok and names.has("Accept") and names.has("Decline") and ov.current == "invite"
 	var acc_btn: Control = ov.current_node.find_child("Aceptar", true, false)
 	await _ev_pad_tap(acc_btn.get_global_rect().get_center())
 	await get_tree().create_timer(0.4).timeout
@@ -2163,7 +2172,7 @@ func _ev_padtest() -> void:
 	_ev_key(KEY_E)
 	await get_tree().create_timer(0.5).timeout
 	print("PADTEST evento: botones=", hud_names, " E abre el banco=", _brew_open(), " sin Tinta=", not brew.btns["ink"].visible)
-	ok = ok and hud_names.has("Caldero") and _brew_open() and not brew.btns["ink"].visible
+	ok = ok and hud_names.has("Cauldron") and _brew_open() and not brew.btns["ink"].visible
 	# 3) el mercado del menú no abre en el evento
 	_on_menu("market")
 	print("PADTEST mercado en el evento: panel=", ov.current)
@@ -2183,7 +2192,7 @@ func _ev_padtest() -> void:
 	_ev_key(KEY_SPACE)
 	await get_tree().create_timer(0.3).timeout
 	print("PADTEST resultados: botones=", card_names, " Espacio cierra=", closed[0], " medalla=", res["medal"])
-	ok = ok and card_names == ["Volver a casa"] and closed[0]
+	ok = ok and card_names == ["Head home"] and closed[0]
 	print("PADTEST ", "OK" if ok else "FALLO")
 	get_tree().quit()
 
@@ -2425,6 +2434,10 @@ func _parse_args() -> void:
 			_bot_ev_accept_all = true
 		elif a.begins_with("--loadsave="):   # --- R4 MERGE: el bot empieza desde una partida guardada (ruta absoluta)
 			_bot_load_path = a.substr(11)
+		# --- R5 MERGE: --textlog=<archivo>: anota todo el texto que se ve (scripts/textlog.gd; solo para pruebas)
+		elif a.begins_with("--textlog="):
+			TextLog.start(self, a.substr(10))
+		# --- end R5 MERGE
 
 func _process(_d: float) -> void:
 	_frame += 1
@@ -2560,13 +2573,13 @@ func _demo_scene(name: String) -> void:
 			ui.order_who = who
 			ui.show_order(Story.char_name(who), current["text"], current["hint"], ["prisa", "calma"] if name == "ticket" else [])
 			if name == "hud":
-				ui.show_tip("Tócala en el [b]estante[/b] para entregarla.", 0.0)
+				ui.show_tip("Tap it on the [b]shelf[/b] to hand it over.", 0.0)
 		# --- end R3 BENCH
 		# --- WORLD: el mercado es un lugar; "upgrades" abre el puesto de Mabel
 		"market", "upgrades", "vendor":
 			phase = Phase.MORNING
 			world.set_time(0.0, false)
-			ui.set_time_label("Mañana")
+			ui.set_time_label("Morning")
 			_switch_place(true, false)
 			if name == "market":
 				market.walker.teleport(5.6, 1)
@@ -2580,7 +2593,7 @@ func _demo_scene(name: String) -> void:
 			_trip_check()
 		"library":
 			phase = Phase.MORNING
-			ui.set_time_label("Mañana")
+			ui.set_time_label("Morning")
 			world.set_time(0.0, false)
 			world.walker.teleport(-7.2, -1)
 			world.snap_camera()
@@ -2608,7 +2621,7 @@ func _demo_scene(name: String) -> void:
 		"runeletter":
 			phase = Phase.MORNING
 			world.set_time(0.0, false)
-			ui.set_time_label("Mañana")
+			ui.set_time_label("Morning")
 			Game.unlock_magic()
 			ov.close(false)
 			var rq: Dictionary = {}
@@ -2626,7 +2639,7 @@ func _demo_scene(name: String) -> void:
 		"mail", "complaint":
 			phase = Phase.MORNING
 			world.set_time(0.0, false)
-			ui.set_time_label("Mañana")
+			ui.set_time_label("Morning")
 			var demo_items := [["panadera", "sueno_profundo", 8, true], ["nyra", "tonico_brio", 5, true], ["granjero", "vigor_verde", 6, false]]
 			if name == "complaint":
 				demo_items = [["granjero", "vigor_verde", 6, false]]
@@ -2715,7 +2728,7 @@ func _demo_scene(name: String) -> void:
 		"flap":
 			phase = Phase.MORNING
 			world.set_time(0.0, false)
-			ui.set_time_label("Mañana")
+			ui.set_time_label("Morning")
 			world.walker.teleport(ShopWorld.P_ALCH_COUNTER.x, 1)
 			world.snap_camera()
 			await get_tree().create_timer(0.6).timeout
@@ -2723,7 +2736,7 @@ func _demo_scene(name: String) -> void:
 		"doorside":
 			phase = Phase.MORNING
 			world.set_time(0.0, false)
-			ui.set_time_label("Mañana")
+			ui.set_time_label("Morning")
 			world.walker.teleport(float(ShopWorld.STATIONS["puerta"]["x"]), -1)
 			world.snap_camera()
 		# prueba del teclado: mantiene D (tecla física, como el jugador) desde su sitio del mostrador hasta el lado de la
@@ -2752,7 +2765,7 @@ func _demo_scene(name: String) -> void:
 		"fountain", "fountain_close":
 			phase = Phase.MORNING
 			world.set_time(0.0, false)
-			ui.set_time_label("Mañana")
+			ui.set_time_label("Morning")
 			_switch_place(true, false)
 			market.walker.teleport(MarketWorld.FOUNTAIN_POS.x - 0.6, 1)
 			market.snap_camera()
@@ -2770,6 +2783,14 @@ func _demo_scene(name: String) -> void:
 		"krapido_shop", "krapido_ball", "krapido_take", "krapido_arrive", "krapido_counter", "krapido_market", "krapido_letter", "krapido_test", "krapido_input", "krapido_empty":
 			_krapido_demo(name)
 		# --- end R4 RAVEN
+		# --- R5 EN-UI: capturas de los papeles que no tenían demo: los ajustes y el «Start over?» del título
+		"settings":
+			ov.show_settings()
+		"confirm":
+			ui.set_gameplay_visible(false)
+			ov.show_title(true)
+			ov._confirm_new(true)
+		# --- end R5 EN-UI
 		"book":
 			ov.show_book()
 		"journal":
@@ -2798,6 +2819,12 @@ func _demo_scene(name: String) -> void:
 		"scenes_check":
 			_scenes_check()
 		# --- end R4 SCENES
+		# --- R5 WORLD: el comprobador de las paredes que tiemblan (z-fighting) en todas las vistas 3D:
+		# --demo=zcheck --view=<vista> [--out=<carpeta>] [--shots [--zonly]] [--film] [--signs] [--stills] [--web]
+		# (ver scripts/world/zcheck.gd)
+		"zcheck":
+			ZCheck.run(self)
+		# --- end R5 WORLD
 
 # --- R4 SCENES: vista previa de los escenarios de los eventos (scripts/world/event_scenes.gd) -----------------------
 ## El escenario de un evento como lo verá el juego: la tienda escondida, la cámara del escenario, ella en su puesto
@@ -3241,11 +3268,11 @@ func _have(c: Array) -> bool:
 const PACE_IDLE_PULL := 6.0                    # segundos con la tienda vacía: entra uno de los de más (la ve libre)
 const PACE_WORK_PANELS := ["market", "stir"]   # paneles de Overlays que NO detienen el reloj (y el grimorio al encantar)
 const PACE_LINES := {
-	"full": ["¡Cuánta gente!", "Uf, está lleno…", "Mejor otro día."],
-	"tired": ["¡Me voy!", "¡Qué lentitud!", "Se me hace tarde.", "Otro día será."],
-	"tired_counter": ["¡No puedo esperar más!", "Lo siento, me voy.", "¡Ya no espero más!"],
-	"home": ["Mañana vuelvo.", "Ay, cerraron.", "Mañana será."],
-	"grumpy": ["¡Por fin!", "¡Ya era hora!", "Uf, por fin."],
+	"full": ["So many people!", "Phew, it's packed…", "Another day."],
+	"tired": ["I'm leaving!", "So slow!", "I'm running late.", "Some other day."],
+	"tired_counter": ["I can't wait any longer!", "Sorry, I have to go.", "I'm done waiting!"],
+	"home": ["Back tomorrow.", "Aw, they closed.", "Tomorrow, then."],
+	"grumpy": ["Finally!", "About time!", "Phew, at last."],
 }
 
 var shop_t := 0.0               # segundos de tienda abierta (0 .. Game.PACE_DAY_SECONDS)
@@ -3317,9 +3344,9 @@ func _pace_open() -> void:
 	ui.set_clock(Game.PACE_OPEN_MIN, "open")
 	ui.set_queue(0, 1.0)
 	if Game.pace_market_day():
-		ui.toast("¡Día de mercado! Vendrá más gente", UIKit.GOLD_BRIGHT, 3.0)
+		ui.toast("Market day! Expect a crowd", UIKit.GOLD_BRIGHT, 3.0)
 	else:
-		ui.toast("¡Abierto! Cerramos a las 18:00", UIKit.GOLD_BRIGHT)
+		ui.toast("Open! We close at %s" % UIKit.clock_words(Game.PACE_CLOSE_MIN), UIKit.GOLD_BRIGHT)   # --- R5 EN-UI: «6 PM»
 	await get_tree().create_timer(1.2).timeout
 	if phase != Phase.OPEN:
 		return
@@ -3394,9 +3421,9 @@ func _pace_arrive() -> void:
 	_pace_path(v, [ShopWorld.P_DOOR_IN, ShopWorld.P_PEEK, _pace_spot(line.size() - 1)], ["", "release", ""])
 	if not v["tutorial"]:
 		v["bubble"] = world.hourglass_for(a)
-		_pace_tip("clock", "El reloj corre: cerramos a las [b]18:00[/b].")
+		_pace_tip("clock", "The clock is ticking: we close at [b]%s[/b]." % UIKit.clock_words(Game.PACE_CLOSE_MIN))   # --- R5 EN-UI
 		if line.size() >= 2:
-			_pace_tip("line", "Si esperan mucho, [b]se van[/b].")
+			_pace_tip("line", "Wait too long and [b]they leave[/b].")
 	_pace_advance()
 
 ## Si el mostrador está libre, el primero de la fila pasa (su paciencia se renueva: ya lo atienden; si esperó demasiado
@@ -3678,7 +3705,7 @@ func _pace_annoyed(v: Dictionary) -> void:
 		world.blurt(a, Story.pick(PACE_LINES["tired_counter" if at_counter else "tired"]), Color(1.0, 0.42, 0.32))
 	_pace_sfx("pace_huff", -5.0)
 	if lost > 0:
-		ui.toast("−%d renombre" % lost, UIKit.BAD, 2.2)
+		ui.toast("−%d renown" % lost, UIKit.BAD, 2.2)
 	_pace_exit(v, 2.0, 0.7)
 	Game.save_game()
 	if at_counter and _pace_closing:
@@ -3811,7 +3838,7 @@ func _pace_bells() -> void:
 	if m >= 1020 and _last_chime < 1:
 		_last_chime = 1
 		_pace_sfx("pace_chime", -7.0, 0.0)
-		ui.toast("Última hora", Color(1.0, 0.74, 0.52), 2.4)
+		ui.toast("Last hour", Color(1.0, 0.74, 0.52), 2.4)
 	if m >= 1060:
 		var step := m / 5
 		if step != _tick_step:
@@ -3866,7 +3893,7 @@ func _pace_close_time() -> void:
 	krapido.on_close()   # --- R4 MERGE (RAVEN on PACE's clock): a las 18:00 los pedidos pendientes se cancelan sin castigo
 	_pace_sfx("pace_bell", -3.0, 0.0)
 	ui.set_clock(Game.PACE_CLOSE_MIN, "closed")
-	ui.show_banner("¡Cerramos!")
+	ui.show_banner("Closing time!")
 	var k := 0
 	for v in line.duplicate():
 		Game.today["lost_closed"] = int(Game.today.get("lost_closed", 0)) + 1
@@ -3884,7 +3911,7 @@ func _pace_close_time() -> void:
 		if phase == Phase.OPEN and _counter_v.is_empty():
 			_close_day()
 	elif not _counter_v.get("handed", false) and not _counter_v.get("told", false):
-		ui.show_tip("Atiende a quien está en el [b]mostrador[/b].", 7.0)
+		ui.show_tip("Serve whoever is at the [b]counter[/b].", 7.0)
 
 ## Fin del día abierto (lo llama _close_day): el reloj se detiene, quien quede se va, y el boca a boca de mañana.
 func _pace_end() -> void:
@@ -3952,7 +3979,7 @@ func _pace_demo(name: String) -> void:
 	if name == "ledger":
 		phase = Phase.CLOSING
 		world.set_time(1.0, false)
-		ui.set_time_label("Noche")
+		ui.set_time_label("Night")
 		Game.today = {"earned": 142, "renombre": 7, "sold": 9, "new_recipes": ["velo_invernal"],
 			"journal": [{"day": 5, "hero": "lirien", "text": Data.HEROES["lirien"][0]["journal"]}],
 			"arrived": 14, "served": 9, "lost_tired": 2, "lost_full": 1, "lost_closed": 2, "declined": 0,
@@ -4239,17 +4266,17 @@ func _bot_answer() -> void:
 		tw += 0.1
 	var choice := ""
 	if ui.dialog_choices.get_child_count() > 0:
-		choice = _bot_choice((ui.dialog_choices.get_child(0) as Button).text)
+		choice = _bot_choice(ui.dialog_choices.get_child(0))   # --- R5 EN-UI: por id
 	await _bot_wait("bye" if choice == "bye" or choice == "return_next" else "read")
 	if not (customer_ready and ui.dialog_open() and _pace_still(vid)) or busy:
 		return
 	if ui.dialog_choices.get_child_count() == 0:
 		ui._advance()
 		return
-	choice = _bot_choice((ui.dialog_choices.get_child(0) as Button).text)
+	choice = _bot_choice(ui.dialog_choices.get_child(0))   # --- R5 EN-UI: por id
 	if _bot == "slow" and choice == "prepare" and not hint_given and randf() < 0.35:
 		for b in ui.dialog_choices.get_children():
-			if (b as Button).text == "¿Una pista?":
+			if String(b.get_meta("choice", "")) == "hint":   # --- R5 EN-UI: por id (antes el texto «¿Una pista?»)
 				_on_choice("hint")
 				return
 	_on_choice(choice)
@@ -4438,7 +4465,7 @@ func _krapido_demo(name: String) -> void:
 		_refresh_all()
 		phase = Phase.MORNING
 		world.set_time(0.0, false)
-		ui.set_time_label("Mañana")
+		ui.set_time_label("Morning")
 		world.walker.teleport(float(ShopWorld.KRAPIDO_STATION["x"]), -1)
 		world.snap_camera()
 		await get_tree().create_timer(0.4).timeout
@@ -4450,7 +4477,7 @@ func _krapido_demo(name: String) -> void:
 		_refresh_all()
 		phase = Phase.MORNING
 		world.set_time(0.0, false)
-		ui.set_time_label("Mañana")
+		ui.set_time_label("Morning")
 		_switch_place(true, false)
 		ov.show_market("morning", "mabel")
 		return
@@ -4459,7 +4486,7 @@ func _krapido_demo(name: String) -> void:
 	if name == "krapido_letter":
 		phase = Phase.MORNING
 		world.set_time(0.0, false)
-		ui.set_time_label("Mañana")
+		ui.set_time_label("Morning")
 		var r: Dictionary = Data.KRAPIDO_ORDERS[0]
 		var req := {"who": r["who"], "kind": "villager", "potion": r["potion"], "text": r["line"], "good": r["good"], "fail": r["fail"], "runes": []}
 		var it := {"kind": "potion", "id": String(r["potion"]), "potency": 5}
@@ -4723,7 +4750,7 @@ func _rank_demo(name: String) -> void:
 			ui.refresh_hud()
 			phase = Phase.MORNING
 			world.set_time(0.0, false)
-			ui.set_time_label("Mañana")
+			ui.set_time_label("Morning")
 			await get_tree().create_timer(0.3).timeout
 			ov.show_ranking()
 			if name == "rankpad":
@@ -4740,7 +4767,7 @@ func _rank_demo(name: String) -> void:
 			ui.refresh_hud()
 			phase = Phase.MORNING
 			world.set_time(0.0, false)
-			ui.set_time_label("Mañana")
+			ui.set_time_label("Morning")
 			var r: Dictionary = {}
 			for q in Data.VILLAGER_REQUESTS:
 				if q["who"] == "panadera" and q["potion"] == "sueno_profundo" and r.is_empty():
@@ -4757,7 +4784,7 @@ func _rank_demo(name: String) -> void:
 			ui.refresh_hud()
 			phase = Phase.MORNING
 			world.set_time(0.0, false)
-			ui.set_time_label("Mañana")
+			ui.set_time_label("Morning")
 			await get_tree().create_timer(0.3).timeout
 			ov.show_gaceta()
 		"ranksummary":
@@ -4810,7 +4837,7 @@ func _rank_demo(name: String) -> void:
 			ui.refresh_hud()
 			phase = Phase.MORNING
 			world.set_time(0.0, false)
-			ui.set_time_label("Mañana")
+			ui.set_time_label("Morning")
 			_morning_mail()
 		# ratón, teclado y mando: clic de verdad en el botón del HUD, G, Esc y el botón B del mando
 		"rankinput":
@@ -5003,7 +5030,7 @@ func _merge_ledger(args: PackedStringArray) -> void:
 	Game.reset_today()
 	phase = Phase.CLOSING
 	world.set_time(1.0, false)
-	ui.set_time_label("Noche")
+	ui.set_time_label("Night")
 	world.walker.teleport(ShopWorld.P_ALCH_COUNTER.x, 1)
 	world.snap_camera()
 	if args.has("--event"):
