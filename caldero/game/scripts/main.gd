@@ -85,13 +85,36 @@ const GAME_TITLE := "Midnight Cauldron"
 func _ready() -> void:
 	get_window().title = GAME_TITLE   # --- R5 EN-UI (en la web también cambia document.title)
 	get_viewport().physics_object_picking = true
-	world = ShopWorld.new()
-	add_child(world)
-	world.build()
+	# --- BOOT: los argumentos primero (antes iban al final de _ready): con --demo=... todo se arma de un tirón como
+	# antes (las pruebas y capturas no cambian); si no, el arranque va en pasos (_boot) con la pantalla de carga viva.
+	_parse_args()
+	if _demo != "":
+		world = ShopWorld.new()
+		add_child(world)
+		world.build()
+		_bs_world_hooks()
+		for step in _boot_steps():
+			step.call()
+		_booted = true
+		Sfx.start_ambience()
+		BootScreen.close(0.0)
+		_run_demo()
+		return
+	_boot()
+	# --- end BOOT
+
+# --- BOOT: el arranque en pasos ---------------------------------------------------------------------------------
+# Lo que antes hacía _ready de un tirón, en el orden de siempre, partido en pasos. Con --demo, _ready los llama todos
+# seguidos; en el juego, _boot() deja pasar un cuadro entre uno y otro (la pantalla de carga se mueve y la página
+# responde). Ningún paso cambió por dentro: son los mismos trozos de antes.
+
+func _bs_world_hooks() -> void:
 	# --- WORLD: la alquimista camina (walker.gd) y las estaciones solo funcionan cuando llega
 	world.walker.can_walk = _can_walk
 	world.can_use = _can_use_station
 	world.station_clicked.connect(_on_station_clicked)
+
+func _bs_market() -> void:
 	market = MarketWorld.new()
 	add_child(market)
 	market.build()
@@ -101,6 +124,7 @@ func _ready() -> void:
 	_set_place_on(market, false)
 	# --- end WORLD
 
+func _bs_post() -> void:
 	var post_layer := CanvasLayer.new()
 	post_layer.layer = 0
 	add_child(post_layer)
@@ -112,8 +136,12 @@ func _ready() -> void:
 	post.material = sm
 	post_layer.add_child(post)
 
+
+func _bs_ui() -> void:
 	ui = GameUI.new()
 	add_child(ui)
+
+func _bs_overlays() -> void:
 	ov = Overlays.new()
 	add_child(ov)
 	# --- R3 BENCH: el banco del caldero (capa 4, debajo del HUD)
@@ -140,6 +168,8 @@ func _ready() -> void:
 	pad.market = market   # --- WORLD
 	pad.brew = brew       # --- R3 BENCH
 	add_child(pad)
+
+func _bs_krapido() -> void:
 	# --- R4 RAVEN: Krápido (la ventanilla del cuervo y la bola de cristal; la medalla del HUD)
 	krapido = Krapido.new()
 	krapido.name = "Krapido"
@@ -148,6 +178,7 @@ func _ready() -> void:
 	pad.ball = krapido.ball
 	# --- end R4 RAVEN
 
+func _bs_wire() -> void:
 	world.jar_clicked.connect(_on_jar_clicked)
 	world.jar_hover.connect(func(id):
 		if not ov.is_open() and not world.hover_blocked():   # --- R3 SHIP: no con el banco abierto (selección vieja)
@@ -177,6 +208,8 @@ func _ready() -> void:
 	Game.stock_changed.connect(func(): world.refresh_jars())
 	Game.potions_changed.connect(func(): world.refresh_rack())
 	Game.upgrades_changed.connect(_on_upgrades_changed)
+
+func _bs_magic() -> void:
 	# --- R3 MAGIC3: el libro de runas del escritorio (encanta pociones del estante) y la tinta del caldero
 	grimoire = GrimoireUI.new()
 	grimoire.setup(self)
@@ -184,18 +217,171 @@ func _ready() -> void:
 	ui.magic_setup()
 	ui.ink_pressed.connect(_on_brew_ink)
 	# --- end R3 MAGIC3
+
+func _bs_events() -> void:
 	_ev_setup()   # --- R4 EVENTS
 	_perf_prefill_faces()   # --- R6 PERF
 	_r6_setup()   # --- R6 UI: los avisos de acción, el dispositivo (teclado, ratón, mando) y --glyphs= (MERGE6: el último, su GlyphWatcher ve la entrada primero)
 
+## Los pasos después de la tienda (ShopWorld se arma aparte: en el juego, repartido en cuadros con build_sliced).
+func _boot_steps() -> Array[Callable]:
+	return [_bs_market, _bs_post, _bs_ui, _bs_overlays, _bs_krapido, _bs_wire, _bs_magic, _bs_events]
+
+var boot_warm: BootWarm   # el precalentamiento de después del título (scripts/boot_warm.gd)
+var _booted := false      # ya están todos los pasos (main._process y la entrada esperan a esto)
+
+## El arranque del juego: la pantalla de carga (BootScreen, ya en pantalla desde el primer cuadro: scripts/boot.gd)
+## tapa todo mientras se arma la tienda en pasos de un cuadro, se encienden los sonidos de fondo de a uno y la tienda se
+## muestra por partes (pocos materiales nuevos por cuadro: los shaders se compilan repartidos, no todos en un cuadro de
+## varios segundos). Solo lo que necesita el título. Después: el título, la pantalla de carga se funde, y lo demás que
+## antes se precalentaba en negro (la biblioteca, los efectos, las letras de los eventos, el mercado) lo hace BootWarm
+## repartido en cuadros mientras el jugador ya ve el título.
+func _boot() -> void:
+	var tree := get_tree()
+	_bm("main:start")
+	BootScreen.progress(0.56)
+	world = ShopWorld.new()
+	world.visible = false   # no se dibuja (ni compila nada) hasta _boot_reveal_world
+	add_child(world)
+	await world.build_sliced(tree)
+	_bs_world_hooks()
+	_bm("world")
+	var steps := _boot_steps()
+	for i in steps.size():
+		BootScreen.progress(0.58 + 0.12 * i / float(steps.size()))
+		await tree.process_frame
+		var st := PerfLog.t0()
+		steps[i].call()
+		PerfLog.step("boot:step%d script" % i, st)
+		if post:
+			post.visible = false   # el desenfoque (lee la pantalla entera) se enciende al final, bajo la pantalla de carga
+		_bm("step%d" % i)
+	_booted = true
+	# los sonidos de fondo, de a uno por cuadro: en la web cada uno se decodifica entero la primera vez que suena
+	for p in [Sfx.fire, Sfx.night, Sfx.music]:
+		await tree.process_frame
+		if not (p as AudioStreamPlayer).playing:
+			(p as AudioStreamPlayer).play()
 	Sfx.start_ambience()
-	_parse_args()
-	if _demo != "":
-		_run_demo()
+	await tree.process_frame
+	_bm("ambience")
+	BootScreen.progress(0.72)
+	await _boot_reveal_world(0.72, 0.96)
+	_bm("revealed")
+	post.visible = true
+	_show_title()
+	await tree.process_frame   # el título y el desenfoque, dibujados (y compilados) bajo la pantalla de carga
+	await tree.process_frame
+	_bm("title:shown")
+	BootScreen.close(0.45)
+	await get_tree().create_timer(0.45).timeout
+	_bm("title:faded_in")
+	if not OS.get_cmdline_user_args().has("--nobootwarm"):   # (medición: sin el precalentamiento de después)
+		boot_warm = BootWarm.start(self)
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--bootcheck"):
+			_boot_check(a.substr(12) if a.begins_with("--bootcheck=") else "new")
+
+## Muestra la tienda por partes: cada cuadro solo lo que trae un material nuevo (cada material nuevo = varios
+## programas de shader, uno por cada pasada y luz que lo toca, que WebGL enlaza en ese cuadro sin soltar la página). Con
+## las luces y la noche del título desde el principio: lo que se compila es lo que el título usa. Mientras tanto la
+## tienda se dibuja a un cuarto de resolución (la tapa la pantalla de carga): los cuadros cuestan menos.
+func _boot_reveal_world(p0: float, p1: float) -> void:
+	var tree := get_tree()
+	world.set_time(1.0, false)   # la noche del título (como _show_title)
+	var hidden := {}
+	BootWarm.hide_layers(world, hidden)
+	var vp := get_viewport()
+	var scale0 := vp.scaling_3d_scale
+	vp.scaling_3d_scale = 0.5
+	world.visible = true
+	var items := BootWarm.items_of(world)
+	var total := maxi(1, items.size())
+	var seen := {}
+	var budget := 1   # firmas de material nuevas por cuadro (las de shader propio o partículas pesan doble)
+	await tree.process_frame   # (el primer cuadro con la tienda: las luces, el entorno, el cielo; sin objetos)
+	var last := Time.get_ticks_usec()
+	while not items.is_empty():
+		var before := seen.size()
+		var group := BootWarm.take_group(items, seen, budget, 32 * budget)
+		for n in group:
+			BootWarm.restore_layers(n, hidden)
+		_bm("reveal %d nodes, +%d keys (budget %d)" % [group.size(), seen.size() - before, budget])
+		BootScreen.progress(lerpf(p0, p1, 1.0 - items.size() / float(total)))
+		await tree.process_frame
+		# con una tarjeta rápida (cuadros cortos aun compilando) van más materiales por cuadro; si no, uno
+		var now := Time.get_ticks_usec()
+		budget = mini(budget + 1, 4) if now - last < 50000 else 1
+		last = now
+	BootWarm.restore_layers(world, hidden)
+	vp.scaling_3d_scale = scale0
+## (pruebas, con --perflog) --bootcheck[=new|continue]: el arranque de verdad (no es una demo) y, cuando BootWarm
+## termina, lo que un jugador hace primero: «Start» (la introducción, pasada con el mismo aviso que el clic) o
+## «Continue» (la partida guardada), la mañana en la tienda, la biblioteca, la puerta, el mercado (un puesto), de vuelta
+## y los efectos del caldero. Cada paso deja una marca «check:...»: en la web, webboot.mjs cuenta los programas de
+## shader que se enlazan entre marca y marca (lo que BootWarm no cubrió se ve ahí). --nobootwarm: sin BootWarm.
+func _boot_check(mode: String) -> void:
+	if is_instance_valid(boot_warm):
+		await boot_warm.wait_done(600.0)
+	PerfLog.mark("check:warm_done")
+	await get_tree().create_timer(1.0).timeout
+	print("BOOTCHECK title has_save=", Game.has_save(), " current=", ov.current)
+	ov.close(false)
+	if mode == "continue":
+		_continue()
 	else:
-		await _warm_places()   # --- PREP: la biblioteca y el mercado se dibujan una vez, en negro, antes del título
-		_show_title()
-		_fade_to(0.0, 0.5)     # --- PREP
+		_start_new()
+	PerfLog.mark("check:start")
+	var t := 0.0
+	while phase != Phase.MORNING and t < 120.0:
+		await get_tree().create_timer(0.6).timeout
+		t += 0.6
+		if phase == Phase.INTRO:
+			ui.dialog_advanced.emit()
+	PerfLog.mark("check:morning")
+	print("BOOTCHECK morning day=", Game.day, " gold=", Game.gold)
+	await get_tree().create_timer(6.0).timeout
+	for i in 6:   # el correo de la mañana y los consejos
+		if ov.is_open():
+			ov.close()
+		await get_tree().create_timer(0.8).timeout
+	Game.tutorial_done = true
+	PerfLog.mark("check:walk")
+	await get_tree().create_timer(2.0).timeout
+	PerfLog.mark("check:library")
+	await world.go_station("biblioteca")
+	await get_tree().create_timer(3.0).timeout
+	PerfLog.mark("check:door")
+	await world.go_station("puerta")
+	await get_tree().create_timer(3.0).timeout
+	PerfLog.mark("check:market")
+	await _go_market()
+	await get_tree().create_timer(3.0).timeout
+	PerfLog.mark("check:stall")
+	await market.use_station("ilse")
+	await get_tree().create_timer(3.0).timeout
+	ov.close()
+	PerfLog.mark("check:back")
+	await _leave_market()
+	await get_tree().create_timer(3.0).timeout
+	PerfLog.mark("check:cauldron")
+	await world.go_station("caldero")
+	world.cauldron.brew_burst(Color(0.6, 0.9, 0.5))
+	world.cauldron.splash(Color(0.6, 0.9, 0.5))
+	world.spawn_sparkles(world.cauldron.global_position + Vector3(0.6, 1.2, 0.4), Color(1.6, 1.5, 1.0), 8)
+	world.spawn_hearts(world.cauldron.global_position + Vector3(1.1, 1.2, 0.4))
+	world.alchemist.emote("heart")
+	await get_tree().create_timer(3.0).timeout
+	PerfLog.mark("check:end")
+	print("BOOTCHECK done")
+	if DisplayServer.get_name() == "headless":
+		get_tree().quit()
+
+## (con --perflog) la hora de cada paso del arranque: «M ... boot:<paso> ticks=<ms desde que arrancó el motor>»
+func _bm(step: String) -> void:
+	if PerfLog.on:
+		PerfLog.mark("boot:%s ticks=%d" % [step, Time.get_ticks_msec()])
+# --- end BOOT
 
 func _build_open_button() -> void:
 	# --- R6 UI: arriba al centro, una sola fila a la altura de la placa y de la barra de la derecha: la acción principal
@@ -1225,6 +1411,8 @@ func _notification(what: int) -> void:
 		Game.save_game()
 
 func _unhandled_input(ev: InputEvent) -> void:
+	if not _booted:   # --- BOOT: todavía armándose
+		return
 	# --- R6 UI: E / Espacio hacen lo que dice el aviso de acción (PromptBrain); O abre la tienda; M va al mercado (o
 	# vuelve, o de día abre el encargo); Tab abre el estante con el banco abierto
 	if ev is InputEventKey and ev.pressed and not ev.echo and _r6_key(ev):
@@ -1352,6 +1540,11 @@ func _go_market() -> void:
 	world.walker.frozen = true
 	await world.alchemist.walk_to(ShopWorld.P_DOOR_IN, 2.2)
 	await _fade_to(1.0, 0.45)
+	# --- BOOT: si el precalentamiento de después del título (BootWarm) todavía no pasó por el mercado, lo hace ahora, en
+	# negro y repartido en cuadros (un negro un poco más largo la primera vez en vez de un tirón con el mercado a la vista)
+	if is_instance_valid(boot_warm) and not boot_warm.market_done:
+		await boot_warm.warm_market()
+	# --- end BOOT
 	world.close_door()
 	world.walker.frozen = false
 	_switch_place(true)
@@ -1420,136 +1613,24 @@ func _trip_check() -> void:
 # --- end WORLD
 
 # --- PREP: precalentar la biblioteca y el mercado ---------------------------------------------------------------
-## Al arrancar, con la pantalla en negro: la cámara de la tienda mira un momento la biblioteca y el mercado se dibuja
-## en tres puntos de la calle. Así WebGL compila sus materiales y shaders antes de que el jugador vaya (sin esto, la
-## primera salida al mercado se trababa más de un segundo en el navegador). Son unos pocos cuadros.
+# --- BOOT: antes, al arrancar y en negro, la cámara de la tienda miraba la biblioteca, el mercado se dibujaba en tres
+# puntos de la calle y se lanzaban los efectos (_warm_shop_effects), las letras de los eventos (_warm_event_text) y las
+# texturas de los papeles (_preload_ui_art), todo ANTES del título y en pocos cuadros enormes. Ahora eso lo hace
+# BootWarm (scripts/boot_warm.gd) después del título, repartido. Esta función queda para las demos de medición
+# (--demo=perf_event, m6_fontprobe, m6_juryprobe): hace lo mismo que el juego y espera a que termine.
 func _warm_places() -> void:
 	fade.color.a = 1.0
-	PerfWarmup.run(self)   # --- R6 PERF: cada clase de trazo 2D una vez (el mapa del viaje, el grimorio), en negro
-	world.cam_fixed_x = ShopWorld.CAM_X0
-	world.snap_camera()
-	await _frames(2)
-	# --- R3 WORLD3: también el lado de los clientes (el frente de paneles del mostrador solo se ve desde ahí)
-	world.cam_fixed_x = ShopWorld.CAM_X1
-	world.snap_camera()
-	await _frames(2)
-	# --- end R3 WORLD3
-	await _warm_shop_effects()   # --- R6 PERF
-	await _warm_event_text()   # --- R6 PERF
-	_preload_ui_art()   # --- R6 PERF
-	world.cam_fixed_x = INF
-	world.snap_camera()
-	_set_place_on(world, false)
-	_set_place_on(market, true)
-	market.enter(false)
-	for v in market.vendors:   # --- R6 PERF: el saludo de los vendedores (globo de emoción) con las luces del mercado
-		(market.vendors[v] as Actor).emote("heart", 0.0)
-	market.alchemist.emote("note", 0.0)   # --- R6 PERF
-	for x in [MarketWorld.X0, MarketWorld.FOUNTAIN_POS.x, MarketWorld.X1]:
-		market.walker.teleport(x, 1)
-		market.snap_camera()
-		await _frames(2)
-	for v in market.vendors:   # --- R6 PERF
-		(market.vendors[v] as Actor).clear_emote()
-	market.alchemist.clear_emote()   # --- R6 PERF
-	market.leave()
-	_set_place_on(market, false)
-	_set_place_on(world, true)
-	world.camera.current = true
-	world.snap_camera()
+	if not is_instance_valid(boot_warm):
+		boot_warm = BootWarm.start(self)
+	await boot_warm.wait_done(300.0)
+# --- end BOOT
 
 func _frames(n: int) -> void:
 	for i in n:
 		await get_tree().process_frame
 
-# --- R6 PERF: las partículas de la tienda que salen por primera vez a mitad del juego (el humo y los destellos al
-# embotellar, la salpicadura del caldero, los destellos de subir de nivel, los corazones de Miga): cada una compila su
-# shader de partículas la primera vez que se ve (un tirón en la web). Aquí salen una vez frente a la cámara, en negro,
-# y se esconden a los dos cuadros (sus propios timers las borran).
-func _warm_shop_effects() -> void:
-	# la puerta abierta (abierta entra en la luz con sombras del mostrador: otra variante de su material, que salía
-	# a la vista con el primer cliente o la primera salida al mercado) y un globo de emoción sobre alguien frente al
-	# mostrador (su material salía la primera vez que un cliente o un vendedor saluda)
-	world.cam_fixed_x = ShopWorld.CAM_X1
-	world.snap_camera()
-	var door_y: float = world.door_pivot.rotation.y
-	world.door_pivot.rotation.y = deg_to_rad(-105.0)
-	var guest := Actor.new()
-	world.add_child(guest)
-	guest.setup(Story.sprite_id("pip"), 0.04)
-	guest.position = ShopWorld.P_CUSTOMER
-	guest.emote("heart", 0.0)
-	await _frames(2)
-	world.door_pivot.rotation.y = door_y
-	guest.queue_free()
-	var cau: Cauldron = world.cauldron
-	world.cam_fixed_x = ShopWorld.CAULDRON_POS.x + 1.0
-	world.snap_camera()
-	world.alchemist.emote("heart", 0.0)
-	var had := {}
-	for n in [world, cau]:
-		for c in n.get_children():
-			had[c.get_instance_id()] = true
-	cau.brew_burst(Color(0.6, 0.9, 0.5))
-	cau.splash(Color(0.6, 0.9, 0.5))
-	cau._flash = 0.0
-	var at := cau.global_position + Vector3(0.6, 1.2, 0.4)
-	world.spawn_sparkles(at, Color(1.6, 1.5, 1.0), 8)
-	world.spawn_hearts(at + Vector3(0.5, 0.0, 0.0))
-	# el confeti de los eventos (EventScenes.cheer: sale cuando el público aplaude): su shader de partículas es de los
-	# más grandes del juego (2 programas; en Mesa ~2,8 s de CPU la primera vez). Mejor aquí, en el negro del arranque,
-	# que en el principio del evento. Un EventScenes vacío (sin armar) solo para lanzarlo; se borra a los dos cuadros.
-	var evc := EventScenes.new()
-	world.add_child(evc)
-	evc.position = at - Vector3(2.0, 2.6, 0.2)   # (_confetti sale 2 / 2,6 / 0,2 por encima de su «Player»)
-	PerfWarmup.keep_particles(evc._confetti())   # (y su shader queda vivo toda la partida: cada aplauso lo reusa)
-	await _frames(2)
-	evc.queue_free()
-	world.alchemist.clear_emote()
-	for n in [world, cau]:
-		for c in n.get_children():
-			if c is GPUParticles3D and not had.has(c.get_instance_id()):
-				PerfWarmup.keep_particles(c as GPUParticles3D)   # el humo, los destellos, la salpicadura, los corazones
-				(c as GPUParticles3D).emitting = false
-				(c as GPUParticles3D).visible = false
-
-## Las letras grandes de los eventos (la cuenta atrás «3 2 1 Go!», «Time!», y los «+3 ★» que saltan): con contorno y a
-## 120 px, cada letra nueva se dibuja en la caché de la fuente y la textura de la caché se vuelve a subir entera a la GPU
-## por cada letra (en la web: 56 subidas, 27 Mpx, ~2 s con SwiftShader en el precalentamiento del evento). Aquí, en el
-## negro del arranque, una vez: la caché de la fuente dura toda la partida.
-func _warm_event_text() -> void:
-	if not (is_instance_valid(events_ui) and events_ui.has_method("_outlined")):
-		return
-	var layer := CanvasLayer.new()
-	layer.layer = 19   # debajo del fundido (20)
-	add_child(layer)
-	var big: Label = events_ui.call("_outlined", "3 2 1 Go! Time! Done!", 120, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold)
-	var small: Label = events_ui.call("_outlined", "+0123456789 ★ time", 40, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold)
-	small.position = Vector2(0, 200)
-	layer.add_child(big)
-	layer.add_child(small)
-	# --- R6 MERGE: la letra de los avisos del banco (brew_ui: msg, font_sc_bold 34 px con contorno 10). El primer aviso
-	# (en el concurso, «Tap it on the shelf to present it») subía la página de la caché una vez por letra nueva (26
-	# subidas en la web). Todas las letras aquí, en el negro del arranque, con la misma letra y contorno.
-	var bench := UIKit.label("ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 !?.,'’+-%:()",
-		34, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold)
-	bench.add_theme_color_override("font_outline_color", Color(0.1, 0.06, 0.12))
-	bench.add_theme_constant_override("outline_size", 10)
-	bench.position = Vector2(0, 300)
-	layer.add_child(bench)
-	# --- end R6 MERGE
-	await _frames(2)
-	layer.queue_free()
-
-## Las texturas de los papeles que se cargan la primera vez que se abren (el Escalafón: 30 escudos y sus marcos; el
-## mapa y los sellos de los eventos): quedan en la caché de PaperKit desde el arranque (la primera vez que se abría el
-## Escalafón tardaba el triple que las siguientes).
-func _preload_ui_art() -> void:
-	for f in ResourceLoader.list_directory("res://assets/ui"):
-		var n := String(f)
-		if n.ends_with(".png") and (n.begins_with("rank_") or n.begins_with("evui_")):
-			PaperKit.tex("res://assets/ui/" + n)
-# --- end R6 PERF
+# --- BOOT: _warm_shop_effects, _warm_event_text y _preload_ui_art (R6 PERF / R6 MERGE) se mudaron a BootWarm
+# (scripts/boot_warm.gd: _step_shop_effects, _step_text, _step_ui_art), que los hace después del título.
 # --- end PREP
 
 # --- R6 PERF: las caras recortadas del ticket del pedido y de la bola de cristal. game_ui y ball_ui buscan la fila de
@@ -1933,6 +2014,11 @@ func _ev_ask(inv: Dictionary) -> void:
 
 ## El día del evento: el viaje, el escenario, el juego, los resultados y la vuelta a casa de noche.
 func _ev_run_day() -> void:
+	# --- BOOT: el precalentamiento de después del título tiene que haber terminado (siempre, salvo que el evento llegue a
+	# los pocos segundos de empezar: entonces sigue unos cuadros más, con la tienda todavía a la vista)
+	if is_instance_valid(boot_warm) and not boot_warm.done:
+		await boot_warm.wait_done(30.0)
+	# --- end BOOT
 	var ev: Dictionary = Game.ev_booked.duplicate(true)
 	var kind := String(ev.get("kind", "academia"))
 	phase = Phase.EVENT
@@ -2825,6 +2911,8 @@ func _parse_args() -> void:
 
 func _process(_d: float) -> void:
 	_frame += 1
+	if not _booted:   # --- BOOT: todavía armándose (la pantalla de carga tapa todo)
+		return
 	_post_follow_camera()   # --- R6 PERF: la banda nítida del desenfoque según el escenario que se ve
 	ui.set_day_market(phase == Phase.OPEN)   # --- R3 MERGE: el «x2» del botón Mercado (de día el encargo cuesta el doble)
 	if open_btn and open_btn.disabled != _trip_busy:   # --- R6 UI: los botones de arriba, desactivados mientras va o vuelve

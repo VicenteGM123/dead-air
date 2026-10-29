@@ -1,4 +1,16 @@
 <!DOCTYPE html>
+<!--
+	--- BOOT: la página del juego (html/custom_html_shell en export_presets.cfg). Es la de Godot 4.7.2
+	(godot.html de la plantilla web) con estos cambios:
+	- el fondo de la página es el color de la imagen de arranque (#0d0a17 = application/boot_splash/bg_color),
+	  no negro: de la página a la pantalla de carga del juego y al título no hay saltos de color;
+	- la barra de progreso tiene la forma, el color y el sitio de la del juego (scripts/boot_screen.gd: al 90 % del alto,
+	  la mitad del ancho, dorada): la página la llena hasta el 42 % mientras baja el juego y el juego sigue desde ahí;
+	- cuando termina la descarga, un brillo recorre la barra («arrancando»): es una animación CSS de transform, que el
+	  navegador mueve aunque el hilo principal esté ocupado arrancando el motor;
+	- el motor arranca dos cuadros después (requestAnimationFrame), para que ese brillo llegue a pintarse antes de la
+	  tarea larga del arranque.
+-->
 <html lang="en">
 	<head>
 		<meta charset="utf-8">
@@ -13,7 +25,7 @@ html, body, #canvas {
 
 body {
 	color: white;
-	background-color: black;
+	background-color: #0d0a17;
 	overflow: hidden;
 	touch-action: none;
 }
@@ -38,7 +50,7 @@ body {
 }
 
 #status {
-	background-color: #242424;
+	background-color: #0d0a17;
 	display: flex;
 	flex-direction: column;
 	justify-content: center;
@@ -70,10 +82,62 @@ body {
 	display: none;
 }
 
-#status-progress {
+#status-progress, #status-shimmer {
 	bottom: 10%;
 	width: 50%;
+	height: 1.05vh;
+	min-height: 4px;
 	margin: 0 auto;
+}
+
+#status-progress {
+	-webkit-appearance: none;
+	appearance: none;
+	border: 0;
+	border-radius: 0;
+	outline: 1px solid rgba(255, 219, 128, 0.28);
+	outline-offset: 1px;
+	background: rgba(255, 255, 255, 0.07);
+	color: #ffdb80;
+}
+
+#status-progress::-webkit-progress-bar {
+	background: rgba(255, 255, 255, 0.07);
+}
+
+#status-progress::-webkit-progress-value {
+	background: #ffdb80;
+}
+
+#status-progress::-moz-progress-bar {
+	background: #ffdb80;
+}
+
+#status-shimmer {
+	position: absolute;
+	left: 0;
+	right: 0;
+	overflow: hidden;
+	display: none;
+	pointer-events: none;
+}
+
+#status-shimmer::after {
+	content: '';
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 0;
+	width: 25%;
+	background: linear-gradient(90deg, rgba(255, 244, 214, 0), rgba(255, 244, 214, 0.75), rgba(255, 244, 214, 0));
+	transform: translateX(-100%);
+	animation: status-shimmer 1.1s ease-in-out infinite;
+	will-change: transform;
+}
+
+@keyframes status-shimmer {
+	from { transform: translateX(-100%); }
+	to { transform: translateX(400%); }
 }
 
 #status-notice {
@@ -106,18 +170,21 @@ body {
 		<div id="status">
 			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png" alt="">
 			<progress id="status-progress"></progress>
+			<div id="status-shimmer"></div>
 			<div id="status-notice"></div>
 		</div>
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":4308232,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":4476136,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
 (function () {
 	const statusOverlay = document.getElementById('status');
 	const statusProgress = document.getElementById('status-progress');
+	const statusShimmer = document.getElementById('status-shimmer');
+	const WEB_START = 42; // --- BOOT: hasta aquí llena la página la barra (el juego sigue desde 0.42: BootScreen.WEB_START)
 	const statusNotice = document.getElementById('status-notice');
 
 	let initializing = true;
@@ -134,6 +201,7 @@ const engine = new Engine(GODOT_CONFIG);
 		}
 		statusOverlay.style.visibility = 'visible';
 		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
+		statusShimmer.style.display = 'none';
 		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
 		statusMode = mode;
 	}
@@ -199,14 +267,23 @@ const engine = new Engine(GODOT_CONFIG);
 		}
 	} else {
 		setStatusMode('progress');
+		statusProgress.max = 100;
+		statusProgress.value = 0;
+		// --- BOOT: el motor arranca dos cuadros después (la barra y su brillo ya pintados antes de la tarea larga)
+		const engineStart = engine.start.bind(engine);
+		engine.start = function (...args) {
+			statusShimmer.style.display = 'block';
+			return new Promise((resolve) => {
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+			}).then(() => engineStart(...args));
+		};
 		engine.startGame({
 			'onProgress': function (current, total) {
-				if (current > 0 && total > 0) {
-					statusProgress.value = current;
-					statusProgress.max = total;
-				} else {
-					statusProgress.removeAttribute('value');
-					statusProgress.removeAttribute('max');
+				// --- BOOT: la descarga llena la barra hasta WEB_START; al terminar, el brillo de «arrancando»
+				statusProgress.max = 100;
+				statusProgress.value = (current > 0 && total > 0) ? WEB_START * Math.min(1, current / total) : 0;
+				if (total > 0 && current >= total) {
+					statusShimmer.style.display = 'block';
 				}
 			},
 		}).then(() => {

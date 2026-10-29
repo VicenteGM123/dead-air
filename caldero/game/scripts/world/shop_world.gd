@@ -306,6 +306,30 @@ func build() -> void:
 	refresh_upgrades()
 	set_time(0.0, false)
 
+# --- BOOT: lo mismo que build(), pero repartido en cuadros (la pantalla de carga sigue viva): entre una parte y la
+# siguiente espera al cuadro siguiente si ya gastó BUILD_SLICE_USEC en este. build() queda igual (las demos y las
+# pruebas la llaman de un tirón).
+const BUILD_SLICE_USEC := 25000
+
+func build_sliced(tree: SceneTree) -> void:
+	var parts: Array[Callable] = [_build_camera_and_env, _build_room, _build_outside, _build_shelves, _build_counter,
+		_build_cauldron, _build_decor, _build_library, _build_characters, _build_krapido, _build_stations,
+		_build_walker, _build_trophies, _build_particles]
+	_font = load("res://assets/fonts/Alegreya-Bold.ttf")
+	var t := Time.get_ticks_usec()
+	for p in parts:
+		var pt := PerfLog.t0()
+		p.call()
+		PerfLog.step("boot:shop " + p.get_method(), pt)
+		if Time.get_ticks_usec() - t > BUILD_SLICE_USEC:
+			await tree.process_frame
+			t = Time.get_ticks_usec()
+	refresh_jars()
+	refresh_rack()
+	refresh_upgrades()
+	set_time(0.0, false)
+# --- end BOOT
+
 # --- R6 PERF: el desenfoque de arriba y abajo de la tienda (main.gd lo aplica cuando esta cámara es la activa): la
 # misma fuerza de antes (max_lod 2,6), en una franja más chica. Antes (para todo): centro 0,46, mitad nítida 0,22,
 # caída 0,30 = el 48 % de la pantalla desenfocado. Ahora la banda nítida va de la fila 107 a la 569 (de 720): el

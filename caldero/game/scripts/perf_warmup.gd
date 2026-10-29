@@ -3,9 +3,10 @@ class_name PerfWarmup
 ## --- R6 PERF: precalentar los shaders 2D. En el renderizador Compatibility (la web), cada clase de dibujo 2D usa una
 ## variante del shader de lienzo que se compila la primera vez que se dibuja: las líneas gruesas y los rectángulos de
 ## borde del mapa del viaje, las líneas y arcos suavizados del grimorio, los polígonos... Si esa primera vez es a la
-## vista, la pantalla se traba un momento (el mapa del viaje al empezar un evento, el grimorio al abrirlo). main.gd pone
-## este nodo con la pantalla en negro al arrancar (_warm_places): dibuja una vez cada clase de trazo que usa el juego,
-## en pequeño, y se borra solo después de dos cuadros. No se ve nunca (queda debajo del fundido negro).
+## vista, la pantalla se traba un momento (el mapa del viaje al empezar un evento, el grimorio al abrirlo). Dibuja una
+## vez cada clase de trazo que usa el juego, en pequeño, y se borra solo después de dos cuadros. No se ve nunca.
+## --- BOOT: antes main.gd lo ponía con la pantalla en negro al arrancar (_warm_places); ahora lo pone BootWarm
+## (scripts/boot_warm.gd) después del título, en el lienzo de su SubViewport (no en la pantalla).
 
 var _frames := 0
 var _tex: Texture2D

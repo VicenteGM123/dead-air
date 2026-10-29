@@ -12,7 +12,9 @@ config_version=5
 
 config/name="Caldero Nocturno"
 config/description="A little potion shop for adventurers."
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/boot.tscn"
+boot_splash/bg_color=Color(0.05, 0.04, 0.09, 1)
+boot_splash/image="res://assets/ui/boot_splash.png"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.png"
 

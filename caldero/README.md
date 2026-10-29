@@ -4,6 +4,16 @@ Una tiendita de pociones en 2.5D (estilo HD-2D) hecha en Godot 4.7. Desde la ron
 
 Se juega en https://vicentegm123.github.io/dead-air/caldero/web/
 
+## Arranque en la web (pantalla de carga)
+
+Antes, después de la pantalla de Godot la página se quedaba en negro unos segundos y el navegador podía avisar de que «no responde»: el juego armaba la tienda y el mercado de un tirón y compilaba todos los shaders (más de 200 programas de WebGL, 105 en un solo cuadro) antes de mostrar el título. Ahora:
+
+- La página y el juego muestran la misma imagen («Midnight Cauldron» con el emblema) y una barra dorada que avanza: primero mientras baja el juego, después mientras se prepara. Nada de negro ni del logo de Godot.
+- La tienda se arma y se muestra por partes, unos pocos materiales nuevos por cuadro: la página sigue respondiendo y la barra se mueve.
+- Solo se prepara lo que se ve en el título. Lo demás (la biblioteca, los efectos, las letras de los eventos, el mercado) se prepara después, ya con el título en pantalla, sin que se note; si se va al mercado antes, se termina en el fundido del viaje. Los eventos siguen empezando sin tirones.
+- Medido en un navegador sin tarjeta gráfica: la primera imagen del juego sale a los ~1,6 s (antes ~5 s, y era negra), el cuadro más largo antes del título bajó de 4,7 s a 1,4 s y el título necesita 149 programas de shader en vez de 203 (como mucho 16 por cuadro, antes 105). Con una tarjeta gráfica normal todo es bastante más rápido; la segunda vez, más aún (el navegador guarda los shaders ya compilados).
+- `index.wasm` (37,7 MB, ~10 MB comprimido) es el motor de Godot tal como viene: no se puede achicar sin compilar Godot a medida.
+
 ## Novedades (ronda 6)
 
 - **Sin tirón al empezar un evento:** el escenario se arma durante el viaje y lo que se dibuja por primera vez (gente, efectos, letras) se prepara con el mapa quieto, antes del fundido. En la web (medido en un navegador sin tarjeta gráfica), el peor cuadro después de aparecer el evento bajó de 2,7–7,5 s a unos pocos milisegundos.
@@ -75,4 +85,4 @@ Se genera con `tools/export_web.sh` (necesita Godot 4.7 con las plantillas de ex
 GODOT=/ruta/a/godot sh caldero/tools/export_web.sh
 ```
 
-Usa el preset "Web" del proyecto (renderizador Compatibility / WebGL 2, sin hilos, para que funcione en GitHub Pages) y deja el resultado en `web/`. Además arregla el audio web de Godot 4.7 en `index.js` (los sonidos en bucle, como la música, el fuego y los grillos, se repiten en el hilo de audio: sin cortes aunque el juego vaya lento) pone «Midnight Cauldron» como título de la pestaña (el nombre interno del proyecto sigue siendo «Caldero Nocturno»: nombra la carpeta de las partidas guardadas, también en el navegador), y no exporta si algún script usa `AudioServer.add_bus()`, que en la web deja el juego sin sonido (los buses se crean agrandando `AudioServer.bus_count`, ver `game/scripts/sfx.gd`).
+Usa el preset "Web" del proyecto (renderizador Compatibility / WebGL 2, sin hilos, para que funcione en GitHub Pages) y deja el resultado en `web/`. Además arregla el audio web de Godot 4.7 en `index.js` (los sonidos en bucle, como la música, el fuego y los grillos, se repiten en el hilo de audio: sin cortes aunque el juego vaya lento) pone «Midnight Cauldron» como título de la pestaña (el nombre interno del proyecto sigue siendo «Caldero Nocturno»: nombra la carpeta de las partidas guardadas, también en el navegador), usa una página propia (`game/tools/web/shell.html`: la de Godot con el color, la imagen y la barra del juego) y no exporta si algún script usa `AudioServer.add_bus()`, que en la web deja el juego sin sonido (los buses se crean agrandando `AudioServer.bus_count`, ver `game/scripts/sfx.gd`).
