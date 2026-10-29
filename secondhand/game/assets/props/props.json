@@ -1,0 +1,166 @@
+{
+ "antenna_mast": {
+  "anchor": "bottom",
+  "px": 0.04
+ },
+ "arch_door": {
+  "anchor": "bottom",
+  "px": 0.045
+ },
+ "cables": {
+  "anchor": "top",
+  "px": 0.03
+ },
+ "canopy_edge_red": {
+  "anchor": "top",
+  "px": 0.04
+ },
+ "canopy_edge_teal": {
+  "anchor": "top",
+  "px": 0.04
+ },
+ "ceiling_fan": {
+  "anchor": "top",
+  "frames": 4,
+  "px": 0.03
+ },
+ "crate": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
+ "crate_stack": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
+ "dome_cap": {
+  "anchor": "bottom",
+  "px": 0.045
+ },
+ "door": {
+  "anchor": "bottom",
+  "frames": 2,
+  "px": 0.035
+ },
+ "junk_shelf": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
+ "lamp_hanging": {
+  "anchor": "top",
+  "px": 0.03
+ },
+ "parts_cabinet": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
+ "round_window": {
+  "anchor": "center",
+  "px": 0.035
+ },
+ "round_window_dark": {
+  "anchor": "center",
+  "px": 0.035
+ },
+ "scrap_patch_a": {
+  "anchor": "center",
+  "px": 0.035
+ },
+ "scrap_patch_b": {
+  "anchor": "center",
+  "px": 0.035
+ },
+ "ship_beetle": {
+  "anchor": "center",
+  "px": 0.06
+ },
+ "ship_hammerhead": {
+  "anchor": "center",
+  "px": 0.06
+ },
+ "ship_needle": {
+  "anchor": "center",
+  "px": 0.06
+ },
+ "shop_plate": {
+  "anchor": "center",
+  "px": 0.02
+ },
+ "sky_ring": {
+  "anchor": "center",
+  "px": 0.1
+ },
+ "stall_canopy_red": {
+  "anchor": "bottom",
+  "px": 0.04
+ },
+ "stall_canopy_teal": {
+  "anchor": "bottom",
+  "px": 0.04
+ },
+ "star_sign_0": {
+  "anchor": "bottom",
+  "px": 0.04
+ },
+ "star_sign_1": {
+  "anchor": "bottom",
+  "px": 0.04
+ },
+ "star_sign_2": {
+  "anchor": "bottom",
+  "px": 0.04
+ },
+ "star_sign_3": {
+  "anchor": "bottom",
+  "px": 0.04
+ },
+ "star_sign_4": {
+  "anchor": "bottom",
+  "px": 0.04
+ },
+ "star_sign_5": {
+  "anchor": "bottom",
+  "px": 0.04
+ },
+ "starfall": {
+  "anchor": "center",
+  "px": 0.06
+ },
+ "sun": {
+  "anchor": "center",
+  "px": 0.1
+ },
+ "tea_station": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
+ "thrust_flame": {
+  "anchor": "top",
+  "frames": 3,
+  "px": 0.06
+ },
+ "tortoise": {
+  "anchor": "bottom",
+  "note": "same pixel density as the characters (drawn next to them 1:1)",
+  "px": 0.0222
+ },
+ "vent_pipe": {
+  "anchor": "bottom",
+  "px": 0.04
+ },
+ "well_tower": {
+  "anchor": "bottom",
+  "px": 0.045
+ },
+ "window_port": {
+  "anchor": "center",
+  "px": 0.03
+ },
+ "window_port_night": {
+  "anchor": "center",
+  "px": 0.03
+ },
+ "workbench": {
+  "anchor": "bottom",
+  "px": 0.03
+ }
+}

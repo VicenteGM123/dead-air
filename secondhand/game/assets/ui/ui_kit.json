@@ -1,0 +1,67 @@
+{
+ "plate9.png": {
+  "margin": 24,
+  "content": 30,
+  "note": "placa oscura remachada (HUD, ventanas)"
+ },
+ "plate_light9.png": {
+  "margin": 24,
+  "content": 30,
+  "note": "placa clara (texto oscuro encima)"
+ },
+ "screen9.png": {
+  "margin": 24,
+  "content": 27,
+  "text": "#f0b44a",
+  "text_dim": "#9a6a2a",
+  "note": "CRT \u00e1mbar: n\u00fameros, reloj, precios"
+ },
+ "tag9.png": {
+  "margin_left": 27,
+  "margin_right": 12,
+  "margin_top": 12,
+  "margin_bottom": 12,
+  "text": "#3a2e26",
+  "content_left": 34,
+  "content_right": 16,
+  "content_top": 2,
+  "content_bottom": 4,
+  "note": "etiqueta de papel (texto a mano con Caveat); el ojal va en el margen izquierdo"
+ },
+ "btn_*9.png": {
+  "margin": 15,
+  "content_top": 9,
+  "content_bottom": 12,
+  "text": "#2a2024",
+  "text_disabled": "#4a4642",
+  "note": "normal / hover / pressed / disabled (+ primary, primary_hover, primary_pressed)"
+ },
+ "glyph_*.png": {
+  "size": 16,
+  "note": "indicaciones: glyph_pad_a (A verde), glyph_pad_b (B rojo), glyph_mouse (clic izquierdo), glyph_key (tecla en blanco: imprimir la letra encima, texto #2a2024)"
+ },
+ "bubble9.png": {
+  "margin": 18,
+  "content": 18,
+  "tail": "bubble_tail.png (24x18, abajo al centro, superponer 3 px)",
+  "text": "#2a2024"
+ },
+ "icon_*.png": {
+  "size": 16,
+  "scale": "x2 o x3, filtro NEAREST",
+  "names": [
+   "clock",
+   "credits",
+   "ledger",
+   "listen",
+   "pod",
+   "rep",
+   "sandtimer",
+   "scan",
+   "star",
+   "tap",
+   "tea",
+   "wrench"
+  ]
+ }
+}

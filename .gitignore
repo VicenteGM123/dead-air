@@ -21,6 +21,7 @@
 !/pharos/
 !/doce/
 !/caldero/
+!/secondhand/
 
 # never, even inside allowed folders
 .godot/

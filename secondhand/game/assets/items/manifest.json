@@ -1,0 +1,173 @@
+{
+ "radio": {
+  "open_size": [
+   360,
+   240
+  ],
+  "part_scale": 2,
+  "slots": [
+   {
+    "slot": "s1",
+    "part": "speaker",
+    "pos": [
+     40,
+     84
+    ],
+    "size": [
+     64,
+     64
+    ]
+   },
+   {
+    "slot": "s2",
+    "part": "tuner",
+    "pos": [
+     252,
+     36
+    ],
+    "size": [
+     64,
+     64
+    ]
+   },
+   {
+    "slot": "s3",
+    "part": "cell",
+    "pos": [
+     252,
+     144
+    ],
+    "size": [
+     64,
+     64
+    ]
+   },
+   {
+    "slot": "s4",
+    "part": "chip",
+    "pos": [
+     144,
+     112
+    ],
+    "size": [
+     64,
+     64
+    ]
+   }
+  ]
+ },
+ "helperbot": {
+  "open_size": [
+   360,
+   240
+  ],
+  "part_scale": 2,
+  "slots": [
+   {
+    "slot": "s1",
+    "part": "servo",
+    "pos": [
+     148,
+     172
+    ],
+    "size": [
+     64,
+     64
+    ]
+   },
+   {
+    "slot": "s2",
+    "part": "chip",
+    "pos": [
+     80,
+     108
+    ],
+    "size": [
+     64,
+     64
+    ]
+   },
+   {
+    "slot": "s3",
+    "part": "lens",
+    "pos": [
+     148,
+     20
+    ],
+    "size": [
+     64,
+     64
+    ]
+   },
+   {
+    "slot": "s4",
+    "part": "cell",
+    "pos": [
+     216,
+     108
+    ],
+    "size": [
+     64,
+     64
+    ]
+   }
+  ]
+ },
+ "thruster": {
+  "open_size": [
+   360,
+   240
+  ],
+  "part_scale": 2,
+  "slots": [
+   {
+    "slot": "s1",
+    "part": "coil",
+    "pos": [
+     148,
+     28
+    ],
+    "size": [
+     64,
+     64
+    ]
+   },
+   {
+    "slot": "s2",
+    "part": "nozzle",
+    "pos": [
+     16,
+     88
+    ],
+    "size": [
+     64,
+     64
+    ]
+   },
+   {
+    "slot": "s3",
+    "part": "fan",
+    "pos": [
+     280,
+     88
+    ],
+    "size": [
+     64,
+     64
+    ]
+   },
+   {
+    "slot": "s4",
+    "part": "cell",
+    "pos": [
+     148,
+     156
+    ],
+    "size": [
+     64,
+     64
+    ]
+   }
+  ]
+ }
+}
