@@ -25,6 +25,7 @@ var _intro_t := 0.0
 var _confirm_new := false
 var _new_btn: Button
 var suspended := false     # una ventana encima (los ajustes desde el título): no se ve ni escucha teclas
+var _title_logo: Control   # --- BOOT: el logo del título (la pantalla de carga vuela su logo hasta aquí)
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -158,10 +159,12 @@ func show_title(can_continue: bool) -> void:
 		UIKit.place(logo, Vector2(0.5, 0.0), Vector2(-301, 26), Vector2(603, 196), Control.GROW_DIRECTION_BOTH)
 		logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_root.add_child(logo)
+		_title_logo = logo
 	else:
 		var t := _outlined("SECONDHAND STARS", 64, Color(1.0, 0.8, 0.4), 14)
 		UIKit.place(t, Vector2(0.5, 0.0), Vector2(-400, 60), Vector2(800, 90), Control.GROW_DIRECTION_BOTH)
 		_root.add_child(t)
+		_title_logo = t
 	var tag := _outlined("A junk-and-repair shop on a desert spaceport", 22, Color(1.0, 0.95, 0.86), 8)
 	UIKit.place(tag, Vector2(0.5, 0.0), Vector2(-400, 226), Vector2(800, 30), Control.GROW_DIRECTION_BOTH)
 	_root.add_child(tag)
@@ -185,6 +188,16 @@ func show_title(can_continue: bool) -> void:
 	var foot := _outlined("A prototype  ·  keyboard, mouse or pad", 17, Color(1.0, 0.95, 0.86), 6, UIKit.font_regular)
 	UIKit.place(foot, Vector2(0.5, 1.0), Vector2(-300, -46), Vector2(600, 26), Control.GROW_DIRECTION_BOTH, Control.GROW_DIRECTION_BEGIN)
 	_root.add_child(foot)
+
+## --- BOOT: dónde está el logo del título (en coordenadas de la pantalla) y mostrarlo / esconderlo.
+func title_logo_rect() -> Rect2:
+	if current == "title" and is_instance_valid(_title_logo):
+		return _title_logo.get_global_rect()
+	return Rect2(339, 26, 603, 196)
+
+func show_title_logo(on: bool) -> void:
+	if current == "title" and is_instance_valid(_title_logo):
+		_title_logo.visible = on
 
 func _new_pressed() -> void:
 	if not _confirm_new:

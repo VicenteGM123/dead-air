@@ -27,6 +27,9 @@ Archivos:
   c64cast_mc.py    el elenco de Midnight Cauldron, solo como ejemplos de fichas
   ss_placeholders.py  el arte de relleno de la semilla (incluye a Kettle dibujado a mano: el kit solo hace humanoides)
   fonts_ss.py      Inter (OFL), Secondhand Mono (= Liberation Mono Bold recortada, OFL), Secondhand Symbols (DejaVu)
+  ss_boot_splash.py  (--- BOOT) la imagen de arranque assets/ui/boot_splash.png (logo sobre el cielo de noche; la
+                   usan el HTML de la web y Godot al arrancar) y assets/ui/boot_bg.png (el mismo fondo sin logo, para
+                   la pantalla de carga del juego): python3 tools/arte/ss_boot_splash.py (lee assets/ui/logo.png)
   (el kit c64*, pixlib y chars64 vienen de Midnight Cauldron, caldero/game/tools/arte, sin cambios en el generador)
 
 Formato de los personajes (lo lee scripts/world/actor.gd): assets/chars/<id>_idle.png = 2 cuadros de 64x96 en fila

@@ -36,9 +36,11 @@ var screens: Screens
 var modal_root: Control
 var fade: ColorRect
 var pad: PadCursor
-var bench: BenchUI
-var haggle: HaggleUI
-var pod_ui: PodUI
+# --- BOOT: sin tipo: así sus scripts (y los de sus piezas, ~4300 líneas) no se compilan en el primer cuadro del juego,
+# sino cuando se crean, con el título ya en pantalla (_make_bench / _make_haggle / _make_pod_ui)
+var bench          # BenchUI
+var haggle         # HaggleUI
+var pod_ui         # PodUI
 
 var busy := false            # una transición o un paso automático (no se camina ni se usa nada)
 var menu_open := false
@@ -56,36 +58,98 @@ var demo := ""
 var autoplay_days := 3
 var errors := 0
 
+# --- BOOT: el arranque por pasos (ver _boot)
+signal boot_finished
+var boot_ready := false      # todo armado y calentado (también lo que se prepara con el título ya en pantalla)
+var boot_screen: BootScreen
+var _boot_log := false       # --bootlog: una línea por paso (las pruebas de arranque)
+var _boot_us := 0            # cuándo empezó el paso actual (usec)
+var _boot_t0 := 0
+var _boot_steps := {}        # paso -> ms de trabajo de ese cuadro (el resumen "BOOT done")
+var _boot_bg_n := 0          # pasos de fondo hechos / previstos (la barrita si alguien espera)
+var _boot_bg_total := 1
+var _last_input_ms := -100000
+var _warm_vp: SubViewport    # la tienda se arma y se calienta aquí (otro mundo 3D) mientras el título está en pantalla
+var _boot_shot := ""         # --bootshot=<carpeta>: una captura por paso (escritorio; las pruebas de arranque)
+var _boot_jump := ""         # --bootjump=night | closing (pruebas: ver _boot_test_jump)
+var _draw_us := 0
+var _draw_ms := 0.0          # (con --bootlog) cuánto tardó el último dibujo: ahí se compilan los shaders
+
 func _ready() -> void:
 	get_window().title = GAME_TITLE
 	get_viewport().physics_object_picking = true
 	_parse_args()
+	if demo == "":
+		_boot()   # --- BOOT: el juego de verdad arma todo de a poco, con la pantalla de carga (ver _boot)
+		return
+	# las demos y las pruebas: todo armado de una vez, como antes
+	_make_shop()
+	_make_street()
+	_setup_post()
+	_make_hud()
+	modal_root = _layer(5)
+	_make_bench()
+	_make_haggle()
+	_make_pod_ui()
+	_make_dialogs_screens()
+	_build_fade()
+	_make_day()
+	day.setup(shop, hud)
+	_make_pad()
+	Sfx.apply_volumes()
+	boot_ready = true
+	fade.color.a = 0.0
+	if _bench_demo(demo):
+		return
+	var d = load("res://scripts/demo_kit.gd").new()   # (--- BOOT: por ruta: el juego no lo compila al arrancar)
+	d.name = "Demo"
+	add_child(d)
+	d.run(self, demo)
+
+# --- BOOT: las piezas del armado (las demos las hacen todas juntas en _ready; el juego, de a una por cuadro en _boot)
+
+func _make_shop() -> void:
 	shop = ShopWorld.new()
 	add_child(shop)
 	shop.build()
+	_wire_world(shop)
+
+func _make_street() -> void:
 	street = StreetWorld.new()
 	add_child(street)
 	street.build()
-	for w in [shop, street]:
-		w.walker.can_walk = can_walk
-		w.station_clicked.connect(_on_station_clicked)
-	_setup_post()
+	_wire_world(street)
+
+func _wire_world(w: SetKit) -> void:
+	w.walker.can_walk = can_walk
+	w.station_clicked.connect(_on_station_clicked)
+	if w == shop:
+		Game.shelf_changed.connect(func(): shop.refresh_shelf())
+
+func _make_hud() -> void:
 	hud = Hud.new()
 	_layer(2).add_child(hud)
 	hud.menu_pressed.connect(open_menu)
 	hud.prompt_pressed.connect(func():
 		if can_walk() and world and world.walker.current != "" and bool(station_verb(world.walker.current)[1]):
 			use_station(world.walker.current))
-	modal_root = _layer(5)
-	bench = BenchUI.new()
+
+func _make_bench() -> void:
+	bench = load("res://scripts/ui/bench_ui.gd").new()
 	modal_root.add_child(bench)
 	bench.finished.connect(_on_bench_finished)
-	haggle = HaggleUI.new()
+
+func _make_haggle() -> void:
+	haggle = load("res://scripts/ui/haggle_ui.gd").new()
 	modal_root.add_child(haggle)
 	haggle.finished.connect(_on_haggle_finished)
-	pod_ui = PodUI.new()
+
+func _make_pod_ui() -> void:
+	pod_ui = load("res://scripts/ui/pod_ui.gd").new()
 	modal_root.add_child(pod_ui)
 	pod_ui.finished.connect(_on_pod_finished)
+
+func _make_dialogs_screens() -> void:
 	dialogs = Dialogs.new()
 	_layer(6).add_child(dialogs)
 	screens = Screens.new()
@@ -94,15 +158,18 @@ func _ready() -> void:
 	screens.intro_done.connect(_on_intro_done)
 	screens.ledger_done.connect(_on_ledger_done)
 	screens.closing_choice.connect(_on_closing_choice)
-	_build_fade()
+
+## ShopDay se crea antes que la tienda (no hace nada hasta setup(shop, hud) y open_day).
+func _make_day() -> void:
 	day = ShopDay.new()
 	day.name = "ShopDay"
 	add_child(day)
-	day.setup(shop, hud)
 	day.at_counter.connect(_on_at_counter)
 	day.left.connect(_on_left)
 	day.closing_started.connect(_on_closing)
 	day.day_over.connect(_on_day_over)
+
+func _make_pad() -> void:
 	pad = PadCursor.new()
 	pad.buttons_root = _pad_root
 	pad.world_picks = func(): return world.pad_picks() if world else []
@@ -110,21 +177,10 @@ func _ready() -> void:
 	pad.modal_open = modal_open
 	# --- SS SHIP: la A del mando también avanza la cápsula («A / X open») y la tarjeta del banco («A done») aunque el
 	# cursor no esté sobre el botón (antes la A hacía clic en el vacío y no pasaba nada)
-	pad.dialog_waiting = func(): return dialogs.is_open() or screens.is_open() or pod_ui.is_open() or (bench.is_open() and bench.step == BenchUI.Step.RESULT)
+	# (--- BOOT: el banco y la cápsula pueden no existir todavía en el título)
+	pad.dialog_waiting = func(): return dialogs.is_open() or screens.is_open() or (pod_ui != null and pod_ui.is_open()) or (bench != null and bench.is_open() and bench.step == bench.get_script().Step.RESULT)
 	add_child(pad)
 	pad.device_changed.connect(func(_on): hud.hide_prompt())
-	Game.shelf_changed.connect(func(): shop.refresh_shelf())
-	Sfx.apply_volumes()
-	if demo != "":
-		fade.color.a = 0.0
-		if _bench_demo(demo):
-			return
-		var d := DemoKit.new()
-		d.name = "Demo"
-		add_child(d)
-		d.run(self, demo)
-	else:
-		_boot()
 
 ## Las demos de BENCH (scripts/ui/bench_demo.gd: --demo=bench_radio | bench_bot | bench_thruster | haggle_buy |
 ## haggle_sell | pod | pod_reveal | benchtest, con --step=...) corren sobre el decorado de CORE en cuanto ese archivo
@@ -218,30 +274,268 @@ func fade_to(a: float, t: float) -> void:
 ## Activa un escenario (el otro se apaga: ni se dibuja ni procesa).
 func use_world(w: SetKit) -> void:
 	for x in [shop, street]:
-		if x != w:
+		if x and x != w:   # (--- BOOT: la tienda no existe todavía mientras carga el título)
 			x.activate(false)
 	world = w
 	w.activate(true)
 	set_post(POST_STREET if w == street else POST_SHOP)
 
-# ------------------------------------------------------------------ arranque: calentar los dos escenarios
+# ------------------------------------------------------------------ --- BOOT: el arranque, por pasos
 
-## Detrás del fundido negro se dibuja cada escenario (de día y de noche) un par de cuadros: así los shaders ya están
-## compilados cuando se usan (sin tirones al abrir la tienda ni al cerrar el día: el cliente lo pidió en el Caldero).
+## Antes (ronda de SS SHIP), todo se armaba en _ready y después se dibujaban los dos escenarios de día y de noche
+## detrás de un fundido negro (warmup): en la web eso era un primer cuadro de ~4 s (armado + 0,6 s de audio + ~90
+## programas de shader) con la página congelada sobre el logo de Godot, y después ~5 s de negro con cuadros de 0,4-2 s.
+## Ahora:
+##   1. el primer cuadro solo dibuja la pantalla de carga (BootScreen: la imagen de arranque + una barra que avanza);
+##   2. CARGA (con la barra): los bucles del título, la calle por partes, la interfaz del título, y los shaders de la
+##      calle de día y de noche, de a una familia de shader por cuadro (_warm_world): ningún cuadro compila mucho;
+##   3. el título aparece (el logo vuela a su sitio) y ya responde;
+##   4. DE FONDO, un paso por cuadro (y en pausa mientras el jugador mueve el ratón o aprieta algo): la tienda se arma
+##      y se calienta de día y de noche en un SubViewport con su propio mundo (no se ve), después pasa al mundo
+##      principal; el banco, el regateo, la cápsula; los demás bucles de música;
+##   5. si el jugador elige algo en el título antes de que termine el paso 4, el fundido a negro espera lo que falta
+##      con una barrita (sigue de a un paso por cuadro).
+## Lo que el calentamiento viejo evitaba (tirones al abrir la tienda, al llegar la noche, en la introducción) sigue
+## evitado: todo eso se compila antes de que se use.
 func _boot() -> void:
-	fade.color.a = 1.0
-	await warmup()
+	_boot_t0 = Time.get_ticks_msec()
+	_boot_us = Time.get_ticks_usec()
+	if _boot_log:
+		RenderingServer.frame_pre_draw.connect(func(): _draw_us = Time.get_ticks_usec())
+		RenderingServer.frame_post_draw.connect(func(): _draw_ms = (Time.get_ticks_usec() - _draw_us) / 1000.0)
+	phase = Phase.BOOT
+	set_process(false)          # (_process usa el HUD, el banco...: todavía no existen)
+	var bl := CanvasLayer.new()
+	bl.layer = 30
+	add_child(bl)
+	boot_screen = BootScreen.new()
+	bl.add_child(boot_screen)
+	await _boot_step("screen")   # (el primer cuadro: solo la pantalla de carga, sin texto)
+	boot_screen.set_progress(0.03, "Sweeping the stall...")
+	# los bucles del título (en la web cada uno se decodifica entero: un cuadro cada uno)
+	Sfx.prewarm_one("music_title")
+	await _boot_step("audio_title", 0.1, "Tuning the radio...")
+	Sfx.prewarm_one("amb_wind")
+	await _boot_step("audio_wind", 0.13)
+	# la calle (escondida mientras se arma: si no, su cámara la dibujaría a medias)
+	street = StreetWorld.new()
+	add_child(street)
+	street.visible = false
+	var steps := street.build_steps()
+	for i in steps.size():
+		steps[i].call()
+		await _boot_step("street_%d" % i, 0.13 + 0.17 * (i + 1) / steps.size(), "Raising the awnings...")
+	_wire_world(street)
+	_setup_post()
+	post.visible = false
+	await _boot_step("post", 0.32)
+	_make_hud()
+	await _boot_step("hud", 0.36)
+	modal_root = _layer(5)      # (el banco, el regateo y la cápsula entran aquí después)
+	_make_dialogs_screens()
+	_build_fade()
+	fade.color.a = 0.0          # (la pantalla de carga tapa todo)
+	_make_day()
+	_make_pad()
+	Sfx.apply_volumes()
+	await _boot_step("ui", 0.4, "Polishing the stars...")
+	# los shaders de la calle: de día y de noche (la introducción y el final son de noche). Nadie la ve (la tapa la
+	# pantalla de carga): se dibuja a 1/4 de resolución (los shaders son los mismos; la GPU trabaja 16 veces menos).
+	get_viewport().scaling_3d_scale = 0.25
+	use_world(street)
+	post.visible = false
+	await _warm_world(street, "street_day", 0.4, 0.72, false, "flyers")
+	street.set_night(true)
+	await _warm_world(street, "street_night", 0.72, 0.94, false, "streaks")
+	street.set_night(false)
+	get_viewport().scaling_3d_scale = 1.0
+	# el título, detrás de la pantalla de carga (su primer dibujo compila lo poco que le falta a la interfaz y al
+	# post-proceso); su logo aparece cuando llega el de la pantalla de carga
+	post.visible = true
 	show_title()
-	fade_to(0.0, 0.6)
+	screens.show_title_logo(false)
+	await _boot_step("title", 1.0, "Open for business!")
+	await boot_screen.reveal(screens.title_logo_rect())
+	screens.show_title_logo(true)
+	boot_screen.get_parent().queue_free()
+	boot_screen = null
+	set_process(true)
+	print("BOOT title %d ms" % (Time.get_ticks_msec() - _boot_t0))
+	# 4. lo demás, de fondo
+	await _boot_background()
 
-func warmup() -> void:
-	for w in [shop, street]:
-		use_world(w)
-		for night in [false, true]:
-			w.set_night(night)
-			await get_tree().process_frame
-			await get_tree().process_frame
-		w.set_night(false)
+## Un paso hecho: anota cuánto trabajó en este cuadro, mueve la barra y espera el cuadro siguiente.
+func _boot_step(step: String, progress := -1.0, text := "") -> void:
+	var ms := (Time.get_ticks_usec() - _boot_us) / 1000.0
+	_boot_steps[step] = snappedf(ms, 0.1)
+	if _boot_log:
+		# t desde el arranque, ms de script de este paso, ms del dibujo anterior (el del paso anterior)
+		print("BOOT step %s t=%d script=%.1f prev_draw=%.1f" % [step, Time.get_ticks_msec() - _boot_t0, ms, _draw_ms])
+	if _boot_shot != "":
+		get_viewport().get_texture().get_image().save_png("%s/%03d_%s.png" % [_boot_shot, _boot_steps.size(), step])
+	if boot_screen and progress >= 0.0:
+		boot_screen.set_progress(progress, text)
+	await get_tree().process_frame
+	_boot_us = Time.get_ticks_usec()
+
+## Dibuja un escenario de a una familia de shader por cuadro (SetKit.warm_groups): primero vacío (el cielo, el
+## brillo, el tonemap), después cada grupo. Con la luz de ahora (llamar a set_night antes). El escenario no procesa
+## mientras tanto (nada cambia de visibilidad por su cuenta). bg: con el título en pantalla (pasos de fondo).
+## probe: qué cosas escondidas se calientan con una copia (SetKit.warm_groups: "all", "flyers", "streaks").
+## Un grupo que proyecta sombra (con el sol con sombras) sale primero un cuadro solo en la pasada de sombra y después
+## entero: así los programas de sombra y los de color se compilan en cuadros distintos (la primera vez, la sombra
+## usa además la familia del material por defecto: eran 12 programas en un solo cuadro).
+func _warm_world(w: SetKit, tag: String, p0: float, p1: float, bg := false, probe := "all") -> void:
+	var was := w.process_mode
+	w.process_mode = Node.PROCESS_MODE_DISABLED
+	var groups := w.warm_groups(probe)
+	var sun_shadows := w.sun != null and w.sun.visible and w.sun.shadow_enabled
+	if _boot_log:
+		for g in groups:
+			print("BOOT group %s %s x%d (%s)" % [tag, g[0], g[1].size(), (g[1][0] as Node).name])
+	await _warm_frame(bg, "%s_empty" % tag, p0)
+	for i in groups.size():
+		var nodes: Array = groups[i][1]
+		if sun_shadows and String(groups[i][0]).ends_with("|cast"):
+			var casts := {}
+			for n in nodes:
+				if is_instance_valid(n):
+					casts[n] = n.cast_shadow
+					n.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+					n.visible = true
+			await _warm_frame(bg, "%s_%d_shadow" % [tag, i], -1.0)
+			for n in casts:
+				if is_instance_valid(n):
+					n.cast_shadow = casts[n]
+		for n in nodes:
+			if is_instance_valid(n):
+				n.visible = true
+		await _warm_frame(bg, "%s_%d" % [tag, i], p0 + (p1 - p0) * (i + 1) / maxf(1.0, groups.size()))
+	w.warm_end()
+	w.process_mode = was
+
+func _warm_frame(bg: bool, step: String, progress: float) -> void:
+	if bg:
+		await _bg_step(step)
+	else:
+		await _boot_step(step, progress)
+
+## 4. Lo que el título no necesita, con el título ya en pantalla: un paso por cuadro.
+func _boot_background() -> void:
+	var t_bg := Time.get_ticks_msec()
+	_boot_us = Time.get_ticks_usec()
+	# la tienda: se arma y se calienta en su propio mundo 3D (un SubViewport chico que nadie ve)
+	_warm_vp = SubViewport.new()
+	_warm_vp.name = "WarmShop"
+	_warm_vp.size = Vector2i(320, 180)
+	_warm_vp.own_world_3d = true
+	_warm_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(_warm_vp)
+	# (main.shop sigue en null hasta que la tienda pase al mundo principal: nada del juego la toca mientras se calienta)
+	var ws := ShopWorld.new()
+	_warm_vp.add_child(ws)
+	ws.visible = false
+	var steps := ws.build_steps()
+	_boot_bg_total = steps.size() + 50 + 18
+	for i in steps.size():
+		steps[i].call()
+		await _bg_step("shop_%d" % i)
+	ws.activate(true)
+	await _warm_world(ws, "shop_day", 0.0, 0.0, true)
+	ws.set_night(true)
+	await _warm_world(ws, "shop_night", 0.0, 0.0, true)
+	ws.set_night(false)
+	ws.activate(false)
+	# a su sitio: el mundo de la ventana, primero entre los hijos (como antes)
+	_warm_vp.remove_child(ws)
+	add_child(ws)
+	move_child(ws, 0)
+	_warm_vp.queue_free()
+	_warm_vp = null
+	shop = ws
+	_wire_world(shop)
+	shop.refresh_shelf()        # (si "Continue" ya cargó la partida, el estante es el de la partida)
+	day.setup(shop, hud)
+	await _bg_step("shop_move")
+	# los scripts del banco, el regateo y la cápsula: se compilan de a uno por cuadro, de las piezas al todo (BenchUI
+	# con todas sus piezas en un solo cuadro eran ~0,3 s); keep los mantiene cargados hasta crear las ventanas
+	var keep: Array = []
+	for f in ["bench_kit", "bench_bubble", "bench_gauge", "bench_kettle", "bench_portrait", "bench_scope", "bench_solder",
+			"bench_stage", "bench_pod_view", "pod_ui", "haggle_ui", "bench_ui"]:
+		var path := "res://scripts/ui/%s.gd" % f
+		if ResourceLoader.exists(path):
+			keep.append(load(path))
+		await _bg_step("script_" + f)
+	_make_bench()
+	await _bg_step("bench")
+	_make_haggle()
+	await _bg_step("haggle")
+	_make_pod_ui()
+	await _bg_step("pod_ui")
+	for n in ["music_market", "amb_port", "music_shop"]:
+		Sfx.prewarm_one(n)
+		await _bg_step("audio_" + n)
+	Sfx.prewarm_report()
+	boot_ready = true
+	_boot_bg_n = _boot_bg_total
+	var worst := ""
+	var worst_ms := 0.0
+	for k in _boot_steps:
+		if float(_boot_steps[k]) > worst_ms:
+			worst_ms = float(_boot_steps[k])
+			worst = k
+	print("BOOT done %d ms (background %d ms, %d steps; slowest script step %s %.0f ms)" % [Time.get_ticks_msec() - _boot_t0,
+		Time.get_ticks_msec() - t_bg, _boot_steps.size(), worst, worst_ms])
+	boot_finished.emit()
+	if _boot_jump != "":
+		_boot_test_jump(_boot_jump)
+
+## (Pruebas del arranque: --bootjump=night | closing salta ahí cuando terminó lo de fondo, para medir si al llegar
+## todavía se compila algo. Un jugador nunca pasa argumentos.)
+func _boot_test_jump(where: String) -> void:
+	busy = true
+	await fade_to(1.0, 0.3)
+	busy = false
+	Game.new_game_state()
+	if where == "night":
+		open_shop_now()
+		show_night()
+	elif where == "closing":
+		show_closing()
+	fade_to(0.0, 0.5)
+	print("BOOT jump %s" % where)
+
+## Un paso de fondo: como _boot_step, pero espera también a que el jugador deje de mover el ratón o de apretar
+## botones (como mucho 0,4 s), para que el título responda primero.
+func _bg_step(step: String) -> void:
+	_boot_bg_n += 1
+	if boot_screen:
+		boot_screen.set_progress(float(_boot_bg_n) / _boot_bg_total)
+	await _boot_step("bg_" + step)
+	var t0 := Time.get_ticks_msec()
+	while boot_screen == null and Time.get_ticks_msec() - _last_input_ms < 150 and Time.get_ticks_msec() - t0 < 400:
+		await get_tree().process_frame
+	_boot_us = Time.get_ticks_usec()
+
+func _input(ev: InputEvent) -> void:
+	if not boot_ready and (ev is InputEventMouseMotion or ev is InputEventMouseButton or ev is InputEventKey or ev is InputEventJoypadButton):
+		_last_input_ms = Time.get_ticks_msec()
+
+## 5. Si algo necesita lo de fondo antes de que termine: espera (detrás del fundido) con una barrita.
+func _wait_boot() -> void:
+	if boot_ready:
+		return
+	var l := CanvasLayer.new()
+	l.layer = 30
+	add_child(l)
+	var b := BootScreen.new()
+	b.mini = true
+	l.add_child(b)
+	boot_screen = b
+	b.set_progress(float(_boot_bg_n) / _boot_bg_total, "Getting the shop ready...")
+	await boot_finished
+	boot_screen = null
+	l.queue_free()
 
 # ------------------------------------------------------------------ título e introducción
 
@@ -281,6 +575,7 @@ func _on_title_choice(id: String) -> void:
 			busy = true
 			screens.hide_all()
 			await fade_to(1.0, 0.35)
+			await _wait_boot()   # --- BOOT: la tienda y el banco tienen que estar listos
 			busy = false
 			if Game.resume == "open":
 				open_shop_now()
@@ -320,6 +615,7 @@ func _on_intro_done() -> void:
 	Game.intro_seen = true
 	busy = true
 	await fade_to(1.0, 0.6)
+	await _wait_boot()   # --- BOOT: la introducción no necesita la tienda; la mañana sí (las cápsulas, la puerta)
 	busy = false
 	begin_morning()
 	fade_to(0.0, 0.7)
@@ -969,7 +1265,7 @@ func to_title() -> void:
 ## Cierra todo lo abierto (al cambiar de fase).
 func close_everything() -> void:
 	for m in [bench, haggle, pod_ui]:
-		if m.is_open():
+		if m and m.is_open():   # (--- BOOT: en el título pueden no existir todavía)
 			m.close_now()
 	if dialogs.is_open():
 		dialogs.close_now()
@@ -983,12 +1279,17 @@ func close_everything() -> void:
 	sale = {}
 	pod_pick = {}
 	for w in [shop, street]:
-		w.walker.stop()
+		if w:
+			w.walker.stop()
 
 # ------------------------------------------------------------------ estaciones, el aviso "[E] ..." y la entrada
 
 func modal_open() -> bool:
-	return bench.is_open() or haggle.is_open() or pod_ui.is_open() or dialogs.is_open() or screens.is_open() or menu_open
+	return _work_ui_open() or dialogs.is_open() or screens.is_open() or menu_open
+
+## --- BOOT: el banco, el regateo o la cápsula abiertos (en el título pueden no existir todavía).
+func _work_ui_open() -> bool:
+	return (bench != null and bench.is_open()) or (haggle != null and haggle.is_open()) or (pod_ui != null and pod_ui.is_open())
 
 func can_walk() -> bool:
 	return (phase == Phase.MORNING or phase == Phase.OPEN) and not modal_open() and not busy and fade.color.a < 0.6
@@ -999,7 +1300,7 @@ func _pad_root() -> Control:
 		return dialogs
 	if screens.is_open():
 		return screens
-	if bench.is_open() or haggle.is_open() or pod_ui.is_open():
+	if _work_ui_open():
 		return modal_root
 	return hud
 
@@ -1125,7 +1426,7 @@ func _process(_d: float) -> void:
 	_update_prompt()
 	if modal_open():
 		hud.hide_banner()
-	hud.set_covered(bench.is_open() or haggle.is_open() or pod_ui.is_open())   # --- SS MERGE
+	hud.set_covered(_work_ui_open())   # --- SS MERGE (--- BOOT: _work_ui_open)
 	if phase == Phase.OPEN and day.running:
 		var m := day.minutes()
 		if m / 5 != _last_minute:
@@ -1176,3 +1477,9 @@ func _parse_args() -> void:
 			demo = a.substr(7)
 		elif a.begins_with("--days="):
 			autoplay_days = maxi(1, int(a.substr(7)))
+		elif a == "--bootlog":
+			_boot_log = true   # --- BOOT
+		elif a.begins_with("--bootshot="):
+			_boot_shot = a.substr(11)
+		elif a.begins_with("--bootjump="):
+			_boot_jump = a.substr(11)

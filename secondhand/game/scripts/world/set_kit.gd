@@ -41,6 +41,7 @@ var _streak_area := AABB()
 var _flyers: Array = []         # naves que pasan: {"s", "flame", "from", "to", "dur", "t", "wait", "every"}
 var _anim_sprites: Array = []   # [Sprite3D, frames, fps] (tiras animadas: ventilador, llamas)
 var _kettle_walking := false
+var warm_probes: Array = []     # --- BOOT: copias temporales para calentar shaders (warm_groups / warm_end)
 
 func _init() -> void:
 	var f := FileAccess.open("res://assets/props/props.json", FileAccess.READ)
@@ -80,6 +81,14 @@ func flat(col: Color, unshaded := false) -> StandardMaterial3D:
 		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	if col.a < 0.999:
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	elif not unshaded:
+		# --- BOOT: las mismas opciones de dibujo que mat() (triplanar, filtro sin suavizar; sin textura = blanco): se
+		# ve igual (blanco x color) pero es el MISMO shader que las paredes y el piso, y no otra familia que compilar
+		# (en la web eran ~6 programas más por escenario y por luz de día / de noche)
+		m.uv1_triplanar = true
+		m.uv1_world_triplanar = true
+		m.uv1_triplanar_sharpness = 20.0
+		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	_mats[key] = m
 	return m
 
@@ -253,45 +262,9 @@ func setup_camera_env(interior: bool) -> void:
 ## El cielo: un telón con degradé (día ámbar / noche violeta con estrellas que titilan). night_mix 0..1.
 func sky_backdrop(size: Vector2, pos: Vector3) -> MeshInstance3D:
 	var sm := ShaderMaterial.new()
-	var sh := Shader.new()
-	sh.code = """shader_type spatial;
-render_mode unshaded, cull_disabled, shadows_disabled;
-uniform float night = 0.0;
-uniform vec3 day_top = vec3(0.93, 0.62, 0.40);
-uniform vec3 day_hor = vec3(1.0, 0.87, 0.64);
-uniform vec3 night_top = vec3(0.045, 0.04, 0.13);
-uniform vec3 night_hor = vec3(0.26, 0.15, 0.30);
-uniform float bright = 1.2;
-uniform float horizon = 2.0;
-uniform vec3 dune_col = vec3(0.86, 0.6, 0.38);
-uniform vec3 dune_night = vec3(0.12, 0.09, 0.16);
-uniform vec2 star_grid = vec2(420.0, 120.0);   // celdas de estrellas (el telón grande de la calle: más celdas)
-uniform float star_size = 0.16;                 // radio de la estrella dentro de su celda (puntitos, no cuadros)
-void fragment() {
-	vec2 uv = UV;
-	vec3 dayc = mix(day_hor, day_top, smoothstep(0.82, 0.08, uv.y));
-	vec3 nightc = mix(night_hor, night_top, smoothstep(0.95, 0.15, uv.y));
-	vec3 col = mix(dayc * bright, nightc, night);
-	float hz = horizon + 0.010 * sin(uv.x * 37.0) + 0.006 * sin(uv.x * 91.0 + 1.3);
-	float dune = step(hz, uv.y);
-	col = mix(col, mix(dune_col, dune_night, night), dune);
-	// estrellas: un punto chico (y no siempre en el centro) en algunas celdas; unas pocas más grandes y más blancas
-	vec2 cell = uv * star_grid;
-	vec2 g = floor(cell);
-	float h = fract(sin(dot(g, vec2(12.9898, 78.233))) * 43758.5453);
-	float h2 = fract(sin(dot(g, vec2(39.3468, 11.135))) * 24634.6345);
-	vec2 c = vec2(0.25 + 0.5 * h2, 0.25 + 0.5 * fract(h * 7.31));
-	float big = step(0.996, h);
-	float r = star_size * (1.0 + 0.9 * big);
-	float d = length(fract(cell) - c);
-	float dot_ = 1.0 - smoothstep(r * 0.55, r, d);
-	float star = step(0.978, h) * dot_ * night * smoothstep(0.92, 0.3, uv.y) * (1.0 - dune);
-	float tw = 0.6 + 0.4 * sin(TIME * (0.8 + h * 2.5) + h * 40.0);
-	col += mix(vec3(1.0, 0.86, 0.7), vec3(1.0, 0.97, 0.92), big) * star * tw * (1.2 + big);
-	ALBEDO = col;
-}
-"""
-	sm.shader = sh
+	# --- BOOT: el código está en shaders/ss_sky.gdshader: un solo Shader para los telones de los dos escenarios (cada
+	# uno con sus valores; en la web cada Shader se compila aparte)
+	sm.shader = load("res://shaders/ss_sky.gdshader")
 	_sky_mats.append(sm)
 	var mi := quad(size, pos, sm)
 	mi.name = "Sky"
@@ -383,6 +356,20 @@ func _update_flyers(delta: float) -> void:
 func blurt(a: Node3D, text: String, col := Color(1.0, 0.95, 0.85), secs := 2.6) -> void:
 	if not is_instance_valid(a) or text == "":
 		return
+	var l := blurt_label(text, col)
+	a.add_child(l)
+	var head: float = a.call("top_height") if a.has_method("top_height") else 1.6
+	var y0 := head + 0.55 + _blurt_lift(a)
+	l.position = Vector3(0.0, y0, 0.12)
+	var tw := l.create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(l, "modulate:a", 1.0, 0.2)
+	tw.tween_property(l, "position:y", y0 + 0.22, secs)
+	tw.tween_property(l, "modulate:a", 0.0, 0.45).set_delay(secs - 0.45)
+	tw.chain().tween_callback(l.queue_free)
+
+## La etiqueta de blurt() (--- BOOT: aparte, para que warm_groups compile su shader antes de la primera frase).
+func blurt_label(text: String, col := Color(1.0, 0.95, 0.85)) -> Label3D:
 	UIKit.load_fonts()
 	var l := Label3D.new()
 	l.text = text
@@ -399,16 +386,7 @@ func blurt(a: Node3D, text: String, col := Color(1.0, 0.95, 0.85), secs := 2.6) 
 	l.width = 900.0
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	a.add_child(l)
-	var head: float = a.call("top_height") if a.has_method("top_height") else 1.6
-	var y0 := head + 0.55 + _blurt_lift(a)
-	l.position = Vector3(0.0, y0, 0.12)
-	var tw := l.create_tween()
-	tw.set_parallel(true)
-	tw.tween_property(l, "modulate:a", 1.0, 0.2)
-	tw.tween_property(l, "position:y", y0 + 0.22, secs)
-	tw.tween_property(l, "modulate:a", 0.0, 0.45).set_delay(secs - 0.45)
-	tw.chain().tween_callback(l.queue_free)
+	return l
 
 ## Cuánto más arriba va la frase de alguien (cada escenario decide: p. ej. si ahí ya va un aviso).
 func _blurt_lift(_a: Node3D) -> float:
@@ -537,3 +515,116 @@ func _process(delta: float) -> void:
 		_cam_x = lerpf(_cam_x, target, 1.0 - exp(-3.0 * delta))
 		place_camera(_cam_x)
 		camera.position.y += sin(_t * 0.6) * 0.008   # la cámara HD-2D respira
+
+# ------------------------------------------------------------------ --- BOOT: calentar los shaders de a poco
+
+## En la web (WebGL 2) Godot compila cada shader la primera vez que lo dibuja, y cada familia nueva son varios
+## programas de golpe (color / sombra, con y sin instancias, más una variante por cada combinación de luces); en una
+## PC con Windows (ANGLE sobre D3D11) cada programa se enlaza en el hilo principal y tarda. Si todo el escenario
+## aparece en un solo cuadro, ese cuadro tarda segundos y la página no responde. warm_groups() esconde todo lo que
+## se ve del escenario y lo devuelve agrupado por familia de shader ([[clave, [nodos]], ...], en orden de árbol);
+## main.gd lo vuelve a mostrar de a un grupo por cuadro (cada cuadro compila poco). Al final queda todo como estaba.
+## probe: qué cosas escondidas se calientan con una copia (ver _probe_wanted).
+func warm_groups(probe := "all") -> Array:
+	var by_key := {}
+	var order: Array = []
+	var hidden: Array = []
+	for n in find_children("", "GeometryInstance3D", true, false):
+		var g := n as GeometryInstance3D
+		if not g.is_visible_in_tree():
+			hidden.append(g)
+			continue
+		var k := warm_key(g)
+		if not by_key.has(k):
+			by_key[k] = []
+			order.append(k)
+		by_key[k].append(g)
+	# Lo que ahora no se ve (las naves que pasan, las burbujas de los clientes, lo de noche, la cosa en el mostrador)
+	# y las frases flotantes (blurt, se crean al hablar) también tienen su familia: si no, se compilaría la primera vez
+	# que aparecen (un tirón en medio del juego). Una copia de cada familia que falte, delante de la cámara, solo
+	# mientras se calienta (warm_end la borra).
+	warm_probes.clear()
+	var at := camera.global_position - camera.global_basis.z * 5.0 if camera else Vector3.ZERO
+	var candidates: Array = hidden.duplicate()
+	var bl := blurt_label("Hi!")
+	add_child(bl)
+	candidates.append(bl)
+	for g in candidates:
+		var k := warm_key(g)
+		if by_key.has(k) or not _probe_wanted(g, probe, bl):
+			if g == bl:
+				remove_child(bl)
+				bl.queue_free()
+			continue
+		var pr: GeometryInstance3D = g if g == bl else g.duplicate()
+		if pr != bl:
+			add_child(pr)
+		pr.visible = true
+		pr.global_position = at
+		if pr is SpriteBase3D:
+			(pr as SpriteBase3D).modulate.a = 1.0
+			if pr is Sprite3D and (pr as Sprite3D).texture == null:
+				(pr as Sprite3D).texture = load("res://assets/ui/icon_star.png")
+		elif pr is Label3D:
+			(pr as Label3D).modulate.a = 1.0
+		warm_probes.append(pr)
+		by_key[k] = [pr]
+		order.append(k)
+	var out: Array = []
+	for k in order:
+		for g in by_key[k]:
+			g.visible = false
+		out.append([k, by_key[k]])
+	return out
+
+## "all": todo lo escondido y la frase flotante (la tienda, de fondo); "flyers": solo las naves que pasan (se ven sobre
+## el título: lo único escondido que puede aparecer ahí); "streaks": solo la lluvia de chatarra (la introducción, de
+## noche). Lo demás (burbujas, frases) ya queda compilado con la tienda; en la calle, como mucho, falta un programa.
+func _probe_wanted(g: GeometryInstance3D, probe: String, bl: Node) -> bool:
+	match probe:
+		"all":
+			return true
+		"flyers":
+			for f in _flyers:
+				if g == f["s"] or g == f["flame"]:
+					return true
+		"streaks":
+			for st in _streaks:
+				if g == st["s"]:
+					return true
+	return false
+
+## Borra las copias de warm_groups (llamar cuando terminó el calentamiento).
+func warm_end() -> void:
+	for pr in warm_probes:
+		if is_instance_valid(pr):
+			if pr.get_parent():
+				pr.get_parent().remove_child(pr)
+			pr.queue_free()
+	warm_probes.clear()
+
+## La familia de shader de una geometría (lo que hace que Godot compile otro programa): el tipo de material y sus
+## opciones de dibujo, no sus colores ni sus texturas. Si proyecta sombra, también (la pasada de sombra).
+static func warm_key(g: GeometryInstance3D) -> String:
+	var k := ""
+	if g is SpriteBase3D:
+		var sp := g as SpriteBase3D
+		k = "spr|%d|%d|%d|%d|%d|%d|%d" % [int(sp.shaded), sp.alpha_cut, sp.billboard, int(sp.transparent), int(sp.double_sided),
+			int(sp.no_depth_test), sp.texture_filter]
+	elif g is Label3D:
+		var lb := g as Label3D
+		k = "lbl|%d|%d|%d|%d" % [int(lb.shaded), lb.billboard, int(lb.no_depth_test), lb.alpha_cut]
+	var m: Material = g.material_override
+	if m == null and g is MeshInstance3D and (g as MeshInstance3D).mesh:
+		m = (g as MeshInstance3D).get_active_material(0)
+	if m is ShaderMaterial and (m as ShaderMaterial).shader:
+		k += "|shader%d" % (m as ShaderMaterial).shader.get_instance_id()
+	elif m is BaseMaterial3D:
+		var b := m as BaseMaterial3D
+		# (la textura no cuenta: el shader de BaseMaterial3D siempre la lee; sin textura usa una blanca)
+		k += "|std|%d|%d|%d|%d|%d|%d" % [b.shading_mode, b.transparency, int(b.uv1_triplanar), b.texture_filter, b.cull_mode,
+			b.billboard_mode]
+	if g.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+		k += "|cast"
+	return k
+

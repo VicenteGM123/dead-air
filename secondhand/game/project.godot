@@ -15,6 +15,9 @@ config/description="A cozy junk-and-repair shop on a desert spaceport."
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.png"
+boot_splash/bg_color=Color(0.10980392, 0.078431375, 0.14901961, 1)
+boot_splash/image="res://assets/ui/boot_splash.png"
+boot_splash/use_filter=false
 
 [autoload]
 

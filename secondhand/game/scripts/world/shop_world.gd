@@ -65,6 +65,15 @@ var _door_open := false
 var _door_sign_open := false
 
 func build() -> void:
+	for st in build_steps():
+		st.call()
+
+## --- BOOT: el armado en pasos cortos (main.gd hace uno por cuadro al arrancar; build() los hace todos juntos).
+func build_steps() -> Array[Callable]:
+	return [_build_base, _build_room, _build_outside, _build_counter, _build_nell_side, _build_customer_side,
+		_build_ceiling, _build_people_and_shelf]
+
+func _build_base() -> void:
 	name = "ShopWorld"
 	setup_camera_env(true)
 	cam_x0 = -3.6
@@ -74,12 +83,8 @@ func build() -> void:
 	cam_look_y = 1.25
 	cam_look_z = -1.6
 	cam_bias = 0.9     # desde el mostrador se ven la fila y la puerta
-	_build_room()
-	_build_outside()
-	_build_counter()
-	_build_nell_side()
-	_build_customer_side()
-	_build_ceiling()
+
+func _build_people_and_shelf() -> void:
 	setup_nell(LANE, STATIONS, -0.42)
 	setup_kettle(Vector3(-1.5, 0, -1.08))
 	refresh_shelf()

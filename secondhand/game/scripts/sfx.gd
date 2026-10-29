@@ -53,7 +53,9 @@ func _ready() -> void:
 	_amb.bus = "SFX"
 	add_child(_amb)
 	apply_volumes()
-	prewarm.call_deferred()   # --- SS AUDIO: precarga de los bucles en la web (ver prewarm() al final)
+	# --- BOOT: la precarga de los bucles ya no corre sola aquí: era un solo bloque de ~0.6 s dentro del primer cuadro
+	# (con la página congelada). main.gd llama a prewarm_one() de a un bucle por cuadro: los del título mientras carga,
+	# los demás después, con el título ya en pantalla (ver prewarm() al final).
 
 func _setup_buses() -> void:
 	_new_bus("Music")
@@ -194,14 +196,29 @@ var prewarm_ms := {}
 func prewarm() -> void:
 	if not OS.has_feature("web"):
 		return
-	var total := 0.0
 	for n in PREWARM:
-		var st := _loop_stream(n)
-		if st == null or AudioServer.is_stream_registered_as_sample(st):
-			continue
-		var t0 := Time.get_ticks_usec()
-		AudioServer.register_stream_as_sample(st)
-		prewarm_ms[n] = snappedf((Time.get_ticks_usec() - t0) / 1000.0, 0.1)
-		total += prewarm_ms[n]
+		prewarm_one(n)
+	prewarm_report()
+
+## --- BOOT: precarga UN bucle (si hace falta). Devuelve los ms que tardó (0 si ya estaba, si no existe o fuera de la
+## web). Cada uno se decodifica entero en el hilo principal: por eso main.gd los hace en cuadros distintos.
+func prewarm_one(n: String) -> float:
+	if not OS.has_feature("web"):
+		return 0.0
+	var st := _loop_stream(n)
+	if st == null or AudioServer.is_stream_registered_as_sample(st):
+		return 0.0
+	var t0 := Time.get_ticks_usec()
+	AudioServer.register_stream_as_sample(st)
+	prewarm_ms[n] = snappedf((Time.get_ticks_usec() - t0) / 1000.0, 0.1)
+	return prewarm_ms[n]
+
+## La línea de la consola que leen las pruebas web ("SS AUDIO prewarm ms: {...} total N").
+func prewarm_report() -> void:
+	if not OS.has_feature("web"):
+		return
+	var total := 0.0
+	for n in prewarm_ms:
+		total += float(prewarm_ms[n])
 	print("SS AUDIO prewarm ms: %s total %.0f" % [prewarm_ms, total])
 # --- end SS AUDIO

@@ -38,7 +38,7 @@ body {
 }
 
 #status {
-	background-color: #242424;
+	background-color: #1c1426;
 	display: flex;
 	flex-direction: column;
 	justify-content: center;
@@ -92,7 +92,7 @@ body {
 		</style>
 		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
 <link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
-<meta property='og:title' content='Secondhand Stars'><meta property='og:description' content='A cozy junk-and-repair shop on a desert spaceport.'><script>document.title = 'Secondhand Stars';</script>
+<meta property='og:title' content='Secondhand Stars'><meta property='og:description' content='A cozy junk-and-repair shop on a desert spaceport.'><script>document.title = 'Secondhand Stars';</script><style>#status-progress{-webkit-appearance:none;appearance:none;box-sizing:border-box;height:14px;border:2px solid #5a4654;border-radius:0;background:#100b16}#status-progress::-webkit-progress-bar{background:#100b16}#status-progress::-webkit-progress-value{background:#ffb045}#status-progress::-moz-progress-bar{background:#ffb045}</style><script>addEventListener('DOMContentLoaded',function(){var p=document.getElementById('status-progress');if(!p){return;}var P=HTMLProgressElement.prototype,dv=Object.getOwnPropertyDescriptor(P,'value'),dm=Object.getOwnPropertyDescriptor(P,'max'),mx=0;Object.defineProperty(p,'max',{configurable:true,get:function(){return dm.get.call(p);},set:function(v){mx=v;dm.set.call(p,1);}});Object.defineProperty(p,'value',{configurable:true,get:function(){return dv.get.call(p);},set:function(v){if(mx>0){dv.set.call(p,0.7*Math.min(1,v/mx));}}});});</script>
 	</head>
 	<body>
 		<canvas id="canvas">
@@ -104,14 +104,14 @@ body {
 		</noscript>
 
 		<div id="status">
-			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png" alt="">
+			<img id="status-splash" class="show-image--true fullsize--true use-filter--false" src="index.png" alt="">
 			<progress id="status-progress"></progress>
 			<div id="status-notice"></div>
 		</div>
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":4994060,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":5018372,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 

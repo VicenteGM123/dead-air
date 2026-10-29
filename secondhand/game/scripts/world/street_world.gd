@@ -39,6 +39,15 @@ var _beetle_flyer := {}
 const SUN_DAY := 1.45
 
 func build() -> void:
+	for st in build_steps():
+		st.call()
+
+## --- BOOT: el armado en pasos cortos (main.gd hace uno por cuadro al arrancar; build() los hace todos juntos).
+func build_steps() -> Array[Callable]:
+	return [_build_base, _build_ground_and_sky, _build_far, _build_shop_facade, _build_stalls, _build_people,
+		_build_nell_kettle]
+
+func _build_base() -> void:
 	name = "StreetWorld"
 	setup_camera_env(false)
 	# la luz del sol de la mañana: arriba a la derecha y un poco desde delante (ilumina las fachadas)
@@ -57,11 +66,8 @@ func build() -> void:
 	env.adjustment_contrast = 1.08
 	fill.position = Vector3(0.0, 3.4, 5.0)
 	fill.light_energy = 0.3
-	_build_ground_and_sky()
-	_build_far()
-	_build_shop_facade()
-	_build_stalls()
-	_build_people()
+
+func _build_nell_kettle() -> void:
 	setup_nell(LANE, STATIONS, SHOP_X + 0.9)
 	setup_kettle(Vector3(SHOP_X - 0.1, 0, LANE_Z + KETTLE_DZ))
 	refresh_sign()
