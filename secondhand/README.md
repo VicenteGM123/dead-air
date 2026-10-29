@@ -69,7 +69,7 @@ Para comprar cápsulas y para vender del estante. El otro pide un precio; se con
 | `A` | interactuar (como `E`); en una ventana, tocar donde está el cursor o avanzar |
 | `B` | volver / cerrar (como `Esc`) |
 | `X` | como `Espacio` (p. ej. parar la aguja del banco) |
-| `LB` / `RB` | mostrar el cursor y saltar a lo tocable anterior / siguiente (lugares, botones, piezas) |
+| `LB` / `RB` | mostrar el cursor y saltar a lo tocable anterior / siguiente que se ve en pantalla (lugares, botones, piezas); a un lugar fuera de pantalla se llega caminando |
 | `Menu` | menú |
 
 Los avisos cambian solos según el aparato: con el mando dicen «[A] Repair». En el navegador el sonido empieza con el primer clic o tecla (los navegadores no cuentan el mando); la esquina de la pantalla lo avisa.
@@ -83,6 +83,7 @@ La partida se guarda sola cada mañana y al abrir la tienda: **Continue** sigue 
 **Todavía no (es un prototipo):**
 
 - Solo 3 días; no hay mejoras de la tienda, historia más allá de la introducción ni más clientes que los 6 del elenco.
+- Los días 1 y 2 terminan con un rato tranquilo (la última hora, más o menos, no entra nadie): se puede reacondicionar algo de las cápsulas o esperar el cierre; no hay botón para cerrar antes.
 - Las cápsulas se abren en el momento de comprarlas (no se pueden guardar para abrirlas en el banco).
 - Clatter se repara sobre la misma vista abierta del robot de bolsillo (no tiene un dibujo propio de su pecho abierto).
 - Los «extras» de los encargos (pintura, bocina más fuerte…) están previstos en los datos pero no se usan.

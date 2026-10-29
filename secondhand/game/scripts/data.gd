@@ -99,7 +99,7 @@ const LINES := {
 	"gorrum": {
 		"bring": {"radio": "My radio is sick. Fix it. Not fast. Right.",
 			"thruster": "Thruster. My hoverbike sulks. Gorrum does not like sulking."},
-		"buy": "Gorrum needs a thruster. A good one. Show me.",
+		"buy": "Gorrum needs a thruster. Or a radio. A good one. Show me.",   # --- SS SHIP: compra de dos familias (lo dice)
 		"thanks": ["Hrm. It works. A little.", "It works. Mostly. Hrm.", "It works. Gorrum is satisfied.",
 			"Hrm! Good work. Gorrum will tell the herd."],
 		"failed": "Still broken. Gorrum is not angry. Gorrum is disappointed.",
@@ -128,7 +128,7 @@ const LINES := {
 	"oona": {
 		"bring": {"radio": "No hurry, little star. My radio only remembers one song.",
 			"helperbot": "My little helper has forgotten itself. It happens to us all."},
-		"buy": "I would like a radio, dear. Something with a warm voice.",
+		"buy": "I would like a radio, dear, or a little helper bot. Something with a warm voice.",   # --- SS SHIP
 		"thanks": ["Oh. Well, it tried its best. So did you.", "It hums a little crooked. Thank you, dear.",
 			"Lovely work, little star.", "Wonderful. My thoughts are glowing for you."],
 		"failed": "Some things stay broken a while. I understand.",
@@ -143,7 +143,7 @@ const LINES := {
 	"pipip": {
 		"bring": {"helperbot": "Um. Hello. My helper is... not helping. Sorry.",
 			"thruster": "My drill bike makes a sad noise. Is that bad? Sorry."},
-		"buy": "Do you... maybe... have a helper bot? A small one?",
+		"buy": "Do you... maybe... have a helper bot? Or a thruster? A small one?",   # --- SS SHIP
 		"thanks": ["Oh. It's... fine! Thank you.", "Thank you! Here. Small coins. Sorry.",
 			"Thank you! It's all in small coins, sorry.", "Oh! Oh wow! Thank you! Sorry about the coins."],
 		"failed": "Oh. That's okay. It was old.",
@@ -158,7 +158,7 @@ const LINES := {
 	"rook": {
 		"bring": {"thruster": "Thruster coughs like my uncle. Ship leaves at two. No pressure.",
 			"radio": "Radio's dead. I like to know who's following me."},
-		"buy": "Need a thruster that won't quit over the dunes. Got one?",
+		"buy": "Need a thruster that won't quit over the dunes. Or a radio for the trip. Got one?",   # --- SS SHIP
 		"thanks": ["If I crash, I'm haunting you.", "Good enough to fly. Thanks, kid.", "Smooth. Thanks, Nell.",
 			"Purrs like new. You're wasted on this rock, Nell."],
 		"failed": "Still coughing. I'll hum along.",
@@ -171,7 +171,7 @@ const LINES := {
 		"home": "Closed. Story of my life.",
 	},
 	"clatter": {
-		"bring": {"helperbot": "Good morning. I would like to be repaired, please. Me. I have savings."},
+		"bring": {"helperbot": "Greetings. I would like to be repaired, please. Me. I have savings."},   # --- SS SHIP: llega por la tarde ("Good morning" a las 2 PM),
 		"buy": "I am only browsing. With my eyes. I have two.",
 		"thanks": ["A small squeak remains. I will name it.", "Better. My savings and I thank you.",
 			"Much better. I shall squeak no more.", "Splendid. I feel twenty years younger. Nineteen."],
