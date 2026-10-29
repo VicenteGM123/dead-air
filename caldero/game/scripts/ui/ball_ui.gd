@@ -57,6 +57,7 @@ var tray_glow: ColorRect
 var tray_arrow: Label
 var sel_frame: Panel
 var close_btn: TextureButton
+var keys_row: HBoxContainer   # --- R6 UI: las teclas de la bola (debajo de la bandeja)
 var badge: Button                          # la medalla del HUD (en ui.root)
 var badge_ring: _Ring
 var badge_count: Label
@@ -331,6 +332,18 @@ func _build_tray() -> void:
 	sel_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	sel_frame.visible = false
 	tray.add_child(sel_frame)
+	# --- R6 UI: debajo de la bandeja, las teclas: ← → eligen, Intro (A) se la da, Esc (B) cierra
+	keys_row = UIKit.hbox(10)
+	keys_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tray.add_child(keys_row)
+	for k in [["choose", "Choose"], ["confirm", "Give"], ["back", "Close"]]:
+		var c := Glyphs.Chip.new(k[0], false, true)
+		keys_row.add_child(c)
+		var l := UIKit.shadow(UIKit.label(k[1], 26, CREAM, UIKit.font_bold), 2)
+		l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		keys_row.add_child(l)
+	keys_row.visible = false
+	# --- end R6 UI
 
 func _rebuild_tray() -> void:
 	for b in tray_btns:
@@ -343,6 +356,9 @@ func _rebuild_tray() -> void:
 	tray_art.size = tex.get_size() * SHELF_K
 	tray_glow.size = tray_art.size + Vector2(36, 36)
 	tray_arrow.position = Vector2(tray_art.size.x / 2.0 - 40, -74)
+	if keys_row:   # --- R6 UI: las teclas, centradas debajo de la bandeja
+		keys_row.reset_size()
+		keys_row.position = Vector2(roundf((tray_art.size.x - keys_row.get_combined_minimum_size().x) / 2.0), tray_art.size.y + 18.0)
 	for i in cap:
 		var r := i / 6
 		var col := i % 6
@@ -415,6 +431,7 @@ func _build_close() -> void:
 		close())
 	close_btn.mouse_entered.connect(func(): Sfx.play("hover", 0.05, -14.0))
 	root.add_child(close_btn)
+	Glyphs.attach_chip(close_btn, "back", "corner", true, Vector2(-4, 74))   # --- R6 UI: Esc (B del mando), debajo del sello
 
 ## La medalla del HUD (abajo a la izquierda): la bolita, cuántos pedidos hay y el reloj de Graznido si espera.
 func _build_badge() -> void:
@@ -873,6 +890,8 @@ func _refresh_side() -> void:
 	# el estante: brilla y la flecha baila si Graznido espera
 	tray_glow.color.a = (0.18 + 0.12 * sin(_t * 5.0)) if waiting else 0.0
 	tray_arrow.visible = waiting and not Game.potions.is_empty()
+	if keys_row:
+		keys_row.visible = tray_arrow.visible   # --- R6 UI: las teclas de la bandeja, solo cuando Graznido espera
 	tray_arrow.position.y = -74.0 + sin(_t * 6.0) * 6.0
 	for i in tray_btns.size():
 		var b: Button = tray_btns[i]

@@ -66,9 +66,27 @@ func _open(id: String, panel: Control, dim := true) -> Control:
 	return holder
 
 func _unhandled_input(ev: InputEvent) -> void:
+	# --- R6 UI: Intro y Espacio pulsan el botón principal del papel abierto (el que lleva su tecla dibujada: Sleep,
+	# Next, Done, Start, Nice!...)
+	if ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE] and current != "stir":
+		if _kf_press() or press_default():
+			get_viewport().set_input_as_handled()
+			return
+	# (resume 3) Tab / Mayús+Tab: el aro del teclado recorre los botones del papel (ver _kf_*, abajo)
+	if ev is InputEventKey and ev.pressed and ev.keycode == KEY_TAB and current != "" and current != "stir":
+		_kf_move(-1 if ev.shift_pressed else 1)
+		get_viewport().set_input_as_handled()
+		return
+	# --- end R6 UI
 	if current == "" or current == "title" or current == "stir" or current == "summary" or current == "levelup":
 		return
 	if current == "invite":   # --- R4 EVENTS: la invitación se acepta o se rechaza (Esc / B no la cierran)
+		# --- R6 UI: con el teclado, 1 acepta y 2 rechaza (sus teclas van dibujadas en los botones). Intro no acepta:
+		# quien pasa el correo a golpes de Intro no debe apuntarse a un evento sin querer.
+		if ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode in [KEY_1, KEY_KP_1, KEY_2, KEY_KP_2]:
+			answer_invitation(ev.keycode in [KEY_1, KEY_KP_1])
+			get_viewport().set_input_as_handled()
+		# --- end R6 UI
 		return
 	if ev is InputEventKey and ev.pressed and ev.keycode == KEY_ESCAPE:
 		if current == "confirm":
@@ -100,6 +118,7 @@ func _unhandled_input(ev: InputEvent) -> void:
 var _trig_prev := 0
 
 func _process(_delta: float) -> void:
+	_kf_process(_delta)   # --- R6 UI: el aro y el aviso del teclado en los papeles
 	if current != "book" and current != "journal":
 		_trig_prev = 0
 		return
@@ -167,10 +186,13 @@ func show_title(has_save: bool) -> void:
 		c.custom_minimum_size = Vector2(360, 74)
 		c.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		btns.add_child(c)
+		set_default(c)   # --- R6 UI
 	var n := PaperKit.wood_button("New game" if has_save else "Start", func(): _confirm_new(has_save), 36)
 	n.custom_minimum_size = Vector2(360, 74)
 	n.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	btns.add_child(n)
+	if not has_save:
+		set_default(n)   # --- R6 UI
 	var q := PaperKit.wood_button("Quit", func(): get_tree().quit(), 30)
 	q.custom_minimum_size = Vector2(360, 62)
 	q.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -1016,7 +1038,9 @@ func _show_vendor(vendor: String) -> void:
 	var btns := UIKit.hbox(16)
 	btns.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_child(btns)
-	btns.add_child(_close_button("Done"))
+	var done := _close_button("Done")
+	btns.add_child(done)
+	set_default(done)   # --- R6 UI
 	_mk_body = cloth
 	_mk_gold = purse.get_child(1)
 	_mk_tabs = null
@@ -1196,10 +1220,12 @@ func _mail_page(i: int) -> void:
 			_mail_page(i + 1), 32)
 		b.custom_minimum_size = Vector2(260, 64)
 		_mail_nav.add_child(b)
+		set_default(b)   # --- R6 UI
 	else:
 		var b2 := PaperKit.wood_button("Done" if n > 0 else "Get to work", func(): close(), 32)
 		b2.custom_minimum_size = Vector2(260, 64)
 		_mail_nav.add_child(b2)
+		set_default(b2)   # --- R6 UI
 	# --- end R3 PAPER
 
 ## --- R3 PAPER: una carta de papel de verdad: el retrato de quien escribe clavado a la izquierda, el sello de lacre
@@ -1375,6 +1401,10 @@ func show_invitation(inv: Dictionary) -> void:
 	rej.custom_minimum_size = Vector2(280, 70)
 	rej.name = "Rechazar"
 	nav.add_child(rej)
+	# --- R6 UI: sus teclas (1 / 2; con el mando no hay glifo: se elige con el cursor y A)
+	Glyphs.attach_chip(acc, "key:1", "right", false, Vector2(16, 0))
+	Glyphs.attach_chip(rej, "key:2", "right", false, Vector2(16, 0))
+	# --- end R6 UI
 	if Game.gold < fee:
 		acc.disabled = true
 		acc.modulate = Color(0.7, 0.68, 0.66)
@@ -1514,6 +1544,7 @@ func show_summary(day: int, today: Dictionary) -> void:
 	b.custom_minimum_size = Vector2(300, 64)
 	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	v.add_child(b)
+	set_default(b)   # --- R6 UI
 	PaperKit.decor(p, "paper_tape", Vector2(0.5, 0.0), Vector2(-36, -12), 3.0, false, Color.WHITE, 0.04)
 	# el sello del día: según cuántos de los que vinieron se fueron atendidos
 	var came := served + tired + full
@@ -1675,6 +1706,7 @@ func show_level_up(lv: int) -> void:
 	var b := PaperKit.button("Nice!", func(): close(), 36)
 	b.custom_minimum_size = Vector2(220, 62)
 	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	set_default(b)   # --- R6 UI
 	v.add_child(b)
 	PaperKit.decor(p, "paper_pin_brass", Vector2(0.5, 0.0), Vector2(-10, -12))
 	PaperKit.attach(p, PaperKit.seal(str(lv), "paper_seal_gold", 3.0), Vector2(1, 1), Vector2(-96, -100))
@@ -1763,7 +1795,9 @@ func show_settings() -> void:
 	var home := PaperKit.button("Home", func(): close(false); Game.save_game(); to_title.emit(), 32, "card", "paper_i_door")
 	home.tooltip_text = "Save and go back to the title"
 	h2.add_child(home)
-	h2.add_child(PaperKit.button("Close", func(): Game.save_game(); close(), 32))
+	var close_b := PaperKit.button("Close", func(): Game.save_game(); close(), 32)
+	h2.add_child(close_b)
+	set_default(close_b)   # --- R6 UI
 	PaperKit.decor(p, "paper_pin_blue", Vector2(0.5, 0.0), Vector2(-10, -12))
 	_open("settings", p)
 
@@ -1846,3 +1880,185 @@ func show_credits(done := Callable()) -> void:
 	if current_node and current_node.get_child_count() > 0 and current_node.get_child(0) is ColorRect:
 		current_node.get_child(0).color = Color(0.02, 0.01, 0.05, 0.9)
 # --- end R4 RANK
+
+# --- R6 UI: el botón principal de cada papel -------------------------------------------------------------------------
+# Lleva su tecla dibujada a la derecha (Glyphs: «Enter» con teclado y ratón, A con el mando); Intro / Espacio lo pulsan
+# y A del mando también, si su cursor no está encima de otro botón (PadCursor._a_route). Se marca con una meta en el
+# propio botón (los papeles se rehacen: el correo hoja a hoja) y se busca dentro del papel abierto.
+func set_default(b: BaseButton) -> void:
+	if b == null or b.has_meta("r6_default"):
+		return
+	b.set_meta("r6_default", true)
+	Glyphs.attach_chip(b, "confirm", "right", false, Vector2(16, 0))   # (aire a la derecha solo en sus estilos propios)
+
+## Pulsa el botón principal del papel abierto. true si había uno a la vista.
+func press_default() -> bool:
+	if current == "" or not is_instance_valid(current_node):
+		return false
+	var b := _find_default(current_node)
+	if b == null:
+		return false
+	b.pressed.emit()
+	return true
+
+func _find_default(n: Node) -> BaseButton:
+	for c in n.get_children():
+		if c is BaseButton and c.has_meta("r6_default") and (c as BaseButton).is_visible_in_tree() and not (c as BaseButton).disabled:
+			return c
+		var r := _find_default(c)
+		if r:
+			return r
+	return null
+# --- end R6 UI
+
+# --- R6 UI: el teclado en cualquier papel (resume 3) ------------------------------------------------------------------
+# Con el ratón se toca y con el mando se lleva el cursor (LB / RB saltan de botón en botón); con el teclado, Tab y
+# Mayús+Tab recorren los botones del papel abierto en orden de lectura (los «+1» del mercado, las pestañas, Open shop,
+# New game, Quit...) con el aro dorado de los botones del HUD, e Intro / Espacio pulsan el marcado; sin marca, Intro
+# pulsa el principal (set_default). Abajo al centro, mientras se usa el teclado y el papel tiene más de un botón, la
+# placa «Tab  Choose · Enter  Press». El ratón o el mando quitan la marca; cambiar de papel también.
+var _kf_i := -1
+var _kf_paper := ""
+var _kf_ring: Control
+var _kf_hint: Control
+var _kf_t := 0.0
+var _kf_cache: Array = []
+var _kf_cache_t := -1.0
+
+## Los botones del papel abierto (visibles, activos y tocables), en orden de lectura.
+func _kf_buttons() -> Array:
+	if _kf_cache_t >= 0.0 and _kf_t - _kf_cache_t < 0.15:
+		var ok := true
+		for b in _kf_cache:
+			if not is_instance_valid(b):
+				ok = false
+				break
+		if ok:
+			return _kf_cache
+	var out := []
+	if current != "" and is_instance_valid(current_node):
+		_kf_collect(current_node, out)
+	var key := func(b: Control) -> float:
+		var c := b.get_global_rect().get_center()
+		return roundf(c.y / 40.0) * 100000.0 + c.x
+	out.sort_custom(func(a, b): return key.call(a) < key.call(b))
+	_kf_cache = out
+	_kf_cache_t = _kf_t
+	return out
+
+func _kf_collect(n: Node, out: Array) -> void:
+	for c in n.get_children():
+		if c is CanvasItem and not (c as CanvasItem).visible:
+			continue
+		if c is BaseButton and not (c as BaseButton).disabled and (c as Control).mouse_filter != Control.MOUSE_FILTER_IGNORE:
+			out.append(c)
+		_kf_collect(c, out)
+
+func _kf_move(dir: int) -> void:
+	_kf_cache_t = -1.0
+	var bs := _kf_buttons()
+	if bs.is_empty():
+		return
+	_kf_paper = current
+	if _kf_i < 0 or _kf_i >= bs.size():
+		_kf_i = 0 if dir > 0 else bs.size() - 1
+	else:
+		_kf_i = wrapi(_kf_i + dir, 0, bs.size())
+	Sfx.play("hover", 0.05, -14.0)
+
+## Intro / Espacio con un botón marcado: lo pulsa (true). El índice se queda: en el mercado, el «+1» rehecho tras la
+## compra sigue marcado y se puede volver a pulsar.
+func _kf_press() -> bool:
+	if _kf_i < 0 or Glyphs.device != "keys":
+		return false
+	_kf_cache_t = -1.0
+	var bs := _kf_buttons()
+	if _kf_i >= bs.size():
+		return false
+	(bs[_kf_i] as BaseButton).pressed.emit()
+	_kf_cache_t = -1.0
+	return true
+
+func _kf_process(delta: float) -> void:
+	_kf_t += delta
+	if current != _kf_paper or Glyphs.device != "keys":
+		_kf_i = -1
+		_kf_paper = current
+	var typing := current != "" and current != "stir" and Glyphs.device == "keys"
+	var bs: Array = _kf_buttons() if typing else []
+	if _kf_ring == null:
+		_kf_ring = _KfRing.new()
+		_kf_ring.z_index = 100
+		root.add_child(_kf_ring)
+		_kf_hint = _kf_make_hint()
+		root.add_child(_kf_hint)
+	var on := _kf_i >= 0 and _kf_i < bs.size()
+	_kf_ring.visible = on
+	if on:
+		var r: Rect2 = (bs[_kf_i] as Control).get_global_rect()
+		_kf_ring.position = r.position - Vector2(5, 5) - root.global_position
+		_kf_ring.size = r.size + Vector2(10, 10)
+		_kf_ring.modulate.a = 0.8 + 0.2 * sin(_kf_t * 6.0)
+	_kf_hint.visible = typing and bs.size() >= 2
+
+## El aro del teclado sobre papel: el aro dorado del HUD (r6_focus9) casi no se ve sobre el pergamino claro, así que
+## aquí es un marco de tinta (3 px) con un hilo de oro por dentro y esquinas marcadas, nítido sobre papel y madera.
+class _KfRing extends Control:
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var r := Rect2(Vector2.ZERO, size)
+		var ink := Color("3a2618")
+		var gold := Color("f2c14e")
+		draw_rect(r.grow(-1.5), ink, false, 3.0)
+		draw_rect(r.grow(-4.5), gold, false, 3.0)
+		var c := 14.0   # las esquinas, más gruesas
+		for p in [r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)]:
+			var sx := 1.0 if p.x <= r.position.x else -1.0
+			var sy := 1.0 if p.y <= r.position.y else -1.0
+			draw_rect(Rect2(p + Vector2(minf(0.0, sx * c), minf(0.0, sy * 6.0)), Vector2(c, 6.0)), ink)
+			draw_rect(Rect2(p + Vector2(minf(0.0, sx * 6.0), minf(0.0, sy * c)), Vector2(6.0, c)), ink)
+
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_RESIZED:
+			queue_redraw()
+
+## La placa de abajo: «Tab  Choose · Enter  Press» (las teclas de pergamino de Glyphs sobre la placa oscura).
+func _kf_make_hint() -> Control:
+	var panel := PanelContainer.new()
+	var sb := StyleBoxTexture.new()
+	sb.texture = PaperKit.tex("r6_plate9")
+	sb.texture_margin_left = 15
+	sb.texture_margin_right = 15
+	sb.texture_margin_top = 15
+	sb.texture_margin_bottom = 15
+	sb.content_margin_left = 12
+	sb.content_margin_right = 16
+	sb.content_margin_top = 6
+	sb.content_margin_bottom = 6
+	panel.add_theme_stylebox_override("panel", sb)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.z_index = 100
+	var row := UIKit.hbox(10)
+	panel.add_child(row)
+	var parts := [["Tab", "Choose"], ["Enter", "Press"]]
+	for i in parts.size():
+		if i > 0:
+			var dot := UIKit.label("·", 22, Color(0.79, 0.63, 0.35), UIKit.font_bold)
+			dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			row.add_child(dot)
+		var g := Glyphs.key_cap(String(parts[i][0]))
+		g.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(g)
+		var l := UIKit.shadow(UIKit.label(String(parts[i][1]), 22, Color("f6ead0"), UIKit.font_bold), 2)
+		l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(l)
+	var holder := CenterContainer.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.z_index = 100
+	UIKit.place(holder, Vector2(0.5, 1), Vector2(-300, -64), Vector2(600, 56), Control.GROW_DIRECTION_BOTH, Control.GROW_DIRECTION_BEGIN)
+	holder.add_child(panel)
+	holder.visible = false
+	return holder
+# --- end R6 UI

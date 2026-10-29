@@ -4,10 +4,15 @@ Una tiendita de pociones en 2.5D (estilo HD-2D) hecha en Godot 4.7. Desde la ron
 
 Se juega en https://vicentegm123.github.io/dead-air/caldero/web/
 
-## Novedades (ronda 5)
+## Novedades (ronda 6)
 
-- **Todo en inglés:** textos, cartas, diálogos, carteles 3D, la Gaceta, los eventos y el final. Las partidas guardadas siguen: al continuar, lo guardado en español (cartas pendientes, diario, noticias) se vuelve a escribir en inglés.
-- **Nombres nuevos:**
+- **Sin tirón al empezar un evento:** el escenario se arma durante el viaje y lo que se dibuja por primera vez (gente, efectos, letras) se prepara con el mapa quieto, antes del fundido. En la web (medido en un navegador sin tarjeta gráfica), el peor cuadro después de aparecer el evento bajó de 2,7–7,5 s a unos pocos milisegundos.
+- **Avisos de botón:** junto a una persona o a algo que se puede usar aparece la tecla y lo que hace (**E Give potion · Space Talk** en el mostrador, **E Brew**, **E Buy**, **E Go to market**, **E Hand over**…). Con el mando se ven los botones del mando.
+- **Botones de arriba nuevos:** **Open shop** (`O`) y **Market** (`M`) con icono y su tecla; los de la derecha con marco nuevo y su tecla en el rótulo.
+- **Menos desenfoque:** las franjas borrosas de arriba y abajo son más angostas (en el mercado, del 48 % al 28 % de la pantalla), con la misma fuerza.
+- Las partidas guardadas siguen funcionando.
+
+Los nombres en inglés (desde la ronda 5):
 
 | Antes | Ahora |
 |---|---|
@@ -19,25 +24,28 @@ Se juega en https://vicentegm123.github.io/dead-air/caldero/web/
 | Valdelago · Robledal · Brisaclara · la Montaña Gris | **Lakevale** · **Oakdale** · **Clearbreeze** · **the Grey Mountain** |
 | Examen de la Academia · Concurso de Robledal · Feria del Torneo | **The Academy of Magic Exam** · **The Oakdale Potion Contest** · **The Clearbreeze Tournament Fair** |
 
-- **Las paredes que temblaban:** al fondo y a los lados de la tienda había paredes dobles (el yeso y la piedra en el mismo lugar exacto) y la tarjeta gráfica alternaba entre las dos en cada cuadro. Arreglado en la tienda y revisado en todo el juego (mercado, eventos, título y final): ninguna superficie queda encima de otra.
-- **La fachada del mercado:** ya no hay una puerta ajena al lado de la tienda: todo el frente es la tienda (una puerta, el letrero **Midnight Cauldron**, escaparate y ventanas). Con Crow Delivery comprado aparece ahí la ventanilla del cuervo.
-
 ## Teclado y ratón
+
+Junto a cada lugar o persona, un aviso dice qué tecla usar (o qué botón del mando, si lo último que usaste fue el mando).
 
 | Tecla | Qué hace |
 |---|---|
-| Clic | tocar: un lugar o un objeto de la tienda (ella camina hasta allí y lo usa), un puesto del mercado, un botón |
+| Clic | tocar: un lugar o un objeto de la tienda (ella camina hasta allí y lo usa), una persona, un puesto del mercado, un botón |
 | Clic en el suelo, `A` / `D` o las flechas | caminar |
-| `E` | usar el lugar donde está la alquimista: el caldero (**Cauldron**) abre el banco, el escritorio de la biblioteca (**Library · grimoire**) abre el grimorio, la puerta (**Door · to the market**) lleva al mercado por la mañana |
-| `Espacio` | avanzar diálogos y remover (**Stir**) |
+| `E` | lo que dice el aviso: **Open shop**, **Talk**, **Give potion**, **Brew**, **Enchant**, **Go to market**, **Buy**, **Back to shop**, **Hand over** / **Read orders** (la ventanilla del cuervo) |
+| `Espacio` | la segunda acción del aviso (**Talk**, o **Present** en el concurso), avanzar diálogos y remover (**Stir**) |
+| `O` / `M` | **Open shop** / **Market** (en el mercado, **Back to shop**) |
+| `1` – `3` | las respuestas de un diálogo (**Brew it**, **A hint?**, **I can't**) |
+| `Intro` | el botón principal de un papel (**Sleep**, **Next**, **Done**, **Start**…); `Tab` marca otro botón; en la invitación, `1` = **Accept**, `2` = **Decline** |
 | `R` / `J` | recetario (**Recipes**) / diario (**Journal**) (`←` `→` o la rueda pasan las hojas) |
 | `G` | el **Guild Rankings** (también la copa del menú de arriba) |
 | `Esc` | ajustes (**Settings**), o cerrar la ventana abierta |
 
-En el **banco del caldero**: `1`–`8` echan un frasco, `Espacio` remueve o embotella (**Stir** / **Bottle**), `Retroceso` saca el último y `Esc` o `E` lo cierran.
+Al dar una poción con `E`, si en el estante hay pociones distintas se abre para elegir: `←` `→` (o `1`–`9`) y `E` o `Intro`; `Esc` vuelve. Con el banco abierto, `Tab` abre el estante.
+En el **banco del caldero**: `1`–`8` echan un frasco, `Espacio` remueve o embotella (**Stir** / **Bottle**), `Retroceso` saca el último, `I` hace tinta (**Ink**), `Supr` vacía (**Empty**) y `Esc` o `E` lo cierran.
 En el **grimorio** (el escritorio de la biblioteca): flechas e `Intro` para elegir y `Esc` para cerrar; la runa se traza con el ratón, las flechas o `WASD`, y `Esc` suelta la pluma sin gastar tinta.
-En la **bola de cristal** de Crow Delivery (junto a la ventanilla; se abre con un clic o con `E` en la ventanilla): `←` `→` eligen una poción, `Intro` o `Espacio` se la dan a Squawk, `1`–`5` destacan un pedido y `Esc` o `E` la cierran.
-En un **evento**: `E` abre el caldero del evento (**Cauldron**) y `Espacio` o `Intro` aceptan sus tarjetas (**Next round**, **See results**, **Head home**).
+En la **bola de cristal** de Crow Delivery (se abre con `E` en la ventanilla o con un clic): `←` `→` eligen una poción, `Intro` o `Espacio` se la dan a Squawk, `1`–`5` destacan un pedido y `Esc` o `E` la cierran.
+En un **evento**: `E` abre el caldero del evento (**Cauldron**), en el concurso `Espacio` elige la poción para el jurado (**Present**), y `Espacio` o `Intro` aceptan sus tarjetas (**Next round**, **See results**, **Head home**).
 
 ## Mando (Xbox y compatibles)
 
@@ -45,11 +53,11 @@ El mando lleva un cursor dorado que hace de ratón: aparece al usar el mando y s
 
 | Botón | Qué hace |
 |---|---|
+| A | la acción del aviso (si el cursor no está sobre otra cosa); sobre algo, tocarlo; en un diálogo, avanzar; en un papel, su botón principal |
+| X | la segunda acción del aviso (**Talk**, **Present**), avanzar diálogos y remover (como `Espacio`) |
+| B | volver / cerrar (el estante, la ventana abierta, el banco del caldero, la bola de cristal) |
+| Cruceta izquierda / derecha | caminar; en el estante y en la bola, elegir la poción |
 | Stick izquierdo | mover el cursor (al soltarlo sobre algo tocable, o cerca, se centra solo) |
-| Cruceta izquierda / derecha | caminar (con una ventana o un diálogo abiertos, mueve el cursor) |
-| A | tocar donde está el cursor (o avanzar el diálogo) |
-| B | volver / cerrar la ventana abierta (también el banco del caldero y la bola de cristal) |
-| X | avanzar diálogos y remover (como `Espacio`) |
 | Y | recetario (**Recipes**) |
 | View (Vista) | diario de viajeros (**Journal**) |
 | Menu (Menú) | ajustes (**Settings**) |

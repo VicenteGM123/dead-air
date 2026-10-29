@@ -7,6 +7,11 @@ class_name PadCursor
 ##   B: volver / cerrar (Esc)     X: Espacio (avanzar, remover)     Y: recetas (R)     Vista: diario (J)
 ##   Menú: ajustes (Esc)     LB / RB: saltar al objeto tocable anterior / siguiente     stick derecho: desplazar listas
 ## El cursor aparece al usar el mando y se esconde en cuanto se mueve el ratón.
+## --- R6 UI: A también hace lo que dice el aviso de acción (PromptBrain: hablar, dar la poción, preparar, comprar...)
+## cuando el cursor no está sobre algo tocable, o mientras está guardado: al caminar con la cruceta el cursor se guarda
+## (se esconde) y vuelve al mover el stick o con LB / RB. Con las respuestas del diálogo a la vista, A sin cursor encima
+## elige la primera; en un papel, su botón principal (Dormir, Siguiente...). X es la segunda acción del aviso (Espacio).
+## Con el estante para elegir abierto: la cruceta elige, A la da, B vuelve.
 
 const DEAD := 0.2            # zona muerta de los sticks
 const SPEED := 1920.0        # píxeles por segundo con el stick a fondo (un ancho de pantalla)
@@ -27,6 +32,9 @@ var market: MarketWorld   # --- WORLD: el mercado (sus puestos son tocables cuan
 var brew: BrewUI          # --- R3 BENCH: el banco del caldero (sus frascos y botones son tocables cuando está abierto)
 var ball: BallUI          # --- R4 RAVEN: la bola de Krápido (sus tarjetas, su estante y cerrar, cuando está abierta)
 var events_ui: EventUI    # --- R4 EVENTS: las tarjetas del evento (jurado, resultados) y el botón «Caldero»
+var brain: PromptBrain    # --- R6 UI: los avisos de acción (A / X hacen lo que dicen)
+var _parked := false      # --- R6 UI: el cursor guardado (escondido) mientras la cruceta la hace caminar
+var _a_mode := ""         # --- R6 UI: qué hizo A al bajar: "space" (diálogo), "click" (tocar), "done" (otra cosa)
 var needs_gesture := false   # web: el navegador no deja sonar nada hasta un clic o una tecla
 var _sprite: Sprite2D
 var _pos := Vector2(960, 540)
@@ -76,26 +84,38 @@ func _input(ev: InputEvent) -> void:
 			_show(false)
 
 func _on_button(b: int, pressed: bool) -> void:
+	var fresh := pressed and not active   # --- R6 UI: el primer botón tras usar el ratón o el teclado (el cursor recién aparece)
 	if pressed:
 		_show(true)
 	match b:
 		JOY_BUTTON_A:
+			# --- R6 UI: A según lo que hay (ver _a_route): avanzar el diálogo, tocar donde está el cursor, o hacer el aviso
 			if pressed and not _a_down:
 				_a_down = true
-				_a_key = _a_advances_dialog()
-				if _a_key:
+				_a_mode = _a_route(fresh)
+				_a_key = _a_mode == "space"
+				if _a_mode == "space":
 					_key(KEY_SPACE, true)
-				else:
+				elif _a_mode == "click":
 					_mouse_button(true)
 			elif not pressed and _a_down:
 				_a_down = false
-				if _a_key:
+				if _a_mode == "space":
 					_key(KEY_SPACE, false)
-				else:
+				elif _a_mode == "click":
 					_mouse_button(false)
+				_a_mode = ""
+			# --- end R6 UI
 		JOY_BUTTON_B:
-			if pressed and (ov.is_open() or _bench_open() or _ball_open()):   # --- R3 BENCH: B también cierra el banco (R4 RAVEN: y la bola)
+			if pressed and ui != null and ui.picker_open():   # --- R6 UI: B vuelve del estante para elegir
+				ui.close_picker()
+			elif pressed and (ov.is_open() or _bench_open() or _ball_open()):   # --- R3 BENCH: B también cierra el banco (R4 RAVEN: y la bola)
 				_tap(KEY_ESCAPE)
+		# --- R6 UI: con el estante para elegir abierto, la cruceta elige (no mueve el cursor ni a ella)
+		JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_DPAD_RIGHT, JOY_BUTTON_DPAD_UP, JOY_BUTTON_DPAD_DOWN:
+			if pressed and ui != null and (ui.picker_open() or _ball_waiting()):
+				_tap({JOY_BUTTON_DPAD_LEFT: KEY_LEFT, JOY_BUTTON_DPAD_RIGHT: KEY_RIGHT, JOY_BUTTON_DPAD_UP: KEY_UP, JOY_BUTTON_DPAD_DOWN: KEY_DOWN}[b])
+		# --- end R6 UI
 		JOY_BUTTON_X:
 			_key(KEY_SPACE, pressed)
 		JOY_BUTTON_Y:
@@ -109,6 +129,7 @@ func _on_button(b: int, pressed: bool) -> void:
 				_tap(KEY_ESCAPE)
 		JOY_BUTTON_LEFT_SHOULDER, JOY_BUTTON_RIGHT_SHOULDER:
 			if pressed:
+				_park(false)   # --- R6 UI: LB / RB sacan el cursor guardado
 				_jump(1 if b == JOY_BUTTON_RIGHT_SHOULDER else -1)
 
 func _process(delta: float) -> void:
@@ -127,11 +148,16 @@ func _process(delta: float) -> void:
 	dpad = dpad.clamp(Vector2(-1, -1), Vector2(1, 1))
 	# --- WORLD: mientras se puede caminar, izquierda/derecha de la cruceta mueven a la alquimista (walker.gd)
 	if Walker.dpad_walk:
+		if dpad.x != 0.0 and active:
+			_park(true)   # --- R6 UI: caminando con la cruceta el cursor se guarda (A hace el aviso de acción)
 		dpad.x = 0.0
 	# --- end WORLD
+	if ui != null and (ui.picker_open() or _ball_waiting()):
+		dpad = Vector2.ZERO   # --- R6 UI: la cruceta elige en el estante o en la bandeja de la bola (_on_button)
 	var m := (stick.length() - DEAD) / (1.0 - DEAD)
 	if m > 0.0 or dpad != Vector2.ZERO or absf(scroll) > DEAD:
 		_show(true)
+		_park(false)   # --- R6 UI: el stick (o la cruceta arriba / abajo) saca el cursor guardado
 	var p := _pos
 	if m > 0.0:
 		# más rápido cuanto más se inclina, y un poco de aceleración al mantenerlo
@@ -179,7 +205,9 @@ func _show(on: bool) -> void:
 	if on == active:
 		return
 	active = on
-	_sprite.visible = on
+	_sprite.visible = on and not _parked   # --- R6 UI
+	if not on:
+		_parked = false   # --- R6 UI
 	if on:
 		# aparece donde estaba el ratón
 		var r := get_viewport().get_visible_rect()
@@ -193,8 +221,9 @@ func _show(on: bool) -> void:
 		_gliding = false
 		if _a_down:
 			_a_down = false
-			if not _a_key:
+			if _a_mode == "click":   # --- R6 UI: (antes: not _a_key)
 				_mouse_button(false)
+			_a_mode = ""
 	_refresh_hint()
 
 func _glide(to: Vector2) -> void:
@@ -208,7 +237,7 @@ func _move_to(p: Vector2) -> void:
 	var mm := InputEventMouseMotion.new()
 	_fill(mm, p)
 	mm.relative = _window(p) - _window(_pos)
-	mm.button_mask = MOUSE_BUTTON_MASK_LEFT if _a_down and not _a_key else 0
+	mm.button_mask = MOUSE_BUTTON_MASK_LEFT if _a_down and _a_mode == "click" else 0   # --- R6 UI
 	_pos = p
 	where = p
 	_sprite.position = p
@@ -278,6 +307,7 @@ func _buttons() -> Array:
 	# --- R3 BENCH: con el banco del caldero abierto (y sin ventana ni diálogo encima), sus frascos y botones
 	if not ov.is_open() and _bench_open() and not ui.dialog_open():
 		_collect(brew.root, out)
+		_collect(ui.potion_panel, out)   # --- R6 UI: el estante del HUD (dar o presentar la poción sin cerrar el banco)
 		return out
 	# --- end R3 BENCH
 	# --- R4 RAVEN: con la bola de Krápido abierta: sus tarjetas, las pociones de su estante y cerrar
@@ -384,3 +414,64 @@ func _refresh_hint() -> void:
 	if t != _hint:
 		_hint = t
 		ov.set_pad_hint(t)
+
+# --- R6 UI: A según lo que hay, y el cursor guardado ---------------------------------------------------------------
+## Qué hace A: "space" (el diálogo se escribe o espera: avanza), "click" (toca donde está el cursor) o "done" (ya hizo
+## otra cosa: el aviso de acción, la respuesta del diálogo, el botón principal del papel, la poción del estante...).
+## fresh: el cursor apareció con este mismo botón (no apuntaba a nada todavía).
+func _a_route(fresh: bool) -> String:
+	var over := not fresh and not _parked and _over_target()
+	if not over and not ov.is_open() and ui != null and ui.dialog_waiting():
+		return "space"
+	if not over:
+		if ui != null and ui.picker_open():
+			ui.call("_pick_confirm")
+			return "done"
+		if events_ui != null and not ov.is_open() and events_ui.modal_open():
+			if events_ui.press_default():
+				return "done"
+		elif ov.is_open():
+			if ov.press_default():
+				return "done"
+		elif ui != null and ui.choices_ready():
+			ui.press_choice(0)
+			return "done"
+		elif _ball_waiting():
+			_tap(KEY_ENTER)   # la bola con Graznido esperando: la poción elegida en la bandeja
+			return "done"
+		elif brain != null and brain.press("interact"):
+			return "done"
+	if _parked or fresh:
+		_park(false)   # nada que hacer: primero se ve el cursor (el próximo A toca donde está)
+		return "done"
+	return "click"
+
+## La bola abierta con Graznido esperando su poción (la cruceta elige en la bandeja y A se la da).
+func _ball_waiting() -> bool:
+	return _ball_open() and not ov.is_open() and ui != null and not ui.dialog_open() and ball.k != null \
+		and ball.k.raven_waiting() and not Game.potions.is_empty()
+
+## El cursor está sobre algo tocable (un botón, o un objeto o estación de la tienda o del mercado).
+func _over_target() -> bool:
+	for r in _targets():
+		if (r as Rect2).grow(4.0).has_point(_pos):
+			return true
+	return false
+
+## Guarda (esconde) el cursor del mando o lo vuelve a mostrar donde estaba. Guardado, el ratón virtual se va fuera de
+## la pantalla: nada queda «debajo del cursor» (letreros de las estaciones, tooltips).
+func _park(on: bool) -> void:
+	if on == _parked:
+		return
+	_parked = on
+	_sprite.visible = active and not on
+	if not active:
+		return
+	if on:
+		var mm := InputEventMouseMotion.new()
+		_fill(mm, Vector2(-400, -400))
+		mm.relative = Vector2.ZERO
+		Input.parse_input_event(mm)
+	else:
+		_move_to(_pos)
+# --- end R6 UI

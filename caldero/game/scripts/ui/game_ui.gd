@@ -67,6 +67,7 @@ var _bench_mode := false
 var tooltip: PanelContainer
 var tooltip_box: VBoxContainer
 var toast_box: VBoxContainer
+var prompts: PromptUI                  # --- R6 UI: los avisos de acción (scripts/ui/prompt_ui.gd)
 var tip_panel: PanelContainer
 var tip_text: RichTextLabel
 var _tip_gen := 0
@@ -79,6 +80,10 @@ func _ready() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.theme = UIKit.theme()
 	add_child(root)
+	# --- R6 UI: los avisos de acción van debajo de todo lo demás del HUD (ticket, estante, diálogo, avisos)
+	prompts = PromptUI.new()
+	root.add_child(prompts)
+	# --- end R6 UI
 	_build_hud()
 	_build_menu()
 	_build_order_card()
@@ -105,7 +110,7 @@ const TOD_ICONS := {"Morning": "manana", "Midday": "mediodia", "Afternoon": "tar
 
 func _build_hud() -> void:
 	hud_panel = UIKit.fancy_panel(UIKit.BG, 14)
-	UIKit.place(hud_panel, Vector2(0, 0), Vector2(22, 18), Vector2(212, 0))
+	UIKit.place(hud_panel, Vector2(0, 0), Vector2(24, 20), Vector2(212, 0))   # --- R6 UI: los mismos márgenes que la barra de la derecha (24, 20)
 	hud_panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	root.add_child(hud_panel)
 	var v := UIKit.vbox(4)
@@ -163,24 +168,24 @@ func bump_gold() -> void:
 	tw.tween_property(gold_label, "scale", Vector2.ONE, 0.15)
 
 # --- R3 BENCH: el menú, 4 botones de icono
+# --- R6 UI: una barra ordenada de 5 cuadrados iguales (HudButton "icon": pergamino en un marco de nogal, 66x66 con 8 de
+# separación), alineada con la placa del HUD a 24 px del borde; al pasar el cursor (o el del mando), el tooltip dice su
+# nombre, su tecla y su botón del mando (Recipes R / Y, Journal J / View, Market M, Rankings G, Settings Esc / Menu).
+const MENU_ITEMS := [["book", "Recipes", "hud_book", "recipes"], ["journal", "Journal", "hud_journal", "journal"],
+	["market", "Market", "hud_market", "market"], ["rank", "Rankings", "hud_rank", "rankings"], ["settings", "Settings", "hud_settings", "settings"]]
+const HUD_EDGE := 24.0      # margen de la placa, la barra y el estante a los bordes de la pantalla
+const HUD_TOP := 20.0
 func _build_menu() -> void:
-	menu_box = UIKit.hbox(10)
-	UIKit.place(menu_box, Vector2(1, 0), Vector2(-394, 22), Vector2(372, 64), Control.GROW_DIRECTION_BEGIN, Control.GROW_DIRECTION_END)   # --- R4 RANK: 5 botones
+	menu_box = UIKit.hbox(8)
+	var w := 66.0 * MENU_ITEMS.size() + 8.0 * (MENU_ITEMS.size() - 1)
+	UIKit.place(menu_box, Vector2(1, 0), Vector2(-w - HUD_EDGE, HUD_TOP), Vector2(w, 66), Control.GROW_DIRECTION_BEGIN, Control.GROW_DIRECTION_END)
 	menu_box.alignment = BoxContainer.ALIGNMENT_END
 	menu_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(menu_box)
-	for m in [["book", "Recipes", "hud_book"], ["journal", "Journal", "hud_journal"],
-			["market", "Market", "hud_market"], ["rank", "Rankings", "hud_rank"], ["settings", "Settings", "hud_settings"]]:   # --- R4 RANK: el Escalafón del Gremio
-		var b := UIKit.button("", func(): menu_pressed.emit(m[0]), 22)
-		b.custom_minimum_size = Vector2(64, 64)
-		b.tooltip_text = m[1]
-		var ic := UIKit.icon("res://assets/ui/%s.png" % m[2], 3.0)
-		ic.set_anchors_preset(Control.PRESET_FULL_RECT)
-		ic.offset_left = 8
-		ic.offset_top = 8
-		ic.offset_right = -8
-		ic.offset_bottom = -8
-		b.add_child(ic)
+	for m in MENU_ITEMS:   # --- R4 RANK: el Escalafón del Gremio
+		var b := HudButton.make("icon", "", m[2], "", func(): menu_pressed.emit(m[0]))
+		b.set_tip(m[1], [m[3]])
+		b.set_meta("menu", m[0])
 		menu_box.add_child(b)
 		if m[0] == "rank":
 			rank_btn = b   # --- R4 RANK
@@ -456,12 +461,19 @@ func say(who: String, text: String, choices: Array = []) -> void:
 	_typing = true
 	_waiting_click = choices.is_empty()
 	for c in dialog_choices.get_children():
+		dialog_choices.remove_child(c)   # --- R6 UI: fuera ya (el bot y las teclas 1-3 leen los hijos en este cuadro)
 		c.queue_free()
+	# --- R6 UI: las respuestas son botones del HUD (la primera, la principal) con su tecla: 1, 2, 3 (E, Espacio o Intro
+	# también eligen la primera); con el mando, A sobre la que tiene el cursor o, sin cursor encima de ninguna, la primera
+	var n := 0
 	for ch in choices:
-		var b := UIKit.button(ch[1], func(): choice_made.emit(ch[0]), 23)
+		n += 1
+		var b := HudButton.make("primary" if n == 1 else "secondary", ch[1], "", "choice%d" % n, func(): choice_made.emit(ch[0]), 24)
+		b.set_tall()   # (resume 3) la misma altura que todos los botones del HUD (en la baja la tecla llenaba la cara)
 		b.set_meta("choice", ch[0])   # --- R5 EN-UI: el id de la elección (el bot lo lee: no compara el texto del botón)
 		b.visible = false
 		dialog_choices.add_child(b)
+	# --- end R6 UI
 	dialog_more.visible = false
 	if not was_visible:
 		UIKit.pop_in(dialog)
@@ -493,9 +505,35 @@ func _on_dialog_input(ev: InputEvent) -> void:
 func _unhandled_input(ev: InputEvent) -> void:
 	if not dialog.visible:
 		return
-	if ev is InputEventKey and ev.pressed and not ev.echo and (ev.keycode == KEY_SPACE or ev.keycode == KEY_ENTER):
-		_advance()
-		get_viewport().set_input_as_handled()
+	# --- R6 UI: con las respuestas a la vista, 1 / 2 / 3 eligen una y E, Espacio o Intro la primera; mientras se escribe,
+	# E, Espacio e Intro terminan la frase (como antes Espacio e Intro)
+	if ev is InputEventKey and ev.pressed and not ev.echo:
+		var k: int = ev.keycode
+		if k in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER, KEY_E]:
+			if not _typing and choices_ready():
+				press_choice(0)
+			else:
+				_advance()
+			get_viewport().set_input_as_handled()
+		elif k >= KEY_1 and k <= KEY_3 and not _typing and choices_ready():
+			if press_choice(k - KEY_1):
+				get_viewport().set_input_as_handled()
+	# --- end R6 UI
+
+## --- R6 UI: las respuestas del diálogo ya están a la vista (terminó de escribirse).
+func choices_ready() -> bool:
+	return dialog.visible and not _typing and dialog_choices.get_child_count() > 0 and dialog_choices.get_child(0).visible
+
+## Pulsa la respuesta i (0 = la primera). true si había.
+func press_choice(i: int) -> bool:
+	if i < 0 or i >= dialog_choices.get_child_count():
+		return false
+	var b := dialog_choices.get_child(i) as BaseButton
+	if b == null or b.disabled or not b.visible:
+		return false
+	b.pressed.emit()
+	return true
+# --- end R6 UI
 
 func _advance() -> void:
 	if _typing:
@@ -517,6 +555,7 @@ func _process(delta: float) -> void:
 	if tooltip.visible:
 		_place_tooltip()
 	_pace_process_ui(delta)   # --- R4 PACE: el reloj late en la última hora; la barra, cuando se acaba la paciencia
+	_pick_process()   # --- R6 UI: el estante para elegir se cierra solo si ya no tiene sentido
 
 # ------------------------------------------------------------------ caldero (compatibilidad)
 
@@ -612,12 +651,18 @@ func refresh_potions() -> void:
 					gy += 24.0
 			var idx := i
 			b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-			b.pressed.connect(func(): potion_pressed.emit(idx))
+			b.pressed.connect(func():
+				close_picker()   # --- R6 UI
+				potion_pressed.emit(idx))
 			b.mouse_entered.connect(func():
+				if _pick_on:
+					return   # --- R6 UI: eligiendo con el teclado, el tooltip es el del frasco elegido
 				show_potion_tooltip(idx)
 				var tw := ic.create_tween()
 				tw.tween_property(ic, "position:y", 3 * SHELF_K, 0.08))
 			b.mouse_exited.connect(func():
+				if _pick_on:
+					return   # --- R6 UI
 				hide_tooltip()
 				if is_instance_valid(ic):
 					var tw := ic.create_tween()
@@ -625,6 +670,11 @@ func refresh_potions() -> void:
 		else:
 			b.disabled = true
 			b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# --- R6 UI: el estante se rehízo (cambiaron las pociones): el aro del estante para elegir vuelve a su frasco
+	_pick_lifted = -1
+	if _pick_on:
+		_pick_show.call_deferred()
+	# --- end R6 UI
 
 ## Centro (en pantalla) del frasco del hueco index.
 func potion_slot_center(index: int) -> Vector2:
@@ -712,6 +762,13 @@ func hide_tip() -> void:
 
 func _build_tooltip() -> void:
 	tooltip = UIKit.fancy_panel(Color(0.06, 0.05, 0.1, 0.96), 14)
+	# --- R6 UI: más aire a los lados y abajo: la línea más ancha (el efecto de la poción) tocaba las esquinas doradas
+	var tsb := tooltip.get_theme_stylebox("panel") as StyleBoxFlat
+	if tsb:
+		tsb.content_margin_left = 24
+		tsb.content_margin_right = 24
+		tsb.content_margin_bottom = 16
+	# --- end R6 UI
 	tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tooltip.z_index = 50
 	root.add_child(tooltip)
@@ -782,6 +839,13 @@ func hide_tooltip() -> void:
 	tooltip.visible = false
 
 func _place_tooltip() -> void:
+	# --- R6 UI: eligiendo en el estante, el tooltip va justo encima del frasco elegido
+	if _pick_on and _pick_i < potion_slots.size():
+		var r: Rect2 = (potion_slots[_pick_i] as Control).get_global_rect()
+		var tp := Vector2(r.get_center().x - tooltip.size.x * 0.5, potion_panel.get_global_rect().position.y - tooltip.size.y - 98.0)
+		tooltip.position = tp.clamp(Vector2(10, 10), root.size - tooltip.size - Vector2(10, 10))
+		return
+	# --- end R6 UI
 	var mp := root.get_local_mouse_position()
 	if PadCursor.active:
 		mp = PadCursor.where   # con el mando, junto a su cursor
@@ -1092,3 +1156,142 @@ func _pace_process_ui(delta: float) -> void:
 			order_pglass.modulate = Color.WHITE
 			order_pglass.rotation = 0.0
 # --- end R4 PACE
+
+# --- R6 UI: elegir una poción del estante con el teclado o el mando -------------------------------------------------
+# «E  Give potion» en el mostrador (con varias clases de poción en el estante), «Space  Present» en el concurso o «Tab»
+# con el banco abierto: el estante se enciende, un aro dorado marca el frasco elegido (se levanta un poco y sale su
+# tooltip encima) y el aviso de encima dice las teclas: ← → (o A / D, o la cruceta) eligen, E / Intro / Espacio (A del
+# mando) lo dan y Esc (B) vuelve. Con el ratón se sigue tocando el frasco. Al dar la poción se emite potion_pressed(i),
+# como un clic en el frasco (main.gd decide a quién: el cliente, el cuervo, el jurado...).
+var _pick_on := false
+var _pick_i := 0
+var _pick_verb := "Give"
+var _pick_valid: Callable
+var _pick_ring: NinePatchRect
+
+func picker_open() -> bool:
+	return _pick_on
+
+func picker_verb() -> String:
+	return _pick_verb
+
+func picker_index() -> int:
+	return _pick_i if _pick_on else -1
+
+## Abre el estante para elegir. valid: si deja de ser cierto (se fue el cliente...), el estante se cierra solo.
+func open_picker(verb := "Give", valid := Callable()) -> void:
+	if Game.potions.is_empty() or not potion_panel.is_visible_in_tree():
+		return
+	_pick_on = true
+	_pick_verb = verb
+	_pick_valid = valid
+	_pick_i = 0   # siempre desde el primer frasco (el estante cambia entre una vez y otra)
+	if _pick_ring == null:
+		_pick_ring = NinePatchRect.new()
+		_pick_ring.texture = PaperKit.tex("r6_focus9")
+		for side in ["patch_margin_left", "patch_margin_right", "patch_margin_top", "patch_margin_bottom"]:
+			_pick_ring.set(side, 15)
+		_pick_ring.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		_pick_ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		potion_panel.add_child(_pick_ring)
+	Sfx.play("hover", 0.05, -8.0)
+	_pick_show()
+
+func close_picker() -> void:
+	if not _pick_on:
+		return
+	_pick_on = false
+	if is_instance_valid(_pick_ring):
+		_pick_ring.visible = false
+	_pick_lift(-1)
+	hide_tooltip()
+
+func _pick_move(d: int) -> void:
+	var n := Game.potions.size()
+	if n == 0:
+		close_picker()
+		return
+	var j := clampi(_pick_i + d, 0, n - 1)
+	if j != _pick_i:
+		_pick_i = j
+		Sfx.play("hover", 0.05, -12.0)
+		_pick_show()
+
+func _pick_confirm() -> void:
+	var i := _pick_i
+	close_picker()
+	if i >= 0 and i < Game.potions.size():
+		potion_pressed.emit(i)
+
+## El aro sobre el frasco elegido, el frasco un poco levantado y su tooltip encima del estante.
+func _pick_show() -> void:
+	if not _pick_on:
+		return
+	if _pick_i >= potion_slots.size() or _pick_i >= Game.potions.size():
+		close_picker()
+		return
+	var b: Control = potion_slots[_pick_i]
+	_pick_ring.visible = true
+	_pick_ring.position = b.position - Vector2(6, 4)
+	_pick_ring.size = b.size + Vector2(12, 8)
+	_pick_lift(_pick_i)
+	show_potion_tooltip(_pick_i)
+
+var _pick_lifted := -1
+func _pick_lift(i: int) -> void:
+	if _pick_lifted == i:
+		return
+	for k in [_pick_lifted, i]:
+		if k >= 0 and k < potion_slots.size() and potion_slots[k].has_node("Icon"):
+			var ic: TextureRect = potion_slots[k].get_node("Icon")
+			var tw := ic.create_tween()
+			tw.tween_property(ic, "position:y", (3 if k == i else 6) * SHELF_K, 0.08)
+	_pick_lifted = i
+
+func _input(ev: InputEvent) -> void:
+	if not _pick_on:
+		return
+	# un clic fuera del estante lo cierra (el clic en un frasco lo da, como siempre)
+	if ev is InputEventMouseButton and ev.pressed and ev.device != Glyphs.PAD_DEVICE:
+		if not potion_panel.get_global_rect().has_point(root.get_global_mouse_position()):
+			close_picker()
+		return
+	if not (ev is InputEventKey and ev.pressed):
+		return
+	var k: int = ev.keycode
+	var cols := 6
+	match k:
+		KEY_LEFT, KEY_A:
+			_pick_move(-1)
+		KEY_RIGHT, KEY_D:
+			_pick_move(1)
+		KEY_UP, KEY_W:
+			_pick_move(-cols)
+		KEY_DOWN, KEY_S:
+			_pick_move(cols)
+		KEY_E, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+			if not ev.echo:
+				_pick_confirm()
+		KEY_ESCAPE, KEY_BACKSPACE, KEY_TAB:
+			if not ev.echo:
+				close_picker()
+				Sfx.play("click", 0.05, -10.0)
+		_:
+			if k >= KEY_1 and k <= KEY_9 and not ev.echo and k - KEY_1 < Game.potions.size():
+				_pick_i = k - KEY_1
+				_pick_confirm()
+			else:
+				return
+	get_viewport().set_input_as_handled()
+
+## Cada cuadro: si ya no tiene sentido (se fue el cliente, se abrió un papel...), se cierra.
+func _pick_process() -> void:
+	if not _pick_on:
+		return
+	if Game.potions.is_empty() or not potion_panel.is_visible_in_tree() or (_pick_valid.is_valid() and not bool(_pick_valid.call())):
+		close_picker()
+		return
+	if _pick_i >= Game.potions.size():
+		_pick_i = Game.potions.size() - 1
+		_pick_show()
+# --- end R6 UI

@@ -209,6 +209,7 @@ class Board extends PanelContainer:
 		var cb := PaperKit.button("Close", func(): ov.close(), 30)
 		cb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		top.add_child(cb)
+		ov.set_default(cb)   # --- R6 UI
 		# las dos hojas
 		var sheets := UIKit.hbox(22)
 		v.add_child(sheets)
@@ -522,6 +523,7 @@ static func gaceta(ov) -> Control:
 	var b := PaperKit.wood_button("Continue", func(): ov.close(), 32)
 	b.custom_minimum_size = Vector2(260, 64)
 	btns.add_child(b)
+	ov.set_default(b)   # --- R6 UI: Intro / Espacio / A (su tecla, dibujada)
 	PaperKit.decor(p, "paper_pin_brass", Vector2(0.5, 0.0), Vector2(-10, -12))
 	return p
 
@@ -695,6 +697,7 @@ static func credits(ov, done: Callable) -> Control:
 	b.custom_minimum_size = Vector2(420, 78)
 	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	root.add_child(b)
+	ov.set_default(b)   # --- R6 UI
 	# los créditos suben solos (la rueda del ratón o el stick derecho también los mueven)
 	sc.ready.connect(func():
 		var tw := sc.create_tween()

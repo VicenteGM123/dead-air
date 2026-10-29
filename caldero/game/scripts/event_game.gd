@@ -120,21 +120,319 @@ func build_people() -> void:
 			to_spawn = int(plan.get("k", 10))
 			_wants = ["vigor", "curacion", "valor"]
 
-## El principio: la anfitriona habla, la cuenta atrás y a trabajar.
-func run() -> void:
+# --- R6 PERF: el principio del evento sin tirones ------------------------------------------------------------------
+# main.gd (_ev_run_day) llama a prepare() y a warm_up() / warm_down() con la pantalla todavía en negro, antes del
+# fundido de entrada. Antes, ella, la fila (o el jurado) y el HUD se armaban justo después del fundido, y la cuenta
+# atrás, la primera poción, el humo del caldero o el confeti se dibujaban por primera vez a la vista: WebGL compila
+# cada material nuevo la primera vez que lo dibuja (en la web, decenas o cientos de ms por shader) y Actor leía cada
+# textura de vuelta desde la GPU. Ahora todo eso pasa en negro y la escena aparece ya completa.
+var _prepared := false
+var _keep: Array = []         # texturas que se usarán durante el evento, cargadas de antemano (se sueltan con el evento)
+var _warm_state := {}
+
+## Ella, la primera fila (o el jurado) y el HUD (antes lo hacía run() justo después del fundido de entrada).
+func prepare() -> void:
+	if _prepared:
+		return
+	_prepared = true
+	var pt := PerfLog.t0()
+	_prefill_heads()
 	build_people()
+	PerfLog.step("ev:build_people", pt)
+	pt = PerfLog.t0()
 	eui.show_hud(kind)
 	eui.set_time(float(plan.get("time", 60)), float(plan.get("time", 60)))
 	_update_hud()
+	PerfLog.step("ev:show_hud", pt)
+
+## Las caras de las tarjetas (event_ui._head: la fila, el tablero, el jurado) armadas con las filas de SpriteTops.HEAD,
+## la misma regla que event_ui, pero sin get_image(): en la web cada cara nueva era un readPixels que espera a la GPU
+## (~0,4 s cada uno con SwiftShader; 12 al empezar el evento). Si event_ui cambia su caché, esto no hace nada.
+func _prefill_heads() -> void:
+	var cache = eui.get("_head_cache") if is_instance_valid(eui) else null
+	if not (cache is Dictionary):
+		return
+	var whos: Array = _pool.duplicate()
+	whos.append_array(["alquimista", "anciano", "fizz"])
+	for j in Events.JUDGES:
+		whos.append(String(j["id"]))
+	for r in rivals:
+		whos.append(String(r.get("sprite", "")))
+	for w in whos:
+		if String(w) == "":
+			continue
+		var sid := Story.sprite_id(String(w))
+		var path := "res://assets/chars/%s_idle.png" % sid
+		if cache.has(sid) or not SpriteTops.HEAD.has(sid) or not ResourceLoader.exists(path):
+			continue
+		var tex: Texture2D = load(path)
+		var fw := tex.get_width() / 2
+		var at := AtlasTexture.new()
+		at.atlas = tex
+		at.region = Rect2((fw - 36) / 2, maxi(0, int(SpriteTops.HEAD[sid]) - 2), 36, 36)
+		cache[sid] = at
+
+## Lo que aparece más tarde se crea una vez a la vista de la cámara (con la pantalla en negro) para que se dibuje y se
+## compile ahora: la poción que vuela, la barra de paciencia, el humo y los destellos del caldero, el confeti, las
+## caritas, las letras grandes de la cuenta atrás, «+3 ★», la pizarra y las caras de las tarjetas. También carga las
+## texturas y los cuadros de quienes pueden llegar a la fila. Devuelve lo que warm_down() quita.
+## Con `tree`, va por partes: un cuadro entre una y otra (cada parte compila lo suyo en su cuadro; sin `tree`, todo de
+## una vez). Lo ya creado se queda a la vista hasta warm_down().
+func warm_up(tree: SceneTree = null) -> Array:
+	var junk: Array = []
+	_warm_t = PerfLog.t0()
+	# los sprites de quienes pueden venir (cuadros y fila de la cabeza) y las texturas de pociones y caritas
+	var ids: Array = []
+	for w in _pool:
+		ids.append(Story.sprite_id(String(w)))
+	Actor.preload_ids(ids)
+	for e in ["heart", "sweat", "note", "dots", "sparkle", "star", "excl", "question", "coin"]:
+		if ResourceLoader.exists("res://assets/icons/emote_%s.png" % e):
+			_keep.append(Actor.emote_texture(e))
+	for pid in Data.POTIONS:
+		var pp := "res://assets/icons/pot_%s.png" % pid
+		if ResourceLoader.exists(pp):
+			_keep.append(load(pp))
+	# las caras de las tarjetas de la fila, del tema y del jurado (event_ui las recorta leyendo la textura de la GPU)
+	if eui.has_method("_head"):
+		var faces: Array = _pool.duplicate()
+		for j in Events.JUDGES:
+			faces.append(String(j["id"]))
+		for r in rivals:
+			faces.append(String(r.get("sprite", "")))
+		for w in faces:
+			if String(w) != "":
+				eui.call("_head", String(w))
+	await _warm_step(tree, "preload")
+	if not is_instance_valid(scene) or not is_instance_valid(her):
+		return junk
+	var scene_had := _child_ids(scene)
+	var pid := _warm_potion()
+	# la poción que vuela y una barra de paciencia (sobre ella)
+	var to: Actor = her
+	if not line.is_empty() and is_instance_valid(line[0]["a"]):
+		to = line[0]["a"]
+	elif not judges.is_empty() and is_instance_valid(judges[0]):
+		to = judges[0]
+	_fly3d(pid, to)
+	_make_bar({"a": her, "want": pid, "pat": 1.0, "pat_max": 1.0})
+	await _warm_step(tree, "potion")
+	if not is_instance_valid(scene) or not is_instance_valid(her):
+		return junk
+	# el humo, los destellos y la salpicadura del caldero (se esconden después: sus propios timers los borran)
+	var cau = scene.get("cauldron")
+	if cau is Cauldron:
+		var cau_had := _child_ids(cau)
+		(cau as Cauldron).brew_burst(Color(0.6, 0.9, 0.5))
+		(cau as Cauldron).splash(Color(0.6, 0.9, 0.5))
+		(cau as Cauldron)._flash = 0.0
+		for c in cau.get_children():
+			if not cau_had.has(c.get_instance_id()):
+				_warm_state[c] = "hide"
+	await _warm_step(tree, "cauldron")
+	if not is_instance_valid(scene) or not is_instance_valid(her):
+		return junk
+	# el confeti del público (EventScenes) y una carita sobre ella
+	if scene.has_method("warm_up"):
+		scene.call("warm_up")
+	her.emote("heart", 0.0)
+	for c in scene.get_children():
+		if not scene_had.has(c.get_instance_id()):
+			junk.append(c)
+	await _warm_step(tree, "scene")
+	if not is_instance_valid(eui):
+		return junk
+	# el HUD: las letras grandes (cuenta atrás, «Time!»), «+3 ★» y la pizarra
+	var big = eui.get("big")
+	if big is Label:
+		_warm_state["big"] = [big.text, big.modulate.a]
+		big.text = "3 2 1 Go! Time! Done!"
+		big.modulate.a = 1.0
+	var root_had := _child_ids(eui.root)
+	eui.pop("+0123456789 ★ time")
+	for c in eui.root.get_children():
+		if not root_had.has(c.get_instance_id()):
+			junk.append(c)
+	await _warm_step(tree, "hud_text")
+	if not is_instance_valid(eui):
+		return junk
+	if kind == "concurso":
+		var th: Array = themes
+		round_i = 1
+		themes = [Events.THEMES[0]]
+		_set_board()
+		round_i = 0
+		themes = th
+	else:
+		_set_board()
+	# las letras de la tarjeta del tema del concurso (Round 1 of 3 / “...”)
+	if kind == "concurso":
+		var layer := CanvasLayer.new()
+		layer.layer = 7
+		add_child(layer)
+		var v := UIKit.vbox(6)
+		v.add_child(PaperKit.head("Round 1 of 3", 40, Color("7a1d18"), HORIZONTAL_ALIGNMENT_CENTER))
+		v.add_child(PaperKit.hand("“%s”" % String(Events.THEMES[0]["text"]), 66, EventUI.INK, true, HORIZONTAL_ALIGNMENT_CENTER))
+		layer.add_child(v)
+		junk.append(layer)
+	PerfLog.step("ev:warm board", _warm_t)
+	# --- R6 MERGE: las letras de la tarjeta del jurado (concurso) y de la de resultados (los tres), debajo del mapa
+	# quieto, un grupo de tamaños por cuadro; warm_down() las quita (ver card_letter_groups)
+	for g in card_letter_groups(kind):
+		var lay := card_letter_layer(g)
+		add_child(lay)
+		junk.append(lay)
+		await _warm_step(tree, "cards")
+		if not is_instance_valid(eui):
+			return junk
+	# --- end R6 MERGE
+	return junk
+
+# --- R6 MERGE: las letras de las tarjetas que salen a mitad del evento. La primera tarjeta del jurado (event_ui
+# show_jury: versalitas y manuscrita a varios tamaños) subía ~170 páginas de la caché de letras en un solo cuadro a la
+# vista (1.5-2.4 s bloqueado con SwiftShader); la de resultados (show_results), lo mismo al final. La manuscrita
+# (Caveat) cambia la forma de cada letra según sus vecinas: un abecedario no basta, van los textos de verdad.
+
+## Los textos de las tarjetas a su letra y tamaño, en grupos (uno por cuadro): [[estilo, tamaño, texto], ...];
+## estilo "head" (versalitas), "hand", "handb" (manuscrita, negrita), "wood" (botón de madera) o "ui" (Alegreya negrita:
+## la tira de premios).
+static func card_letter_groups(kind_: String) -> Array:
+	var groups := []
+	if kind_ == "concurso":
+		var rounds := []
+		var i := 0
+		for th in Events.THEMES:
+			rounds.append("Round %d · “%s”" % [i % 3 + 1, String(th["text"])])
+			i += 1
+		var names := []
+		for j in Events.JUDGES:
+			names.append(String(j["name"]))
+		var said := ["“Nothing to taste…”"]
+		for id in Events.JUDGE_LINES:
+			for ln in Events.JUDGE_LINES[id]:
+				said.append("“%s”" % String(ln))
+		var pots := []
+		for pid in Data.POTIONS:
+			pots.append(Events.potion_name(String(pid)))
+		var rivals_ := [ME_NAME, "· perfect stir"]
+		for r in Events.RIVALS:
+			rivals_.append(String(r["name"]))
+		var fizz := ["+0123456789  ·  ★"]
+		for k in Events.FIZZ_LINES:
+			for ln in Events.FIZZ_LINES[k]:
+				fizz.append("Fizz: “%s”" % String(ln))
+		groups.append([["head", 38, "\n".join(rounds)], ["head", 30, "  ".join(names)], ["hand", 24, "guest judge  judge"],
+			["hand", 27, "\n".join(said)]])
+		groups.append([["handb", 36, "\n".join(pots)], ["handb", 34, "You presented nothing."], ["handb", 30, "\n".join(rivals_)],
+			["hand", 28, "\n".join(fizz)], ["wood", 32, "Next round  See results"]])
+	# la tarjeta de resultados
+	var ends := []
+	var info: Dictionary = Events.info(kind_)
+	for m in (info.get("end", {}) as Dictionary):
+		ends.append("“%s”" % String(info["end"][m]))
+	var rows := ["Potions delivered  Points (stars)  Finished early", "Served  Walked out  Tips"]
+	for k in 4:
+		rows.append("%s  %s" % [UIKit.ordinal(k + 1), ME_NAME])
+	groups.append([["head", 38, Events.ev_name(kind_, true)], ["handb", 58, "\n".join(Events.MEDAL_TITLE.values())]])
+	groups.append([["hand", 30, "\n".join(ends)], ["hand", 32, "\n".join(rows)], ["handb", 36, "0123456789 / + ★"],
+		["wood", 34, "Head home"], ["ui", 36, "+0123456789 -  Trophy"]])
+	return groups
+
+## Una capa debajo del mapa del viaje (15) con los textos de un grupo (a escala pequeña para que quepan en pantalla:
+## la caché de letras va por tamaño de letra, no por la escala del nodo).
+static func card_letter_layer(group: Array) -> CanvasLayer:
+	var lay := CanvasLayer.new()
+	lay.layer = 7
+	var gv := UIKit.vbox(0)
+	gv.scale = Vector2(0.4, 0.4)
+	for it in group:
+		var st := String(it[0])
+		var sz := int(it[1])
+		var tx := String(it[2])
+		if st == "head":
+			gv.add_child(PaperKit.head(tx, sz))
+		elif st == "ui":
+			gv.add_child(UIKit.label(tx, sz, UIKit.TEXT, UIKit.font_bold))
+		elif st == "wood":
+			var b := PaperKit.wood_button(tx, func(): pass, sz)
+			b.disabled = true
+			b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			gv.add_child(b)
+		else:
+			gv.add_child(PaperKit.hand(tx, sz, EventUI.INK, st == "handb"))
+	lay.add_child(gv)
+	return lay
+# --- end R6 MERGE
+
+var _warm_t := 0
+
+## Entre dos partes de warm_up(): anota lo que costó la parte y, con `tree`, espera al cuadro siguiente.
+func _warm_step(tree: SceneTree, label: String) -> void:
+	PerfLog.step("ev:warm " + label, _warm_t)
+	if tree != null:
+		await tree.process_frame
+	_warm_t = PerfLog.t0()
+
+## Quita lo de warm_up() y deja el HUD como estaba (la pizarra sale después de la anfitriona, como siempre).
+func warm_down(junk: Array) -> void:
+	for n in junk:
+		if is_instance_valid(n):
+			n.queue_free()
+	for k in _warm_state:
+		if is_instance_valid(k) and k is Node3D and _warm_state[k] == "hide":
+			(k as Node3D).visible = false
+			if k is GPUParticles3D:
+				(k as GPUParticles3D).emitting = false
+	var big = eui.get("big") if is_instance_valid(eui) else null
+	if big is Label and _warm_state.has("big"):
+		big.text = _warm_state["big"][0]
+		big.modulate.a = _warm_state["big"][1]
+	_warm_state.clear()
+	if is_instance_valid(eui):
+		eui.set_board("")
+	if is_instance_valid(her):
+		her.clear_emote()
+	if is_instance_valid(scene) and scene.has_method("warm_down"):
+		scene.call("warm_down")
+
+## Si el evento se corta a mitad del precalentamiento (volver al título en esos pocos cuadros), el HUD queda como estaba.
+func _exit_tree() -> void:
+	if not _warm_state.is_empty():
+		warm_down([])
+
+func _child_ids(n: Node) -> Dictionary:
+	var d := {}
+	for c in n.get_children():
+		d[c.get_instance_id()] = true
+	return d
+
+## Una poción que sale en este evento (para calentar su icono y sus materiales).
+func _warm_potion() -> String:
+	match kind:
+		"academia":
+			return String(plan.get("potion", "sueno_profundo"))
+		"torneo":
+			return Events.torneo_potion("vigor", tier)
+	return "sueno_profundo"
+# --- end R6 PERF
+
+## El principio: la anfitriona habla, la cuenta atrás y a trabajar.
+func run() -> void:
+	prepare()   # --- R6 PERF: ella, la fila y el HUD (ya armados detrás del negro si main.gd llamó a prepare())
+	var pt := PerfLog.t0()   # --- R6 PERF
 	var host := String(Events.info(kind)["host_name"])
 	main.ui.say(host, Events.line(kind, "intro", ev))
+	PerfLog.step("ev:host_say", pt)   # --- R6 PERF
 	await main.ui.dialog_advanced
 	main.ui.hide_dialog()
+	PerfLog.mark("ev:host_done")   # --- R6 PERF
 	if kind == "concurso":
 		await _run_concurso()
 	else:
 		_set_board()
+		PerfLog.mark("ev:countdown")   # --- R6 PERF
 		await eui.countdown()
+		PerfLog.mark("ev:go")   # --- R6 PERF
 		time_total = float(plan.get("time", 90))
 		time_left = time_total
 		started = true
@@ -146,9 +444,11 @@ func run() -> void:
 	await _finish()
 
 func _open_bench() -> void:
+	var pt := PerfLog.t0()   # --- R6 PERF
 	if not main._brew_open():
 		main.open_brew()
 	eui.set_bench_button(false)
+	PerfLog.step("ev:open_bench", pt)   # --- R6 PERF
 
 # ------------------------------------------------------------------ cada cuadro
 
@@ -215,8 +515,10 @@ func _face_at(marker: String, toward: Vector3) -> int:
 
 ## Extras opcionales del escenario (EVENTS-SCENES): el público se alegra o se lamenta.
 func _cheer(good: bool) -> void:
+	var pt := PerfLog.t0()   # --- R6 PERF
 	if is_instance_valid(scene) and scene.has_method("cheer"):
 		scene.call("cheer", good)
+	PerfLog.step("ev:cheer", pt)   # --- R6 PERF
 
 ## Un personaje que el escenario puso solo (la profesora, Fizz...), o null.
 func _fixed(id: String) -> Actor:
@@ -258,6 +560,7 @@ func _next_who() -> String:
 func _spawn_visitor(want: String, pat: float, instant := false) -> void:
 	if line.size() >= LINE_MAX:
 		return
+	var pt := PerfLog.t0()   # --- R6 PERF
 	var who := _next_who()
 	var a := Actor.new()
 	scene.add_child(a)
@@ -272,6 +575,7 @@ func _spawn_visitor(want: String, pat: float, instant := false) -> void:
 	line.append(v)
 	spawned += 1
 	to_spawn -= 1
+	PerfLog.step("ev:spawn " + who, pt)   # --- R6 PERF
 
 ## Una barra de paciencia (y lo que pide) sobre la cabeza.
 func _make_bar(v: Dictionary) -> void:
@@ -352,6 +656,7 @@ func _leave(v: Dictionary, happy: bool) -> void:
 func _fly3d(pid: String, to: Actor) -> void:
 	if not is_instance_valid(her) or not is_instance_valid(to):
 		return
+	PerfLog.mark("ev:fly3d " + pid)   # --- R6 PERF
 	var s := Sprite3D.new()
 	s.texture = load("res://assets/icons/pot_%s.png" % pid)
 	s.pixel_size = 0.035
@@ -384,6 +689,7 @@ func _shelf_find(pid: String) -> int:
 
 ## main.gd: una poción recién embotellada (ya está en el estante del evento).
 func on_bottled(pid: String, potency: int, perfect: bool) -> void:
+	PerfLog.mark("ev:bottled " + pid)   # --- R6 PERF
 	# marca la poción con su removido (el concurso lo juzga)
 	for p in Game.potions:
 		if String(p["id"]) == pid and int(p["potency"]) == potency and not p.has("ev_tag"):

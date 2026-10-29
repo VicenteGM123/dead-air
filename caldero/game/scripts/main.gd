@@ -185,6 +185,8 @@ func _ready() -> void:
 	ui.ink_pressed.connect(_on_brew_ink)
 	# --- end R3 MAGIC3
 	_ev_setup()   # --- R4 EVENTS
+	_perf_prefill_faces()   # --- R6 PERF
+	_r6_setup()   # --- R6 UI: los avisos de acción, el dispositivo (teclado, ratón, mando) y --glyphs= (MERGE6: el último, su GlyphWatcher ve la entrada primero)
 
 	Sfx.start_ambience()
 	_parse_args()
@@ -196,21 +198,32 @@ func _ready() -> void:
 		_fade_to(0.0, 0.5)     # --- PREP
 
 func _build_open_button() -> void:
-	open_btn = UIKit.button("Open", func(): _open_shop(), 28)   # --- R3 BENCH: una palabra
-	open_btn.custom_minimum_size = Vector2(340, 64)
+	# --- R6 UI: arriba al centro, una sola fila a la altura de la placa y de la barra de la derecha: la acción principal
+	# («Open shop», con la campanilla y su tecla O) y otra más tranquila («Market» con la cesta, o en el mercado «Back to
+	# shop» con la casita; tecla M). Son HudButton (scripts/ui/hud_button.gd): pergamino sobre nogal, el principal con aro
+	# de latón; la misma forma, altura y letra; estados normal, encima, pulsado, desactivado (durante el viaje) y el aro
+	# del cursor del mando. Antes: dos bloques lisos uno encima del otro (UIKit.button «Open» 340x64 y «Market» 280x50).
+	open_btn = HudButton.make("primary", "Open shop", "r6_ico_bell", "open", func(): _open_shop())
+	open_btn.set_meta("top", "open")
 	open_btn.visible = false
-	# --- WORLD: debajo, "Ir al mercado" (o "Volver a la tienda" en el mercado)
-	trip_btn = UIKit.button("Market", func(): _on_trip_button(), 23)   # --- R3 BENCH
-	trip_btn.custom_minimum_size = Vector2(280, 50)
+	# --- WORLD: al lado, "Ir al mercado" (o "Volver a la tienda" en el mercado)
+	trip_btn = HudButton.make("secondary", "Market", "hud_market", "market", func(): _on_trip_button())
+	trip_btn.set_meta("top", "trip")
 	trip_btn.visible = false
-	top_box = UIKit.vbox(10)
-	UIKit.place(top_box, Vector2(0.5, 0), Vector2(-170, 24), Vector2(340, 0), Control.GROW_DIRECTION_BOTH)
+	top_box = UIKit.vbox(0)
+	UIKit.place(top_box, Vector2(0.5, 0), Vector2(-320, GameUI.HUD_TOP), Vector2(640, 0), Control.GROW_DIRECTION_BOTH)
 	top_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var row := UIKit.hbox(14)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top_box.add_child(row)
 	for b in [open_btn, trip_btn]:
-		b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		top_box.add_child(b)
+		(b as HudButton).set_tall()   # 66 de alto: a la altura de la barra de la derecha (arriba los dos a HUD_TOP)
+		b.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		row.add_child(b)
 	ui.root.add_child(top_box)
 	# --- end WORLD
+	# --- end R6 UI
 
 # ------------------------------------------------------------------ título y comienzo
 
@@ -337,7 +350,7 @@ func _begin_day() -> void:
 	# --- WORLD: ya no se abre el panel del mercado: el mercado es un lugar (se va por la puerta)
 	# --- R3 BENCH: consejos de una línea (cada uno sale una vez: día 1 y día 2)
 	if Game.day == 1 and not Game.tutorial_done:
-		ui.show_tip("Walk with [b]A/D[/b] or a click. Then, [b]Open[/b].", 14.0)
+		ui.show_tip("Walk with [b]A/D[/b] or a click. Then, [b]Open shop[/b].", 14.0)   # --- R6 UI: el botón se llama así ahora
 	elif Game.day == 2 and not in_market:
 		ui.show_tip("Every morning: go shopping at the [b]market[/b] (out the door).", 12.0)
 	# --- end R3 BENCH
@@ -1212,6 +1225,12 @@ func _notification(what: int) -> void:
 		Game.save_game()
 
 func _unhandled_input(ev: InputEvent) -> void:
+	# --- R6 UI: E / Espacio hacen lo que dice el aviso de acción (PromptBrain); O abre la tienda; M va al mercado (o
+	# vuelve, o de día abre el encargo); Tab abre el estante con el banco abierto
+	if ev is InputEventKey and ev.pressed and not ev.echo and _r6_key(ev):
+		get_viewport().set_input_as_handled()
+		return
+	# --- end R6 UI
 	if ev is InputEventKey and ev.pressed and not ev.echo:
 		if ev.keycode == KEY_ESCAPE and not ov.is_open() and phase != Phase.TITLE and phase != Phase.INTRO:
 			ov.show_settings()
@@ -1239,7 +1258,7 @@ func _unhandled_input(ev: InputEvent) -> void:
 func _can_walk() -> bool:
 	if _trip_busy or (phase != Phase.MORNING and phase != Phase.OPEN):
 		return false
-	return not ov.is_open() and not busy and not ui.dialog_open() and not _brew_open() and not _ball_open()   # --- R3 BENCH (R4 RAVEN: la bola)
+	return not ov.is_open() and not busy and not ui.dialog_open() and not _brew_open() and not _ball_open() and not ui.picker_open()   # --- R3 BENCH (R4 RAVEN: la bola) (R6 UI: ni eligiendo en el estante)
 
 ## Si se puede usar una estación de la tienda (ShopWorld la llama antes de caminar hasta ella).
 func _can_use_station(id: String) -> bool:
@@ -1284,7 +1303,12 @@ func _update_top_buttons() -> void:
 	var morning := phase == Phase.MORNING
 	open_btn.visible = morning and not in_market
 	trip_btn.visible = morning
-	trip_btn.text = "Shop" if in_market else "Market"   # --- R3 BENCH
+	# --- R6 UI: en el mercado, «Back to shop» con la casita; en la tienda, «Market» con la cesta (los dos con la tecla M)
+	(trip_btn as HudButton).set_label("Back to shop" if in_market else "Market")
+	(trip_btn as HudButton).set_icon_name("r6_ico_home" if in_market else "hud_market")
+	open_btn.disabled = _trip_busy
+	trip_btn.disabled = _trip_busy
+	# --- end R6 UI
 
 ## Muestra u oculta un escenario 3D (la tienda o el mercado) y lo pausa: sus clics, animaciones y sonidos.
 func _set_place_on(place: Node3D, on: bool) -> void:
@@ -1401,6 +1425,7 @@ func _trip_check() -> void:
 ## primera salida al mercado se trababa más de un segundo en el navegador). Son unos pocos cuadros.
 func _warm_places() -> void:
 	fade.color.a = 1.0
+	PerfWarmup.run(self)   # --- R6 PERF: cada clase de trazo 2D una vez (el mapa del viaje, el grimorio), en negro
 	world.cam_fixed_x = ShopWorld.CAM_X0
 	world.snap_camera()
 	await _frames(2)
@@ -1409,15 +1434,24 @@ func _warm_places() -> void:
 	world.snap_camera()
 	await _frames(2)
 	# --- end R3 WORLD3
+	await _warm_shop_effects()   # --- R6 PERF
+	await _warm_event_text()   # --- R6 PERF
+	_preload_ui_art()   # --- R6 PERF
 	world.cam_fixed_x = INF
 	world.snap_camera()
 	_set_place_on(world, false)
 	_set_place_on(market, true)
 	market.enter(false)
+	for v in market.vendors:   # --- R6 PERF: el saludo de los vendedores (globo de emoción) con las luces del mercado
+		(market.vendors[v] as Actor).emote("heart", 0.0)
+	market.alchemist.emote("note", 0.0)   # --- R6 PERF
 	for x in [MarketWorld.X0, MarketWorld.FOUNTAIN_POS.x, MarketWorld.X1]:
 		market.walker.teleport(x, 1)
 		market.snap_camera()
 		await _frames(2)
+	for v in market.vendors:   # --- R6 PERF
+		(market.vendors[v] as Actor).clear_emote()
+	market.alchemist.clear_emote()   # --- R6 PERF
 	market.leave()
 	_set_place_on(market, false)
 	_set_place_on(world, true)
@@ -1427,7 +1461,147 @@ func _warm_places() -> void:
 func _frames(n: int) -> void:
 	for i in n:
 		await get_tree().process_frame
+
+# --- R6 PERF: las partículas de la tienda que salen por primera vez a mitad del juego (el humo y los destellos al
+# embotellar, la salpicadura del caldero, los destellos de subir de nivel, los corazones de Miga): cada una compila su
+# shader de partículas la primera vez que se ve (un tirón en la web). Aquí salen una vez frente a la cámara, en negro,
+# y se esconden a los dos cuadros (sus propios timers las borran).
+func _warm_shop_effects() -> void:
+	# la puerta abierta (abierta entra en la luz con sombras del mostrador: otra variante de su material, que salía
+	# a la vista con el primer cliente o la primera salida al mercado) y un globo de emoción sobre alguien frente al
+	# mostrador (su material salía la primera vez que un cliente o un vendedor saluda)
+	world.cam_fixed_x = ShopWorld.CAM_X1
+	world.snap_camera()
+	var door_y: float = world.door_pivot.rotation.y
+	world.door_pivot.rotation.y = deg_to_rad(-105.0)
+	var guest := Actor.new()
+	world.add_child(guest)
+	guest.setup(Story.sprite_id("pip"), 0.04)
+	guest.position = ShopWorld.P_CUSTOMER
+	guest.emote("heart", 0.0)
+	await _frames(2)
+	world.door_pivot.rotation.y = door_y
+	guest.queue_free()
+	var cau: Cauldron = world.cauldron
+	world.cam_fixed_x = ShopWorld.CAULDRON_POS.x + 1.0
+	world.snap_camera()
+	world.alchemist.emote("heart", 0.0)
+	var had := {}
+	for n in [world, cau]:
+		for c in n.get_children():
+			had[c.get_instance_id()] = true
+	cau.brew_burst(Color(0.6, 0.9, 0.5))
+	cau.splash(Color(0.6, 0.9, 0.5))
+	cau._flash = 0.0
+	var at := cau.global_position + Vector3(0.6, 1.2, 0.4)
+	world.spawn_sparkles(at, Color(1.6, 1.5, 1.0), 8)
+	world.spawn_hearts(at + Vector3(0.5, 0.0, 0.0))
+	# el confeti de los eventos (EventScenes.cheer: sale cuando el público aplaude): su shader de partículas es de los
+	# más grandes del juego (2 programas; en Mesa ~2,8 s de CPU la primera vez). Mejor aquí, en el negro del arranque,
+	# que en el principio del evento. Un EventScenes vacío (sin armar) solo para lanzarlo; se borra a los dos cuadros.
+	var evc := EventScenes.new()
+	world.add_child(evc)
+	evc.position = at - Vector3(2.0, 2.6, 0.2)   # (_confetti sale 2 / 2,6 / 0,2 por encima de su «Player»)
+	PerfWarmup.keep_particles(evc._confetti())   # (y su shader queda vivo toda la partida: cada aplauso lo reusa)
+	await _frames(2)
+	evc.queue_free()
+	world.alchemist.clear_emote()
+	for n in [world, cau]:
+		for c in n.get_children():
+			if c is GPUParticles3D and not had.has(c.get_instance_id()):
+				PerfWarmup.keep_particles(c as GPUParticles3D)   # el humo, los destellos, la salpicadura, los corazones
+				(c as GPUParticles3D).emitting = false
+				(c as GPUParticles3D).visible = false
+
+## Las letras grandes de los eventos (la cuenta atrás «3 2 1 Go!», «Time!», y los «+3 ★» que saltan): con contorno y a
+## 120 px, cada letra nueva se dibuja en la caché de la fuente y la textura de la caché se vuelve a subir entera a la GPU
+## por cada letra (en la web: 56 subidas, 27 Mpx, ~2 s con SwiftShader en el precalentamiento del evento). Aquí, en el
+## negro del arranque, una vez: la caché de la fuente dura toda la partida.
+func _warm_event_text() -> void:
+	if not (is_instance_valid(events_ui) and events_ui.has_method("_outlined")):
+		return
+	var layer := CanvasLayer.new()
+	layer.layer = 19   # debajo del fundido (20)
+	add_child(layer)
+	var big: Label = events_ui.call("_outlined", "3 2 1 Go! Time! Done!", 120, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold)
+	var small: Label = events_ui.call("_outlined", "+0123456789 ★ time", 40, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold)
+	small.position = Vector2(0, 200)
+	layer.add_child(big)
+	layer.add_child(small)
+	# --- R6 MERGE: la letra de los avisos del banco (brew_ui: msg, font_sc_bold 34 px con contorno 10). El primer aviso
+	# (en el concurso, «Tap it on the shelf to present it») subía la página de la caché una vez por letra nueva (26
+	# subidas en la web). Todas las letras aquí, en el negro del arranque, con la misma letra y contorno.
+	var bench := UIKit.label("ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 !?.,'’+-%:()",
+		34, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold)
+	bench.add_theme_color_override("font_outline_color", Color(0.1, 0.06, 0.12))
+	bench.add_theme_constant_override("outline_size", 10)
+	bench.position = Vector2(0, 300)
+	layer.add_child(bench)
+	# --- end R6 MERGE
+	await _frames(2)
+	layer.queue_free()
+
+## Las texturas de los papeles que se cargan la primera vez que se abren (el Escalafón: 30 escudos y sus marcos; el
+## mapa y los sellos de los eventos): quedan en la caché de PaperKit desde el arranque (la primera vez que se abría el
+## Escalafón tardaba el triple que las siguientes).
+func _preload_ui_art() -> void:
+	for f in ResourceLoader.list_directory("res://assets/ui"):
+		var n := String(f)
+		if n.ends_with(".png") and (n.begins_with("rank_") or n.begins_with("evui_")):
+			PaperKit.tex("res://assets/ui/" + n)
+# --- end R6 PERF
 # --- end PREP
+
+# --- R6 PERF: las caras recortadas del ticket del pedido y de la bola de cristal. game_ui y ball_ui buscan la fila de
+# la cabeza leyendo la textura de vuelta de la GPU (get_image) la primera vez que ven a cada personaje: en la web es un
+# readPixels que espera a la tarjeta gráfica (un tirón cuando llega cada cliente nuevo). SpriteTops.HEAD tiene esas
+# filas precalculadas con la misma regla: se cargan en sus cachés al arrancar y ya no leen nada.
+func _perf_prefill_faces() -> void:
+	for holder in [ui, krapido.ball if krapido else null]:
+		if holder == null:
+			continue
+		for key in ["_portrait_top", "_head_cache"]:
+			var d = holder.get(key)
+			if d is Dictionary:
+				for sid in SpriteTops.HEAD:
+					if not d.has(sid):
+						d[sid] = int(SpriteTops.HEAD[sid])
+# --- end R6 PERF
+
+# --- R6 PERF: el desenfoque de arriba y abajo (shaders/hd2d_post.gdshader) por escenario. La fuerza del desenfoque es la
+# misma de siempre; lo que cambia es cuánto de la pantalla cubre: cada escenario dice dónde va su banda nítida y qué
+# tan rápido se pasa a borroso (post_params() en ShopWorld, MarketWorld y EventScenes; el mercado es el que más se
+# abre, porque la gente camina abajo). main.gd mira la cámara activa en cada cuadro y solo cambia los parámetros
+# cuando cambia la cámara (la tienda, el mercado, un evento, el final). --post=centro,mitad,caída[,lod] los fuerza
+# (para probar valores).
+const POST_DEFAULT := {"focus_center": 0.46, "focus_half": 0.22, "focus_falloff": 0.30, "max_lod": 2.6}   # el de antes
+var _post_cam: Camera3D
+var _post_force := {}
+
+func _post_follow_camera() -> void:
+	var cam := get_viewport().get_camera_3d()
+	if cam == _post_cam or post == null:
+		return
+	_post_cam = cam
+	var p: Dictionary = POST_DEFAULT
+	var n: Node = cam
+	while n != null:
+		if n.has_method("post_params"):
+			p = n.call("post_params")
+			break
+		n = n.get_parent()
+	apply_post(p)
+
+## Pone los parámetros del desenfoque (los que falten quedan como estaban).
+func apply_post(p: Dictionary) -> void:
+	var sm := post.material as ShaderMaterial
+	if sm == null:
+		return
+	for k in p:
+		sm.set_shader_parameter(k, p[k])
+	for k in _post_force:
+		sm.set_shader_parameter(k, _post_force[k])
+# --- end R6 PERF
 
 # --- R3 MAGIC3: la tinta del caldero, las capturas de la magia y la prueba rápida ------------------------------------
 # (Ya no hay pergaminos: las runas se inscriben en la etiqueta de las pociones del estante, en el grimorio del
@@ -1766,36 +1940,144 @@ func _ev_run_day() -> void:
 	ui.hide_tip()
 	ui.hide_order()
 	events_ui.refresh_reminder(false)
+	PerfLog.mark("ev:day " + kind)   # --- R6 PERF
 	ui.show_banner(Events.ev_name(kind), "No shop today")
 	await get_tree().create_timer(1.8).timeout
 	if phase != Phase.EVENT:
 		return
+	PerfLog.mark("ev:travel")   # --- R6 PERF
+	_ev_prebuild(kind)   # --- R6 PERF: el escenario se arma por partes mientras el carro va de camino
+	_ev_hide_shop_under_map()   # --- R6 PERF: y la tienda, tapada por el mapa, deja de dibujarse
 	await events_ui.travel(kind)
-	await _fade_to(1.0, 0.35)
-	events_ui.end_travel()
+	# --- R6 PERF: el escenario se arma y se precalienta mientras el mapa del viaje sigue en pantalla: el carro ya llegó
+	# y el mapa está quieto (tapa todo). Antes se armaba entero en un cuadro después del fundido a negro (0,15 s y 4
+	# cuadros) y la gente, el HUD y los efectos se armaban o se compilaban ya a la vista (los tirones). Ahora: armado
+	# por partes durante el viaje (_ev_prebuild), mostrado por partes bajo el mapa (reveal_gradually: los shaders se
+	# compilan en varios cuadros medianos), la gente, el HUD y los efectos de después dibujados una vez (warm_up), y
+	# solo entonces el fundido a negro y el de entrada, sin nada pesado en medio (el negro dura dos cuadros).
+	while _ev_pre.get("busy", false):
+		await get_tree().process_frame
+	if phase != Phase.EVENT:
+		_ev_drop_prebuilt()
+		if not _ev_active:
+			world.visible = true
+		return
+	PerfLog.mark("ev:build_under_map")
+	var pt := PerfLog.t0()
+	_ev_enter_scene(ev)
+	PerfLog.step("ev:enter_scene", pt)
+	await _ev_warm_hidden()
 	if phase != Phase.EVENT:
 		return
-	_ev_enter_scene(ev)
-	await get_tree().create_timer(0.15).timeout
-	for i in 4:   # --- R4 MERGE: unos cuadros dibujados detrás del negro (los shaders del escenario se compilan aquí)
-		await get_tree().process_frame
+	PerfLog.mark("ev:fade_out")
+	await _fade_to(1.0, 0.35)
+	PerfLog.mark("ev:black")
+	events_ui.end_travel()
+	await _frames(2)
+	if phase != Phase.EVENT:
+		return
+	PerfLog.mark("ev:fade_in")
 	await _fade_to(0.0, 0.6)
+	PerfLog.mark("ev:visible")
+	# --- end R6 PERF
 	await _ev_play(ev)
+
+# --- R6 PERF: el principio del evento sin tirones. Con el escenario todavía tapado (el mapa del viaje ya quieto encima):
+# ella, la fila o el jurado y el HUD se arman (EventGame.prepare) y lo que sale en los primeros segundos se dibuja una
+# vez y se quita (EventGame.warm_up / warm_down: la poción que vuela, el humo del caldero, el confeti, las caritas, la
+# cuenta atrás, «+3 ★», la pizarra, las caras de las tarjetas). WebGL compila cada material la primera vez que lo dibuja:
+# así lo hace aquí, tapado, y no a la vista. Antes estas cosas aparecían después del fundido de entrada (un tirón al ver
+# la escena, otro en la cuenta atrás y otro con la primera poción).
+func _ev_warm_hidden() -> void:
+	var g := ev_game
+	if not is_instance_valid(g):
+		return
+	if ev_scene is EventScenes:   # el escenario (y su público) en unos 8 cuadros: los shaders, repartidos
+		await (ev_scene as EventScenes).reveal_gradually(get_tree())
+	if not is_instance_valid(g) or phase != Phase.EVENT:
+		return
+	g.prepare()
+	await _frames(2)          # el escenario, la gente y el HUD se dibujan (y se compilan) aquí
+	if not is_instance_valid(g) or phase != Phase.EVENT:
+		return
+	var junk: Array = await g.warm_up(get_tree())   # por partes, un cuadro cada una
+	await _frames(2)          # los efectos de más tarde, dibujados una vez más
+	if is_instance_valid(g):
+		g.warm_down(junk)
+	await _frames(2)          # dos cuadros tranquilos antes del fundido de entrada
+	PerfLog.mark("ev:warm_done")
+# --- end R6 PERF
+
+# --- R6 PERF: el escenario armado por partes durante el viaje (EventScenes.build_async), fuera del árbol hasta que
+# _ev_enter_scene lo pone. Si el día del evento se corta antes (volver al título), se borra cuando termina de armarse.
+var _ev_pre := {}   # {"kind", "busy": se está armando, "scene": Node3D}
+
+func _ev_prebuild(kind: String) -> void:
+	_ev_drop_prebuilt()
+	var job := {"kind": kind, "busy": true, "scene": null}
+	_ev_pre = job
+	var pt := PerfLog.t0()
+	var sc: Node3D = await EventScenes.build_async(kind, get_tree())
+	PerfLog.step("ev:prebuild " + kind, pt)
+	job["busy"] = false
+	if is_same(_ev_pre, job):
+		job["scene"] = sc
+	else:
+		sc.free()   # nadie lo va a usar
+
+## Mientras el mapa del viaje tapa toda la pantalla, la tienda de detrás no se dibuja (eran ~460 llamadas de dibujo por
+## cuadro que nadie veía: el carro va más suave y el armado por partes tiene más sitio). _ev_enter_scene la deja
+## escondida igual (y _ev_leave_scene la vuelve a mostrar).
+func _ev_hide_shop_under_map() -> void:
+	for i in 240:   # el mapa aparece en 0,35 s (y tapa todo cuando ya es opaco); cuadros y no segundos: en un equipo lento
+		await get_tree().process_frame   # el fundido puede tardar más cuadros, pero no más segundos de juego
+		if phase != Phase.EVENT or _ev_active:
+			return
+		var bg = events_ui.get("_map_bg")
+		if bg is CanvasItem and is_instance_valid(bg) and (bg as CanvasItem).modulate.a >= 0.999:
+			world.visible = false
+			return
+
+func _ev_take_prebuilt(kind: String) -> Node3D:
+	if _ev_pre.get("busy", false) or String(_ev_pre.get("kind", "")) != kind:
+		return null
+	var sc = _ev_pre.get("scene")
+	_ev_pre = {}
+	return sc if is_instance_valid(sc) else null
+
+func _ev_drop_prebuilt() -> void:
+	if _ev_pre.get("busy", false):
+		_ev_pre = {}   # el que se está armando se borra solo al terminar (ya no es el de _ev_pre)
+		return
+	var sc = _ev_pre.get("scene")
+	if is_instance_valid(sc) and not (sc as Node).is_inside_tree():
+		(sc as Node).free()
+	_ev_pre = {}
+# --- end R6 PERF
 
 ## Pone el escenario del evento (la tienda queda escondida y en pausa), la despensa y el juego.
 func _ev_enter_scene(ev: Dictionary) -> void:
 	var kind := String(ev.get("kind", "academia"))
 	if is_instance_valid(ev_scene):
 		ev_scene.queue_free()
-	ev_scene = EventScenes.build(kind)
+	var pt := PerfLog.t0()   # --- R6 PERF
+	ev_scene = _ev_take_prebuilt(kind)   # --- R6 PERF: el que se armó durante el viaje (si no, se arma aquí)
+	if ev_scene == null:
+		ev_scene = EventScenes.build(kind)
+	PerfLog.step("ev:build " + kind, pt)   # --- R6 PERF
+	pt = PerfLog.t0()   # --- R6 PERF
 	add_child(ev_scene)
+	PerfLog.step("ev:add_child", pt)   # --- R6 PERF
 	_ev_active = true
 	_set_place_on(world, false)
 	var cam := ev_scene.get_node_or_null("Camera") as Camera3D
 	if cam:
 		cam.make_current()
+	pt = PerfLog.t0()   # --- R6 PERF
 	if ev_scene.has_method("set_crowd"):
 		ev_scene.call("set_crowd", Array(Events.info(kind)["crowd"]))
+	PerfLog.step("ev:set_crowd", pt)   # --- R6 PERF
+	pt = PerfLog.t0()   # --- R6 PERF
 	Sfx.set_place("market" if kind != "academia" else "shop")
 	ui.set_time_label("Midday")
 	brew.close_now()
@@ -1806,10 +2088,13 @@ func _ev_enter_scene(ev: Dictionary) -> void:
 	ui.set_shop_panels_visible(true)
 	if is_instance_valid(ev_game):
 		ev_game.queue_free()
+	PerfLog.step("ev:stash_bench_mode", pt)   # --- R6 PERF
+	pt = PerfLog.t0()   # --- R6 PERF
 	ev_game = EventGame.new()
 	ev_game.name = "EventGame"
 	add_child(ev_game)
 	ev_game.setup(self, events_ui, ev, ev_scene)
+	PerfLog.step("ev:game_setup", pt)   # --- R6 PERF
 
 ## El juego y lo que viene después (resultados, vuelta a casa, las cuentas).
 func _ev_play(ev: Dictionary) -> void:
@@ -1895,6 +2180,95 @@ func _ev_abort() -> void:
 func _ev_open_bench() -> void:
 	if phase == Phase.EVENT and is_instance_valid(ev_game) and ev_game.running and not _brew_open():
 		open_brew()
+
+# --- R6 PERF: demos para medir los tirones (con --perflog=<archivo>, o =console en la web) -------------------------
+## --demo=perf_event --evkind=academia|concurso|torneo [--evplay=20]: como en el juego. El arranque precalienta la
+## tienda y el mercado en negro (_warm_places), unos segundos de mañana en la tienda y luego el día del evento entero
+## (cartel, mapa del viaje, negro, escenario, la anfitriona, la cuenta atrás) y --evplay segundos de juego con el bot.
+## --demo=perf_tour: la primera vez de cada pantalla, una tras otra (banco, grimorio, recetario, diario, el mercado y un
+## puesto, la bola de cristal, el Escalafón, abrir la tienda con el primer cliente y el final del puesto 1).
+func _perf_demo(name: String) -> void:
+	var args := _ev_args()
+	_ev_demo_state(20)
+	phase = Phase.MORNING
+	_update_top_buttons()
+	if name == "perf_tour":
+		Game.upgrades["krapido"] = true
+		_refresh_all()
+	PerfLog.mark("perf:warm_places")
+	await _warm_places()
+	PerfLog.mark("perf:fade_in")
+	await _fade_to(0.0, 0.5)
+	PerfLog.mark("perf:morning")
+	await get_tree().create_timer(3.0).timeout
+	if name == "perf_event":
+		var kind := String(args.get("evkind", "academia"))
+		Events.make_invite(kind)
+		Game.ev_booked = Game.ev_invite
+		Game.ev_invite = {}
+		Game.ev_booked["day"] = Game.day
+		Game.gold -= int(Game.ev_booked["fee"])
+		phase = Phase.MORNING
+		_bot_play_event.call_deferred(false)
+		_ev_run_day()
+		var t := 0.0
+		while (ev_game == null or not ev_game.started) and t < 120.0:
+			await get_tree().create_timer(0.25).timeout
+			t += 0.25
+		PerfLog.mark("perf:play")
+		await get_tree().create_timer(float(args.get("evplay", "20"))).timeout
+	else:
+		await _perf_tour()
+	PerfLog.mark("perf:end")
+	PerfLog.stop()
+	get_tree().quit()
+
+## Cada paso: lo abre, espera, lo cierra y espera (los cuadros de en medio son los que importan).
+func _perf_tour() -> void:
+	var steps := [
+		["bench", func(): open_brew(), func(): brew.close_now()],
+		["grimoire", func(): grimoire.open(), func(): ov.close()],
+		["recipes", func(): ov.show_book(), func(): ov.close()],
+		["journal", func(): ov.show_journal(), func(): ov.close()],
+		["ball", func(): krapido.ball.open(), func(): krapido.ball.close_now()],
+		["ranking", func(): ov.show_ranking(), func(): ov.close()],
+	]
+	if String(_ev_args().get("evtour", "")) == "market":   # --evtour=market: solo el mercado, la tienda y el final
+		steps = []
+	for st in steps:
+		for k in 2:   # la primera vez y la segunda (lo que cuesta solo la primera vez es lo que se puede precalentar)
+			PerfLog.mark("tour:%s open%d" % [st[0], k + 1])
+			var t := PerfLog.t0()
+			st[1].call()
+			PerfLog.step("tour:%s open%d_call" % [st[0], k + 1], t)
+			await get_tree().create_timer(2.0).timeout
+			PerfLog.mark("tour:%s close" % st[0])
+			st[2].call()
+			await get_tree().create_timer(1.0).timeout
+	# el mercado: sale por la puerta, un puesto y vuelve
+	PerfLog.mark("tour:market go")
+	await _go_market()
+	PerfLog.mark("tour:market in")
+	await get_tree().create_timer(2.0).timeout
+	PerfLog.mark("tour:stall")
+	await market.use_station("ilse")
+	await get_tree().create_timer(2.0).timeout
+	ov.close()
+	PerfLog.mark("tour:market back")
+	await _leave_market()
+	await get_tree().create_timer(1.5).timeout
+	# abrir la tienda: el reloj, el primer cliente entra y llega al mostrador
+	PerfLog.mark("tour:open shop")
+	_open_shop()
+	await get_tree().create_timer(14.0).timeout
+	# el final del puesto 1 (en automático), desde negro
+	PerfLog.mark("tour:ending")
+	phase = Phase.CLOSING
+	await _fade_to(1.0, 0.5)
+	_play_ending(true)
+	await get_tree().create_timer(45.0).timeout   # el final entero (confeti y créditos incluidos)
+	PerfLog.mark("tour:ending end")
+# --- end R6 PERF
 
 # ------------------------------------------------ demos, prueba rápida y bot de los eventos
 
@@ -2438,10 +2812,24 @@ func _parse_args() -> void:
 		elif a.begins_with("--textlog="):
 			TextLog.start(self, a.substr(10))
 		# --- end R5 MERGE
+		# --- R6 PERF: --perflog=<archivo> (o «console» en la web): los tiempos de cada cuadro y de cada paso medido
+		elif a.begins_with("--perflog="):
+			PerfLog.start(self, a.substr(10))
+		elif a.begins_with("--post="):   # --post=centro,mitad,caída[,lod]: fuerza el desenfoque (para probar valores)
+			var v := a.substr(7).split(",")
+			var keys := ["focus_center", "focus_half", "focus_falloff", "max_lod"]
+			for i in mini(v.size(), keys.size()):
+				_post_force[keys[i]] = float(v[i])
+			_post_cam = null
+		# --- end R6 PERF
 
 func _process(_d: float) -> void:
 	_frame += 1
+	_post_follow_camera()   # --- R6 PERF: la banda nítida del desenfoque según el escenario que se ve
 	ui.set_day_market(phase == Phase.OPEN)   # --- R3 MERGE: el «x2» del botón Mercado (de día el encargo cuesta el doble)
+	if open_btn and open_btn.disabled != _trip_busy:   # --- R6 UI: los botones de arriba, desactivados mientras va o vuelve
+		open_btn.disabled = _trip_busy
+		trip_btn.disabled = _trip_busy
 	_pace_process(_d)   # --- R4 PACE: el reloj, las llegadas, la fila y la paciencia
 	if _shot_path != "" and _frame == max(_shot_frames, 20):
 		if _stats:   # --- R4 SCENES
@@ -2454,6 +2842,12 @@ func _process(_d: float) -> void:
 			get_tree().quit()
 
 func _run_demo() -> void:
+	if _demo.begins_with("r6_"):   # --- R6 UI: capturas y pruebas de los avisos y los botones (bloque R6 UI, al final)
+		_r6_demo(_demo)
+		return
+	if _demo.begins_with("m6_"):   # --- R6 MERGE: las pruebas de la unión (bloque R6 MERGE, al final)
+		_m6_demo(_demo)
+		return
 	match _demo:
 		"title":
 			_show_title()
@@ -2475,6 +2869,10 @@ func _run_demo() -> void:
 		"merge_shop", "merge_rankcheck", "merge_morning", "merge_ledger":
 			_merge_demo(_demo)
 		# --- end R4 MERGE
+		# --- R6 PERF: --demo=perf_event (--evkind=academia|concurso|torneo) y --demo=perf_tour: medir los tirones
+		"perf_event", "perf_tour":
+			_perf_demo(_demo)
+		# --- end R6 PERF
 		_:
 			_demo_scene(_demo)
 
@@ -5069,3 +5467,791 @@ func _merge_rankcheck() -> void:
 		print("RANKCHECK ", k, " total=", r.get("total", 0), " partes=", r.get("parts", {}), " medalla=", r.get("medal", ""))
 	get_tree().quit()
 # --- end R4 MERGE
+
+# --- R6 UI: los avisos de acción, los botones de arriba y las teclas nuevas ------------------------------------------
+# PromptBrain (scripts/ui/prompt_brain.gd) mira cada cuadro dónde está ella y qué se puede hacer, y PromptUI dibuja el
+# aviso («E  Give potion · Space  Talk») sobre la persona o la estación; Glyphs sabe si lo último fue el teclado, el
+# ratón o el mando (y dibuja su tecla o su botón). Teclas: E y Espacio = lo que dice el aviso; O = abrir la tienda;
+# M = el mercado (ir, volver, o de día el encargo); Tab = el estante con el banco abierto; en el diálogo 1 / 2 / 3; en
+# el estante para elegir ← → y E. El mando: A hace el aviso (o toca donde está su cursor), X la segunda acción.
+var prompt_brain: PromptBrain
+
+func _r6_setup() -> void:
+	prompt_brain = PromptBrain.new()
+	prompt_brain.name = "PromptBrain"
+	add_child(prompt_brain)
+	prompt_brain.setup(self)
+	pad.brain = prompt_brain
+	for a in OS.get_cmdline_user_args():
+		if a == "--r6dbg":   # (depuración) dónde va cada aviso y qué lo empujó
+			PromptUI.debug = true
+		if a.begins_with("--glyphs="):   # (capturas y pruebas) fija el dispositivo de los glifos
+			Glyphs.forced = a.substr(9)
+			Glyphs.device = Glyphs.forced
+			Glyphs.gen += 1
+	# el vigilante del dispositivo va el último: su _input llega antes que el de nadie (también antes que PadCursor)
+	var gw := Glyphs.GlyphWatcher.new()
+	gw.name = "GlyphWatcher"
+	add_child(gw)
+
+## La fase como palabra (PromptBrain y PadCursor no ven el enum): "TITLE", "INTRO", "MORNING", "OPEN", "CLOSING", "EVENT".
+func r6_phase() -> String:
+	return Phase.keys()[phase]
+
+## E / Espacio / Tab / O / M. true si la tecla hizo algo (entonces no sigue).
+func _r6_key(ev: InputEventKey) -> bool:
+	match ev.keycode:
+		KEY_E:
+			return prompt_brain.press("interact")
+		KEY_SPACE:
+			return prompt_brain.press("alt")
+		KEY_TAB:
+			return prompt_brain.press("shelf")
+		KEY_O:
+			if phase == Phase.MORNING and open_btn.is_visible_in_tree() and not open_btn.disabled and _r6_hands_free():
+				_open_shop()
+				return true
+		KEY_M:
+			if not _r6_hands_free():
+				return false
+			if phase == Phase.MORNING and trip_btn.is_visible_in_tree() and not trip_btn.disabled:
+				_on_trip_button()
+				return true
+			if phase == Phase.OPEN:
+				_on_menu("market")   # de día: el encargo de Pip (x2)
+				return true
+	return false
+
+## Nada abierto ni a medias (para las teclas de los botones de arriba).
+func _r6_hands_free() -> bool:
+	return not ov.is_open() and not ui.dialog_open() and not busy and not _trip_busy and not _brew_open() and not _ball_open() and not ui.picker_open()
+
+# ------------------------------------------------ capturas (--demo=r6_<escena> [--glyphs=keys|mouse|pad] [--hover=...])
+## Una partida de prueba: día 3, tres pociones distintas en el estante, el grimorio abierto (el escritorio dice
+## «Enchant»), con o sin la ventanilla del cuervo.
+func _r6_state(krapido_on := false) -> void:
+	Game.new_game_state()
+	Game.tutorial_done = true
+	Game.mail_seen = true
+	Game.day = 3
+	Game.gold = 140
+	Game.renombre = 14
+	Game.upgrades = {"alfombra": true, "cojin": true, "huerto": true, "farolillos": true}
+	if krapido_on:
+		Game.upgrades["krapido"] = true
+	Game.unlock_magic()
+	Game.potions = [{"id": "ojo_nocturno", "potency": 6}, {"id": "balsamo_helado", "potency": 4}, {"id": "sueno_profundo", "potency": 7}]
+	Game.sort_potions()
+	for id in Data.INGREDIENT_ORDER:
+		Game.stock[id] = 4 if Game.ingredient_unlocked(id) else 0
+	ov.close(false)
+	_refresh_all()
+	world.refresh_upgrades()
+	ui.set_gameplay_visible(true)
+	ui.refresh_hud()
+
+func _r6_morning(x: float, face := 1) -> void:
+	phase = Phase.MORNING
+	world.set_time(0.0, false)
+	ui.set_time_label("Morning")
+	ui.set_clock_visible(false)
+	world.set_station_label("puerta", "Door · to the market")
+	_update_top_buttons()
+	world.walker.teleport(x, face)
+	world.snap_camera()
+
+## La tienda abierta a media mañana con alguien en el mostrador (ordered: ya pidió; si no, todavía no) y tres en la fila.
+func _r6_open_day(who: String, ordered: bool, queue_n := 3) -> void:
+	phase = Phase.OPEN
+	_pace_clear()
+	queue = []
+	_update_top_buttons()
+	shop_t = 110.0
+	world.set_time(0.12 + 0.8 * shop_t / Game.PACE_DAY_SECONDS, false)
+	_update_time_label(0.12 + 0.8 * shop_t / Game.PACE_DAY_SECONDS)
+	ui.set_clock_visible(true)
+	_pace_on = true
+	var req := _pace_demo_req(who)
+	var cv := _pace_demo_visitor(req, ShopWorld.P_CUSTOMER, 0.8)
+	cv["fidget"] = 9999.0
+	cv["state"] = "counter"
+	cv["ordered"] = ordered
+	cv["counter_secs"] = Game.pace_counter_secs(req) * 3.0
+	cv["line_secs"] = 600.0
+	_counter_v = cv
+	current = req
+	customer = cv["actor"]
+	customer_ready = true
+	hint_given = true
+	if ordered:
+		ui.order_who = who
+		ui.show_order(Story.char_name(who), String(req["text"]), String(req["hint"]), Game.order_runes(req))
+		cv["bubble"].visible = true
+	else:
+		cv["bubble"].visible = false
+	var rows := [["granjero", 0.9], ["anciano", 0.6], ["pip", 0.35], ["marta", 0.75]]
+	for i in mini(queue_n, rows.size()):
+		var v := _pace_demo_visitor(_pace_demo_req(rows[i][0]), _pace_spot(i), rows[i][1])
+		v["line_secs"] = 600.0
+		v["fidget"] = 9999.0
+		line.append(v)
+	world.walker.teleport(ShopWorld.P_ALCH_COUNTER.x, 1)
+	world.snap_camera()
+
+## (r6_concurso) ya corriendo y con el banco cerrado, una poción en el estante para presentar.
+func _r6_concurso_potion() -> void:
+	while not (is_instance_valid(ev_game) and ev_game.started and ev_game.running and not _brew_open()):
+		await get_tree().create_timer(0.2).timeout
+	Game.potions = [{"id": "sueno_profundo", "potency": 7}]
+	Game.potions_changed.emit()
+
+func _r6_demo(name: String) -> void:
+	var args := OS.get_cmdline_user_args()
+	if name == "r6_prompttest":
+		await _r6_prompttest()
+		return
+	_r6_state(name in ["r6_window", "r6_orders"])
+	match name:
+		"r6_morning":   # de mañana detrás del mostrador: «Open shop» y los botones de arriba
+			_r6_morning(ShopWorld.P_ALCH_COUNTER.x, 1)
+		"r6_door":   # de mañana junto a la puerta: «Go to market»
+			_r6_morning(float(ShopWorld.STATIONS["puerta"]["x"]), 1)
+		"r6_cauldron":
+			_r6_morning(float(ShopWorld.STATIONS["caldero"]["x"]), -1)
+		"r6_desk":
+			_r6_morning(float(ShopWorld.STATIONS["biblioteca"]["x"]), -1)
+		"r6_market", "r6_marketdoor":   # el mercado: en el puesto de Borin («Buy») o en la puerta de la tienda
+			phase = Phase.MORNING
+			world.set_time(0.0, false)
+			ui.set_time_label("Morning")
+			_switch_place(true, false)
+			if name == "r6_market":
+				market.walker.teleport(float(MarketWorld.STALL_X["borin"]) + 1.3, -1)
+			else:
+				market.walker.teleport(MarketWorld.SHOP_DOOR_X, -1)
+			market.snap_camera()
+		"r6_talk":   # ya pidió pero el estante está vacío: «Talk» (pedir una pista o decir que no)
+			Game.potions = []
+			Game.potions_changed.emit()
+			_r6_open_day("nyra", true)
+		"r6_give", "r6_picker":   # ya pidió y hay tres pociones distintas: «Give potion · Talk» (o el estante abierto)
+			_r6_open_day("nyra", true)
+			if name == "r6_picker":
+				await get_tree().create_timer(0.3).timeout
+				ui.open_picker("Give")
+				ui._pick_move(1)
+		"r6_give1":   # una sola clase de poción: «Give» con su icono
+			var want := String(_pace_demo_req("nyra")["potion"])
+			Game.potions = [{"id": want, "potency": 7}]
+			Game.potions_changed.emit()
+			_r6_open_day("nyra", true)
+		"r6_dialog":   # lo que pide, con las respuestas y sus teclas
+			_r6_open_day("nyra", false)
+			_talk_request()
+		"r6_window", "r6_orders":   # la ventanilla del cuervo: «Hand over» (espera) o «Read orders»
+			_r6_open_day("nyra", true, 2)
+			krapido.demo_orders(3, name == "r6_window")
+			krapido._active = true
+			world.walker.teleport(float(ShopWorld.KRAPIDO_STATION["x"]), -1)
+			world.snap_camera()
+		"r6_bench":   # el banco con dos ingredientes en la olla: las teclas de los frascos, Remover y cerrar
+			_r6_open_day("nyra", true)
+			world.walker.teleport(float(ShopWorld.STATIONS["caldero"]["x"]), -1)
+			world.snap_camera()
+			await get_tree().create_timer(0.2).timeout
+			open_brew()
+			await get_tree().create_timer(0.8).timeout
+			for id in ["raiz_mandragora", "hongo_violeta"]:
+				brew.throw(id)
+				await get_tree().create_timer(0.7).timeout
+		"r6_concurso":   # el concurso corriendo con una poción en el estante: «Space  Present» sobre el estante
+			_ev_demo_state(20)
+			Events.make_invite("concurso")
+			Game.ev_booked = Game.ev_invite
+			Game.ev_invite = {}
+			Game.ev_booked["day"] = Game.day
+			phase = Phase.EVENT
+			_ev_enter_scene(Game.ev_booked.duplicate(true))
+			_ev_demo_watch.call_deferred()
+			_r6_concurso_potion.call_deferred()
+			await _ev_play(Game.ev_booked.duplicate(true))
+		"r6_benchgive":   # el banco abierto con alguien esperando: «Tab  Give» sobre el estante
+			_r6_open_day("nyra", true)
+			world.walker.teleport(float(ShopWorld.STATIONS["caldero"]["x"]), -1)
+			world.snap_camera()
+			await get_tree().create_timer(0.2).timeout
+			open_brew()
+		"r6_ledger":
+			Game.reset_today()
+			for k in {"earned": 212, "renombre": 8, "sold": 9, "arrived": 11, "served": 9, "lost_tired": 1, "avg_wait": 22.0}:
+				Game.today[k] = {"earned": 212, "renombre": 8, "sold": 9, "arrived": 11, "served": 9, "lost_tired": 1, "avg_wait": 22.0}[k]
+			phase = Phase.CLOSING
+			world.set_time(1.0, false)
+			ui.set_time_label("Night")
+			_update_top_buttons()
+			ov.show_summary(Game.day, Game.today)
+		"r6_mail":
+			phase = Phase.MORNING
+			world.set_time(0.0, false)
+			ui.set_time_label("Morning")
+			_update_top_buttons()
+			for who in ["panadera", "granjero"]:
+				var r := _pace_demo_req(who)
+				var it := {"kind": "potion", "id": String(r["potion"]), "potency": 7}
+				var o := Story.make_outcome(r, it, true, Story.price_of(it, r))
+				o["via"] = "letter"
+				o["due"] = Game.day
+				Game.schedule_outcome(o)
+			_morning_mail()
+		"r6_title":
+			ui.set_gameplay_visible(false)
+			ov.show_title(true)
+		"r6_vendor":   # (resume 3) el puesto de Ilse con el teclado: Tab marca el segundo botón (el aro y la placa de abajo)
+			_r6_morning(float(ShopWorld.STATIONS["puerta"]["x"]), 1)
+			ov.show_market("morning", "ilse")
+			await get_tree().create_timer(0.5).timeout
+			for i in 2:
+				await _r6_tap(KEY_TAB)
+		"r6_invite":   # (resume 3) la invitación con sus teclas 1 / 2
+			_r6_morning(ShopWorld.P_ALCH_COUNTER.x, 1)
+			ov.show_invitation(Events.make_invite("academia"))
+	# --hover=<botón>: el cursor (el del mando con --glyphs=pad) encima de un botón, para ver su estado y su tooltip
+	for a in args:
+		if a.begins_with("--hover="):
+			await get_tree().create_timer(0.6).timeout
+			_r6_hover(a.substr(8))
+
+func _r6_hover(what: String) -> void:
+	var c: Control = null
+	match what:
+		"open":
+			c = open_btn
+		"trip":
+			c = trip_btn
+		"choice2":
+			c = ui.dialog_choices.get_child(1) if ui.dialog_choices.get_child_count() > 1 else null
+		_:
+			for b in ui.menu_box.get_children():
+				if String(b.get_meta("menu", "")) == what:
+					c = b
+	if c == null:
+		return
+	var at := c.get_global_rect().get_center()
+	if Glyphs.device == "pad":
+		pad._show(true)
+		pad._move_to(at)
+	else:
+		var mm := InputEventMouseMotion.new()
+		mm.position = get_viewport().get_final_transform() * at
+		mm.global_position = mm.position
+		Input.parse_input_event(mm)
+
+# ------------------------------------------------ la prueba de los avisos (--demo=r6_prompttest, sin ventana)
+var _r6_bad := 0
+
+func _r6_check(what: String, ok: bool, extra = "") -> void:
+	if not ok:
+		_r6_bad += 1
+	print("R6TEST %s %s %s" % ["ok  " if ok else "FAIL", what, str(extra)])
+
+func _r6_wait(s: float) -> void:
+	await get_tree().create_timer(s).timeout
+
+func _r6_tap(code: Key, from_pad := false) -> void:
+	for pressed in [true, false]:
+		var e := InputEventKey.new()
+		e.keycode = code
+		e.physical_keycode = code
+		e.pressed = pressed
+		if from_pad:
+			e.device = PadCursor.PAD_DEVICE
+		Input.parse_input_event(e)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+func _r6_pad(button: JoyButton) -> void:
+	var e := InputEventJoypadButton.new()
+	e.button_index = button
+	e.pressed = true
+	Input.parse_input_event(e)
+	await get_tree().process_frame
+	var e2 := e.duplicate()
+	e2.pressed = false
+	Input.parse_input_event(e2)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+func _r6_prompt(id: String) -> String:
+	var cur := prompt_brain.current()
+	if not cur.has(id):
+		return ""
+	return " · ".join((cur[id] as Array).map(func(a): return String(a[1])))
+
+func _r6_prompttest() -> void:
+	Engine.time_scale = 2.0
+	_r6_state(true)
+	# 1) el dispositivo: tecla -> teclado, ratón que se mueve -> ratón, botón del mando -> mando
+	await _r6_tap(KEY_SHIFT)
+	await _r6_tap(KEY_K)
+	var k_dev := Glyphs.device
+	for i in 6:
+		var mm := InputEventMouseMotion.new()
+		mm.relative = Vector2(9, 0)
+		mm.position = Vector2(400 + i * 9, 300)
+		Input.parse_input_event(mm)
+	await get_tree().process_frame
+	var m_dev := Glyphs.device
+	var jb := InputEventJoypadButton.new()
+	jb.button_index = JOY_BUTTON_LEFT_STICK
+	jb.pressed = true
+	Input.parse_input_event(jb)
+	await get_tree().process_frame
+	var p_dev := Glyphs.device
+	_r6_check("dispositivo tecla/ratón/mando", k_dev == "keys" and m_dev == "mouse" and p_dev == "pad", [k_dev, m_dev, p_dev])
+	pad._show(false)
+	await _r6_tap(KEY_K)
+	# 2) de mañana detrás del mostrador: «Open shop»; los botones de arriba; O abre la tienda
+	_r6_morning(ShopWorld.P_ALCH_COUNTER.x, 1)
+	await _r6_wait(0.3)
+	_r6_check("mañana mostrador", _r6_prompt("counter") == "Open shop", _r6_prompt("counter"))
+	_r6_check("botones de arriba", open_btn.visible and trip_btn.visible and open_btn.text == "Open shop" and trip_btn.text == "Market", [open_btn.text, trip_btn.text])
+	await _r6_tap(KEY_O)
+	_r6_check("O abre la tienda", phase == Phase.OPEN, r6_phase())
+	_pace_clear()
+	krapido.reset_day()
+	# 3) de mañana: caldero «Brew» (E abre el banco), escritorio «Enchant» (E abre el grimorio), puerta «Go to market»
+	_r6_morning(float(ShopWorld.STATIONS["caldero"]["x"]), -1)
+	await _r6_wait(0.3)
+	_r6_check("caldero", _r6_prompt("cauldron") == "Brew", _r6_prompt("cauldron"))
+	await _r6_tap(KEY_E)
+	await _r6_wait(0.6)
+	_r6_check("E abre el banco", _brew_open(), _brew_open())
+	# (resume 3) en el banco: 1 echa el primer ingrediente y Supr vacía el caldero (su tecla en el botón «Empty»)
+	await _r6_tap(KEY_1)
+	await _r6_wait(1.0)
+	var n1 := contents.size()
+	await _r6_tap(KEY_DELETE)
+	await _r6_wait(0.8)
+	_r6_check("banco: 1 echa, Supr vacía", n1 >= 1 and contents.is_empty(), [n1, contents.size()])
+	brew.close_now()
+	_r6_morning(float(ShopWorld.STATIONS["biblioteca"]["x"]), -1)
+	await _r6_wait(0.3)
+	_r6_check("escritorio", _r6_prompt("desk") == "Enchant", _r6_prompt("desk"))
+	await _r6_tap(KEY_E)
+	await _r6_wait(0.6)
+	_r6_check("E abre el grimorio", ov.current == "grimoire", ov.current)
+	ov.close()
+	await _r6_wait(0.3)
+	_r6_morning(float(ShopWorld.STATIONS["puerta"]["x"]), 1)
+	await _r6_wait(0.3)
+	_r6_check("puerta", _r6_prompt("door") == "Go to market", _r6_prompt("door"))
+	# 4) M va al mercado; en el puesto «Buy» y E abre el puesto; Esc lo cierra; M vuelve a la tienda
+	await _r6_tap(KEY_M)
+	var w := 0.0
+	while not in_market and w < 8.0:
+		await _r6_wait(0.2)
+		w += 0.2
+	_r6_check("M va al mercado", in_market and trip_btn.text == "Back to shop", [in_market, trip_btn.text])
+	while _trip_busy or market.walker.frozen:
+		await _r6_wait(0.1)
+	market.walker.teleport(float(MarketWorld.STALL_X["ilse"]) + 1.3, -1)
+	await _r6_wait(0.3)
+	_r6_check("puesto", _r6_prompt("stall") == "Buy", _r6_prompt("stall"))
+	await _r6_tap(KEY_E)
+	await _r6_wait(0.8)
+	_r6_check("E abre el puesto", ov.current == "market", ov.current)
+	await _r6_tap(KEY_ESCAPE)
+	await _r6_wait(0.3)
+	market.walker.teleport(MarketWorld.SHOP_DOOR_X, -1)
+	await _r6_wait(0.3)
+	_r6_check("puerta de la tienda", _r6_prompt("shopdoor") == "Back to shop", _r6_prompt("shopdoor"))
+	await _r6_tap(KEY_M)
+	w = 0.0
+	while (in_market or _trip_busy) and w < 10.0:
+		await _r6_wait(0.2)
+		w += 0.2
+	_r6_check("M vuelve a la tienda", not in_market and trip_btn.text == "Market", [in_market, trip_btn.text])
+	# 5) la tienda abierta: el cliente ya pidió y hay tres pociones: «Give potion · Talk»; E abre el estante, → elige,
+	# E se la da (la entrega de siempre)
+	_r6_state(true)
+	_r6_open_day("nyra", true)
+	await _r6_wait(0.4)
+	_r6_check("mostrador con pociones", _r6_prompt("counter") == "Give potion · Talk", _r6_prompt("counter"))
+	await _r6_tap(KEY_E)
+	_r6_check("E abre el estante", ui.picker_open(), ui.picker_open())
+	await _r6_wait(0.1)
+	_r6_check("aviso del estante", _r6_prompt("picker") == "Choose · Give · Back", _r6_prompt("picker"))
+	await _r6_tap(KEY_RIGHT)
+	var sel := ui.picker_index()
+	await _r6_tap(KEY_D)
+	_r6_check("→ y D eligen", sel == 1 and ui.picker_index() == 2 and not world.walker.is_walking(), [sel, ui.picker_index()])
+	await _r6_tap(KEY_A)
+	var given_id := String(Game.potions[ui.picker_index()]["id"])
+	var n0 := Game.potions.size()
+	await _r6_tap(KEY_E)
+	w = 0.0
+	while not bool(_counter_v.get("handed", false)) and w < 6.0:
+		await _r6_wait(0.2)
+		w += 0.2
+	_r6_check("E se la da", Game.potions.size() == n0 - 1 and bool(_counter_v.get("handed", false)), [given_id, Game.potions.size()])
+	var served0 := served
+	await _r6_wait(0.3)
+	await _r6_tap(KEY_E)   # (la despedida: E termina de escribirla...)
+	await _r6_wait(0.2)
+	await _r6_tap(KEY_E)   # (...y E elige la única respuesta: se va)
+	await _r6_wait(2.5)
+	_r6_check("E se despide (pasa el siguiente de la fila)", served == served0 + 1, [served0, served])
+	# 6) Espacio = «Talk»: el diálogo con sus respuestas; 2 pide la pista; 1 «Got it»
+	ui.hide_dialog()
+	_r6_state(true)
+	_r6_open_day("nyra", true)
+	hint_given = false
+	await _r6_wait(0.4)
+	await _r6_tap(KEY_SPACE)
+	await _r6_wait(0.2)
+	await _r6_tap(KEY_SPACE)   # termina de escribirse
+	var labels: Array = ui.dialog_choices.get_children().map(func(b): return String(b.text))
+	_r6_check("Espacio habla (respuestas)", ui.dialog_open() and labels == ["Brew it", "A hint?", "I can't"], labels)
+	await _r6_tap(KEY_2)
+	await _r6_wait(0.2)
+	_r6_check("2 pide la pista", hint_given and ui.dialog_open(), hint_given)
+	await _r6_tap(KEY_ENTER)
+	await _r6_wait(0.1)
+	await _r6_tap(KEY_1)
+	_r6_check("1 «Got it»", not ui.dialog_open() and ui.order_card.visible, ui.dialog_open())
+	# 7) el mando: A (sin cursor encima de nada) abre el estante, la cruceta elige, A la da; X habla; B cierra el estante
+	_r6_state(true)
+	_r6_open_day("nyra", true)
+	Glyphs.forced = ""
+	await _r6_wait(0.4)
+	pad._show(false)
+	await _r6_pad(JOY_BUTTON_A)
+	_r6_check("mando A abre el estante", ui.picker_open(), [ui.picker_open(), Glyphs.device])
+	await _r6_pad(JOY_BUTTON_DPAD_RIGHT)
+	_r6_check("cruceta elige", ui.picker_index() == 1, ui.picker_index())
+	await _r6_pad(JOY_BUTTON_B)
+	_r6_check("B cierra el estante", not ui.picker_open(), ui.picker_open())
+	await _r6_pad(JOY_BUTTON_X)
+	await _r6_wait(0.2)
+	_r6_check("X habla", ui.dialog_open(), ui.dialog_open())
+	await _r6_pad(JOY_BUTTON_A)   # termina de escribirse (A avanza el diálogo)
+	await _r6_wait(0.1)
+	pad._park(true)
+	await _r6_pad(JOY_BUTTON_A)   # sin cursor: la primera respuesta («Brew it»)
+	await _r6_wait(0.2)
+	_r6_check("A elige la primera respuesta", not ui.dialog_open(), ui.dialog_open())
+	await _r6_pad(JOY_BUTTON_A)
+	await _r6_wait(0.1)
+	await _r6_pad(JOY_BUTTON_DPAD_RIGHT)
+	await _r6_pad(JOY_BUTTON_A)
+	w = 0.0
+	while not bool(_counter_v.get("handed", false)) and w < 6.0:
+		await _r6_wait(0.2)
+		w += 0.2
+	_r6_check("mando: A, cruceta, A se la da", bool(_counter_v.get("handed", false)), Game.potions.size())
+	# 8) los botones de arriba y la barra de la derecha: tamaño, alineación y tooltips con su tecla
+	var bar_ok := true
+	for b in ui.menu_box.get_children():
+		bar_ok = bar_ok and b is HudButton and (b as Control).size == Vector2(66, 66) and (b as HudButton).tip_title != ""
+	_r6_check("barra de la derecha", bar_ok and ui.rank_btn is HudButton, ui.menu_box.get_child_count())
+	# 9) la bola con el mando: A en la ventanilla la abre, la cruceta elige en la bandeja y A le da la poción a Graznido
+	_r6_state(true)
+	ui.hide_dialog()
+	_r6_open_day("nyra", true, 0)
+	krapido.demo_orders(3, true)
+	krapido._active = true
+	var want := String(krapido.raven_order.get("potion", ""))
+	Game.potions.append({"id": want, "potency": 6})
+	Game.sort_potions()
+	_refresh_all()
+	world.walker.teleport(float(ShopWorld.KRAPIDO_STATION["x"]), -1)
+	world.snap_camera()
+	await _r6_wait(0.4)
+	_r6_check("ventanilla Hand over", _r6_prompt("window") == "Hand over", [_r6_prompt("window"), world.current_station(), prompt_brain._free(),
+		world.walker.frozen, world.walker._has_target, ov.current, ui.dialog_open(), busy, krapido.active(), r6_phase()])
+	await _r6_pad(JOY_BUTTON_A)
+	await _r6_wait(0.6)
+	_r6_check("A abre la bola", krapido.ball_open(), krapido.ball_open())
+	var idx := -1
+	for i in Game.potions.size():
+		if String(Game.potions[i]["id"]) == want and idx < 0:
+			idx = i
+	var s0: int = krapido.ball._sel
+	await _r6_pad(JOY_BUTTON_DPAD_RIGHT)
+	var s1: int = krapido.ball._sel
+	_r6_check("cruceta elige en la bandeja", s1 == mini(s0 + 1, Game.potions.size() - 1) and krapido.ball.keys_row.visible, [s0, s1])
+	var guard := 0
+	while krapido.ball._sel != idx and guard < 8:
+		await _r6_pad(JOY_BUTTON_DPAD_RIGHT if idx > krapido.ball._sel else JOY_BUTTON_DPAD_LEFT)
+		guard += 1
+	var d0 := int(Game.today.get("deliveries", 0))
+	await _r6_pad(JOY_BUTTON_A)
+	var wk := 0.0
+	while krapido.raven_state != "away" and wk < 8.0:
+		await _r6_wait(0.2)
+		wk += 0.2
+	_r6_check("A se la da a Graznido", int(Game.today.get("deliveries", 0)) == d0 + 1, [want, idx, krapido.raven_state])
+	# (resume 3) los papeles con el teclado: Tab marca un botón y Intro lo pulsa (el puesto de Ilse: un «+» compra);
+	# la invitación: 2 la rechaza (Intro sola no la acepta)
+	krapido.ball.close_now()
+	pad._show(false)
+	await _r6_tap(KEY_K)
+	Game.gold = 500
+	ov.show_market("morning", "ilse")
+	await _r6_wait(0.4)
+	var kb: Array = ov._kf_buttons()
+	var plus := -1
+	for i in kb.size():
+		if (kb[i] is Button) and String((kb[i] as Button).text).begins_with("+"):
+			plus = i
+			break
+	var g0 := Game.gold
+	for i in plus + 1:
+		await _r6_tap(KEY_TAB)
+	var marked: int = ov._kf_i
+	await _r6_tap(KEY_ENTER)
+	await _r6_wait(0.2)
+	_r6_check("papel: Tab marca, Intro compra", plus >= 0 and marked == plus and Game.gold < g0 and ov._kf_hint.visible, [plus, marked, g0, Game.gold])
+	ov.close(false)
+	await _r6_wait(0.2)
+	var said := []
+	var cb := func(acc: bool): said.append(acc)
+	ov.invite_answered.connect(cb)
+	ov.show_invitation(Events.make_invite("academia"))
+	await _r6_wait(0.4)
+	await _r6_tap(KEY_ENTER)
+	var still := ov.current == "invite"
+	await _r6_tap(KEY_2)
+	_r6_check("invitación: Intro no acepta, 2 rechaza", still and said == [false] and ov.current != "invite", [still, said, ov.current])
+	ov.invite_answered.disconnect(cb)
+	print("R6TEST ", "OK" if _r6_bad == 0 else "FALLO (%d)" % _r6_bad)
+	get_tree().quit()
+# --- end R6 UI
+
+# --- R6 MERGE: los dos carriles juntos ------------------------------------------------------------------------------
+# --demo=m6_evprompt --evkind=academia|concurso|torneo: el día del evento entero como en el juego (el cartel, el mapa
+# del viaje con el escenario que PERF arma por partes y precalienta debajo, el negro, el fundido de entrada) y después,
+# con el teclado como un jugador: la línea del anfitrión, la cuenta atrás, el banco, el botón «Cauldron» y los avisos
+# (en el concurso «Space Present» sobre el estante). Mira en cada cuadro que ningún aviso salga mientras el mapa o el
+# negro tapan la escena, que el HUD esté completo y limpio (sin restos del precalentamiento) en el primer cuadro a la
+# vista y cuánto tardan el HUD y los avisos desde ese cuadro. Imprime M6TEST ... y sale.
+var _m6_bad := 0
+var _m6_log := {}
+
+func _m6_check(what: String, ok: bool, extra = "") -> void:
+	if not ok:
+		_m6_bad += 1
+	print("M6TEST %s %s %s" % ["ok  " if ok else "FAIL", what, str(extra)])
+
+func _m6_demo(name: String) -> void:
+	match name:
+		"m6_evprompt":
+			await _m6_evprompt()
+		"m6_fontprobe":
+			await _m6_fontprobe()
+		"m6_juryprobe":
+			await _m6_juryprobe()
+	get_tree().quit()
+
+## (sonda) los tamaños/contornos que la caché de las fuentes tiene, con cuántas letras y texturas.
+func _m6_font_state(tag: String) -> void:
+	var ts := TextServerManager.get_primary_interface()
+	PaperKit.load_fonts()
+	var fonts: Array = [UIKit.font_regular, UIKit.font_bold, UIKit.font_italic, UIKit.font_sc, UIKit.font_sc_bold,
+		PaperKit.font_hand, PaperKit.font_hand_bold]
+	var k := 0
+	while k < fonts.size():   # y sus respaldos
+		for fb in (fonts[k] as Font).fallbacks:
+			if not fonts.has(fb):
+				fonts.append(fb)
+		k += 1
+	var rids := []
+	for f in fonts:
+		for rid in (f as Font).get_rids():
+			if rids.has(rid):
+				continue
+			rids.append(rid)
+			for sz in ts.font_get_size_cache_list(rid):
+				print("M6FONT %s | %s/%s %s glyphs=%d tex=%d" % [tag, ts.font_get_name(rid), ts.font_get_style_name(rid), sz,
+					ts.font_get_glyph_list(rid, sz).size(), ts.font_get_texture_count(rid, sz)])
+
+## --demo=m6_fontprobe: el arranque (con su precalentamiento), el banco abierto y el aviso del concurso: qué entradas de
+## la caché de letras aparecen con el aviso (las que el precalentamiento no cubrió).
+func _m6_fontprobe() -> void:
+	_ev_demo_state(20)
+	phase = Phase.MORNING
+	_update_top_buttons()
+	await _warm_places()
+	await _frames(3)
+	_m6_font_state("1warm")
+	print("M6MARK bench ", Time.get_ticks_msec())
+	open_brew()
+	await _r6_wait(1.0)
+	_m6_font_state("2bench")
+	print("M6MARK tip ", Time.get_ticks_msec())
+	brew.say("Tap it on the shelf to present it", UIKit.GOLD_BRIGHT)
+	await _r6_wait(1.0)
+	_m6_font_state("3tip")
+	print("M6MARK end ", Time.get_ticks_msec(), " perf:end")
+
+## --demo=m6_juryprobe [--m6nocards] [--m6results]: el arranque, las letras de las tarjetas como en EventGame.warm_up
+## y la tarjeta del jurado del concurso (o la de resultados de la academia): qué entradas de la caché de letras trae la
+## tarjeta que el precalentamiento no cubrió.
+func _m6_juryprobe() -> void:
+	var results := OS.get_cmdline_user_args().has("--m6results")
+	_ev_demo_state(20)
+	phase = Phase.MORNING
+	_update_top_buttons()
+	await _warm_places()
+	if not OS.get_cmdline_user_args().has("--m6nocards"):
+		for g in EventGame.card_letter_groups("academia" if results else "concurso"):
+			var lay := EventGame.card_letter_layer(g)
+			add_child(lay)
+			await _frames(2)
+			lay.queue_free()
+	await _frames(2)
+	_m6_font_state("1warm")
+	if results:
+		events_ui.show_hud("academia")
+		events_ui.show_results({"kind": "academia", "medal": "gold", "reward": {"gold": 145, "renombre": 13, "trophy": true},
+			"rows": [["res://assets/icons/pot_sueno_profundo.png", "Potions delivered", "10 / 10"],
+				["res://assets/icons/emote_star.png", "Points (stars)", "27 / 30"], ["paper_i_hourglass", "Finished early", "+2"]],
+			"line": String(Events.info("academia")["end"]["gold"])})
+		await _r6_wait(3.0)
+		_m6_font_state("2jury")
+		print("M6MARK end perf:end")
+		return
+	events_ui.show_hud("concurso")
+	var th: Dictionary = Events.THEMES[0]
+	events_ui.show_jury({"round": 1, "theme": String(th["text"]), "potion": {"id": "sueno_profundo", "potency": 7, "perfect": true},
+		"scores": [4, 3, 5], "lines": [Events.JUDGE_LINES["elda"][3], Events.JUDGE_LINES["lirien"][2], Events.JUDGE_LINES["grumm"][4]],
+		"table": [{"name": "You", "round": 12, "total": 12, "me": true}, {"name": "Fizz", "round": 11, "total": 11},
+			{"name": "Roots & Dew", "round": 9, "total": 9}, {"name": "Fordside Herbs", "round": 8, "total": 8}],
+		"last": false, "fizz_line": Events.FIZZ_LINES["low"][0]})
+	await _r6_wait(3.0)
+	_m6_font_state("2jury")
+	print("M6MARK end perf:end")
+
+## true mientras el mapa del viaje (opaco) o el negro tapan la pantalla.
+func _m6_covered() -> bool:
+	var bg = events_ui.get("_map_bg")
+	if bg is CanvasItem and is_instance_valid(bg) and (bg as CanvasItem).is_visible_in_tree() and (bg as CanvasItem).modulate.a >= 0.999:
+		return true
+	return fade.color.a >= 0.999
+
+## Cada cuadro, mientras dura la prueba: avisos con la escena tapada, el primer cuadro a la vista, el HUD, los avisos.
+func _m6_watch() -> void:
+	var t := 0.0
+	var f := 0
+	while is_inside_tree() and not _m6_log.get("stop", false):
+		await get_tree().process_frame
+		t += get_process_delta_time() / maxf(Engine.time_scale, 0.001)
+		f += 1
+		var plates: Array = ui.prompts.visible_prompts()
+		var acts := prompt_brain.has_action("interact") or prompt_brain.has_action("alt")
+		if _ev_active and not _m6_log.has("enter"):
+			_m6_log["enter"] = [f, t]
+		var cov := _m6_covered()
+		if _ev_active and cov and (not plates.is_empty() or acts):
+			_m6_log["covered_prompt"] = int(_m6_log.get("covered_prompt", 0)) + 1
+		if _ev_active and fade.color.a > 0.001 and fade.color.a < 0.999 and _m6_log.has("black"):
+			if not plates.is_empty():
+				_m6_log["fading_prompt"] = int(_m6_log.get("fading_prompt", 0)) + 1
+		if _ev_active and fade.color.a >= 0.999 and not _m6_log.has("black"):
+			_m6_log["black"] = [f, t]
+		if _m6_log.has("black") and not _m6_log.has("visible") and fade.color.a <= 0.001:
+			_m6_log["visible"] = [f, t]
+			_m6_log["hud_at_visible"] = events_ui.root.visible and events_ui.plate.is_visible_in_tree()
+			var big = events_ui.get("big")
+			_m6_log["big_at_visible"] = String(big.text) if big is Label else ""
+			var junk := 0
+			for c in events_ui.root.get_children():
+				if c is Label and String((c as Label).text).find("0123456789") >= 0:
+					junk += 1
+			_m6_log["junk_at_visible"] = junk
+			_m6_log["board_at_visible"] = events_ui.board.visible if events_ui.get("board") is Control else false
+		if _m6_log.has("visible") and not _m6_log.has("dialog") and ui.dialog_open():
+			_m6_log["dialog"] = [f, t]
+		if is_instance_valid(ev_game) and ev_game.running and not _m6_log.has("running"):
+			_m6_log["running"] = [f, t]
+		if _m6_log.has("running") and not _m6_log.has("act") and acts:
+			_m6_log["act"] = [f, t]
+
+func _m6_evprompt() -> void:
+	var args := _ev_args()
+	var kind := String(args.get("evkind", "academia"))
+	_ev_demo_state(20)
+	Events.make_invite(kind)
+	Game.ev_booked = Game.ev_invite
+	Game.ev_invite = {}
+	Game.ev_booked["day"] = Game.day
+	Game.gold -= int(Game.ev_booked["fee"])
+	phase = Phase.MORNING
+	_update_top_buttons()
+	world.walker.teleport(ShopWorld.P_ALCH_COUNTER.x, 1)
+	world.snap_camera()
+	Glyphs.forced = ""
+	await _r6_tap(KEY_K)   # (el teclado: los glifos son teclas)
+	_m6_watch()
+	_ev_run_day()
+	# la línea del anfitrión: E la termina de escribir y la pasa (como un jugador)
+	var w := 0.0
+	while not (is_instance_valid(ev_game) and ev_game.running) and w < 120.0:
+		if ui.dialog_open():
+			await _r6_tap(KEY_E)
+		await _r6_wait(0.25)
+		w += 0.25
+	_m6_check("evento corriendo", is_instance_valid(ev_game) and ev_game.running, [kind, w])
+	_m6_check("ningún aviso con la escena tapada (mapa o negro)", int(_m6_log.get("covered_prompt", 0)) == 0 and int(_m6_log.get("fading_prompt", 0)) == 0,
+		[_m6_log.get("covered_prompt", 0), _m6_log.get("fading_prompt", 0)])
+	_m6_check("HUD completo en el primer cuadro a la vista", bool(_m6_log.get("hud_at_visible", false)), _m6_log.get("visible", []))
+	_m6_check("sin restos del precalentamiento", int(_m6_log.get("junk_at_visible", 1)) == 0 and String(_m6_log.get("big_at_visible", "x")).find("Go! Time!") < 0
+		and not bool(_m6_log.get("board_at_visible", true)), [_m6_log.get("junk_at_visible"), _m6_log.get("big_at_visible"), _m6_log.get("board_at_visible")])
+	var vis: Array = _m6_log.get("visible", [0, 0.0])
+	var dl: Array = _m6_log.get("dialog", [0, 99.0])
+	_m6_check("la línea del anfitrión sale al verse la escena", float(dl[1]) - float(vis[1]) < 0.3, [vis, dl])
+	# go: el banco se abre solo; Esc lo cierra; el botón «Cauldron» con su tecla; E lo vuelve a abrir
+	w = 0.0
+	while not _brew_open() and w < 10.0:
+		await _r6_wait(0.1)
+		w += 0.1
+	var act: Array = _m6_log.get("act", [0, 99.0])
+	var run: Array = _m6_log.get("running", [0, 0.0])
+	_m6_check("banco abierto al empezar", _brew_open(), [run, act])
+	await _r6_tap(KEY_ESCAPE)
+	await _r6_wait(0.4)
+	if _brew_open():
+		brew.close_now()
+		await _r6_wait(0.3)
+		_m6_check("Esc cierra el banco", false, "")
+	var bb: Control = events_ui.bench_btn
+	_m6_check("botón Cauldron a la vista con su tecla", bb.is_visible_in_tree() and bb is HudButton and String((bb as Button).text) == "Cauldron"
+		and prompt_brain.has_action("interact"), [bb.is_visible_in_tree(), (bb as Button).text])
+	await _r6_tap(KEY_E)
+	await _r6_wait(0.5)
+	_m6_check("E abre el banco", _brew_open(), "")
+	if kind == "concurso":
+		# una poción en el estante con el banco cerrado: «Space  Present» sobre el estante; Espacio abre el estante
+		# («Present»); E la presenta (el jurado)
+		brew.close_now()
+		await _r6_wait(0.3)
+		Game.potions = [{"id": "sueno_profundo", "potency": 7}]
+		Game.potions_changed.emit()
+		await _r6_wait(0.4)
+		var plates: Array = ui.prompts.visible_prompts()
+		var shelf := plates.filter(func(p): return String(p["id"]) == "shelf")
+		_m6_check("concurso: aviso Present sobre el estante", _r6_prompt("shelf") == "Present" and shelf.size() == 1, [_r6_prompt("shelf"), plates.map(func(p): return p["text"])])
+		await _r6_tap(KEY_SPACE)
+		await _r6_wait(0.2)
+		_m6_check("Espacio abre el estante (Present)", ui.picker_open() and ui.picker_verb() == "Present", [ui.picker_open(), ui.picker_verb()])
+		await _r6_tap(KEY_E)
+		w = 0.0
+		while not events_ui.modal_open() and w < 10.0:
+			await _r6_wait(0.2)
+			w += 0.2
+		_m6_check("E la presenta (el jurado)", events_ui.modal_open() and not ui.picker_open(), [events_ui.modal_kind() if events_ui.has_method("modal_kind") else "", w])
+	_m6_log["stop"] = true
+	act = _m6_log.get("act", [0, 99.0])
+	print("M6TEST tiempos (s de juego) negro=", _m6_log.get("black"), " vista=", vis, " anfitrión=", dl, " corriendo=", run, " aviso E=", act)
+	print("M6TEST ", "OK" if _m6_bad == 0 else "FALLO (%d)" % _m6_bad)
+# --- end R6 MERGE

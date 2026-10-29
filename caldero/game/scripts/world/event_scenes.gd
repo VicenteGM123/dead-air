@@ -60,8 +60,120 @@ var _pending_cheers: Array = []   # [{t, a: Actor, good}]
 ## Construye el escenario de un evento ("academia", "concurso" o "torneo"). No hace falta que esté en el árbol.
 static func build(k: String) -> Node3D:
 	var s := EventScenes.new()
-	s._build(k)
+	s._build(k)   # (sin build_async, _slice() no espera nunca: se arma entero aquí mismo)
 	return s
+
+# --- R6 PERF: armar el escenario por partes, repartido en varios cuadros (main.gd lo hace mientras el carro del mapa
+# del viaje va de camino). build() lo arma de una vez (en la web eran ~1,1 s en un solo cuadro). build_async() hace lo
+# mismo, pero entre una parte y la siguiente (_slice) espera al cuadro siguiente si ya gastó SLICE_USEC en este. El
+# escenario se arma fuera del árbol (nada se dibuja hasta que main.gd lo añade).
+const SLICE_USEC := 8000
+var _slice_tree: SceneTree
+var _slice_t := 0
+
+static func build_async(k: String, tree: SceneTree) -> Node3D:
+	var s := EventScenes.new()
+	s._slice_tree = tree
+	s._slice_t = Time.get_ticks_usec()
+	await s._build(k)
+	s._slice_tree = null
+	return s
+
+## Entre dos partes del armado: con build_async, si este cuadro ya gastó su parte, sigue en el siguiente.
+func _slice() -> void:
+	if _slice_tree == null or Time.get_ticks_usec() - _slice_t < SLICE_USEC:
+		return
+	PerfLog.step("ev:build_slice", _slice_t)
+	await _slice_tree.process_frame
+	_slice_t = Time.get_ticks_usec()
+
+## Muestra el escenario (ya en el árbol, todavía tapado) por partes: esconde lo que se ve y lo vuelve a mostrar en unos
+## `steps` cuadros. WebGL compila cada material la primera vez que lo dibuja: así son varios cuadros medianos y no uno
+## enorme. Reparte por «firmas» de material (_keys_of: dos materiales con las mismas opciones comparten shader): cada
+## cuadro estrena más o menos las mismas firmas nuevas, y lo que solo usa firmas ya vistas sale enseguida. Solo toca a
+## los hijos directos (las luces, la cámara y los marcadores no).
+func reveal_gradually(tree: SceneTree, steps := 8) -> void:
+	var left: Array = []   # [nodo, firmas]
+	var uniq := {}
+	for c in get_children():
+		if c is Node3D and not (c is Light3D or c is Camera3D or c is Marker3D) and (c as Node3D).visible:
+			var k := {}
+			_keys_of(c, k)
+			left.append([c, k.keys()])
+			uniq.merge(k)
+			(c as Node3D).visible = false
+	var total := 0
+	for x in uniq:
+		total += _key_weight(x)
+	var per := maxi(1, ceili(total / float(maxi(1, steps))))
+	var seen := {}
+	var n := 0
+	while not left.is_empty():
+		var pt := PerfLog.t0()
+		var later: Array = []
+		var fresh := 0
+		for it in left:
+			var nk: Array = (it[1] as Array).filter(func(x): return not seen.has(x))
+			var w := 0
+			for x in nk:
+				w += _key_weight(x)
+			if nk.is_empty() or fresh == 0 or fresh + w <= per:
+				if is_instance_valid(it[0]):
+					(it[0] as Node3D).visible = true
+				for x in nk:
+					seen[x] = true
+				fresh += w
+				n += 1
+			else:
+				later.append(it)
+		left = later
+		PerfLog.step("ev:reveal %d nodes, %d/%d keys" % [n, seen.size(), uniq.size()], pt)
+		await tree.process_frame
+
+## Un shader propio o unas partículas compilan más variantes que un material estándar: cuentan doble.
+static func _key_weight(k: String) -> int:
+	return 1 + int(k.contains("sh")) + int(k.begins_with("gp"))
+
+## Las firmas de material de un nodo y de lo que lleva dentro (solo lo visible).
+static func _keys_of(n: Node, out: Dictionary) -> void:
+	if n is Node3D and not (n as Node3D).visible:
+		return
+	if n is GeometryInstance3D:
+		var g := n as GeometryInstance3D
+		var sh := "s%d" % int(g.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+		if g.material_override:
+			out[sh + _mat_key(g.material_override)] = true
+		elif n is MeshInstance3D and (n as MeshInstance3D).mesh:
+			var mi := n as MeshInstance3D
+			for i in mi.mesh.get_surface_count():
+				out[sh + _mat_key(mi.get_active_material(i))] = true
+		elif n is SpriteBase3D:
+			var sp := n as SpriteBase3D
+			out[sh + "spr%d%d%d%d%d%d%d" % [int(sp.shaded), int(sp.double_sided), int(sp.transparent), sp.alpha_cut,
+				sp.billboard, int(sp.no_depth_test), sp.texture_filter]] = true
+		elif n is GPUParticles3D:
+			var gp := n as GPUParticles3D
+			out["gp" + _mat_key(gp.process_material) + (_mat_key(gp.draw_pass_1.surface_get_material(0))
+				if gp.draw_pass_1 and gp.draw_pass_1.get_surface_count() > 0 else "")] = true
+		else:
+			out[sh + n.get_class()] = true
+	for c in n.get_children():
+		_keys_of(c, out)
+
+static func _mat_key(m: Material) -> String:
+	if m == null:
+		return "nil"
+	if m is ShaderMaterial:
+		var shd := (m as ShaderMaterial).shader
+		return "sh%d" % (shd.get_instance_id() if shd else 0)
+	if m is BaseMaterial3D:
+		var b := m as BaseMaterial3D
+		return "b%d%d%d%d%d%d%d%d%d%d%d%d%s" % [b.transparency, b.shading_mode, b.cull_mode, b.billboard_mode, b.blend_mode,
+			b.texture_filter, int(b.vertex_color_use_as_albedo), int(b.albedo_texture != null), int(b.normal_enabled),
+			int(b.emission_enabled), int(b.no_depth_test), int(b.disable_receive_shadows),
+			_mat_key(b.next_pass) if b.next_pass else ""]
+	return m.get_class()
+# --- end R6 PERF
 
 func _build(k: String) -> void:
 	kind = k if KINDS.has(k) else "academia"
@@ -70,13 +182,13 @@ func _build(k: String) -> void:
 	name = "Event_" + kind
 	_font = load("res://assets/fonts/Alegreya-Bold.ttf")
 	_font_sc = load("res://assets/fonts/AlegreyaSC-Bold.ttf")
-	match kind:
+	match kind:   # --- R6 PERF: con await (build_async lo reparte en cuadros; build() no espera)
 		"academia":
-			_academia()
+			await _academia()
 		"concurso":
-			_concurso()
+			await _concurso()
 		"torneo":
-			_torneo()
+			await _torneo()
 
 ## Pone a los personajes del elenco (ids de Data.CHARACTERS / assets/chars) en los sitios del público, en orden.
 ## Quita a los que había. Se salta los repetidos y a los que el escenario ya puso (fixed). Devuelve los Actor.
@@ -162,7 +274,7 @@ func cheer(good := true) -> void:
 			_pending_cheers.append({"t": randf_range(0.0, 0.5), "a": a, "good": good})
 
 ## Una lluvia de confeti sobre su puesto y la fila (se borra sola).
-func _confetti() -> void:
+func _confetti() -> GPUParticles3D:   # --- R6 PERF: devuelve el nodo (warm_up)
 	var pm_node: Node3D = get_node_or_null("Player")
 	var c := pm_node.position if pm_node else Vector3.ZERO
 	var p := GPUParticles3D.new()
@@ -207,6 +319,44 @@ func _confetti() -> void:
 	p.emitting = true
 	if is_inside_tree():   # fuera del árbol se queda (de una vez) y se va con el escenario
 		get_tree().create_timer(4.0).timeout.connect(p.queue_free)
+	return p
+
+# --- R6 PERF: EventGame.warm_up() lo llama con la pantalla todavía en negro (antes del fundido de entrada): lo que el
+# escenario solo muestra más tarde se dibuja una vez ahora, para que WebGL compile sus materiales sin que se vea: el
+# confeti de cheer(), una carita del público y, en el torneo, los caballeros de las justas con su polvo (quietos en el
+# centro de la liza mientras dura el negro). warm_down() lo deja todo como estaba; EventGame borra el confeti.
+var _warm_actor: Actor
+
+func warm_up() -> void:
+	_confetti()
+	var all: Array = crowd + extras
+	if not all.is_empty() and is_instance_valid(all[0]):
+		_warm_actor = all[0]
+		_warm_actor.emote(String(_crowd_emotes[0]), 0.0)
+	for e in _crowd_emotes + ["heart", "star", "note", "sparkle", "sweat", "dots", "question", "excl"]:
+		Actor.emote_texture(String(e))
+	if not _riders.is_empty():
+		_joust_on = false
+		_joust_t = 99.0
+		for r in _riders:
+			r["s"].position.x = 0.0
+			r["s"].visible = true
+			r["dust"].position.x = 0.0
+			r["dust"].emitting = true
+	if kind == "torneo":
+		_tex("res://assets/props/swallow.png")
+
+func warm_down() -> void:
+	if is_instance_valid(_warm_actor):
+		_warm_actor.clear_emote()
+	_warm_actor = null
+	if not _riders.is_empty():
+		for r in _riders:
+			r["s"].visible = false
+			r["dust"].emitting = false
+			r["dust"].visible = false   # (su polvo ya soltado no se ve; _update_joust lo vuelve a mostrar)
+		_joust_t = 1.2   # la primera justa sale poco después del fundido de entrada
+# --- end R6 PERF
 
 ## Mueve la cámara a otra vista (sigue con su leve vaivén si cam_drift).
 func set_view(pos: Vector3, look: Vector3) -> void:
@@ -462,6 +612,18 @@ func _arrow_left(tip: Vector3, length: float, col: Color, parent: Node3D = null)
 
 # ------------------------------------------------------------------ cámara, entorno y luz
 
+# --- R6 PERF: el desenfoque de arriba y abajo de cada escenario (main.gd lo aplica cuando su cámara es la activa).
+# La misma fuerza de antes en una franja más chica (antes: centro 0,46, mitad 0,22, caída 0,30 = 48 % desenfocado;
+# ahora 36 %). En el concurso, un poco más arriba: el letrero del escenario se lee.
+const POST := {
+	"academia": {"focus_center": 0.48, "focus_half": 0.30, "focus_falloff": 0.16, "max_lod": 2.6},
+	"concurso": {"focus_center": 0.47, "focus_half": 0.30, "focus_falloff": 0.16, "max_lod": 2.6},
+	"torneo": {"focus_center": 0.48, "focus_half": 0.30, "focus_falloff": 0.16, "max_lod": 2.6},
+}
+func post_params() -> Dictionary:
+	return POST.get(kind, POST["academia"])
+# --- end R6 PERF
+
 func _camera(pos: Vector3, look: Vector3, fov := 35.0, dof_far := 17.0, dof_near := 7.0) -> void:
 	camera = Camera3D.new()
 	camera.name = "Camera"
@@ -473,12 +635,15 @@ func _camera(pos: Vector3, look: Vector3, fov := 35.0, dof_far := 17.0, dof_near
 	_cam_look = look
 	_apply_cam(0.0)
 	var ca := CameraAttributesPractical.new()
+	# --- R6 PERF: el desenfoque de cámara (solo Forward+) más lejos que antes: +5 m al fondo, el de cerca a 5 m (antes
+	# 6,5 m: el suelo de delante, la fila y su puesto quedaban en el borde)
 	ca.dof_blur_far_enabled = true
-	ca.dof_blur_far_distance = dof_far
-	ca.dof_blur_far_transition = 6.0
+	ca.dof_blur_far_distance = dof_far + 5.0
+	ca.dof_blur_far_transition = 8.0
 	ca.dof_blur_near_enabled = true
-	ca.dof_blur_near_distance = dof_near
-	ca.dof_blur_near_transition = 2.0
+	ca.dof_blur_near_distance = minf(dof_near, 5.0)
+	ca.dof_blur_near_transition = 1.5
+	# --- end R6 PERF
 	ca.dof_blur_amount = 0.08
 	camera.attributes = ca
 
@@ -734,13 +899,21 @@ func _academia() -> void:
 	_environment(Color(0.06, 0.05, 0.08), Color(0.6, 0.55, 0.62), 0.5, 0.42)
 	_sun(ACA_KEY, Color(1.0, 0.86, 0.68), 0.75, 30.0)
 	_fill(Vector3(-0.8, 4.2, 4.0), Color(1.0, 0.86, 0.72), 0.45, 17.0)
+	await _slice()   # --- R6 PERF
 	_aca_room()
+	await _slice()   # --- R6 PERF
 	_aca_windows()
+	await _slice()   # --- R6 PERF
 	_aca_station()
+	await _slice()   # --- R6 PERF
 	_aca_lectern()
+	await _slice()   # --- R6 PERF
 	_aca_desks()
+	await _slice()   # --- R6 PERF
 	_aca_candles()
+	await _slice()   # --- R6 PERF
 	_aca_details()
+	await _slice()   # --- R6 PERF
 	# la fila: los alumnos esperan su poción por la alfombra, de su mesa hacia la derecha
 	_marker("Player", ACA_PLAYER, 1)
 	_marker("Bench", Vector3(-4.3, 0, -2.55), 1)
@@ -1021,14 +1194,23 @@ func _concurso() -> void:
 	_environment(Color(0.16, 0.1, 0.18), Color(0.58, 0.46, 0.72), 0.55, 0.5, 1.15)
 	_sun(Vector3(0.6, -0.42, 0.68), Color(1.0, 0.58, 0.36), 1.15, 34.0)
 	_fill(Vector3(-0.3, 4.4, 5.0), Color(1.0, 0.76, 0.56), 0.55, 18.0)
+	await _slice()   # --- R6 PERF
 	_con_square()
+	await _slice()   # --- R6 PERF
 	_con_stage()
+	await _slice()   # --- R6 PERF
 	_con_her_stall()
+	await _slice()   # --- R6 PERF
 	_con_fizz_stall()
+	await _slice()   # --- R6 PERF
 	_con_jury()
+	await _slice()   # --- R6 PERF
 	_con_rival_stall(-8.7, "raicesrocio", "verde", "goods_herbs", "")
+	await _slice()   # --- R6 PERF
 	_con_rival_stall(8.3, "vado", "azul", "goods_books", "")
+	await _slice()   # --- R6 PERF
 	_con_lights()
+	await _slice()   # --- R6 PERF
 	_marker("Player", CON_PLAYER, 1)
 	_marker("Bench", Vector3(-4.6, CON_STAGE_TOP, -2.7), 1)
 	_queue(Vector3(-1.65, CON_STAGE_TOP, -2.05), Vector3(0.72, 0, -0.06), -1)
@@ -1352,12 +1534,19 @@ func _torneo() -> void:
 	_environment(Color(0.62, 0.78, 0.98), Color(0.6, 0.68, 0.86), 0.42, 0.3, 1.2)
 	_sun(Vector3(0.55, -0.62, -0.56), Color(1.0, 0.93, 0.8), 1.55, 40.0)
 	_fill(Vector3(-0.3, 4.2, 5.0), Color(1.0, 0.9, 0.78), 0.28, 18.0)
+	await _slice()   # --- R6 PERF
 	_tor_ground()
+	await _slice()   # --- R6 PERF
 	_tor_lists()
+	await _slice()   # --- R6 PERF
 	_tor_stand()
+	await _slice()   # --- R6 PERF
 	_tor_tents()
+	await _slice()   # --- R6 PERF
 	_tor_her_stall()
+	await _slice()   # --- R6 PERF
 	_tor_paddock()
+	await _slice()   # --- R6 PERF
 	_marker("Player", TOR_PLAYER, 1)
 	_marker("Bench", Vector3(-4.6, 0, -2.7), 1)
 	_queue(Vector3(-1.65, 0, -2.05), Vector3(0.8, 0, -0.06), -1)
@@ -1700,6 +1889,7 @@ func _update_joust(delta: float) -> void:
 			_joust_x = 0.0
 			for r in _riders:
 				r["s"].visible = true
+				r["dust"].visible = true   # --- R6 PERF: (warm_down lo escondió)
 				r["dust"].emitting = true
 		return
 	_joust_x += delta * 7.0

@@ -1356,6 +1356,520 @@ if '--bench' in sys.argv:
     print('ok bench')
     sys.exit(0)
 # --- end R3 BENCH
+# --- R6 UI: los botones del HUD (arriba al centro y arriba a la derecha), la placa de los avisos de acción («E Hablar»)
+# y los glifos de las teclas, del mando y del ratón. Pixel art a 1x guardado ya a 3x (r6_save): Godot lo dibuja 1:1 en
+# el lienzo de 1920x1080 (a 1280x720 cada píxel de arte son 2 px de pantalla). Familias:
+#   - botones de acción: cara de pergamino (tinta encima) sobre una tabla de nogal, aro de latón el principal;
+#   - placas (los avisos sobre la gente y las estaciones): oscuras, con un hilo de latón y una colita que señala;
+#   - teclas: tecla de pergamino con borde de tinta (la letra la escribe Godot); mando: botones redondos de colores
+#     (A verde, B rojo, X azul, Y ámbar), gatillos, cruceta, Vista y Menú; ratón: el botón que se pulsa en dorado.
+# Solo esto: python3 ui_art.py --r6 (sale en ./salida/ui; copiar los r6_*.png a assets/ui).
+R6_K = 3
+R6_OUT = B_WAL[0]             # contorno (nogal casi negro)
+R6_INK = B_INK
+R6_PAPER_HI = '#fbf3df'
+
+
+def r6_save(img, name, k=R6_K):
+    Image.fromarray(bench_up(img, k) if k > 1 else img, 'RGBA').save(f'{OUT}/{name}')
+    return img
+
+
+def r6_round(img, r=2):
+    """Esquinas redondeadas (radio 1 o 2 px de arte): borra los píxeles de las esquinas."""
+    h, w = img.shape[:2]
+    cut = [(0, 0)] if r == 1 else [(0, 0), (1, 0), (0, 1)]
+    for (x, y) in cut:
+        for (cx, cy) in [(x, y), (w - 1 - x, y), (x, h - 1 - y), (w - 1 - x, h - 1 - y)]:
+            img[cy, cx] = (0, 0, 0, 0)
+    return img
+
+
+def r6_frame(img, x0, y0, x1, y1, out, top, left, right, bottom):
+    """Contorno de 1 px y aro de 1 px por dentro (arriba / izquierda / derecha / abajo) en el rectángulo [x0, x1) x [y0, y1)."""
+    bench_fill(img, x0 + 1, y0, x1 - 1, y0 + 1, out)
+    bench_fill(img, x0 + 1, y1 - 1, x1 - 1, y1, out)
+    bench_fill(img, x0, y0 + 1, x0 + 1, y1 - 1, out)
+    bench_fill(img, x1 - 1, y0 + 1, x1, y1 - 1, out)
+    bench_fill(img, x0 + 1, y0 + 1, x1 - 1, y0 + 2, top)
+    bench_fill(img, x0 + 1, y0 + 2, x0 + 2, y1 - 2, left)
+    bench_fill(img, x1 - 2, y0 + 2, x1 - 1, y1 - 2, right)
+    bench_fill(img, x0 + 1, y1 - 2, x1 - 1, y1 - 1, bottom)
+
+
+def r6_paper_face(img, x0, y0, x1, y1, ramp, rng, fibres=True, cx0=None, cx1=None):
+    """Cara de pergamino: de claro (arriba) a sombra (abajo), con alguna fibra. Las fibras van solo en [cx0, cx1) y se
+    repiten con ese periodo (el centro de un nine-patch se repite sin costuras); sin cx0/cx1, en toda la cara."""
+    hi, base, lo, lo2 = ramp
+    h = y1 - y0
+    for y in range(y0, y1):
+        t = (y - y0) / max(1, h - 1)
+        c = hi if t < 0.18 else (base if t < 0.72 else (lo if t < 0.9 else lo2))
+        bench_fill(img, x0, y, x1, y + 1, c)
+    if fibres and h > 4:
+        a = x0 if cx0 is None else cx0
+        b = x1 if cx1 is None else cx1
+        w = b - a
+        n = int(w * h * 0.05)
+        for _ in range(n):
+            x = int(rng.integers(0, w))
+            y = int(rng.integers(y0 + 2, y1 - 1))
+            L = int(rng.integers(2, 5))
+            c = bench_mix(base, lo, 0.55) if rng.random() < 0.6 else bench_mix(base, hi, 0.7)
+            if t_row(y, y0, h) > 0.72:
+                continue
+            for k in range(L):
+                bench_put(img, a + (x + k) % w, y, c)
+
+
+def t_row(y, y0, h):
+    return (y - y0) / max(1, h - 1)
+
+
+def r6_round_rect(img, x0, y0, x1, y1):
+    """Esquinas redondeadas (radio 2) de un rectángulo dentro de la imagen."""
+    for (x, y) in [(0, 0), (1, 0), (0, 1)]:
+        for (cx, cy) in [(x0 + x, y0 + y), (x1 - 1 - x, y0 + y), (x0 + x, y1 - 1 - y), (x1 - 1 - x, y1 - 1 - y)]:
+            if 0 <= cy < img.shape[0] and 0 <= cx < img.shape[1]:
+                img[cy, cx] = (0, 0, 0, 0)
+
+
+def r6_button(kind, state, W=64, H=18, edge=6):
+    """Botón de acción (nine-patch de márgenes edge px de arte = 3*edge px): la cara de pergamino sobre una tabla de
+    nogal que asoma 2 px por debajo (el canto). kind: 'primary' (aro de latón y tachuelas) o 'secondary' (aro de nogal).
+    state: normal, hover, pressed (la cara baja 1 px: Godot baja el texto 3 px), disabled."""
+    img = bench_canvas(W, H)
+    rng = np.random.default_rng(61 if kind == 'primary' else 67)
+    down = 1 if state == 'pressed' else 0
+    fy0, fy1 = down, H - 3 + down          # la cara con su contorno: filas [fy0, fy1)
+    if kind == 'primary':
+        # (resume 2) la cara de miel: el principal se distingue de un vistazo del secundario (crema)
+        rim = [B_BRASS[5], B_BRASS[4], B_BRASS[2], B_BRASS[1]]   # arriba, izquierda, derecha, abajo
+        face = ['#ffeab0', '#f7d68a', '#ebc06c', '#d9a854']
+    else:
+        rim = [B_WAL[6], B_WAL[5], B_WAL[4], B_WAL[3]]
+        face = ['#f4ead4', '#e9dec4', '#dccfb2', '#cdbf9f']
+    wood = [B_WAL[1], B_WAL[2]]
+    if state == 'hover':
+        if kind == 'primary':
+            face = ['#fff6d0', '#fde4a4', '#f3cd80', '#e3b666']
+            rim = ['#fff6d2', B_BRASS[5], B_BRASS[3], B_BRASS[2]]
+        else:
+            face = ['#fdf7e8', '#f5eddb', '#eadfc6', '#ddd0b2']
+            rim = [B_BRASS[4], B_BRASS[3], B_BRASS[2], B_BRASS[1]]
+    elif state == 'pressed':
+        face = ['#d2a85a', '#ddb76c', '#e6c47c', '#e6c47c'] if kind == 'primary' else ['#cfc2a4', '#d9ccb0', '#e0d5bc', '#e0d5bc']
+        rim = [bench_mix(c, B_WAL[0], 0.35) for c in rim]
+    elif state == 'disabled':
+        face = ['#d2cabb', '#c8bfae', '#bdb3a1', '#b1a794']
+        rim = ['#8f877c', '#7f776d', '#6a635a', '#5a544c']
+        wood = ['#2e2a28', '#3a3431']
+    # el canto de nogal (lo que asoma debajo de la cara) y su contorno
+    if not down:
+        bench_fill(img, 1, fy1, W - 1, H - 1, wood[1])
+        bench_fill(img, 1, H - 2, W - 1, H - 1, wood[0])
+        bench_fill(img, 0, fy1, 1, H - 1, R6_OUT)
+        bench_fill(img, W - 1, fy1, W, H - 1, R6_OUT)
+        bench_fill(img, 1, H - 1, W - 1, H, R6_OUT)
+    else:
+        bench_fill(img, 1, fy1, W - 1, H - 1, wood[0])
+        bench_fill(img, 0, fy1, 1, H - 1, R6_OUT)
+        bench_fill(img, W - 1, fy1, W, H - 1, R6_OUT)
+        bench_fill(img, 1, H - 1, W - 1, H, R6_OUT)
+    # la cara
+    r6_paper_face(img, 2, fy0 + 2, W - 2, fy1 - 2, face, rng, fibres=state != 'disabled', cx0=edge, cx1=W - edge)
+    r6_frame(img, 0, fy0, W, fy1, R6_OUT, rim[0], rim[1], rim[2], rim[3])
+    r6_round_rect(img, 0, fy0, W, H)
+    # tachuelas de latón en los extremos (el principal) o clavitos de nogal (el secundario)
+    cy = (fy0 + fy1) // 2 - 1
+    if state != 'disabled' and edge >= 5:
+        for x in (3, W - 5):
+            if kind == 'primary':
+                bench_brass_dot(img, x, cy)
+            else:
+                bench_put(img, x, cy, B_WAL[4])
+                bench_put(img, x + 1, cy, B_WAL[3])
+                bench_put(img, x, cy + 1, B_WAL[3])
+                bench_put(img, x + 1, cy + 1, B_WAL[2])
+    return img
+
+
+def r6_icon_button(state, S=22):
+    """Botón cuadrado de icono (barra de arriba a la derecha): cara de pergamino en un marco de nogal; al pasar el ratón,
+    el aro se vuelve de latón; pulsado, la cara baja 1 px."""
+    img = r6_button('secondary', state, W=S, H=S, edge=0)
+    return img
+
+
+def r6_focus_ring(S=16):
+    """Aro del foco del mando (nine-patch, márgenes 5): dos píxeles dorados por fuera del botón, esquinas redondas."""
+    img = bench_canvas(S, S)
+    gold, glow = '#ffe9a8', B_BRASS[3]
+    bench_fill(img, 2, 0, S - 2, 1, glow, 160)
+    bench_fill(img, 2, S - 1, S - 2, S, glow, 160)
+    bench_fill(img, 0, 2, 1, S - 2, glow, 160)
+    bench_fill(img, S - 1, 2, S, S - 2, glow, 160)
+    bench_fill(img, 2, 1, S - 2, 2, gold)
+    bench_fill(img, 2, S - 2, S - 2, S - 1, gold)
+    bench_fill(img, 1, 2, 2, S - 2, gold)
+    bench_fill(img, S - 2, 2, S - 1, S - 2, gold)
+    for (x, y) in [(1, 1), (S - 2, 1), (1, S - 2), (S - 2, S - 2)]:
+        bench_put(img, x, y, glow, 200)
+    return img
+
+
+def r6_plate(S=16, alpha=236):
+    """Placa oscura (los avisos de acción, nine-patch de márgenes 5): contorno, hilo de latón y un fondo violeta noche
+    casi opaco, esquinas redondas."""
+    img = bench_canvas(S, S)
+    fill = '#1a1426'
+    bench_fill(img, 1, 1, S - 1, S - 1, fill, alpha)
+    bench_fill(img, 2, 2, S - 2, 3, '#251d36', alpha)     # una luz arriba
+    r6_frame(img, 0, 0, S, S, '#0b0812', B_BRASS[3], B_BRASS[2], B_BRASS[1], B_BRASS[1])
+    return r6_round(img, 2)
+
+
+def r6_tail():
+    """La colita de la placa (señala a quién o a qué): 7x4, el borde de latón y el fondo de la placa."""
+    art = """
+        OkkkkkO
+        .OfffO.
+        ..OfO..
+        ...O...
+        """
+    return bench_ascii_art(art, {'O': '#0b0812', 'k': B_BRASS[1], 'f': ('#1a1426', 236)})
+
+
+def r6_key(state='normal', W=11, H=12):
+    """Tecla (nine-patch: márgenes 3 a los lados y arriba, 4 abajo): pergamino claro con el canto de abajo más oscuro y
+    borde de tinta. Godot escribe encima la tecla (E, Esc, Space...). 'down': pulsada (sin canto). W, H = 7, 8: la tecla
+    chica (dentro de los botones y en las esquinas), también a 3x para que a 1280x720 quede nítida (2 px por píxel)."""
+    img = bench_canvas(W, H)
+    top = ['#fbf3df', '#f2e6c8', '#eadbb8']
+    side = ['#cdb68a', '#a88a5c']
+    if state == 'down':
+        top = ['#e6d6b2', '#e0cda3', '#dccba2']
+    body_y1 = H - 1 if state == 'down' else H - 3
+    bench_fill(img, 1, 1, W - 1, H - 1, side[0])
+    bench_fill(img, 1, H - 2, W - 1, H - 1, side[1])
+    bench_fill(img, 1, 1, W - 1, body_y1, top[1])
+    bench_fill(img, 1, 1, W - 1, 2, top[0])
+    bench_fill(img, 1, body_y1 - 1, W - 1, body_y1, top[2])
+    # contorno de tinta
+    bench_fill(img, 1, 0, W - 1, 1, R6_INK)
+    bench_fill(img, 1, H - 1, W - 1, H, R6_INK)
+    bench_fill(img, 0, 1, 1, H - 1, R6_INK)
+    bench_fill(img, W - 1, 1, W, H - 1, R6_INK)
+    if state != 'down':
+        bench_fill(img, 1, body_y1, W - 1, body_y1 + 1, bench_mix(side[0], R6_INK, 0.35))   # la arista entre cara y canto
+    return img
+
+
+# letras de 5x5 para los botones del mando (y 3x5 para LB / RB / LT / RT)
+R6_GLYPH5 = {
+    'A': [".###.", "#...#", "#####", "#...#", "#...#"],
+    'B': ["####.", "#...#", "####.", "#...#", "####."],
+    'X': ["#...#", ".#.#.", "..#..", ".#.#.", "#...#"],
+    'Y': ["#...#", ".#.#.", "..#..", "..#..", "..#.."],
+}
+R6_GLYPH3 = {
+    'L': ["#..", "#..", "#..", "#..", "###"], 'R': ["##.", "#.#", "##.", "#.#", "#.#"],
+    'B': ["##.", "#.#", "##.", "#.#", "##."], 'T': ["###", ".#.", ".#.", ".#.", ".#."],
+}
+R6_PAD = {   # base, luz, sombra, letra
+    'a': ('#3f9c4b', '#7fd28a', '#24662f', '#f4fbef'),
+    'b': ('#c43f30', '#ee7f6c', '#7b2319', '#fff1ec'),
+    'x': ('#3a6dc8', '#7ea8ee', '#203f7c', '#eef4ff'),
+    'y': ('#d39f1f', '#f5d76a', '#86630f', '#fffbe8'),
+}
+
+
+def r6_pad_button(k):
+    """Botón redondo del mando (11x11): disco con luz arriba a la izquierda, contorno oscuro y la letra en claro."""
+    S = 11
+    base, hi, lo, let = R6_PAD[k]
+    img = bench_canvas(S, S)
+    m = bench_ellipse_mask(S, S, 5.5, 5.5, 5.0, 5.0)
+    ys, xs = np.nonzero(m)
+    for y, x in zip(ys, xs):
+        d = (x - 3.6) * 0.7 + (y - 3.6)
+        c = hi if d < -1.2 else (base if d < 4.5 else lo)
+        img[y, x] = (*bench_rgb(c), 255)
+    g = R6_GLYPH5[k.upper()]
+    for yy, row in enumerate(g):
+        for xx, ch in enumerate(row):
+            if ch == '#':
+                bench_put(img, 3 + xx, 3 + yy, let)
+                if 3 + yy + 1 < S and (yy + 1 >= 5 or g[yy + 1][xx] != '#'):
+                    bench_put(img, 3 + xx, 4 + yy, lo)
+    bench_outline(img, '#120e16')
+    return img   # 13x13 con el contorno
+
+
+def r6_bumper(text, trigger=False):
+    """LB / RB (gatillos LT / RT con trigger): pastilla gris oscura con las letras."""
+    W, H = 15, 9
+    img = bench_canvas(W, H)
+    body, hi, lo, let = '#4a4b5a', '#6d6f82', '#2c2c37', '#e8e6f0'
+    if trigger:
+        bench_fill(img, 1, 1, W - 1, H - 1, body)
+        bench_fill(img, 2, 1, W - 2, 2, hi)
+        bench_fill(img, 1, H - 2, W - 1, H - 1, lo)
+    else:
+        bench_fill(img, 1, 2, W - 1, H - 1, body)
+        bench_fill(img, 3, 1, W - 3, 2, hi)
+        bench_fill(img, 1, H - 2, W - 1, H - 1, lo)
+    x = (W - 7) // 2
+    for ch in text:
+        for yy, row in enumerate(R6_GLYPH3[ch]):
+            for xx, c in enumerate(row):
+                if c == '#':
+                    bench_put(img, x + xx, 2 + yy, let)
+        x += 4
+    bench_outline(img, '#120e16')
+    return r6_round(img, 1)
+
+
+def r6_small_round(kind):
+    """Vista (dos ventanitas) y Menú (tres rayas): botones redondos chicos del mando."""
+    S = 9
+    img = bench_canvas(S, S)
+    m = bench_ellipse_mask(S, S, 4.5, 4.5, 4.2, 4.2)
+    ys, xs = np.nonzero(m)
+    for y, x in zip(ys, xs):
+        img[y, x] = (*bench_rgb('#3d3e4c' if (x + y) > 6 else '#55576a'), 255)
+    w = '#e8e6f0'
+    if kind == 'menu':
+        for y in (2, 4, 6):
+            bench_fill(img, 2, y, 7, y + 1, w)
+    else:
+        bench_fill(img, 2, 2, 5, 5, '#8a8ca0')
+        bench_fill(img, 4, 4, 7, 7, w)
+    bench_outline(img, '#120e16')
+    return img
+
+
+def r6_dpad(hl=''):
+    """La cruceta (11x11); hl: 'lr' (izquierda / derecha encendidas), 'ud' o ''."""
+    S = 11
+    img = bench_canvas(S, S)
+    arm, hi, lit = '#4a4b5a', '#6d6f82', '#f0e6c8'
+    bench_fill(img, 4, 0, 7, S, arm)
+    bench_fill(img, 0, 4, S, 7, arm)
+    bench_fill(img, 4, 0, 7, 1, hi)
+    bench_fill(img, 0, 4, 1, 7, hi)
+    if hl == 'lr':
+        bench_fill(img, 0, 4, 3, 7, lit)
+        bench_fill(img, 8, 4, S, 7, lit)
+    elif hl == 'ud':
+        bench_fill(img, 4, 0, 7, 3, lit)
+        bench_fill(img, 4, 8, 7, S, lit)
+    bench_put(img, 5, 5, '#2c2c37')
+    bench_outline(img, '#120e16')
+    return img
+
+
+def r6_stick(letter):
+    """Un stick (L / R): disco gris con su letra."""
+    S = 11
+    img = bench_canvas(S, S)
+    m = bench_ellipse_mask(S, S, 5.5, 5.5, 5.0, 5.0)
+    ys, xs = np.nonzero(m)
+    for y, x in zip(ys, xs):
+        r = math.hypot(x + 0.5 - 5.5, y + 0.5 - 5.5)
+        img[y, x] = (*bench_rgb('#2c2c37' if r > 3.6 else ('#55576a' if (x + y) < 10 else '#4a4b5a')), 255)
+    for yy, row in enumerate(R6_GLYPH3[letter]):
+        for xx, c in enumerate(row):
+            if c == '#':
+                bench_put(img, 4 + xx, 3 + yy, '#e8e6f0')
+    bench_outline(img, '#120e16')
+    return img
+
+
+def r6_mouse(button):
+    """El ratón (11x14): cuerpo de pergamino, contorno de tinta; button: 'left' / 'right' (en dorado) o '' (ninguno)."""
+    art = """
+        ...OOOOO...
+        ..OLLLORRO.
+        .OLLLLORRRO
+        .OLLLLORRRO
+        .OLLLLORRRO
+        .OOOOOOOOOO
+        .OwwwwwwwwO
+        .OwwwwwwwwO
+        .OwwwwwwwwO
+        .OwwwwwwwsO
+        .OswwwwwwsO
+        ..OsssssO..
+        ...OOOOO...
+        """
+    gold, cream, shade = '#e8a93a', '#f2e6c8', '#cdb68a'
+    codes = {'O': R6_INK, 'w': cream, 's': shade,
+             'L': gold if button == 'left' else cream, 'R': gold if button == 'right' else cream}
+    img = bench_ascii_art(art, codes)
+    return img
+
+
+def r6_icons():
+    """Iconos de 16x16 de los botones nuevos: la campanilla (abrir la tienda), la casita (volver a la tienda), la luna
+    (dormir), el caldero (el banco del evento) y la flecha de salida. Mismo estilo que los del HUD (bench_hud_icons)."""
+    codes = {'O': '#1c1424', 'k': B_BRASS[4], 'K': B_BRASS[2], 'h': B_BRASS[5], 'd': B_BRASS[1],
+             'R': B_WAX[2], 'r': B_WAX[3], 'W': B_WAL[3], 'w': B_WAL[5], 'q': B_PAPER[5], 'Q': B_PAPER[3],
+             'y': '#ffd84d', 'Y': '#f0a030', 'm': '#e9e2ff', 'M': '#b9aee6', 'I': B_IRON[3], 'i': B_IRON[5],
+             'g': '#7fd28a', 'G': '#3f9c4b', 'f': B_FIRE[2], 'F': B_FIRE[4]}
+    arts = {
+        'bell': """
+            ................
+            .......OO.......
+            ......OkKO......
+            .......OO.......
+            .....OOOOOO.....
+            ....OhkkkkKO....
+            ...OhkkkkkkKO...
+            ...OhkkkkkkKO...
+            ...OhkkkkkkKO...
+            ...OhkkkkkkKO...
+            ..OhkkkkkkkkKO..
+            .OhkkkkkkkkkkKO.
+            .OKKKKKKKKKKKKO.
+            ..OOOOOOOOOOOO..
+            ......OdddO.....
+            .......OOO......
+            """,
+        'home': """
+            ................
+            .......OO.......
+            ......ORRO..OO..
+            .....ORrrRO.OWO.
+            ....ORrrrrROOWO.
+            ...ORrrrrrrRRWO.
+            ..ORRRRRRRRRRRO.
+            ...OqqqqqqqqqO..
+            ...OqOOOqqOOqO..
+            ...OqOyyOqOWOO..
+            ...OqOyYOqOWWO..
+            ...OqOOOOqOWWO..
+            ...OqqqqqqOWWO..
+            ...OQQQQQQOWkO..
+            ...OOOOOOOOOOO..
+            ................
+            """,
+        'moon': """
+            ................
+            .....OOOO.......
+            ...OOmmmO.......
+            ..OmmmMO........
+            ..OmmMO.....O...
+            .OmmmMO....OyO..
+            .OmmmO......O...
+            .OmmmO..........
+            .OmmmMO.........
+            .OmmmmMO.....O..
+            ..OmmmmMOOOOOmO.
+            ..OMmmmmmmmmMO..
+            ...OMMmmmmMMO...
+            ....OOMMMMOO....
+            ......OOOO......
+            ................
+            """,
+        'cauldron': """
+            ................
+            .....g..g.......
+            ....gG.gG..g....
+            ......G...gG....
+            ..OOOOOOOOOOOO..
+            .OiiiiiiiiiiiiO.
+            ..OgggggggggGO..
+            .OIiIIIIIIIIIIO.
+            .OIIIIIIIIIIIIO.
+            .OIIIIIIIIIIIIO.
+            ..OIIIIIIIIIIO..
+            ...OIIIIIIIIO...
+            ..OfOOOOOOOOfO..
+            ..OFfFfFfFfFfO..
+            ...OOOOOOOOOO...
+            ................
+            """,
+    }
+    out = {}
+    for k, a in arts.items():
+        out[k] = bench_ascii_art(a, codes)
+    return out
+
+
+def r6_all():
+    """R6 UI: todo el arte nuevo de esta ronda -> ./salida/ui/r6_*.png (copiar a assets/ui) y la hoja ./prev_r6.png."""
+    os.makedirs(OUT, exist_ok=True)
+    made = []
+
+    def keep(img, name):
+        r6_save(img, name)
+        made.append((name, img))
+
+    for kind in ('primary', 'secondary'):
+        for st in ('normal', 'hover', 'pressed', 'disabled'):
+            keep(r6_button(kind, st), f'r6_btn_{kind}_{st}.png')
+            # (resume 2) la alta (22 px de arte = 66 px): los botones de arriba al centro, a la altura de la barra de la
+            # derecha y de la placa del HUD
+            keep(r6_button(kind, st, H=22), f'r6_btn_{kind}_{st}_t.png')
+    for st in ('normal', 'hover', 'pressed', 'disabled'):
+        keep(r6_icon_button(st), f'r6_ibtn_{st}.png')
+    keep(r6_focus_ring(), 'r6_focus9.png')
+    keep(r6_plate(), 'r6_plate9.png')
+    keep(r6_tail(), 'r6_plate_tail.png')
+    keep(r6_key('normal'), 'r6_key9.png')
+    keep(r6_key('down'), 'r6_key9_down.png')
+    keep(r6_key('normal', 7, 8), 'r6_key9_mini.png')   # la tecla chica nítida (3x; márgenes 6 / 6 / 6 / 9)
+    for k in R6_PAD:
+        keep(r6_pad_button(k), f'r6_pad_{k}.png')
+        r6_save(r6_pad_button(k), f'r6_pad_{k}_2x.png', 2)
+    keep(r6_bumper('LB'), 'r6_pad_lb.png')
+    keep(r6_bumper('RB'), 'r6_pad_rb.png')
+    keep(r6_bumper('LT', True), 'r6_pad_lt.png')
+    keep(r6_bumper('RT', True), 'r6_pad_rt.png')
+    keep(r6_small_round('view'), 'r6_pad_view.png')
+    keep(r6_small_round('menu'), 'r6_pad_menu.png')
+    keep(r6_dpad(''), 'r6_pad_dpad.png')
+    keep(r6_dpad('lr'), 'r6_pad_dpad_lr.png')
+    keep(r6_dpad('ud'), 'r6_pad_dpad_ud.png')
+    keep(r6_stick('L'), 'r6_pad_ls.png')
+    keep(r6_stick('R'), 'r6_pad_rs.png')
+    keep(r6_mouse('left'), 'r6_mouse_left.png')
+    keep(r6_mouse('right'), 'r6_mouse_right.png')
+    keep(r6_mouse(''), 'r6_mouse.png')
+    for k in ('left', 'right'):
+        r6_save(r6_mouse(k), f'r6_mouse_{k}_2x.png', 2)
+    for nm, im in (('view', r6_small_round('view')), ('menu', r6_small_round('menu')), ('dpad_lr', r6_dpad('lr')),
+                   ('lb', r6_bumper('LB')), ('rb', r6_bumper('RB'))):
+        r6_save(im, f'r6_pad_{nm}_2x.png', 2)
+    for k, im in r6_icons().items():
+        r6_save(im, f'r6_ico_{k}.png', 1)
+        made.append((f'r6_ico_{k}.png', im))
+    # la hoja de muestras
+    cells = [bench_up(im, 4) for _, im in made]
+    W = 1600
+    x = y = 8
+    rowh = 0
+    pos = []
+    for c in cells:
+        if x + c.shape[1] + 8 > W:
+            x = 8
+            y += rowh + 12
+            rowh = 0
+        pos.append((x, y))
+        x += c.shape[1] + 12
+        rowh = max(rowh, c.shape[0])
+    sheet = Image.new('RGBA', (W, y + rowh + 8), (58, 48, 78, 255))
+    for c, p in zip(cells, pos):
+        sheet.alpha_composite(Image.fromarray(c, 'RGBA'), p)
+    sheet.save('./prev_r6.png')
+    print('r6:', len(made), 'imágenes')
+
+
+if '--r6' in sys.argv:
+    r6_all()
+    sys.exit(0)
+# --- end R6 UI
 CORNER = """
 YYYYYYYYYY..
 Y...........

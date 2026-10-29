@@ -222,6 +222,7 @@ func _build_shelf() -> void:
 		lock.visible = false
 		jar_lock[id] = lock
 		b.pressed.connect(func(): throw(id))
+		Glyphs.attach_chip(b, "key:%d" % (i + 1), "topleft", true, Vector2(2, 4))   # --- R6 UI: su número (1-8)
 		b.mouse_entered.connect(func(): _on_jar_hover(id, true))
 		b.mouse_exited.connect(func(): _on_jar_hover(id, false))
 		jar_btns[id] = b
@@ -491,6 +492,15 @@ func _build_buttons() -> void:
 				Sfx.play("hover", 0.05, -14.0))
 		btn_row.add_child(b)
 		btns[id] = b
+		# --- R6 UI: Remover y Embotellar van con Espacio (X del mando): su tecla en la esquina
+		if id == "stir" or id == "bottle":
+			Glyphs.attach_chip(b, "stir", "corner", true, Vector2(8, -10))
+		# (resume 3) Tinta con I y Vaciar con Supr (Delete): solo teclado (con el mando, el cursor y A)
+		elif id == "ink":
+			Glyphs.attach_chip(b, "key:I", "corner", true, Vector2(8, -10))
+		elif id == "empty":
+			Glyphs.attach_chip(b, "key:Del", "corner", true, Vector2(8, -10))
+		# --- end R6 UI
 
 ## Madera del banco (bench_btn_*.png, 30x26 px de arte estirados a 4x); el principal, con borde dorado.
 func _wood_style(b: Button, primary: bool) -> void:
@@ -567,6 +577,7 @@ func _build_close() -> void:
 		close())
 	close_btn.mouse_entered.connect(func(): Sfx.play("hover", 0.05, -14.0))
 	root.add_child(close_btn)
+	Glyphs.attach_chip(close_btn, "back", "corner", true, Vector2(-4, 74))   # --- R6 UI: Esc (B del mando), debajo del sello
 
 # ------------------------------------------------------------------ abrir y cerrar
 
@@ -948,6 +959,13 @@ func _unhandled_input(ev: InputEvent) -> void:
 		var n := _shown().size()
 		if n > 0:
 			_take(n - 1)
+	# --- R6 UI: I = Tinta, Supr = Vaciar (sus teclas van dibujadas en la esquina de sus botones)
+	elif k == KEY_I or k == KEY_DELETE:
+		var id := "ink" if k == KEY_I else "empty"
+		var b: Button = btns.get(id)
+		if b and b.visible and not b.disabled:
+			_on_action(id)
+	# --- end R6 UI
 	else:
 		return
 	get_viewport().set_input_as_handled()

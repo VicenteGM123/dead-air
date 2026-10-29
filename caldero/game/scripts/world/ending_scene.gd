@@ -63,7 +63,11 @@ func play(m) -> void:
 	world = m.world
 	ui = m.ui
 	_setup()
+	PerfLog.mark("end:warm")   # --- R6 PERF
+	await _warm()   # --- R6 PERF: lo de la fiesta se dibuja una vez en negro, antes del fundido
+	PerfLog.mark("end:fade_in")   # --- R6 PERF
 	await m._fade_to(0.0, 1.0)
+	PerfLog.mark("end:visible")   # --- R6 PERF
 	Sfx.play("doorbell", 0.02, -4.0)
 	# 1) Pip entra corriendo con el caldero de oro del Gremio
 	var pip := _spawn("pip", ShopWorld.P_OUTSIDE)
@@ -128,6 +132,40 @@ func play(m) -> void:
 		await get_tree().process_frame
 	await m._fade_to(1.0, 0.7)
 	_cleanup()
+
+# --- R6 PERF: el final sin tirones. Con la pantalla todavía en negro (después de _setup: farolillos y luces nuevas en
+# la sala): los cuadros de quienes vienen a celebrar quedan cargados, y un vecino, el caldero de oro y el confeti se
+# dibujan una vez delante de la cámara (WebGL compila sus materiales con las luces nuevas ahora y no a la vista).
+# Después se quitan y empieza el fundido de entrada.
+func _warm() -> void:
+	var ids: Array = ["pip"]
+	for c in CROWD:
+		ids.append(c[0])
+	var sids: Array = []
+	for id in ids:
+		sids.append(Story.sprite_id(String(id)))
+	Actor.preload_ids(sids)
+	var junk: Array = []
+	var a := Actor.new()
+	world.add_child(a)
+	a.setup(Story.sprite_id("pip"), 0.04)
+	a.global_position = PIP_SPOT
+	a.emote("heart", 0.0)
+	junk.append(a)
+	var t := _trophy_sprite()
+	t.position = TROPHY_POS
+	world.add_child(t)
+	junk.append(t)
+	var p := _confetti()   # (se queda en _added: lo borra _cleanup; su timer lo apaga a los 5 s)
+	for i in 3:
+		await get_tree().process_frame
+	for n in junk:
+		if is_instance_valid(n):
+			n.queue_free()
+	p.emitting = false
+	p.visible = false
+	await get_tree().process_frame
+# --- end R6 PERF
 
 ## Todo listo con la pantalla en negro: noche, guirnaldas, farolillos, la cámara mirando el mostrador y la sala.
 func _setup() -> void:
@@ -265,7 +303,7 @@ func _miga_party() -> void:
 	world.spawn_hearts(to + Vector3(0, 0.7, 0.1))
 
 ## Confeti de colores que cae sobre la sala.
-func _confetti() -> void:
+func _confetti() -> GPUParticles3D:   # --- R6 PERF: devuelve el nodo (_warm)
 	var p := GPUParticles3D.new()
 	p.amount = 260
 	p.lifetime = 5.0
@@ -313,6 +351,7 @@ func _confetti() -> void:
 	get_tree().create_timer(5.0).timeout.connect(func():
 		if is_instance_valid(p):
 			p.emitting = false)
+	return p
 
 ## Deja la tienda como estaba (y el caldero de oro en su sitio para siempre).
 func _cleanup() -> void:

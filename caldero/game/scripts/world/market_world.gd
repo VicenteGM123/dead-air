@@ -202,6 +202,15 @@ func build() -> void:
 	_build_label()
 	_pick_floor()
 
+# --- R6 PERF: el desenfoque de arriba y abajo del mercado (main.gd lo aplica cuando esta cámara es la activa). La
+# gente camina en la mitad de abajo de la pantalla: la banda nítida baja y se abre más que en la tienda.
+# Antes: centro 0,46, mitad 0,22, caída 0,30 (la calle con la gente quedaba en la franja borrosa de abajo). Ahora la
+# banda nítida va de la fila 124 a la 638 (de 720): solo el 28 % desenfocado (los tejados y las macetas de delante).
+func post_params() -> Dictionary:
+	return POST
+const POST := {"focus_center": 0.53, "focus_half": 0.34, "focus_falloff": 0.13, "max_lod": 2.6}
+# --- end R6 PERF
+
 func _build_camera_and_env() -> void:
 	camera = Camera3D.new()
 	camera.fov = 35.0
@@ -209,12 +218,15 @@ func _build_camera_and_env() -> void:
 	camera.far = 90.0
 	add_child(camera)
 	var ca := CameraAttributesPractical.new()
+	# --- R6 PERF: el desenfoque de cámara (solo Forward+) más lejos: la calle de delante (la gente, las macetas) y las
+	# casas del fondo quedan nítidas (antes: lejos 19 m / 8, cerca 6,2 m / 2)
 	ca.dof_blur_far_enabled = true
-	ca.dof_blur_far_distance = 19.0
+	ca.dof_blur_far_distance = 24.0
 	ca.dof_blur_far_transition = 8.0
 	ca.dof_blur_near_enabled = true
-	ca.dof_blur_near_distance = 6.2
-	ca.dof_blur_near_transition = 2.0
+	ca.dof_blur_near_distance = 4.5
+	ca.dof_blur_near_transition = 1.5
+	# --- end R6 PERF
 	ca.dof_blur_amount = 0.08
 	camera.attributes = ca
 	env = Environment.new()

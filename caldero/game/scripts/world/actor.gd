@@ -80,25 +80,46 @@ func setup(id: String, pixel := 0.04) -> void:
 	emote_sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(emote_sprite)
 
-func _build_frames(id: String) -> SpriteFrames:
+# --- R6 PERF: lo que cuesta armar un personaje se hace una vez por sprite y no por personaje: los SpriteFrames (se
+# comparten: nadie los cambia por personaje), el tamaño del cuadro y la fila donde empieza el dibujo. Antes cada setup()
+# leía la textura de vuelta desde la tarjeta gráfica (get_image) para medir _top_px: en la web eso es un readPixels que
+# espera a que la GPU termine todo lo pendiente (~1 s con SwiftShader cada vez que entraba alguien a la fila del evento
+# o a la tienda). La fila sale de SpriteTops (tabla precalculada); un sprite que no esté ahí se mide una sola vez.
+static var _frames_cache := {}   # id -> [SpriteFrames, frame_w, frame_h, top_px]
+static var _emote_tex := {}      # nombre -> Texture2D (las caritas quedan cargadas: sin load() a mitad del juego)
+
+## Precarga los cuadros de estos sprites (para hacerlo detrás de un fundido y no cuando entran en escena).
+static func preload_ids(ids: Array) -> void:
+	for id in ids:
+		var sid := String(id)
+		if sid != "" and not _frames_cache.has(sid) and ResourceLoader.exists("res://assets/chars/%s_idle.png" % sid):
+			_frames_for(sid)
+
+static func emote_texture(name: String) -> Texture2D:
+	if not _emote_tex.has(name):
+		_emote_tex[name] = load("res://assets/icons/emote_%s.png" % name)
+	return _emote_tex[name]
+
+static func _frames_for(id: String) -> Array:
+	if _frames_cache.has(id):
+		return _frames_cache[id]
 	var sf := SpriteFrames.new()
 	if sf.has_animation("default"):
 		sf.remove_animation("default")
 	var idle_tex: Texture2D = load("res://assets/chars/%s_idle.png" % id)
 	var walk_tex: Texture2D = load("res://assets/chars/%s_walk.png" % id)
 	# tamaño de cuadro según la textura (idle = 2 cuadros, walk = 4 cuadros en fila)
-	frame_h = idle_tex.get_height()
-	frame_w = int(idle_tex.get_width() / 2.0)
+	var fh := idle_tex.get_height()
+	var fw := int(idle_tex.get_width() / 2.0)
 	var walk_w := int(walk_tex.get_width() / 4.0)
-	var img := idle_tex.get_image()
-	_top_px = img.get_used_rect().position.y if img else 0
+	var top := SpriteTops.top_of(id, idle_tex)
 	sf.add_animation("idle")
 	sf.set_animation_speed("idle", 1.6)
 	sf.set_animation_loop("idle", true)
 	for i in 2:
 		var at := AtlasTexture.new()
 		at.atlas = idle_tex
-		at.region = Rect2(i * frame_w, 0, frame_w, frame_h)
+		at.region = Rect2(i * fw, 0, fw, fh)
 		sf.add_frame("idle", at)
 	sf.add_animation("walk")
 	sf.set_animation_speed("walk", 7.0)
@@ -106,9 +127,19 @@ func _build_frames(id: String) -> SpriteFrames:
 	for i in 4:
 		var at2 := AtlasTexture.new()
 		at2.atlas = walk_tex
-		at2.region = Rect2(i * walk_w, 0, walk_w, frame_h)
+		at2.region = Rect2(i * walk_w, 0, walk_w, fh)
 		sf.add_frame("walk", at2)
-	return sf
+	_frames_cache[id] = [sf, fw, fh, top]
+	return _frames_cache[id]
+
+func _build_frames(id: String) -> SpriteFrames:
+	var c := _frames_for(id)
+	frame_w = int(c[1])
+	frame_h = int(c[2])
+	_top_px = int(c[3])
+	return c[0]
+
+# --- end R6 PERF
 
 func height() -> float:
 	return frame_h * sprite.pixel_size
@@ -166,7 +197,7 @@ func shake() -> void:
 	tw.tween_property(sprite, "position:x", 0.0, 0.05)
 
 func emote(name: String, duration := 1.6) -> void:
-	emote_sprite.texture = load("res://assets/icons/emote_%s.png" % name)
+	emote_sprite.texture = emote_texture(name)   # --- R6 PERF: (era load() cada vez)
 	emote_sprite.position = Vector3(0, top_height() + 0.05, 0.05)
 	emote_sprite.visible = true
 	emote_sprite.scale = Vector3.ONE * 0.2

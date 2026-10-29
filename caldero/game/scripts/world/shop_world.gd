@@ -306,6 +306,15 @@ func build() -> void:
 	refresh_upgrades()
 	set_time(0.0, false)
 
+# --- R6 PERF: el desenfoque de arriba y abajo de la tienda (main.gd lo aplica cuando esta cámara es la activa): la
+# misma fuerza de antes (max_lod 2,6), en una franja más chica. Antes (para todo): centro 0,46, mitad nítida 0,22,
+# caída 0,30 = el 48 % de la pantalla desenfocado. Ahora la banda nítida va de la fila 107 a la 569 (de 720): el
+# 36 %, y el pleno desenfoque queda en los bordes (el suelo de delante, las cosas colgadas de arriba).
+func post_params() -> Dictionary:
+	return POST
+const POST := {"focus_center": 0.47, "focus_half": 0.30, "focus_falloff": 0.16, "max_lod": 2.6}
+# --- end R6 PERF
+
 func _build_camera_and_env() -> void:
 	camera = Camera3D.new()
 	camera.fov = 35.0
@@ -318,12 +327,15 @@ func _build_camera_and_env() -> void:
 	camera.look_at(_cam_target, Vector3.UP)
 	camera.current = true
 	var ca := CameraAttributesPractical.new()
+	# --- R6 PERF: el desenfoque de cámara (solo Forward+; la web no lo usa) más lejos: el suelo de delante y el fondo
+	# de la tienda quedan nítidos (antes: lejos 15 m / 5, cerca 7,4 m / 2: el suelo de abajo ya se desenfocaba)
 	ca.dof_blur_far_enabled = true
-	ca.dof_blur_far_distance = 15.0
-	ca.dof_blur_far_transition = 5.0
+	ca.dof_blur_far_distance = 18.0
+	ca.dof_blur_far_transition = 6.0
 	ca.dof_blur_near_enabled = true
-	ca.dof_blur_near_distance = 7.4
-	ca.dof_blur_near_transition = 2.0
+	ca.dof_blur_near_distance = 6.0
+	ca.dof_blur_near_transition = 1.5
+	# --- end R6 PERF
 	ca.dof_blur_amount = 0.09
 	camera.attributes = ca
 

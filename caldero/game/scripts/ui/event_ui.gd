@@ -143,11 +143,14 @@ func _build_line() -> void:
 	root.add_child(line_box)
 
 func _build_bench_button() -> void:
-	bench_btn = PaperKit.wood_button("Cauldron", func(): bench_pressed.emit(), 34)
-	bench_btn.custom_minimum_size = Vector2(300, 72)
-	bench_btn.icon = PaperKit.scaled("res://assets/ui/act_stir.png", 2)
-	UIKit.place(bench_btn, Vector2(0.5, 1), Vector2(-150, -112), Vector2(300, 72), Control.GROW_DIRECTION_BOTH, Control.GROW_DIRECTION_BEGIN)
-	bench_btn.tooltip_text = "E"
+	# --- R6 UI: el mismo botón que los de arriba en la tienda (HudButton principal: pergamino dorado, aro de latón), con
+	# el caldero y su tecla (E; A del mando). Sigue llamándose «Cauldron» (el mando y las pruebas lo buscan así).
+	bench_btn = HudButton.make("primary", "Cauldron", "r6_ico_cauldron", "bench", func(): bench_pressed.emit())   # (letra 26: la de los botones de arriba)
+	bench_btn.set_tall()   # (resume 2) 66 de alto: la misma forma y tamaño que «Open shop» arriba en la tienda
+	bench_btn.custom_minimum_size = Vector2(260, 66)
+	UIKit.place(bench_btn, Vector2(0.5, 1), Vector2(-130, -66.0 - GameUI.HUD_EDGE), Vector2(260, 66), Control.GROW_DIRECTION_BOTH, Control.GROW_DIRECTION_BEGIN)
+	bench_btn.set_tip("Back to your cauldron", ["bench"])
+	# --- end R6 UI
 	bench_btn.visible = false
 	root.add_child(bench_btn)
 
@@ -548,6 +551,7 @@ func show_jury(d: Dictionary) -> void:
 	PaperKit.decor(p, "paper_tape", Vector2(0.5, 0.0), Vector2(-36, -12), 3.0, false, Color.WHITE, -0.03)
 	await _open_modal("jury", p)
 	_modal_btn = b
+	Glyphs.attach_chip(b, "confirm", "right", false, Vector2(16, 0))   # --- R6 UI: su tecla (Intro / A)
 	# las estrellas de cada jurado, una a una
 	for i in star_rows.size():
 		await get_tree().create_timer(0.35).timeout
@@ -631,6 +635,7 @@ func show_results(d: Dictionary) -> void:
 	Sfx.play("levelup" if medal != "none" else "sad", 0.0, -2.0)
 	await _open_modal("results", p, 0.6)
 	_modal_btn = b
+	Glyphs.attach_chip(b, "confirm", "right", false, Vector2(16, 0))   # --- R6 UI: su tecla (Intro / A)
 	if medal != "none":
 		md.pivot_offset = md.size / 2.0
 		md.scale = Vector2(0.2, 0.2)
