@@ -21,6 +21,7 @@ signal line_changed(n: int)
 var world: ShopWorld
 var hud: Hud
 var shop_t := 0.0
+var counter_left_ms := -100000   # --- SS SHIP: cuándo se fue el último del mostrador (sigue ahí unos segundos, despidiéndose)
 var running := false
 var closing := false
 var paused := false        # el menú de pausa (todo se detiene)
@@ -265,6 +266,7 @@ func leave(v: Dictionary, why: String, say := "", col := Color(1.0, 0.95, 0.85))
 		return
 	var was_counter := not counter.is_empty() and int(counter["id"]) == int(v["id"])
 	if was_counter:
+		counter_left_ms = Time.get_ticks_msec()   # --- SS SHIP
 		counter = {}
 		world.counter_actor = null
 		world.set_counter_item("")

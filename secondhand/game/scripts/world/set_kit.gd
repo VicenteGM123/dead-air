@@ -388,7 +388,7 @@ func blurt(a: Node3D, text: String, col := Color(1.0, 0.95, 0.85), secs := 2.6) 
 	l.text = text
 	l.font = UIKit.font_bold
 	l.font_size = 38
-	l.pixel_size = 0.0042
+	l.pixel_size = 0.0042 * maxf(1.0, cam_dist / 8.0)   # --- SS SHIP: en la calle (cámara a 12 m) la frase se veía chica; mismo tamaño en pantalla que en la tienda
 	l.outline_size = 12
 	l.outline_modulate = Color(0.1, 0.06, 0.05)
 	l.modulate = Color(col.r, col.g, col.b, 0.0)

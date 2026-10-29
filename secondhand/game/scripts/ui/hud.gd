@@ -273,6 +273,18 @@ func set_hint(walking: bool, extra := "") -> void:
 		last.queue_free()
 	_hint_plate.visible = walking or extra != ""
 	_hint_plate.reset_size()
+	_pin_hint()              # --- SS SHIP
+	_pin_hint.call_deferred()
+
+# --- SS SHIP: la placa queda pegada abajo a la izquierda (14 px de margen). reset_size() conserva el borde de arriba:
+# cada vez que se vaciaba (al abrir una ventana) y se volvía a llenar, subía ~32 px; a media tarde flotaba en medio
+# del piso de la tienda.
+func _pin_hint() -> void:
+	var sz := _hint_plate.get_combined_minimum_size()
+	_hint_plate.offset_left = 14.0
+	_hint_plate.offset_right = 14.0 + sz.x
+	_hint_plate.offset_bottom = -14.0
+	_hint_plate.offset_top = -14.0 - sz.y
 
 func _hint_pair(keys: Array, what: String) -> void:
 	for k in keys:

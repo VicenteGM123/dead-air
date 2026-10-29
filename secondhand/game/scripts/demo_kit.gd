@@ -176,6 +176,7 @@ func run(main, name: String) -> void:
 			_state(2)
 			m.begin_morning()
 			m.hud.show_top(false)
+			m.street.walker.teleport(-2.6, 1)   # --- SS SHIP: Nell en la calle, entre su puerta y las cápsulas (sin aviso que tape el cartel)
 			m.street.cam_fixed = true
 			m.street.camera.position = Vector3(0.0, 7.0, 22.0)
 			m.street.camera.look_at(Vector3(0.0, 4.0, -20.0), Vector3.UP)

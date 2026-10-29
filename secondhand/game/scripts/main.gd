@@ -108,7 +108,9 @@ func _ready() -> void:
 	pad.world_picks = func(): return world.pad_picks() if world else []
 	pad.camera = func(): return world.camera if world else null
 	pad.modal_open = modal_open
-	pad.dialog_waiting = func(): return dialogs.is_open() or screens.is_open()
+	# --- SS SHIP: la A del mando también avanza la cápsula («A / X open») y la tarjeta del banco («A done») aunque el
+	# cursor no esté sobre el botón (antes la A hacía clic en el vacío y no pasaba nada)
+	pad.dialog_waiting = func(): return dialogs.is_open() or screens.is_open() or pod_ui.is_open() or (bench.is_open() and bench.step == BenchUI.Step.RESULT)
 	add_child(pad)
 	pad.device_changed.connect(func(_on): hud.hide_prompt())
 	Game.shelf_changed.connect(func(): shop.refresh_shelf())
@@ -1058,6 +1060,10 @@ func station_verb(id: String) -> Array:
 					return ["Repair" if String(v["kind"]) == "repair" else "Sell", true]
 				if not sale.is_empty():
 					return ["Haggling...", false]
+				# --- SS SHIP: quien se acaba de ir sigue en el mostrador despidiéndose ("Lovely work, little star."): sin
+				# el cartel "No one at the counter" encima de su frase
+				if Time.get_ticks_msec() - day.counter_left_ms < 2800:
+					return ["", false]
 				return ["No one at the counter", false]
 			"bench":
 				if job.get("kind", "") == "repair" and String(job.get("stage", "")) == "accepted":

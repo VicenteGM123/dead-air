@@ -152,7 +152,7 @@ func open(j: Dictionary) -> void:
 	_head_who.text = ("for %s" % Data.char_name(who)) if who != "" else ""
 	# --- SS SHIP: sin cliente es algo roto de una cápsula: se reacondiciona para el estante (no es un encargo)
 	_head_verb.text = "REPAIR" if who != "" else "REFURBISH"
-	_ticket_hdr.text = "CUSTOMER NOTE" if who != "" else "POD FIND · WHAT'S WRONG"
+	_ticket_hdr.text = "CUSTOMER NOTE" if who != "" else "POD FIND · FAULT"
 	if who == "":
 		_head_who.text = "for the shelf"
 	# --- end SS SHIP
