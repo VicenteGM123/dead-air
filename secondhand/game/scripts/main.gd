@@ -68,6 +68,7 @@ var _boot_t0 := 0
 var _boot_steps := {}        # paso -> ms de trabajo de ese cuadro (el resumen "BOOT done")
 var _boot_bg_n := 0          # pasos de fondo hechos / previstos (la barrita si alguien espera)
 var _boot_bg_total := 1
+var _boot_pscale := 0.5      # --- BOOT2: la parte del título llena la barra hasta la mitad; lo de fondo, el resto
 var _last_input_ms := -100000
 var _warm_vp: SubViewport    # la tienda se arma y se calienta aquí (otro mundo 3D) mientras el título está en pantalla
 var _boot_shot := ""         # --bootshot=<carpeta>: una captura por paso (escritorio; las pruebas de arranque)
@@ -295,6 +296,9 @@ func use_world(w: SetKit) -> void:
 ##      principal; el banco, el regateo, la cápsula; los demás bucles de música;
 ##   5. si el jugador elige algo en el título antes de que termine el paso 4, el fundido a negro espera lo que falta
 ##      con una barrita (sigue de a un paso por cuadro).
+## --- BOOT2: el cliente prefirió esperar en la carga y no después (con «Continue» el juego se sentía lento): el paso 4
+## ahora va ANTES del título, todavía bajo la pantalla de carga (la barra: la primera mitad el paso 2, la segunda el 4).
+## Cuando el título aparece ya está todo armado y calentado; _wait_boot ya no espera nunca.
 ## Lo que el calentamiento viejo evitaba (tirones al abrir la tienda, al llegar la noche, en la introducción) sigue
 ## evitado: todo eso se compila antes de que se use.
 func _boot() -> void:
@@ -348,6 +352,10 @@ func _boot() -> void:
 	street.set_night(true)
 	await _warm_world(street, "street_night", 0.72, 0.94, false, "streaks")
 	street.set_night(false)
+	# --- BOOT2: lo de fondo (la tienda, el banco, el regateo, la cápsula, la música), aquí, bajo la pantalla de carga
+	# (la calle sigue a 1/4 de resolución: nadie la ve)
+	await _boot_background()
+	# --- end BOOT2
 	get_viewport().scaling_3d_scale = 1.0
 	# el título, detrás de la pantalla de carga (su primer dibujo compila lo poco que le falta a la interfaz y al
 	# post-proceso); su logo aparece cuando llega el de la pantalla de carga
@@ -361,8 +369,8 @@ func _boot() -> void:
 	boot_screen = null
 	set_process(true)
 	print("BOOT title %d ms" % (Time.get_ticks_msec() - _boot_t0))
-	# 4. lo demás, de fondo
-	await _boot_background()
+	if _boot_jump != "":   # --- BOOT2: (pruebas) ahora después del título
+		_boot_test_jump(_boot_jump)
 
 ## Un paso hecho: anota cuánto trabajó en este cuadro, mueve la barra y espera el cuadro siguiente.
 func _boot_step(step: String, progress := -1.0, text := "") -> void:
@@ -374,7 +382,7 @@ func _boot_step(step: String, progress := -1.0, text := "") -> void:
 	if _boot_shot != "":
 		get_viewport().get_texture().get_image().save_png("%s/%03d_%s.png" % [_boot_shot, _boot_steps.size(), step])
 	if boot_screen and progress >= 0.0:
-		boot_screen.set_progress(progress, text)
+		boot_screen.set_progress(progress * _boot_pscale if progress < 1.0 else progress, text)   # --- BOOT2: escala
 	await get_tree().process_frame
 	_boot_us = Time.get_ticks_usec()
 
@@ -424,6 +432,8 @@ func _warm_frame(bg: bool, step: String, progress: float) -> void:
 func _boot_background() -> void:
 	var t_bg := Time.get_ticks_msec()
 	_boot_us = Time.get_ticks_usec()
+	if boot_screen:   # --- BOOT2
+		boot_screen.set_progress(_boot_pscale, "Opening the workshop...")
 	# la tienda: se arma y se calienta en su propio mundo 3D (un SubViewport chico que nadie ve)
 	_warm_vp = SubViewport.new()
 	_warm_vp.name = "WarmShop"
@@ -487,8 +497,6 @@ func _boot_background() -> void:
 	print("BOOT done %d ms (background %d ms, %d steps; slowest script step %s %.0f ms)" % [Time.get_ticks_msec() - _boot_t0,
 		Time.get_ticks_msec() - t_bg, _boot_steps.size(), worst, worst_ms])
 	boot_finished.emit()
-	if _boot_jump != "":
-		_boot_test_jump(_boot_jump)
 
 ## (Pruebas del arranque: --bootjump=night | closing salta ahí cuando terminó lo de fondo, para medir si al llegar
 ## todavía se compila algo. Un jugador nunca pasa argumentos.)
@@ -509,8 +517,8 @@ func _boot_test_jump(where: String) -> void:
 ## botones (como mucho 0,4 s), para que el título responda primero.
 func _bg_step(step: String) -> void:
 	_boot_bg_n += 1
-	if boot_screen:
-		boot_screen.set_progress(float(_boot_bg_n) / _boot_bg_total)
+	if boot_screen:   # --- BOOT2: bajo la pantalla de carga, la segunda mitad de la barra
+		boot_screen.set_progress(_boot_pscale + (0.98 - _boot_pscale) * float(_boot_bg_n) / _boot_bg_total)
 	await _boot_step("bg_" + step)
 	var t0 := Time.get_ticks_msec()
 	while boot_screen == null and Time.get_ticks_msec() - _last_input_ms < 150 and Time.get_ticks_msec() - t0 < 400:

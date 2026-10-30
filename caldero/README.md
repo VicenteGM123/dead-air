@@ -10,7 +10,7 @@ Antes, después de la pantalla de Godot la página se quedaba en negro unos segu
 
 - La página y el juego muestran la misma imagen («Midnight Cauldron» con el emblema) y una barra dorada que avanza: primero mientras baja el juego, después mientras se prepara. Nada de negro ni del logo de Godot.
 - La tienda se arma y se muestra por partes, unos pocos materiales nuevos por cuadro: la página sigue respondiendo y la barra se mueve.
-- Solo se prepara lo que se ve en el título. Lo demás (la biblioteca, los efectos, las letras de los eventos, el mercado) se prepara después, ya con el título en pantalla, sin que se note; si se va al mercado antes, se termina en el fundido del viaje. Los eventos siguen empezando sin tirones.
+- Todo se prepara bajo la pantalla de carga, antes del título: primero lo que se ve en el título y después lo demás (la biblioteca, los efectos, las letras de los eventos, el mercado), siempre repartido en cuadros cortos. Al aparecer el título no queda nada pendiente: **Continue** y **Start** entran directo (antes, lo demás se preparaba con el título en pantalla y al apretar Continue de inmediato el juego se podía pegar). Los eventos siguen empezando sin tirones.
 - Medido en un navegador sin tarjeta gráfica: la primera imagen del juego sale a los ~1,6 s (antes ~5 s, y era negra), el cuadro más largo antes del título bajó de 4,7 s a 1,4 s y el título necesita 149 programas de shader en vez de 203 (como mucho 16 por cuadro, antes 105). Con una tarjeta gráfica normal todo es bastante más rápido; la segunda vez, más aún (el navegador guarda los shaders ya compilados).
 - `index.wasm` (37,7 MB, ~10 MB comprimido) es el motor de Godot tal como viene: no se puede achicar sin compilar Godot a medida.
 

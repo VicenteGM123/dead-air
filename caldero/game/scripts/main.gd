@@ -227,15 +227,15 @@ func _bs_events() -> void:
 func _boot_steps() -> Array[Callable]:
 	return [_bs_market, _bs_post, _bs_ui, _bs_overlays, _bs_krapido, _bs_wire, _bs_magic, _bs_events]
 
-var boot_warm: BootWarm   # el precalentamiento de después del título (scripts/boot_warm.gd)
+var boot_warm: BootWarm   # el precalentamiento (scripts/boot_warm.gd; BOOT2: bajo la pantalla de carga, antes del título)
 var _booted := false      # ya están todos los pasos (main._process y la entrada esperan a esto)
 
 ## El arranque del juego: la pantalla de carga (BootScreen, ya en pantalla desde el primer cuadro: scripts/boot.gd)
 ## tapa todo mientras se arma la tienda en pasos de un cuadro, se encienden los sonidos de fondo de a uno y la tienda se
 ## muestra por partes (pocos materiales nuevos por cuadro: los shaders se compilan repartidos, no todos en un cuadro de
-## varios segundos). Solo lo que necesita el título. Después: el título, la pantalla de carga se funde, y lo demás que
-## antes se precalentaba en negro (la biblioteca, los efectos, las letras de los eventos, el mercado) lo hace BootWarm
-## repartido en cuadros mientras el jugador ya ve el título.
+## varios segundos). Después, todavía bajo la pantalla de carga, BootWarm precalienta lo demás (la biblioteca, los
+## efectos, las letras de los eventos, el mercado) repartido en cuadros (BOOT2: antes iba detrás del título y chocaba
+## con «Continue»). Al final el título, y la pantalla de carga se funde: ya no queda nada pendiente.
 func _boot() -> void:
 	var tree := get_tree()
 	_bm("main:start")
@@ -266,8 +266,21 @@ func _boot() -> void:
 	await tree.process_frame
 	_bm("ambience")
 	BootScreen.progress(0.72)
-	await _boot_reveal_world(0.72, 0.96)
+	await _boot_reveal_world(0.72, 0.82)
 	_bm("revealed")
+	# --- BOOT2: el precalentamiento (BootWarm) también aquí, bajo la pantalla de carga y antes del título. Antes iba
+	# después, mientras el jugador ya jugaba, y si apretaba «Continue» al tiro el juego se pegaba. Mientras tanto la
+	# cámara de la tienda no dibuja nada (la tapa la pantalla de carga; lo que ve ya se compiló en _boot_reveal_world):
+	# cada cuadro cuesta solo lo que se precalienta. Si por algo no terminara en 2 minutos, el título sale igual y lo
+	# que falte sigue detrás, como antes.
+	if not OS.get_cmdline_user_args().has("--nobootwarm"):   # (medición: sin el precalentamiento)
+		var cam_mask := world.camera.cull_mask
+		world.camera.cull_mask = 0
+		boot_warm = BootWarm.start(self, 0.82, 0.97)
+		await boot_warm.wait_done(120.0)
+		world.camera.cull_mask = cam_mask & ~BootWarm.WARM_LAYER
+		_bm("warmed")
+	# --- end BOOT2
 	post.visible = true
 	_show_title()
 	await tree.process_frame   # el título y el desenfoque, dibujados (y compilados) bajo la pantalla de carga
@@ -276,8 +289,6 @@ func _boot() -> void:
 	BootScreen.close(0.45)
 	await get_tree().create_timer(0.45).timeout
 	_bm("title:faded_in")
-	if not OS.get_cmdline_user_args().has("--nobootwarm"):   # (medición: sin el precalentamiento de después)
-		boot_warm = BootWarm.start(self)
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--bootcheck"):
 			_boot_check(a.substr(12) if a.begins_with("--bootcheck=") else "new")

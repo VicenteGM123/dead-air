@@ -15,6 +15,10 @@ class_name BootWarm
 ##    se muestra por partes y se vuelve a su sitio. Si el jugador va al mercado antes, main.gd lo termina en el negro del
 ##    viaje (warm_market()).
 ## main.gd espera a que termine antes de empezar un evento (main._ev_run_day), como la ronda 6 suponía.
+## --- BOOT2: el cliente apretó «Continue» con esto todavía en marcha y el juego se pegó: ahora el arranque del juego lo
+## hace ENTERO bajo la pantalla de carga, antes del título (main._boot: start(main, p0, p1) y espera a que termine). La
+## barra avanza paso a paso y, con una tarjeta rápida, entran más materiales por cuadro (_budget). Después del título ya
+## no queda nada pendiente. (Las demos de medición siguen usándolo como antes: start(main) sin pantalla de carga.)
 
 signal finished
 signal market_finished
@@ -24,42 +28,66 @@ const VP_SIZE := Vector2i(480, 270)
 
 var main: Node
 var done := false
+var loading := false   # --- BOOT2: bajo la pantalla de carga (la barra va de _p0 a _p1)
+var _p0 := 0.0
+var _p1 := 1.0
+var _budget := 1       # --- BOOT2: firmas de material nuevas por cuadro (bajo la pantalla de carga sube hasta 4 si los cuadros son cortos)
 var market_done := false
 var _market_busy := false
 var _vp: SubViewport
 var _cam: Camera3D
 var _canvas: Control
 
-static func start(m: Node) -> BootWarm:
+static func start(m: Node, p0 := -1.0, p1 := -1.0) -> BootWarm:
 	var w := BootWarm.new()
 	w.name = "BootWarm"
 	w.main = m
+	# --- BOOT2: con p0/p1, bajo la pantalla de carga: sin esperar al título y moviendo la barra de p0 a p1
+	if p0 >= 0.0:
+		w.loading = true
+		w._p0 = p0
+		w._p1 = p1
+	# --- end BOOT2
 	m.get_tree().root.add_child(w)
 	w._run()
 	return w
 
 func _run() -> void:
-	await get_tree().create_timer(1.3).timeout   # el título termina de aparecer
+	if not loading:   # --- BOOT2
+		await get_tree().create_timer(1.3).timeout   # el título termina de aparecer
 	_bm("warm:start")
 	_make_viewport()
 	await _step_2d()
 	_bm("warm:2d")
+	_prog(0.05)
 	await _step_shop_views()
 	_bm("warm:shop_views")
+	_prog(0.40)
 	await _step_shop_hidden()
 	_bm("warm:shop_hidden")
+	_prog(0.52)
 	await _step_shop_effects()
 	_bm("warm:shop_effects")
+	_prog(0.62)
 	await _step_text()
 	_bm("warm:text")
+	_prog(0.71)
 	await _step_ui_art()
 	_bm("warm:ui_art")
+	_prog(0.75)
 	await warm_market()
 	_bm("warm:market")
+	_prog(1.0)
 	_vp.queue_free()
 	done = true
 	_bm("warm:done")
 	finished.emit()
+
+## --- BOOT2: la barra de la pantalla de carga (f = cuánto va del precalentamiento, 0..1; los pesos de cada paso salen
+## de lo que tardaban en la web)
+func _prog(f: float) -> void:
+	if loading:
+		BootScreen.progress(lerpf(_p0, _p1, f))
 
 static func _bm(step: String) -> void:
 	if PerfLog.on:
@@ -108,8 +136,16 @@ func _shop_cam(x: float) -> void:
 func _render(n := 1) -> void:
 	_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	for i in n:
+		var t := Time.get_ticks_usec()
 		await _frame()
+		_adapt(Time.get_ticks_usec() - t)
 	_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+
+## --- BOOT2: como _boot_reveal_world: bajo la pantalla de carga, si el cuadro fue corto (tarjeta rápida) entran más
+## materiales nuevos en el siguiente; si no, uno. Después del título siempre uno (cuadros cortos mientras se juega).
+func _adapt(usec: int) -> void:
+	if loading:
+		_budget = mini(_budget + 1, 4) if usec < 50000 else 1
 
 ## Pone (o quita) la capa de precalentar en todo lo visible de n. only: SOLO esa capa (lo que no debe verse en la
 ## cámara del juego: copias y cosas de prueba); si no, se suma a la que ya tiene. Las copias tampoco dan sombra: las
@@ -142,16 +178,19 @@ func _step_2d() -> void:
 ## Los nodos 3D de la tienda en grupos con pocos materiales nuevos por cuadro, vistos desde los dos extremos del carril
 ## de la cámara (la biblioteca y el lado de la puerta).
 func _step_shop_views() -> void:
-	for x in [ShopWorld.CAM_X0, ShopWorld.CAM_X1]:
+	for xi in 2:
+		var x: float = [ShopWorld.CAM_X0, ShopWorld.CAM_X1][xi]
 		await _shop_ready()
 		_shop_cam(x)
 		# lo que la cámara del juego ya ve (el título) ya está compilado: solo lo de fuera de su vista
 		var cam: Camera3D = main.world.camera
 		var items := BootWarm.items_of(main.world).filter(func(it): return not _seen_by(cam, it[0]))
 		var seen := {}
+		var total := maxf(1.0, items.size())
 		while not items.is_empty():
 			await _shop_ready()
-			var group := BootWarm.take_group(items, seen, 1, 32)
+			_prog(lerpf(0.05, 0.40, (xi + 1.0 - items.size() / total) / 2.0))   # --- BOOT2
+			var group := BootWarm.take_group(items, seen, _budget, 32 * _budget)
 			for n in group:
 				if is_instance_valid(n):
 					_set_warm(n, true)
@@ -195,7 +234,7 @@ func _step_shop_hidden() -> void:
 	var seen := {}
 	while not items.is_empty():
 		await _shop_ready()
-		var group := BootWarm.take_group(items, seen, 1, 16)
+		var group := BootWarm.take_group(items, seen, _budget, 16 * _budget)
 		var x := 0.0
 		for n in group:
 			_set_warm(n, true, true)
@@ -533,11 +572,15 @@ func warm_market() -> void:
 	m.visible = true
 	var items := BootWarm.items_of(m)
 	var seen := {}
+	var total := maxf(1.0, items.size())
 	while not items.is_empty():
-		var group := BootWarm.take_group(items, seen, 1, 32)
+		_prog(lerpf(0.75, 0.95, 1.0 - items.size() / total))   # --- BOOT2
+		var group := BootWarm.take_group(items, seen, _budget, 32 * _budget)
 		for n in group:
 			BootWarm.restore_layers(n, hidden)
+		var t := Time.get_ticks_usec()
 		await _frame()
+		_adapt(Time.get_ticks_usec() - t)
 	BootWarm.restore_layers(m, hidden)
 	# el saludo de los vendedores (globo de emoción) con las luces del mercado, en los tres sitios donde para la cámara
 	for v in m.vendors:
