@@ -109,6 +109,27 @@ func _wave_y(kind: String, x: float, t: float) -> float:
 			return sin(x * 90.0) * (0.9 if b < 0.22 else 0.05)
 		"slow":
 			return sin(x * TAU * 1.2 + t * 2.0) * 0.45
+		# --- SS2 BENCH: las ondas de las piezas nuevas
+		"wobble":   # el giroscopio: una nota que sube y baja
+			return sin(x * TAU * 3.0 + t * 6.0) * (0.35 + 0.4 * sin(t * 2.2 + x * 2.5))
+		"tick":     # la aguja que se engancha: casi plana, con tics secos
+			var tp := fmod(x * 6.0 - t * 1.5, 1.0)
+			if tp < 0.0:
+				tp += 1.0
+			return (0.9 if tp < 0.025 else (-0.5 if tp < 0.045 else 0.0)) + (randf() - 0.5) * 0.05
+		"chirr":    # el chip de la brújula: un chirrido rápido que recalcula
+			return sin(x * TAU * 18.0 + t * 30.0) * 0.45 * (0.55 + 0.45 * sin(x * TAU * 2.0 - t * 5.0))
+		"loop":     # el tambor: las mismas tres notas, otra vez
+			var lp := fmod(x * 3.0 - t * 0.8, 1.0)
+			if lp < 0.0:
+				lp += 1.0
+			return sin(lp * 3.0 * PI) * 0.6
+		"clunk":    # la ranura de monedas: un golpe que se apaga
+			var cp := fmod(x * 1.5 - t * 0.7, 1.0)
+			if cp < 0.0:
+				cp += 1.0
+			return sin(cp * 60.0) * exp(-cp * 8.0) * 0.95
+		# --- end SS2 BENCH
 		"mixed":
 			return (sin(x * 23.0 + t * 7.0) * 0.3 + sin(x * 61.0 - t * 5.0) * 0.2) + (randf() - 0.5) * 0.35
 		_:

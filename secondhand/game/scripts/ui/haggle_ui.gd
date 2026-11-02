@@ -13,6 +13,11 @@ class_name HaggleUI
 ##   Humano (Rook): un reloj de despegue; cerca del despegue mira la hora y paga más; si llega a cero se va.
 ##   Bot (Clatter): dice su presupuesto en voz alta; acepta hasta ahí, nunca más; no se enoja.
 ##   Dune Raker: vende cápsulas cerradas (peso y traqueteo a la vista); saca la lengua cuando su precio ya es bueno.
+## --- SS2 BENCH: las reglas salen de BenchData.haggle_rules_for(customer) (la regla propia del personaje, si no su
+##   especie). Las especies nuevas usan una rama genérica (rule "generic"): tell_fx en el retrato (still | flutter |
+##   ears) y la frase "tell" cuando tell_when == "near" (su precio a menos de tell_near x base de su límite) o
+##   "bluff" (una contraoferta que todavía no es la final: la Sandglass detiene su arena). Las seis especies de antes
+##   siguen por su camino. Las cápsulas "kind" (wreck / bigfall / charity) cambian el nombre y el tinte del ícono.
 ## --- SS BENCH: reemplaza el placeholder de la semilla con el MISMO contrato (SS_BRIEF §3):
 ##   open(deal)  deal = {"mode": "buy" | "sell", "what", "species", "base", "customer", "name"} (BenchData.make_deal)
 ##               (opcionales: "item", "stars" (lo que se vende), "pod" (la cápsula que se compra), "seed")
@@ -101,6 +106,11 @@ func open(d: Dictionary) -> void:
 	if _sp == "" or not BenchData.HAGGLE.has(_sp):
 		_sp = Data.species_of(_who) if _who != "" else "human"
 	_r = BenchData.haggle_rules(_sp)
+	# --- SS2 BENCH: la regla del personaje (CAST[who].haggle) manda sobre la especie
+	if _who != "" and (Data.CAST.has(_who) or CastData.CAST.has(_who)):
+		_r = BenchData.haggle_rules_for(_who)
+		_sp = String(_r.get("key", _sp))
+	# --- end SS2 BENCH
 	if deal.has("seed"):
 		_rng.seed = int(deal["seed"])
 	else:
@@ -193,6 +203,16 @@ func _demo_tell() -> void:
 			_decline_barter()
 			await get_tree().create_timer(0.4).timeout
 			_on_counter_hover(0, true)
+		_:
+			# --- SS2 BENCH: la regla genérica: contraofertas lejanas hasta que se vea la señal
+			if String(_r.get("rule", "")) == "generic":
+				for i in 3:
+					if _done or _final:
+						break
+					_counter(0 if _buy else 2)
+					await get_tree().create_timer(0.45).timeout
+					if _portrait._fx.has(String(_r.get("tell_fx", ""))):
+						break
 	demo_ready = true
 
 # ------------------------------------------------------------------ armado (una vez)
@@ -416,7 +436,8 @@ func _fill() -> void:
 	_title.text = ("Buying: %s" if _buy else "Selling: %s") % what
 	_wallet.text = ("·  you have %d cr" % Game.credits) if _buy else ""   # --- SS MERGE
 	_name_lbl.text = String(deal.get("name", Data.char_name(_who)))
-	_species_lbl.text = String(Data.SPECIES.get(_sp, {}).get("name", _sp.capitalize()))
+	var spn := Data.species_of(_who) if _who != "" else _sp   # --- SS2 BENCH: la especie (no la clave de la regla)
+	_species_lbl.text = String(Data.SPECIES.get(spn, {}).get("name", spn.capitalize()))
 	_portrait.set_char(_who if _who != "" else "nell")
 	_habit.text = String(_r.get("habit", ""))
 	# la mercadería
@@ -425,7 +446,8 @@ func _fill() -> void:
 	if deal.has("pod") and deal["pod"] is Dictionary:
 		var pod: Dictionary = deal["pod"]
 		icon_path = "res://assets/items/pod_closed.png"
-		_goods_title.text = "Sealed salvage pod"
+		# --- SS2 BENCH: las cápsulas de la temporada
+		_goods_title.text = {"wreck": "Wreck pod", "bigfall": "Big Fall pod", "charity": "Free pod"}.get(String(pod.get("kind", "")), "Sealed salvage pod")
 		lines.append("Weight: %s" % BenchData.POD_WEIGHT[clampi(int(pod.get("weight", 1)) - 1, 0, 2)])
 		lines.append("Rattle: %s" % BenchData.POD_RATTLE[clampi(int(pod.get("rattle", 0)), 0, 2)])
 	elif deal.has("item"):
@@ -441,6 +463,9 @@ func _fill() -> void:
 	lines.append("Fair price ~%d cr" % int(round(_base)))
 	_goods_lines.text = "\n".join(lines)
 	_goods_icon.texture = BenchKit.tex(icon_path) if icon_path != "" else null
+	# --- SS2 BENCH: el naufragio tiene un tinte rojo óxido; la de la Gran Caída, dorado
+	var pk := String(deal.get("pod", {}).get("kind", "")) if deal.get("pod", null) is Dictionary else ""
+	_goods_icon.modulate = {"wreck": Color(1.0, 0.62, 0.5), "bigfall": Color(1.0, 0.9, 0.62)}.get(pk, Color.WHITE)
 	_price_head.text = "THEY ASK" if _buy else "THEY OFFER"
 	_depart.visible = _clock > 0.0
 	for c in _pips.get_children():
@@ -513,7 +538,10 @@ func _say(text: String, caption: String) -> void:
 
 func _barter_text() -> String:
 	var pn := BenchData.part_name(_barter)
-	return ("a %s" % pn.to_lower()) if _barter_n <= 1 else ("%d %ss" % [_barter_n, pn.to_lower()])
+	# --- SS2 SHIP: el plural de "lens" es "lenses" (decía "Take 3 lenss")
+	var pl := pn.to_lower() + ("es" if pn.to_lower().ends_with("s") or pn.to_lower().ends_with("x") else "s")
+	return ("a %s" % pn.to_lower()) if _barter_n <= 1 else ("%d %s" % [_barter_n, pl])
+	# --- end SS2 SHIP
 
 # ------------------------------------------------------------------ reglas
 
@@ -575,6 +603,11 @@ func _counter(k: int) -> void:
 	var over := absf(float(c) - _limit) / _base
 	_mood -= float(_r["temper"]) * (0.7 + 2.5 * over)
 	var caption := ""
+	# --- SS2 BENCH (P1): una contraoferta FIRM eriza a la Thornfolk (un poco más de enojo y la señal)
+	if k == 2 and String(_r.get("firm_fx", "")) != "":
+		_mood -= float(_r.get("firm_temper", 0.1))
+		_portrait.fx(String(_r["firm_fx"]), 1.0)
+		caption = String(BenchData.HAGGLE_LINES.get(_sp, {}).get("bristle", ""))
 	if _r.get("rule", "") == "small_coins" and not _buy and float(c) > _limit * 1.08:
 		_mood -= 0.15
 		_portrait.set_hiding(true)
@@ -627,9 +660,33 @@ func _after_move_tells(opening: bool) -> void:
 		"bot":
 			if not opening:
 				_portrait.fx("calc", 1.0)
+	# --- SS2 BENCH: la rama genérica de las especies nuevas
+	if String(_r.get("rule", "")) == "generic":
+		cap = _generic_tell(opening, near)
 	if cap != "":
 		_bubble.say(_bubble.text(), cap)
 		_bubble.point_at(BOOTH.position + _portrait.top_point() + Vector2(0, -6))
+
+## --- SS2 BENCH: la señal genérica (la de la especie nueva). Devuelve el subtítulo ("" = ninguno).
+func _generic_tell(opening: bool, _near: bool) -> String:
+	var fxn := String(_r.get("tell_fx", ""))
+	var lines: Dictionary = BenchData.HAGGLE_LINES.get(_sp, {})
+	match String(_r.get("tell_when", "near")):
+		"bluff":
+			if opening:
+				return ""
+			var bluff := not _final and absf(float(_price) - _limit) > 0.04 * _base
+			if bluff:
+				_portrait.fx(fxn, 60.0)
+				return String(lines.get("tell", ""))
+			_portrait.clear_fx(fxn)
+			return String(lines.get("steady", ""))
+		_:
+			if absf(float(_price) - _limit) <= float(_r.get("tell_near", 0.06)) * _base:
+				_portrait.fx(fxn, 1.6)
+				Sfx.play_pitched("blip", 1.3, -10.0)
+				return String(lines.get("tell", ""))
+	return ""
 
 ## Glimmerfolk: cómo le cae un precio (cálido = lo acepta; tibio = cerca; frío = lejos).
 func _glow_for(c: int) -> String:
@@ -837,8 +894,10 @@ func _bot_run(skill: float, stop_at: String) -> void:
 	await get_tree().create_timer(0.5).timeout
 	if g != _gen or _done:
 		return
-	# el Quill blufea (cresta que parpadea): otra vez; si no, aceptar lo que hay
-	if _sp == "quill" and not _final and _opts[2] > 0:
+	# el Quill blufea (cresta que parpadea): otra vez; si no, aceptar lo que hay (--- SS2 BENCH: y la Sandglass con la
+	# arena quieta)
+	var bluffs := _sp == "quill" or String(_r.get("tell_when", "")) == "bluff"
+	if bluffs and not _final and _opts[2] > 0:
 		_counter(2)
 		await get_tree().create_timer(0.5).timeout
 		if g != _gen or _done:

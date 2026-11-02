@@ -14,6 +14,12 @@ extends Node
 ##                             "pod" (la cápsula de roll_pod) al comprar una: se ven su peso y su traqueteo)
 ##   cápsula (PodUI.open):    {"id", "weight": 1-3, "rattle": 0-2, "price", "contents": [...]}        -> roll_pod()
 ##   contenido de cápsula:    [{"part": "cell"}, {"item": "radio", "fault": "tuner"}, ...]
+## --- SS2 BENCH: dos familias nuevas (Song box "jukebox" con TAP, Star compass "navbox" con LISTEN), 4 piezas nuevas
+## (drum, coingate, gyro, needle), pistas por familia (TOOL_CLUES_BY_ITEM / WAVES_BY_ITEM), el efecto al probarla por
+## familia (ITEMS[item].power_fx), las cápsulas de la temporada (roll_pod_for: wreck / bigfall / charity, el núcleo de
+## lámpara {"core": true}), las reglas de regateo por personaje (haggle_rules_for: CAST[who].haggle, luego la especie;
+## las especies nuevas viven en scripts/cast_data.gd y se mezclan aquí en _init) y el precio del cajón "as-is" de Mags
+## (asis_price). Los datos de los personajes nuevos (líneas, acertijos, giros) están en scripts/cast_data.gd.
 
 ## Las tres familias. slots: las 4 piezas que se ven con la carcasa abierta (en este orden: s1..s4, como el
 ## manifest.json de ART; los números 1-4 pintados junto a cada zócalo son las teclas 1-4).
@@ -24,17 +30,27 @@ const ITEMS := {
 	"radio": {"name": "Street radio", "slots": ["speaker", "tuner", "cell", "chip"], "best_tool": "listen",
 		"repair_pay": 13, "sale_base": 34, "pads": 3, "zone": 0.24, "sweep": 0.8,
 		"kettle_tip": "Radios tell you by ear. Try LISTEN.",
-		"power": "It plays! An old desert love song."},
+		"power": "It plays! An old desert love song.", "power_fx": "notes"},
 	"helperbot": {"name": "Pocket helper bot", "slots": ["servo", "chip", "lens", "cell"], "best_tool": "tap",
 		"talks": true, "repair_pay": 15, "sale_base": 38, "pads": 4, "zone": 0.21, "sweep": 0.92,
 		"kettle_tip": "Little bots rattle where it hurts. TAP it.",
-		"power": "It sits up and beeps hello."},
+		"power": "It sits up and beeps hello.", "power_fx": ""},
 	"thruster": {"name": "Hoverbike thruster", "slots": ["coil", "nozzle", "fan", "cell"], "best_tool": "scan",
 		"repair_pay": 17, "sale_base": 42, "pads": 5, "zone": 0.18, "sweep": 1.05,
 		"kettle_tip": "Thrusters run hot. SCAN for the heat.",
-		"power": "Whoomph! A clean blue flame."},
+		"power": "Whoomph! A clean blue flame.", "power_fx": "flame"},
+	# --- SS2 BENCH: la rocola del Slow Orbit (TAP: un buen golpe) y la brújula de bolsillo de los pilotos (LISTEN)
+	"jukebox": {"name": "Song box", "slots": ["drum", "needle", "speaker", "coingate"], "best_tool": "tap",
+		"repair_pay": 19, "sale_base": 48, "pads": 4, "zone": 0.20, "sweep": 0.95,
+		"kettle_tip": "Every song box needs a good thump. TAP it.",
+		"power": "Clunk-whirr... and the Slow Orbit's favourite song fills the shop.", "power_fx": "lights"},
+	"navbox": {"name": "Star compass", "slots": ["gyro", "needle", "lens", "chip"], "best_tool": "listen",
+		"repair_pay": 22, "sale_base": 55, "pads": 5, "zone": 0.17, "sweep": 1.1,
+		"kettle_tip": "A good compass sings one steady note. LISTEN.",
+		"power": "The needle swings, settles... and points at the stars.", "power_fx": "stars"},
+	# --- end SS2 BENCH
 }
-const ITEM_ORDER := ["radio", "helperbot", "thruster"]
+const ITEM_ORDER := ["radio", "helperbot", "thruster", "jukebox", "navbox"]   # --- SS2 BENCH: + jukebox, navbox
 
 ## Las 9 piezas (precio fijo en el puesto de Mags).
 const PARTS := {
@@ -47,8 +63,15 @@ const PARTS := {
 	"coil": {"name": "Heat coil", "price": 7},
 	"nozzle": {"name": "Nozzle", "price": 6},
 	"fan": {"name": "Fan", "price": 5},
+	# --- SS2 BENCH: las piezas de las familias nuevas (needle sirve a las dos)
+	"drum": {"name": "Song drum", "price": 6},
+	"coingate": {"name": "Coin gate", "price": 5},
+	"gyro": {"name": "Gyro", "price": 8},
+	"needle": {"name": "Needle", "price": 6},
+	# --- end SS2 BENCH
 }
-const PART_ORDER := ["speaker", "tuner", "cell", "chip", "servo", "lens", "coil", "nozzle", "fan"]
+const PART_ORDER := ["speaker", "tuner", "cell", "chip", "servo", "lens", "coil", "nozzle", "fan",
+	"drum", "coingate", "gyro", "needle"]   # --- SS2 BENCH: 13 piezas
 
 ## Las fallas: cosa -> pieza rota -> lo que dice el cliente (el síntoma de la nota).
 const FAULTS := {
@@ -58,6 +81,12 @@ const FAULTS := {
 		"cell": "It won't wake up."},
 	"thruster": {"coil": "Overheats after a minute.", "nozzle": "Coughs and sputters.", "fan": "Weak thrust.",
 		"cell": "Won't ignite."},
+	# --- SS2 BENCH
+	"jukebox": {"drum": "Plays the same three notes.", "needle": "Skips every other beat.",
+		"speaker": "It sings like it has a cold.", "coingate": "Eats coins. Plays nothing."},
+	"navbox": {"gyro": "Spins like a top.", "needle": "Stuck on north. There is no north out here.",
+		"lens": "Can't see the stars in it.", "chip": "Always points home. I'm not from here."},
+	# --- end SS2 BENCH
 }
 
 ## Otras maneras de decir el mismo síntoma (la primera es la de FAULTS).
@@ -74,6 +103,17 @@ const SYMPTOM_LINES := {
 		"nozzle": ["Coughs and sputters.", "Goes pop-pop-pop and stalls.", "Spits sand, then stalls."],
 		"fan": ["Weak thrust.", "My bike barely lifts off.", "It wheezes. No push."],
 		"cell": ["Won't ignite.", "Click, click, nothing.", "Dead. Not even a spark."]},
+	# --- SS2 BENCH
+	"jukebox": {"drum": ["Plays the same three notes.", "The song loops forever.", "It plays a song nobody wrote."],
+		"needle": ["Skips every other beat.", "The song limps.", "It hiccups through the chorus."],
+		"speaker": ["It sings like it has a cold.", "All hiss, no band.", "The chorus sounds like frying eggs."],
+		"coingate": ["Eats coins. Plays nothing.", "It took my last credit and burped.", "Coins go in. Silence comes out."]},
+	"navbox": {"gyro": ["Spins like a top.", "Points at my boots.", "It gets dizzy. I get dizzy."],
+		"needle": ["Stuck on north. There is no north out here.", "The needle droops.", "It points nowhere. Very calmly."],
+		"lens": ["Can't see the stars in it.", "The star chart is all smudge.", "Foggy. Like a porthole in the rain."],
+		"chip": ["Always points home. I'm not from here.", "It points at the lounge. Every time.",
+			"Keeps recalculating. Never stops."]},
+	# --- end SS2 BENCH
 }
 
 ## Las tres herramientas del diagnóstico (key: la tecla).
@@ -91,17 +131,32 @@ const TOOL_CLUES := {
 		"cell": "Silence. Not even a hum. No power from the cell.", "chip": "The tune runs backwards. The chip is scrambled.",
 		"servo": "A grinding whirr from the servo.", "lens": "A thin whine: the lens can't focus.",
 		"coil": "A rising electric buzz from the coil.", "nozzle": "Pop. Pop-pop. Sputter. It's the nozzle.",
-		"fan": "A tired, slow whoosh from the fan."},
+		"fan": "A tired, slow whoosh from the fan.",
+		# --- SS2 BENCH
+		"drum": "Three notes, again and again.", "coingate": "A coin rattles, then silence.",
+		"gyro": "The gyro's note wobbles up and down.", "needle": "A tiny tick-tick: the needle's catching."},
 	"tap": {"speaker": "The speaker cone buzzes when tapped.", "tuner": "The tuner dial wobbles in its socket.",
 		"cell": "Clunk. The cell is loose in its clip.", "chip": "Tap... and the chip blinks, confused.",
 		"servo": "The servo rattles like a loose tooth.", "lens": "The lens rattles in its ring.",
 		"coil": "The coil ticks and pings. Cracked.", "nozzle": "Grit shakes out of the nozzle.",
-		"fan": "A fan blade ticks against the cage."},
+		"fan": "A fan blade ticks against the cage.",
+		# --- SS2 BENCH
+		"drum": "Thump: the drum slips on its spindle.", "coingate": "Clunk. A coin is stuck in the gate.",
+		"gyro": "The gyro wobbles in its ring.", "needle": "The needle arm jumps when you thump it."},
 	"scan": {"speaker": "The speaker coil runs hot.", "tuner": "A hot spot on the tuner.",
 		"cell": "The cell is stone cold. Empty.", "chip": "The chip glows in a strange pattern.",
 		"servo": "One servo runs hot.", "lens": "The lens motor runs hot.",
 		"coil": "The coil glows bright orange!", "nozzle": "A hot ring around the nozzle.",
-		"fan": "The fan motor runs hot and slow."},
+		"fan": "The fan motor runs hot and slow.",
+		# --- SS2 BENCH
+		"drum": "The drum motor runs hot.", "coingate": "The coin gate's motor runs warm.",
+		"gyro": "The gyro bearing runs hot.", "needle": "Nothing hot. The needle's just stuck."},
+}
+## --- SS2 BENCH: la misma pieza dice otra cosa en otra familia (clue() mira aquí primero).
+const TOOL_CLUES_BY_ITEM := {
+	"jukebox": {"tap": {"speaker": "The horn speaker buzzes when thumped."},
+		"scan": {"needle": "Nothing hot. The arm's just loose."}},
+	"navbox": {"listen": {"chip": "A busy chirr: the chip keeps recalculating."}},
 }
 ## Las otras dos herramientas no ven claro: dejan dos candidatos (la falla y un "señuelo"); cada una un señuelo
 ## distinto, así usar las dos permite deducirla.
@@ -112,7 +167,10 @@ const TOOL_MUDDLED := {
 }
 ## LISTEN: la forma de la onda en la pantalla según la pieza rota (bench_scope.gd la dibuja).
 const WAVES := {"speaker": "hiss", "tuner": "drone", "cell": "flat", "chip": "reverse", "servo": "grind",
-	"lens": "whine", "coil": "buzz", "nozzle": "sputter", "fan": "slow"}
+	"lens": "whine", "coil": "buzz", "nozzle": "sputter", "fan": "slow",
+	"gyro": "wobble", "needle": "tick", "drum": "loop", "coingate": "clunk"}   # --- SS2 BENCH: + 4 ondas
+## --- SS2 BENCH: la onda de una pieza en una familia concreta (el chip de la brújula no canta al revés: recalcula).
+const WAVES_BY_ITEM := {"navbox": {"chip": "chirr"}}
 ## SCAN: la pieza rota está caliente (1) o fría (-1).
 const HEAT := {"cell": -1}
 
@@ -167,7 +225,9 @@ const SCORE := {"wrong": 0.5, "wrong_secs": 2.0, "patch": 1.0, "cold": 1.0, "mes
 ##   temper: cuánto baja el ánimo con cada contraoferta rechazada; rounds: contraofertas posibles (2-3);
 ##   give: cuánto se acerca a su límite después de rechazar una (0..1);
 ##   tell: la señal que se ve; habit: el consejo para el jugador (etiqueta de papel); rule: la regla especial.
-const HAGGLE := {
+## --- SS2 BENCH: HAGGLE y HAGGLE_LINES son variables (se arman en _init con las filas de las especies nuevas de
+## scripts/cast_data.gd: sandglass, lampwing, brushtail). Quien lee BenchData.HAGGLE[...] ve todas.
+const HAGGLE_BASE := {
 	"hornback": {"ask": 1.35, "offer": 0.7, "floor": 0.95, "ceiling": 1.15, "temper": 0.12, "rounds": 3, "give": 0.3,
 		"tell": "Snorts and stamps when you're close to his limit.",
 		"habit": "Hornbacks hate a quick yes. Always counter once.",
@@ -198,7 +258,7 @@ const HAGGLE := {
 		"rule": "pods_sealed"},              # vende cápsulas cerradas (pistas: peso y traqueteo)
 }
 ## Lo que dice cada especie. %d = un precio (el bot "open_sell" lleva dos: presupuesto y oferta), %s = una pieza.
-const HAGGLE_LINES := {
+const HAGGLE_LINES_BASE := {
 	"hornback": {"open_sell": ["Hrm. %d credits.", "%d. Good price. Hrm."], "open_buy": ["%d. Not a coin less."],
 		"reject": ["Hrrm. No. %d.", "Too far. %d."], "accept": ["Hrm. Deal.", "Good. Deal."],
 		"final": ["%d. That is all."], "walk": ["Hmph. Too much talk."],
@@ -229,6 +289,16 @@ const HAGGLE_LINES := {
 		"final": ["%d, and that's a kindness."], "walk": ["No worries. More fall every night!"],
 		"tell": "*flicks a tongue*"},
 }
+var HAGGLE: Dictionary = {}
+var HAGGLE_LINES: Dictionary = {}
+
+func _init() -> void:
+	HAGGLE = HAGGLE_BASE.duplicate(true)
+	HAGGLE_LINES = HAGGLE_LINES_BASE.duplicate(true)
+	HAGGLE.merge(CastData.HAGGLE, true)
+	HAGGLE_LINES.merge(CastData.HAGGLE_LINES, true)
+# --- end SS2 BENCH
+
 ## Palabras del ánimo (0..1) para la pantalla.
 const MOODS := [[0.72, "Happy"], [0.48, "Fine"], [0.25, "Annoyed"], [0.0, "Fuming"]]
 
@@ -339,8 +409,10 @@ func clue(item: String, fault: String, tool: String, seed := 0) -> Dictionary:
 	elif clear:
 		strength[fi] = 1.0
 		heat[fi] = float(HEAT.get(fault, 1))
-		out["text"] = String(TOOL_CLUES.get(tool, {}).get(fault, "That one."))
-		out["wave"] = String(WAVES.get(fault, "hum"))
+		# --- SS2 BENCH: primero lo de la familia (TOOL_CLUES_BY_ITEM / WAVES_BY_ITEM)
+		var by_item: Dictionary = TOOL_CLUES_BY_ITEM.get(item, {}).get(tool, {})
+		out["text"] = String(by_item.get(fault, TOOL_CLUES.get(tool, {}).get(fault, "That one.")))
+		out["wave"] = wave_for(item, fault)
 	else:
 		var others := []
 		for i in n:
@@ -417,7 +489,7 @@ func pod_value(pod: Dictionary) -> int:
 			v += part_price(c["part"])
 		elif c.has("item"):
 			v += int(round(float(ITEMS.get(c["item"], {}).get("sale_base", 50)) * 0.4))
-	return v
+	return v   # (--- SS2 BENCH: el núcleo de lámpara no tiene precio)
 
 ## Texto corto de un contenido de cápsula ("Power cell", "Street radio (broken)").
 func content_name(c: Dictionary) -> String:
@@ -425,4 +497,95 @@ func content_name(c: Dictionary) -> String:
 		return part_name(c["part"])
 	if c.has("item"):
 		return "%s (broken)" % item_name(c["item"])
+	if c.has("core"):
+		return "Lamp core"      # --- SS2 BENCH
 	return "?"
+
+# ------------------------------------------------------------------ --- SS2 BENCH: la temporada
+
+## La onda de LISTEN de una pieza en una familia (WAVES_BY_ITEM primero).
+func wave_for(item: String, fault: String) -> String:
+	return String(WAVES_BY_ITEM.get(item, {}).get(fault, WAVES.get(fault, "hum")))
+
+## Lo que hace la cosa al probarla bien: "notes" | "flame" | "lights" | "stars" | "" (el bot habla).
+func power_fx(item: String) -> String:
+	return String(ITEMS.get(item, {}).get("power_fx", ""))
+
+## El acertijo de Old Seven para una falla ("" si no hay: entonces vale el síntoma de siempre). Las familias sin
+## acertijos propios usan los de la radio.
+func riddle(item: String, fault: String) -> String:
+	var r: Dictionary = CastData.RIDDLES.get(item, {})
+	if r.has(fault):
+		return String(r[fault])
+	return String(CastData.RIDDLES.get("radio", {}).get(fault, ""))
+
+## El precio del cajón "as-is" de Mags (una cosa rota a la vista): round(sale_base * 0.42).
+func asis_price(item: String) -> int:
+	return int(round(float(ITEMS.get(item, {}).get("sale_base", 40)) * 0.42))
+
+## Las reglas de regateo de un PERSONAJE: CAST[who].haggle (una clave de regla propia) si la tiene, si no su especie;
+## con los valores por defecto del humano. Mira Data.CAST y, si no está ahí, CastData.CAST.
+func haggle_rules_for(who: String) -> Dictionary:
+	var row: Dictionary = Data.CAST.get(who, CastData.CAST.get(who, {}))
+	var key := String(row.get("haggle", ""))
+	if key == "" or not HAGGLE.has(key):
+		key = String(row.get("species", "human"))
+	var r := haggle_rules(key)
+	r["key"] = key
+	return r
+
+## La clave de las líneas de regateo de un personaje (la de su regla propia o su especie).
+func haggle_key_for(who: String) -> String:
+	return String(haggle_rules_for(who).get("key", "human"))
+
+## Una cápsula de la temporada: solo familias y piezas desbloqueadas.
+##   items / parts: lo que puede salir (Season.unlocked_items() / unlocked_parts()); vacío = todo.
+##   opts: {"kind": "wreck" | "bigfall" | "charity", "force_item": "navbox", "min_parts": 3, "broken_p": 1.0,
+##          "core": true, "price": 40}
+## El peso y el traqueteo siguen diciendo la verdad (como roll_pod). El naufragio pesa 3 y traquetea 2.
+func roll_pod_for(rng: RandomNumberGenerator, id: String, items: Array, parts: Array, opts := {}) -> Dictionary:
+	if rng == null:
+		rng = RandomNumberGenerator.new()
+		rng.randomize()
+	var item_pool: Array = []
+	for it in items:
+		if ITEMS.has(String(it)):
+			item_pool.append(String(it))
+	if item_pool.is_empty():
+		item_pool = ITEM_ORDER.duplicate()
+	var part_pool: Array = []
+	for pt in parts:
+		if PARTS.has(String(pt)):
+			part_pool.append(String(pt))
+	if part_pool.is_empty():
+		part_pool = PART_ORDER.duplicate()
+	var kind := String(opts.get("kind", ""))
+	var n := rng.randi_range(POD_PARTS.x, POD_PARTS.y)
+	n = maxi(n, int(opts.get("min_parts", 0)))
+	var contents: Array = []
+	for i in n:
+		contents.append({"part": part_pool[rng.randi() % part_pool.size()]})
+	var force := String(opts.get("force_item", ""))
+	var broken := force != "" or rng.randf() < float(opts.get("broken_p", POD_BROKEN))
+	if broken:
+		var item: String = force if ITEMS.has(force) else item_pool[rng.randi() % item_pool.size()]
+		var faults: Array = FAULTS[item].keys()
+		contents.append({"item": item, "fault": faults[rng.randi() % faults.size()]})
+	if bool(opts.get("core", false)):
+		contents.append({"core": true})
+	var weight := clampi(n - 1 + (1 if broken else 0), 1, 3)
+	var rattle := 2 if broken else (1 if n >= 3 else 0)
+	if kind == "wreck":
+		weight = 3
+		rattle = 2
+	var price := POD_BASE + 3 * weight + 2 * rattle
+	if opts.has("price"):
+		price = int(opts["price"])
+	elif kind == "charity":
+		price = 0
+	var pod := {"id": id if id != "" else "pod_%d" % rng.randi_range(100, 999), "weight": weight, "rattle": rattle,
+		"price": price, "contents": contents}
+	if kind != "":
+		pod["kind"] = kind
+	return pod
+# --- end SS2 BENCH

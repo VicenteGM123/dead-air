@@ -1,0 +1,39 @@
+{
+ "cell": [
+  24,
+  24
+ ],
+ "order": [
+  "gildedgear",
+  "deepsalvage",
+  "patienthand",
+  "longcounter",
+  "kilnworks",
+  "hornpost",
+  "brineswap",
+  "fogbellows",
+  "glassblown",
+  "thimble",
+  "clockpantry",
+  "pipeworks",
+  "rollingbazaar",
+  "couriercorner",
+  "orchard",
+  "unittwelve",
+  "bikebolt",
+  "drybell",
+  "moonmoth",
+  "tinpot",
+  "pricklyparts",
+  "shineagain",
+  "gutter",
+  "halfhalf",
+  "honestholt",
+  "lastbolt",
+  "oddsendings",
+  "fennel",
+  "dunepocket",
+  "secondhandstar"
+ ],
+ "note": "crests.png: 30 escudos de 24x24 en el orden de Ranking.SHOPS (Ranking.crest_index)"
+}

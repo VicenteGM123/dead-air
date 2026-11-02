@@ -107,11 +107,13 @@ func force_close() -> void:
 func _visitor(e: Dictionary) -> Dictionary:
 	_seq += 1
 	var who := String(e.get("who", "zib"))
-	var f := Data.patience_of(who)
+	var f := Data.patience_of(who) * Season.k("patience_k")   # --- SS2 SEASON: la Scour, la banda, el último día
+	# --- SS2 SEASON: "extra" pasa tal cual (graded, riddle, deadline_min, favour, racer); t_arrive para los corredores
 	return {"id": _seq, "who": who, "kind": String(e.get("kind", "repair")), "item": String(e.get("item", "")),
 		"fault": String(e.get("fault", "")), "wants": e.get("wants", []), "actor": null, "p": 1.0, "state": "in",
 		"line_secs": Data.LINE_PATIENCE * f, "counter_secs": Data.COUNTER_PATIENCE * f, "grumpy": false,
-		"t_job": -1.0, "path": [], "ev": [], "speed": 1.7, "wait": 0.0, "fidget": randf_range(5.0, 9.0)}
+		"t_job": -1.0, "path": [], "ev": [], "speed": 1.7, "wait": 0.0, "fidget": randf_range(5.0, 9.0),
+		"extra": (e.get("extra", {}) as Dictionary).duplicate(true), "t_arrive": shop_t, "turned": false}
 
 func _arrive(e: Dictionary) -> void:
 	var v := _visitor(e)
@@ -302,8 +304,38 @@ func leave(v: Dictionary, why: String, say := "", col := Color(1.0, 0.95, 0.85))
 	else:
 		_shift()
 
+# --- SS2 SEASON: las mañas de la paciencia
+## Madam Sift se da vuelta una vez: la primera vez que se le acaba la paciencia, vuelve a la mitad (true: no se va).
+func _turnover(v: Dictionary) -> bool:
+	var tw: Dictionary = SeasonData.TWISTS.get(String(v["who"]), {})
+	if String(tw.get("kind", "")) != "turnover" or bool(v.get("turned", false)):
+		return false
+	v["turned"] = true
+	v["p"] = float(tw.get("back_to", 0.5))
+	var a: Actor = v["actor"]
+	if is_instance_valid(a):
+		a.emote("excl", 1.0)
+		world.blurt(a, String(tw.get("line", "")), Color(1.0, 0.93, 0.7))
+	return true
+
+## Los corredores (el día de la carrera): su paciencia sigue al reloj hasta las 2 PM; a las 2 PM, si su propulsor
+## no está en el banco, se van. true = ya se manejó (no se cansa como los demás).
+func _deadline(v: Dictionary) -> bool:
+	var ex: Dictionary = v.get("extra", {})
+	if not ex.has("deadline_min"):
+		return false
+	var dl := int(ex["deadline_min"])
+	var m := minutes()
+	var t0 := Data.OPEN_MIN + int(clampf(float(v.get("t_arrive", 0.0)) / Data.DAY_SECONDS, 0.0, 1.0) * float(Data.CLOSE_MIN - Data.OPEN_MIN))
+	v["p"] = clampf(float(dl - m) / maxf(1.0, float(dl - t0)), 0.0, 1.0)
+	if m >= dl:
+		leave(v, "angry")
+	return true
+# --- end SS2 SEASON
+
 ## El té de Kettle: i = 0 el mostrador, 1.. la fila. Devuelve true si había alguien.
-func tea_boost(i: int) -> bool:
+## --- SS2 SEASON: amount (el Samovar sirve un poco más; el bis de Lune también pasa por aquí)
+func tea_boost(i: int, amount := -1.0) -> bool:
 	var v := {}
 	if i == 0:
 		v = counter
@@ -311,7 +343,9 @@ func tea_boost(i: int) -> bool:
 		v = line[i - 1]
 	if v.is_empty() or String(v.get("state", "")) == "out":
 		return false
-	v["p"] = minf(1.0, float(v["p"]) + Data.TEA_BOOST)
+	if (v.get("extra", {}) as Dictionary).has("deadline_min"):
+		return true   # (a los corredores los apura el reloj, no el té)
+	v["p"] = minf(1.0, float(v["p"]) + (Data.TEA_BOOST if amount < 0.0 else amount))
 	var a: Actor = v["actor"]
 	if is_instance_valid(a):
 		a.emote("heart", 1.2)
@@ -365,17 +399,22 @@ func _process(delta: float) -> void:
 func _patience(delta: float) -> void:
 	if hold:
 		return
+	var drain := Season.k("line_drain_k")   # --- SS2 SEASON: los Liner Seats (solo la fila)
 	for v in line.duplicate():
 		if String(v["state"]) in ["in", "line"]:
-			v["p"] = float(v["p"]) - delta / float(v["line_secs"])
-			if float(v["p"]) <= 0.0:
+			if _deadline(v):
+				continue
+			v["p"] = float(v["p"]) - delta * drain / float(v["line_secs"])
+			if float(v["p"]) <= 0.0 and not _turnover(v):
 				leave(v, "angry")
 	if counter.is_empty():
 		return
 	match String(counter["state"]):
 		"counter":
+			if _deadline(counter):
+				return
 			counter["p"] = float(counter["p"]) - delta / float(counter["counter_secs"])
-			if float(counter["p"]) <= 0.0:
+			if float(counter["p"]) <= 0.0 and not _turnover(counter):
 				leave(counter, "angry")
 		"work":
 			counter["p"] = maxf(Data.WORK_FLOOR, float(counter["p"]) - delta * Data.WORK_DRAIN / float(counter["counter_secs"]))

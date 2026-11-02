@@ -27,11 +27,12 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_style = UIKit.screen_style(12)
 
-func setup(sweep: float, zone: float, seed: int) -> void:
+## --- SS2 BENCH: zone_k (zona verde más ancha: la Loupe Lamp) y sweep_k (aguja más lenta: el Cool Coil).
+func setup(sweep: float, zone: float, seed: int, zone_k := 1.0, sweep_k := 1.0) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
-	speed = sweep
-	zone_w = zone
+	speed = sweep * clampf(sweep_k, 0.3, 2.0)
+	zone_w = clampf(zone * clampf(zone_k, 0.5, 2.0), 0.05, 0.4)
 	zone_c = rng.randf_range(0.24 + zone_w / 2.0, 0.76 - zone_w / 2.0)
 	verdict = ""
 	_u = 0.0

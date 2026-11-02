@@ -32,6 +32,11 @@ MATS = {
     'pod': ('#9aa8ac', 'metal'), 'pod2': ('#6a7478', 'metal'), 'podband': '#c0603a', 'light': ('#ffd36a', 'flat'),
     'glow': ('#ffe8a0', 'flat'), 'smoke': ('#c8c0b4', 'white'), 'shadow': ('#2a2224', 'flat'), 'socket': ('#26222a', 'leather'),
     'clip': ('#b8bcc4', 'metal'), 'sticker': ('#e8dcc0', 'white'), 'stripe': ('#ece2c4', 'white'),
+    # --- SS2 BENCH: la rocola y la brújula, sus piezas y el núcleo de lámpara
+    'wood': ('#8c4a2c', 'leather'), 'wood2': ('#6a3424', 'leather'), 'ambert': ('#f0a838', 'gem'), 'enamel': '#2f7f7a',
+    'enamel2': '#225e5a', 'engrave': ('#9ad8c8', 'flat'), 'glassc': ('#c4dee0', 'gem'), 'filament': ('#ffd070', 'flat'),
+    'glowc': ('#ffe6a8', 'flat'), 'halo': ('#f6c860', 'flat'), 'coin': ('#e2b44c', 'metal'), 'jewel': ('#c8402e', 'gem'),
+    'felt': '#7a2e3a', 'cream3': ('#efe0b8', 'white'),
 }
 
 
@@ -631,6 +636,307 @@ def open_thruster(cv):
 OPEN_DRAW = {'radio': open_radio, 'helperbot': open_helperbot, 'thruster': open_thruster}
 
 
+# ================================================================== --- SS2 BENCH: la temporada
+# Song box (la rocola del Slow Orbit: un gabinete con una cresta de caños de cobre y tubos ámbar, como un órgano de
+# feria; nunca el arco de tubos burbujeantes de una marca real), Star compass (entre reloj de bolsillo y sextante:
+# bronce y esmalte, sin ninguna luz), sus 4 piezas nuevas y el núcleo de lámpara (una bombita con filamento, no un
+# cristal).
+
+def star_mask(cv, cx, cy, ro, ri, n=5, rot=-math.pi / 2):
+    pts = []
+    for k in range(2 * n):
+        r = ro if k % 2 == 0 else ri
+        a = rot + k * math.pi / n
+        pts.append((cx + math.cos(a) * r, cy + math.sin(a) * r))
+    return cv.poly(pts)
+
+
+def rrect(cv, x0, y0, x1, y1, r):
+    """Rectángulo con las cuatro esquinas redondeadas (radio r)."""
+    m = cv.rect(x0, y0, x1, y1)
+    for (cx, cy, sx, sy) in ((x0 + r, y0 + r, -1, -1), (x1 - r, y0 + r, 1, -1), (x0 + r, y1 - r, -1, 1), (x1 - r, y1 - r, 1, 1)):
+        corner = ((cv.xs - cx) * sx > 0) & ((cv.ys - cy) * sy > 0)
+        m &= ~(corner & ~cv.ellipse(cx, cy, r + 0.3, r + 0.3))
+    return m
+
+
+def p_drum(bad=False):
+    cv = canvas(32, 32)
+    cy = 16.0
+    cv.put(cv.rect(2, 15, 29, 17), 'steel', mode='cyl', cast=1, iline=True)
+    body = cv.rect(8, 7, 23, 25)
+    if bad:
+        body &= ~cv.ellipse(18.0, 6.2, 3.4, 2.2)
+    pb = cv.put(body, 'brass', mode='stroke', nrm=hcyl_n(cv, cy, 9.0), cast=1, iline=True)
+    cv.put(cv.ellipse(23.6, cy, 2.0, 9.0), 'dkmetal', mode='shine', iline=True)
+    pe = cv.put(cv.ellipse(8.0, cy, 3.0, 9.4), 'gold', mode='shine', cast=1, iline=True)
+    cv.set_nrm(pe, cv.sphere_n(6.0, cy - 3.0, 4.0, 10.0, k=0.7))
+    cv.put(cv.ellipse(8.0, cy, 1.2, 2.2), 'dkmetal', mode='shine')
+    pins = [(11, 9), (14, 11), (17, 8), (20, 12), (12, 14), (16, 15), (19, 17), (11, 19), (14, 21), (18, 20), (21, 22),
+            (13, 24), (17, 24), (20, 9)]
+    for k, (x, y) in enumerate(pins):
+        if bad and k in (2, 5, 9, 13):
+            cv.dot(x, y, 'hole', 1)
+            continue
+        cv.dot(x, y, 'cream', 4)
+        cv.dot(x, y + 1, 'dkmetal', 1)
+    if bad:
+        cv.shade(cv.ellipse(18.0, 9.5, 2.8, 2.2), -2, within=[pb])
+        crack(cv, [(10, 17), (12, 19), (15, 18), (16, 21)])
+    return render(cv)
+
+
+def p_coingate(bad=False):
+    cv = canvas(32, 32)
+    chute = cv.poly([(10, 19), (21, 19), (20, 28), (11, 28)])
+    cv.put(chute, 'copper', mode='cyl', cast=1, iline=True)
+    cv.put(cv.ellipse(15.5, 28.0, 4.6, 1.6), 'hole', mode='flat')
+    plate = rrect(cv, 6, 4, 25, 21, 3)
+    pp = cv.put(plate, 'brass', mode='top', cast=1, iline=True)
+    for (x, y) in ((8, 19), (23, 19), (8, 6), (23, 6)):
+        cv.dot(x, y, 'dkmetal', 1)
+    star = star_mask(cv, 15.5, 12.0, 6.0, 2.6)
+    cv.shade(star_mask(cv, 15.5, 13.0, 6.0, 2.6) & ~star, 2, within=[pp])
+    cv.put(star, 'hole', mode='flat', outline=False)
+    if not bad:
+        flap = cv.poly([(12, 24), (19, 24), (19, 26), (12, 26)])
+    else:
+        flap = cv.poly([(12, 25), (19, 21), (20, 23), (13, 27)])
+    cv.put(flap, 'steel', mode='shine', iline=True)
+    if bad:
+        cv.put(cv.ellipse(17.0, 10.5, 3.2, 2.4), 'coin', mode='shine', iline=True)
+        cv.dot(16.0, 9.8, 'white', 4)
+        crack(cv, [(21, 14), (23, 16), (22, 18)])
+        soot(cv, 9.0, 16.0, 1.8, 1.2)
+    return render(cv)
+
+
+def p_gyro(bad=False):
+    cv = canvas(32, 32)
+    cx, cy = 15.5, 16.0
+    ox, oy = (2.0, -1.0) if bad else (0.0, 0.0)
+    cv.put(cv.rect(15, 0, 16, 3), 'dkmetal', mode='cyl', iline=True)
+    cv.put(cv.rect(15, 29, 16, 31), 'dkmetal', mode='cyl', iline=True)
+    outer = cv.ellipse(cx, cy, 13.0, 13.0) & ~cv.ellipse(cx, cy, 10.8, 10.8)
+    if bad:
+        outer &= ~cv.ellipse(cx + 9.0, cy - 9.5, 3.0, 2.6)
+        outer |= cv.ellipse(cx + 7.6, cy - 8.0, 1.6, 1.4) & ~cv.ellipse(cx, cy, 10.0, 10.0)
+    cv.put(outer, 'brass', mode='shine', cast=1, iline=True)
+    mid = cv.ellipse(cx + ox, cy + oy, 4.6, 10.4) & ~cv.ellipse(cx + ox, cy + oy, 2.8, 8.6)
+    cv.put(mid, 'copper', mode='shine', cast=1, iline=True)
+    inner = cv.ellipse(cx - ox * 0.5, cy, 8.8, 3.6) & ~cv.ellipse(cx - ox * 0.5, cy, 7.0, 2.0)
+    cv.put(inner, 'brass', mode='shine', cast=1, iline=True)
+    cv.put(cv.ellipse(cx + ox * 0.5, cy + oy * 0.5, 2.3, 2.3), 'steel', mode='shine', iline=True)
+    cv.dot(cx - 0.8 + ox * 0.5, cy - 0.8, 'white', 4)
+    if bad:
+        crack(cv, [(5, 19), (7, 21), (6, 23)])
+        soot(cv, 22.0, 22.0, 1.8, 1.2)
+    return render(cv)
+
+
+def p_needle(bad=False):
+    cv = canvas(32, 32)
+    px, py = 9.0, 23.0
+    pts = [(px, py), (22.0, 10.0)] if not bad else [(px, py), (15.0, 16.0), (22.5, 13.5)]
+    tip = pts[-1]
+    m = cv.stroke(pts, 1.2, 0.8)
+    pn = cv.put(m, 'brass', mode='shine', cast=1, iline=True)
+    cv.put(cv.capsule((px, py), (px - 3.6, py + 3.6), 1.6), 'brass', mode='shine', cast=1, iline=True)
+    st = star_mask(cv, tip[0] + 1.6, tip[1] - 1.6, 4.4, 1.9)
+    if bad:
+        st &= ~cv.ellipse(tip[0] + 5.5, tip[1] - 3.0, 2.0, 1.6)
+    cv.put(st, 'gold', mode='shine', cast=1, iline=True)
+    cv.put(cv.ellipse(px, py, 3.2, 3.2), 'brass', mode='shine', cast=1, iline=True)
+    cv.put(cv.ellipse(px, py, 1.6, 1.6), 'jewel', mode='shine')
+    cv.dot(px - 0.6, py - 0.6, 'white', 4)
+    if bad:
+        cv.paint(m & cv.ellipse(15.0, 16.5, 4.5, 4.5), 'soot', 2)
+        cv.paint(m & cv.ellipse(18.5, 15.0, 2.5, 2.5), 'burnt', 2)
+    return render(cv)
+
+
+def i_lamp_core():
+    cv = canvas(64, 64)
+    cx, cy = 32.0, 25.0
+    halo = cv.ellipse(cx, cy, 21.0, 20.0) & ~cv.ellipse(cx, cy, 16.6, 16.1)
+    q = cv.put(halo, 'halo', mode='flat', outline=False)
+    keep_all(cv)
+    # base de rosca de bronce con su contacto
+    base = cv.rect(25, 40, 38, 52)
+    pb = cv.put(base, 'brass', mode='cyl', cast=1, iline=True)
+    for y in (42, 45, 48):
+        cv.shade(cv.line([(25, y), (38, y + 1)]), -1, within=[pb])
+    cv.put(cv.ellipse(31.5, 54.0, 3.6, 2.2), 'dkmetal', mode='shine', iline=True)
+    # la bombita de vidrio
+    bulb = cv.ellipse(cx, cy, 16.0, 15.6) | cv.poly([(cx - 8, cy + 9), (cx + 8, cy + 9), (cx + 6, cy + 16), (cx - 6, cy + 16)])
+    pg = cv.put(bulb, 'glassc', mode='shine', cast=1, iline=True)
+    cv.set_nrm(pg, cv.sphere_n(cx - 3.0, cy - 4.0, 17.0, 17.0, k=0.9))
+    cv.paint(cv.ellipse(cx + 1.0, cy + 1.0, 11.0, 10.5) & cv.of(pg), 'glowc', 2)
+    # el filamento: dos alambres que suben y un espiral entre ellos
+    for x0, x1 in ((cx - 3.5, cx - 6.0), (cx + 3.5, cx + 6.0)):
+        cv.put(cv.line([(x0, cy + 15), (x1, cy + 2)]), 'steel', mode='flat', outline=False)
+    coil = []
+    for k in range(13):
+        coil.append((cx - 6.0 + k, cy + (0.0 if k % 2 else -2.5)))
+    q2 = cv.put(cv.line(coil), 'filament', mode='flat', outline=False)
+    cv.parts[q2].keep = True
+    for (x, y) in ((cx - 9, cy - 9), (cx - 8, cy - 10), (cx - 10, cy - 7), (cx - 6, cy - 11)):
+        cv.dot(x, y, 'white', 4)
+    return render(cv)
+
+
+def i_jukebox():
+    cv = canvas(64, 64)
+    # la cresta de caños de cobre (como un órgano de feria) con tubos ámbar entre ellos, detrás de la tapa
+    for x, hh in ((14, 8), (22, 13), (30, 17), (38, 13), (46, 8)):
+        cv.put(cv.rect(x, 20 - hh, x + 3, 21), 'copper', mode='cyl', cast=1, iline=True)
+        cv.put(cv.ellipse(x + 1.5, 20 - hh, 2.0, 1.0), 'dkmetal', mode='shine')
+    for x, hh in ((18, 10), (26, 15), (34, 15), (42, 10)):
+        q = cv.put(cv.rect(x, 21 - hh, x + 2, 21) | cv.ellipse(x + 1.0, 21 - hh, 1.6, 1.4), 'ambert', mode='shine', iline=True)
+    pf, pt, ps = box3(cv, 9, 22, 49, 58, 5, -4, 'wood', 'wood', 'wood2')
+    # frente crema con la ventanita del tambor
+    cv.put(cv.rect(12, 25, 46, 55), 'cream3', mode='cyl', iline=True)
+    cv.put(cv.rect(16, 27, 42, 37), 'brass', mode='shine', cast=1, iline=True)
+    win = cv.rect(18, 29, 40, 35)
+    cv.put(win, 'glass', mode='flat')
+    drum = cv.rect(21, 30, 37, 34)
+    pd = cv.put(drum, 'gold', mode='stroke', nrm=hcyl_n(cv, 32.0, 2.6))
+    for x in range(22, 37, 3):
+        cv.dot(x, 31 + (x // 3) % 3, 'cream', 4)
+    cv.dot(19, 30, 'white', 4)
+    # rejilla del parlante (tablillas) y la ranura de monedas con forma de estrella
+    gr = cv.rect(15, 40, 34, 52)
+    pg = cv.put(gr, 'grille', mode='stroke', nrm=concave_n(cv, 24.5, 46.0, 11.0, 7.0), iline=True)
+    for y in range(41, 52, 2):
+        cv.paint(cv.rect(16, y, 33, y) & cv.of(pg), 'felt', 2)
+    cv.put(cv.rect(37, 40, 44, 48), 'brass', mode='top', cast=1, iline=True)
+    cv.put(star_mask(cv, 40.5, 44.0, 3.4, 1.4), 'hole', mode='flat', outline=False)
+    # patitas y unas bombitas de colores en el borde
+    for x in (12, 43):
+        cv.put(cv.rect(x, 58, x + 3, 61), 'dkmetal', mode='cyl', iline=True)
+    for k, c in enumerate(('amber', 'red', 'teal', 'amber')):
+        cv.dot(16 + k * 8, 24, c, 4)
+    crack(cv, [(44, 30), (45, 33)])
+    return render(cv)
+
+
+def i_navbox():
+    cv = canvas(64, 64)
+    cx, cy = 31.0, 35.0
+    # el arco de sextante detrás (abajo a la derecha), con su escala
+    arc = cv.ellipse(cx, cy, 27.0, 27.0) & ~cv.ellipse(cx, cy, 23.5, 23.5) & (cv.ys > cy + 2) & (cv.xs > cx - 4)
+    pa = cv.put(arc, 'brass', mode='shine', cast=1, iline=True)
+    for a in np.linspace(0.15, 1.45, 9):
+        cv.dot(cx + math.cos(a) * 25.2, cy + math.sin(a) * 25.2, 'dkmetal', 1)
+    # la anilla de la cadena y la corona (arriba), unos eslabones
+    cv.put(cv.ellipse(cx, 7.0, 4.4, 4.2) & ~cv.ellipse(cx, 7.0, 2.4, 2.2), 'brass', mode='shine', cast=1, iline=True)
+    cv.put(cv.rect(int(cx) - 2, 10, int(cx) + 2, 15), 'brass', mode='cyl', cast=1, iline=True)
+    for (x, y) in ((cx - 7, 5), (cx - 11, 6), (cx - 15, 8)):
+        cv.put(cv.ellipse(x, y, 1.8, 1.4) & ~cv.ellipse(x, y, 0.6, 0.4), 'brass', mode='shine', iline=True)
+    # la caja redonda de bronce
+    case = cv.ellipse(cx, cy, 21.0, 20.0)
+    pc = cv.put(case, 'brass', mode='shine', cast=2, iline=True)
+    cv.set_nrm(pc, cv.sphere_n(cx - 4, cy - 5, 23, 22, k=0.85))
+    dial = cv.ellipse(cx, cy, 17.0, 16.0)
+    pd = cv.put(dial, 'enamel', mode='top', iline=True)
+    # grabados: un círculo, los rumbos y estrellitas
+    ring = cv.ellipse(cx, cy, 11.0, 10.4) & ~cv.ellipse(cx, cy, 10.0, 9.4)
+    cv.paint(ring & cv.of(pd), 'engrave', 2)
+    for k in range(8):
+        a = k * math.pi / 4
+        r0, r1 = (12.0, 15.0) if k % 2 else (12.0, 15.6)
+        cv.paint(cv.line([(cx + math.cos(a) * r0, cy + math.sin(a) * r0 * 0.95), (cx + math.cos(a) * r1, cy + math.sin(a) * r1 * 0.95)]) & cv.of(pd), 'engrave', 2)
+    for (x, y) in ((cx - 6, cy - 5), (cx - 3, cy + 6), (cx + 6, cy + 4), (cx - 8, cy + 2), (cx + 3, cy - 7)):
+        cv.dot(x, y, 'engrave', 4)
+    # la aguja flotante con punta de estrella (apunta arriba a la derecha) y el pivote
+    m = cv.stroke([(cx - 5.0, cy + 5.0), (cx + 8.0, cy - 8.0)], 1.1, 0.7)
+    cv.put(m, 'needle', mode='flat', iline=True)
+    cv.put(star_mask(cv, cx + 9.5, cy - 9.5, 3.6, 1.5), 'gold', mode='shine', iline=True)
+    cv.put(cv.ellipse(cx, cy, 2.0, 2.0), 'brass', mode='shine', iline=True)
+    # el domo de vidrio: un reflejo arriba a la izquierda (sin luz propia)
+    for (x, y) in ((cx - 11, cy - 7), (cx - 10, cy - 9), (cx - 8, cy - 11), (cx - 6, cy - 12)):
+        cv.dot(x, y, 'white', 4)
+    return render(cv)
+
+
+def open_jukebox(cv):
+    # el gabinete de madera abierto de frente; adentro, el fondo oscuro y la mecánica
+    case = rrect(cv, 3, 8, 176, 116, 6)
+    cv.put(case, 'wood', mode='top', cast=1, iline=True)
+    cv.put(cv.rect(9, 14, 170, 110), 'wood2', mode='flat', iline=True)
+    pf = cv.put(cv.rect(12, 17, 167, 107), 'felt', mode='flat', iline=True)
+    # el fieltro rojo de adentro, con pliegues verticales suaves y dos rieles de bronce
+    for x in range(20, 167, 14):
+        cv.shade(cv.rect(x, 18, x, 106), -1, within=[pf])
+    for y in (30, 84):
+        cv.put(cv.rect(12, y, 167, y + 2), 'brass', mode='cyl', cast=1, iline=True)
+    # la cresta de caños de cobre y tubos ámbar a lo largo del borde de arriba
+    k = 0
+    for x in range(10, 170, 8):
+        hh = 6 + int(4 * math.sin(k * 0.7) + 4)
+        if k % 2 == 0:
+            cv.put(cv.rect(x, 9 - hh, x + 3, 10), 'copper', mode='cyl', cast=1, iline=True)
+        else:
+            cv.put(cv.rect(x, 9 - hh, x + 2, 10) | cv.ellipse(x + 1.0, 9 - hh, 1.6, 1.2), 'ambert', mode='shine', iline=True)
+        k += 1
+    # una correa del tambor al motor y cables
+    cv.put(cv.rect(118, 88, 140, 104), 'dkmetal', mode='top', cast=1, iline=True)
+    cv.put(cv.ellipse(129, 96, 5.0, 5.0), 'copper', mode='shine', iline=True)
+    wire(cv, [(52, 58), (96, 70), (124, 90)], 'rubber', 1.0)
+    wire(cv, [(52, 50), (64, 34), (76, 30)], 'wire_r')
+    wire(cv, [(106, 30), (118, 40), (128, 46)], 'wire_y')
+    wire(cv, [(90, 74), (92, 60), (90, 48)], 'wire_k')
+    # la caja de monedas (abajo a la izquierda) con un par de monedas
+    cv.put(cv.rect(14, 88, 44, 106), 'dkmetal', mode='top', cast=1, iline=True)
+    for (x, y) in ((22, 98), (28, 100), (34, 97)):
+        cv.put(cv.ellipse(x, y, 2.6, 1.6), 'coin', mode='shine', iline=True)
+    for (x, y) in ((6, 11), (173, 11), (6, 113), (173, 113)):
+        cv.put(cv.ellipse(x, y, 1.6, 1.6), 'steel', mode='shine', iline=True)
+    cv.put(cv.rect(140, 108, 166, 112), 'sticker', mode='flat')
+
+
+def open_navbox(cv):
+    # la caja abierta como un reloj de bolsillo: bronce, esmalte verde azulado con estrellas grabadas
+    case = rrect(cv, 3, 3, 176, 117, 24)
+    cv.put(case, 'brass', mode='top', cast=1, iline=True)
+    dial = rrect(cv, 9, 9, 170, 111, 20)
+    pd = cv.put(dial, 'enamel', mode='flat', iline=True)
+    gx, gy = 90.0, 56.0
+    for r in (26.0, 40.0, 54.0):
+        ring = cv.ellipse(gx, gy, r * 1.3, r) & ~cv.ellipse(gx, gy, r * 1.3 - 1.0, r - 1.0)
+        cv.paint(ring & cv.of(pd), 'engrave', 2)
+    for k in range(16):
+        a = k * math.pi / 8
+        cv.paint(cv.line([(gx + math.cos(a) * 30, gy + math.sin(a) * 23), (gx + math.cos(a) * 76, gy + math.sin(a) * 58)]) & cv.of(pd), 'enamel2', 2)
+    stars = [(30, 70), (42, 96), (60, 104), (118, 100), (150, 86), (160, 60), (140, 70), (24, 92), (52, 78), (128, 84)]
+    for i in range(len(stars) - 1):
+        if i in (3, 6):
+            continue
+        cv.paint(cv.line([stars[i], stars[i + 1]]) & cv.of(pd), 'engrave', 2)
+    for (x, y) in stars:
+        cv.dot(x, y, 'cream', 4)
+        for (dx, dy) in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            cv.dot(x + dx, y + dy, 'engrave', 3)
+    # la bisagra a la izquierda y la corona a la derecha
+    for y in (40, 60, 80):
+        cv.put(cv.rect(1, y - 5, 6, y + 5), 'brass', mode='cyl', cast=1, iline=True)
+    cv.put(cv.rect(174, 54, 179, 66), 'brass', mode='cyl', cast=1, iline=True)
+    for (x, y) in ((16, 12), (163, 12), (16, 108), (163, 108)):
+        cv.put(cv.ellipse(x, y, 1.6, 1.6), 'steel', mode='shine', iline=True)
+
+
+PARTS2 = {'drum': p_drum, 'coingate': p_coingate, 'gyro': p_gyro, 'needle': p_needle}
+ITEMS2 = {'jukebox': i_jukebox, 'navbox': i_navbox}
+EXTRA2 = {'lamp_core': i_lamp_core}
+# zócalos en píxeles de 180x120 (el manifest los da x2: los de §5.1 del diseño)
+OPEN2 = {
+    'jukebox': [('s1', 'drum', (20, 42)), ('s2', 'needle', (74, 14)), ('s3', 'speaker', (128, 42)), ('s4', 'coingate', (74, 76))],
+    'navbox': [('s1', 'gyro', (74, 40)), ('s2', 'needle', (18, 16)), ('s3', 'lens', (130, 16)), ('s4', 'chip', (74, 80))],
+}
+OPEN_DRAW2 = {'jukebox': open_jukebox, 'navbox': open_navbox}
+# --- end SS2 BENCH
+
+
 def build_open(out, parts):
     """<item>_open.png (360x240, con las piezas puestas), <item>_open_empty.png (zócalos vacíos) y manifest.json."""
     manifest = {}
@@ -653,8 +959,13 @@ def build_open(out, parts):
         json.dump(manifest, f, indent=1)
     return manifest
 
-PARTS = {'speaker': p_speaker, 'tuner': p_tuner, 'cell': p_cell, 'chip': p_chip, 'servo': p_servo, 'lens': p_lens,
+PARTS_BASE = {'speaker': p_speaker, 'tuner': p_tuner, 'cell': p_cell, 'chip': p_chip, 'servo': p_servo, 'lens': p_lens,
          'coil': p_coil, 'nozzle': p_nozzle, 'fan': p_fan}
+PARTS = dict(PARTS_BASE)
+PARTS.update(PARTS2)      # --- SS2 BENCH
+ITEMS.update(ITEMS2)
+OPEN.update(OPEN2)
+OPEN_DRAW.update(OPEN_DRAW2)
 
 
 def build_parts(out):
@@ -677,6 +988,8 @@ if __name__ == '__main__':
     os.makedirs(os.path.join(out, 'items'), exist_ok=True)
     for name, fn in ITEMS.items():
         Image.fromarray(fn(), 'RGBA').save(os.path.join(out, 'items', f'{name}_closed.png'))
+    for name, fn in EXTRA2.items():   # --- SS2 BENCH: el núcleo de lámpara
+        Image.fromarray(fn(), 'RGBA').save(os.path.join(out, 'items', f'{name}.png'))
     Image.fromarray(i_pod(False), 'RGBA').save(os.path.join(out, 'items', 'pod_closed.png'))
     Image.fromarray(i_pod(True), 'RGBA').save(os.path.join(out, 'items', 'pod_open.png'))
     if 'build_open' in globals():

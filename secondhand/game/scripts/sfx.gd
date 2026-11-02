@@ -13,6 +13,16 @@ extends Node
 ##   efectos:   sfx_bell, sfx_whistle, sfx_blip1..3, sfx_ratchet, sfx_sizzle, sfx_coins, sfx_pod, sfx_good, sfx_bad,
 ##              sfx_takeoff, sfx_tea                       -> Sfx.play("sfx_bell") o un alias de ALIASES
 ## Volúmenes: Game.music_volume y Game.sfx_volume (0..1) con apply_volumes().
+## --- SS2 RANK (la línea R es dueña de este archivo desde la ronda 2, SS2_DESIGN §7):
+##   música:    music_festival (bucle, Bronzemoon), music_gala (UNA vez, la noche del cometa; después music("night")),
+##              music_night (P1, 'Copper & Tin', bucle de 48 s: el libro de cuentas, el tablero, después de hora),
+##              music_race (P1, todavía sin archivo: suena music_shop, LOOP_FALLBACK)
+##   ambiente:  amb_storm (bucle, la Scour)
+##   efectos:   sfx_flap, sfx_signal, sfx_tape, sfx_stamp, sfx_upgrade, sfx_cheer, sfx_rumble, sfx_gust, sfx_comet,
+##              sfx_rank_up, sfx_rank_down (alias cortos en ALIASES2: "flap", "signal"...); P1 sin archivo todavía:
+##              sfx_whoosh, sfx_lamp, sfx_sand, sfx_flutter, sfx_squeak, sfx_thump (no suenan, sin error)
+##   BG_LOOPS se decodifican al arrancar (main._boot_background); LATE_LOOPS solo con prewarm_late(alias) sobre una
+##   pantalla quieta, la noche antes de usarlos (§7, §8.13). ONCE: las músicas que no son bucle.
 
 const SFX := ["sfx_bell", "sfx_whistle", "sfx_blip1", "sfx_blip2", "sfx_blip3", "sfx_ratchet", "sfx_sizzle",
 	"sfx_coins", "sfx_pod", "sfx_good", "sfx_bad", "sfx_takeoff", "sfx_tea"]
@@ -22,6 +32,26 @@ const ALIASES := {
 	"ratchet": "sfx_ratchet", "sizzle": "sfx_sizzle", "coin": "sfx_coins", "coins": "sfx_coins", "pod": "sfx_pod",
 	"good": "sfx_good", "bad": "sfx_bad", "takeoff": "sfx_takeoff", "tea": "sfx_tea", "door": "sfx_bell",
 }
+# --- SS2 SEASON contract (RANK owns sfx.gd from wave 2; keep these names): los sonidos nuevos de la ronda 2 (§7).
+# Todos opcionales (sin archivo no suena nada). LATE_LOOPS: los bucles largos que NO se decodifican al arrancar sino
+# con prewarm_late(alias) sobre una pantalla quieta, antes de usarlos (§7, §8.13). LOOP_FALLBACK: lo que suena
+# mientras un bucle nuevo no existe (de noche, music_night -> music_title, como en BASE).
+const ALIASES2 := {
+	"flap": "sfx_flap", "signal": "sfx_signal", "tape": "sfx_tape", "stamp": "sfx_stamp", "upgrade": "sfx_upgrade",
+	"cheer": "sfx_cheer", "rumble": "sfx_rumble", "gust": "sfx_gust", "comet": "sfx_comet", "rank_up": "sfx_rank_up",
+	"rank_down": "sfx_rank_down", "whoosh": "sfx_whoosh", "lamp": "sfx_lamp", "sand": "sfx_sand", "flutter": "sfx_flutter",
+	"squeak": "sfx_squeak", "thump": "sfx_thump",
+}
+const LATE_LOOPS := {"storm": "amb_storm", "festival": "music_festival", "gala": "music_gala", "night": "music_night",
+	"race": "music_race"}
+const LOOP_FALLBACK := {"music_night": "music_title", "music_festival": "music_market", "music_gala": "music_title",
+	"music_race": "music_shop", "amb_storm": "amb_wind"}
+# --- end SS2 SEASON contract
+# --- SS2 RANK: los bucles que el arranque decodifica en segundo plano (la misma lista que main._boot_background, que
+# es de S: MERGE puede leer esta), y las músicas que suenan una sola vez (loop = false aunque pasen por music()).
+const BG_LOOPS := ["music_market", "amb_port", "music_shop"]
+const ONCE := ["music_gala"]
+# --- end SS2 RANK
 const MUSIC_DB := -6.0
 const AMB_DB := -12.0
 const FADE := 1.2
@@ -82,7 +112,7 @@ func path_of(name: String) -> String:
 	return ""
 
 func has_sound(name: String) -> bool:
-	return _stream(ALIASES.get(name, name)) != null
+	return _stream(ALIASES.get(name, ALIASES2.get(name, name))) != null   # --- SS2 RANK: + ALIASES2
 
 func _stream(name: String) -> AudioStream:
 	if _streams.has(name):
@@ -100,7 +130,7 @@ func _stream(name: String) -> AudioStream:
 func _loop_stream(name: String) -> AudioStream:
 	var st := _stream(name)
 	if st is AudioStreamOggVorbis:
-		st.loop = true
+		st.loop = not (name in ONCE)   # --- SS2 RANK: la música de la gala suena una vez
 	return st
 
 func apply_volumes() -> void:
@@ -117,7 +147,7 @@ func play(name: String, pitch_var := 0.06, db := 0.0) -> void:
 
 ## Como play(), pero con un tono exacto.
 func play_pitched(name: String, pitch: float, db := 0.0) -> void:
-	var st := _stream(ALIASES.get(name, name))
+	var st := _stream(ALIASES.get(name, ALIASES2.get(name, name)))   # --- SS2 SEASON contract: ALIASES2
 	if st == null:
 		return
 	for p in _pool:
@@ -138,7 +168,8 @@ func step() -> void:
 
 ## La música en bucle: "title", "shop", "market" (music_<nombre>.ogg) o "" para callar. Cambia con un fundido.
 func music(name: String) -> void:
-	if name == _music_name:
+	# --- SS2 RANK: una música de una sola vez (ONCE) que ya terminó vuelve a empezar si se la pide otra vez
+	if name == _music_name and (name == "" or _music.playing or not (("music_" + name) in ONCE)):
 		return
 	_music_name = name
 	if _music_tw and _music_tw.is_valid():
@@ -150,7 +181,7 @@ func music(name: String) -> void:
 		_music.stop()
 		var st: AudioStream = null
 		if name != "":
-			st = _loop_stream("music_" + name)
+			st = _loop_fb("music_" + name)   # --- SS2 SEASON contract: con su respaldo (LOOP_FALLBACK)
 		if st:
 			_music.stream = st
 			_music.volume_db = -60.0
@@ -172,7 +203,7 @@ func ambience(name: String) -> void:
 		_amb.stop()
 		var st: AudioStream = null
 		if name != "":
-			st = _loop_stream("amb_" + name)
+			st = _loop_fb("amb_" + name)   # --- SS2 SEASON contract
 		if st:
 			_amb.stream = st
 			_amb.volume_db = -60.0
@@ -182,6 +213,35 @@ func ambience(name: String) -> void:
 
 func music_name() -> String:
 	return _music_name
+
+## --- SS2 RANK: si la música de ahora todavía suena (la gala pregunta cuándo terminó su tema de una vez).
+func music_playing() -> bool:
+	return _music.playing
+
+# --- SS2 SEASON contract
+## Un bucle, o su respaldo si el archivo todavía no existe (LOOP_FALLBACK).
+func _loop_fb(full: String) -> AudioStream:
+	# --- SS2 RANK: en la web un bucle tardío (LATE_LOOPS) que todavía no se decodificó con prewarm_late() NO se
+	# decodifica aquí (sería un tirón en medio de la escena): suena su respaldo, ya decodificado al arrancar, y el bucle
+	# nuevo suena la próxima vez que se lo pida, después de su prewarm_late (el tablero de la noche y la gala lo hacen)
+	if OS.has_feature("web") and full in LATE_LOOPS.values() and LOOP_FALLBACK.has(full):
+		var st0 := _stream(full)
+		if st0 != null and not AudioServer.is_stream_registered_as_sample(st0):
+			return _loop_stream(String(LOOP_FALLBACK[full]))
+	# --- end SS2 RANK
+	var st := _loop_stream(full)
+	if st == null and LOOP_FALLBACK.has(full):
+		st = _loop_stream(String(LOOP_FALLBACK[full]))
+	return st
+
+## Decodifica (en la web) uno de los bucles tardíos por su alias ("storm", "festival", "gala", "night", "race"), sobre
+## una pantalla quieta. Sin archivo: nada (suena su respaldo, ya decodificado al arrancar).
+func prewarm_late(alias: String) -> float:
+	var full := String(LATE_LOOPS.get(alias, alias))
+	if path_of(full) == "":
+		return 0.0
+	return prewarm_one(full)
+# --- end SS2 SEASON contract
 
 # --- SS AUDIO: precarga de los bucles en la web.
 ## En la web (Godot 4.7 reproduce los sonidos como "samples" del navegador) cada sonido se decodifica ENTERO, en el

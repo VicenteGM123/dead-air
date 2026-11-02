@@ -7,6 +7,28 @@
   "anchor": "bottom",
   "px": 0.045
  },
+ "band_trio": {
+  "anchor": "bottom",
+  "frames": 2,
+  "px": 0.0222
+ },
+ "band_trio_window": {
+  "anchor": "bottom",
+  "frames": 2,
+  "px": 0.02
+ },
+ "boarded_poster": {
+  "anchor": "bottom",
+  "px": 0.035
+ },
+ "bot_torso": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
+ "bunting": {
+  "anchor": "top",
+  "px": 0.03
+ },
  "cables": {
   "anchor": "top",
   "px": 0.03
@@ -24,11 +46,37 @@
   "frames": 4,
   "px": 0.03
  },
+ "chalkboard": {
+  "anchor": "center",
+  "frames": 4,
+  "px": 0.03
+ },
+ "chrome_plant": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
+ "cloth_flap": {
+  "anchor": "top",
+  "frames": 2,
+  "px": 0.03
+ },
+ "coat_rack": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
  "crate": {
   "anchor": "bottom",
   "px": 0.03
  },
+ "crate_sealed": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
  "crate_stack": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
+ "departure_board": {
   "anchor": "bottom",
   "px": 0.03
  },
@@ -41,17 +89,136 @@
   "frames": 2,
   "px": 0.035
  },
+ "facade_awning": {
+  "anchor": "top",
+  "px": 0.035
+ },
+ "fg_bike_frame": {
+  "anchor": "top",
+  "px": 0.03
+ },
+ "fg_cable_coil": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
+ "fg_engine_block": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
+ "fg_oil_drum": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
+ "fg_pod_shells": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
+ "flag_race": {
+  "anchor": "top",
+  "px": 0.03
+ },
+ "flyer_bike": {
+  "anchor": "center",
+  "frames": 2,
+  "px": 0.05
+ },
+ "frame_certificate": {
+  "anchor": "center",
+  "px": 0.026
+ },
+ "glint_balloon": {
+  "anchor": "bottom",
+  "frames": 2,
+  "px": 0.045
+ },
  "junk_shelf": {
   "anchor": "bottom",
   "px": 0.03
+ },
+ "lamp_core_prop": {
+  "anchor": "bottom",
+  "frames": 4,
+  "px": 0.024
  },
  "lamp_hanging": {
   "anchor": "top",
   "px": 0.03
  },
+ "lantern_string": {
+  "anchor": "top",
+  "px": 0.03
+ },
+ "lounge_sign": {
+  "anchor": "center",
+  "px": 0.045
+ },
+ "lucky_key": {
+  "anchor": "bottom",
+  "px": 0.022
+ },
+ "moon_banner": {
+  "anchor": "top",
+  "px": 0.035
+ },
+ "moon_copper": {
+  "anchor": "center",
+  "frames": 3,
+  "px": 0.05
+ },
+ "moon_halo": {
+  "anchor": "center",
+  "px": 0.05
+ },
+ "moon_tin": {
+  "anchor": "center",
+  "frames": 3,
+  "px": 0.05
+ },
+ "moonbeam": {
+  "anchor": "center",
+  "px": 0.03
+ },
+ "neon_street": {
+  "anchor": "center",
+  "frames": 2,
+  "px": 0.035
+ },
+ "notice_board": {
+  "anchor": "center",
+  "px": 0.03
+ },
  "parts_cabinet": {
   "anchor": "bottom",
   "px": 0.03
+ },
+ "pipe_run": {
+  "anchor": "center",
+  "px": 0.03
+ },
+ "plaque_paid": {
+  "anchor": "center",
+  "px": 0.022
+ },
+ "poster_frame": {
+  "anchor": "center",
+  "px": 0.022
+ },
+ "race_gate": {
+  "anchor": "bottom",
+  "px": 0.06
+ },
+ "radio_wall": {
+  "anchor": "center",
+  "px": 0.026
+ },
+ "ribbon_bronze": {
+  "anchor": "bottom",
+  "px": 0.022
+ },
+ "ring_lamp": {
+  "anchor": "center",
+  "frames": 2,
+  "px": 0.06
  },
  "round_window": {
   "anchor": "center",
@@ -61,11 +228,32 @@
   "anchor": "center",
   "px": 0.035
  },
+ "sand_drift": {
+  "anchor": "center",
+  "frames": 2,
+  "px": 0.03
+ },
  "scrap_patch_a": {
   "anchor": "center",
   "px": 0.035
  },
  "scrap_patch_b": {
+  "anchor": "center",
+  "px": 0.035
+ },
+ "shadow_board": {
+  "anchor": "center",
+  "px": 0.03
+ },
+ "shine_carpet": {
+  "anchor": "center",
+  "px": 0.035
+ },
+ "shine_facade": {
+  "anchor": "bottom",
+  "px": 0.035
+ },
+ "shine_star": {
   "anchor": "center",
   "px": 0.035
  },
@@ -87,7 +275,50 @@
  },
  "sky_ring": {
   "anchor": "center",
-  "px": 0.1
+  "lamps": [
+   [
+    46.2,
+    116.6
+   ],
+   [
+    109.6,
+    98.6
+   ],
+   [
+    173.0,
+    81.9
+   ],
+   [
+    241.4,
+    65.7
+   ],
+   [
+    304.8,
+    52.7
+   ],
+   [
+    382.9,
+    39.2
+   ],
+   [
+    451.2,
+    29.2
+   ]
+  ],
+  "px": 0.06,
+  "size": [
+   512,
+   150
+  ]
+ },
+ "smoke_column": {
+  "anchor": "bottom",
+  "frames": 4,
+  "px": 0.09
+ },
+ "spark": {
+  "anchor": "center",
+  "px": 0.04
  },
  "stall_canopy_red": {
   "anchor": "bottom",
@@ -96,6 +327,10 @@
  "stall_canopy_teal": {
   "anchor": "bottom",
   "px": 0.04
+ },
+ "stall_tarp": {
+  "anchor": "bottom",
+  "px": 0.045
  },
  "star_sign_0": {
   "anchor": "bottom",
@@ -121,6 +356,11 @@
   "anchor": "bottom",
   "px": 0.04
  },
+ "star_sign_comet": {
+  "anchor": "bottom",
+  "px": 0.031,
+  "star_cx": 92
+ },
  "starfall": {
   "anchor": "center",
   "px": 0.06
@@ -128,6 +368,15 @@
  "sun": {
   "anchor": "center",
   "px": 0.1
+ },
+ "sunbeam": {
+  "anchor": "center",
+  "frames": 2,
+  "px": 0.03
+ },
+ "tally_banner": {
+  "anchor": "top",
+  "px": 0.035
  },
  "tea_station": {
   "anchor": "bottom",
@@ -143,13 +392,67 @@
   "note": "same pixel density as the characters (drawn next to them 1:1)",
   "px": 0.0222
  },
+ "trophy_cup": {
+  "anchor": "bottom",
+  "px": 0.022
+ },
+ "trophy_shelf": {
+  "anchor": "center",
+  "px": 0.03
+ },
+ "up_coolring": {
+  "anchor": "top",
+  "px": 0.03
+ },
+ "up_display": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
+ "up_loupe": {
+  "anchor": "bottom",
+  "px": 0.026
+ },
+ "up_neon": {
+  "anchor": "center",
+  "frames": 2,
+  "px": 0.022
+ },
+ "up_partswall": {
+  "anchor": "center",
+  "frames": 3,
+  "px": 0.03
+ },
+ "up_podlamp": {
+  "anchor": "top",
+  "px": 0.03
+ },
+ "up_samovar": {
+  "anchor": "bottom",
+  "px": 0.028
+ },
+ "up_seats": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
+ "vendor_crates": {
+  "anchor": "bottom",
+  "px": 0.03
+ },
  "vent_pipe": {
   "anchor": "bottom",
   "px": 0.04
  },
+ "wall_niche": {
+  "anchor": "center",
+  "px": 0.03
+ },
  "well_tower": {
   "anchor": "bottom",
   "px": 0.045
+ },
+ "window_haze": {
+  "anchor": "center",
+  "px": 0.028
  },
  "window_port": {
   "anchor": "center",
@@ -162,5 +465,9 @@
  "workbench": {
   "anchor": "bottom",
   "px": 0.03
+ },
+ "wreck_glow": {
+  "anchor": "bottom",
+  "px": 0.1
  }
 }

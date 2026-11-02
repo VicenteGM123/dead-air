@@ -42,6 +42,16 @@ var _flyers: Array = []         # naves que pasan: {"s", "flame", "from", "to", 
 var _anim_sprites: Array = []   # [Sprite3D, frames, fps] (tiras animadas: ventilador, llamas)
 var _kettle_walking := false
 var warm_probes: Array = []     # --- BOOT: copias temporales para calentar shaders (warm_groups / warm_end)
+# --- SS2 SEASON contract: nodos escondidos que igual se calientan (decorado de eventos, mejoras, la gala). WORLD los
+# registra al armarlos; warm_groups les hace su copia como a lo demás escondido (WORLD conserva este bloque).
+var warm_extra: Array = []
+# --- end SS2 SEASON contract
+# --- SS2 WORLD: las luces que se prenden y apagan (mejoras, fiesta, el neón de la vecina): [[OmniLight3D, energía
+# encendida], ...]. Existen desde el arranque; warm_groups las prende a su energía de encendidas mientras se calienta
+# (así las variantes con luz se compilan bajo la pantalla de carga) y warm_end las deja como estaban.
+var toggle_lights: Array = []
+var _warm_energy: Array = []
+var flyer_event := ""            # las naves con "event" en su dict solo cruzan ese día (P1: las hoverbikes del Derby)
 
 func _init() -> void:
 	var f := FileAccess.open("res://assets/props/props.json", FileAccess.READ)
@@ -168,6 +178,37 @@ func prop(name_: String, pos: Vector3, px := -1.0, anchor := "", frame := 0, sha
 	var p := px if px > 0.0 else float(info.get("px", 0.03))
 	var a := anchor if anchor != "" else String(info.get("anchor", "bottom"))
 	return sprite("res://assets/props/%s.png" % name_, p, pos, a, parent, shaded, int(info.get("frames", 1)), frame)
+
+# --- SS2 WORLD: ayudas para los decorados de la ronda 2 (todas reusan las combinaciones de material que ya existen:
+# prop con luz y sombra, prop sin luz ni sombra como el sol y el anillo, y sin luz con alfa como la lluvia de chatarra)
+
+## Un prop que brilla solo (sin luz ni sombra: lámparas, neón, el cielo). La misma familia de shader que el sol.
+func glow(name_: String, pos: Vector3, px := -1.0, anchor := "", frame := 0, parent: Node3D = null) -> Sprite3D:
+	var s := prop(name_, pos, px, anchor, frame, false, parent)
+	s.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return s
+
+## Un prop sin luz que se desvanece (alfa: chispas, polvo, el rayo de sol). La familia de la lluvia de chatarra.
+func soft(name_: String, pos: Vector3, px := -1.0, anchor := "", frame := 0, parent: Node3D = null) -> Sprite3D:
+	var s := glow(name_, pos, px, anchor, frame, parent)
+	s.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
+	return s
+
+## Esconde un nodo que puede aparecer después y lo anota para el calentamiento (warm_extra). Devuelve el nodo.
+func later(n: Node3D) -> Node3D:
+	n.visible = false
+	if n is GeometryInstance3D:
+		warm_extra.append(n)
+	for c in n.find_children("", "GeometryInstance3D", true, false):
+		warm_extra.append(c)
+	return n
+
+## Una luz que se prende y apaga (existe desde el arranque, sin sombra, a energía 0).
+func toggle_omni(pos: Vector3, color: Color, on_energy: float, rng: float, parent: Node3D = null) -> OmniLight3D:
+	var l := omni(pos, color, 0.0, rng, false, parent)
+	toggle_lights.append([l, on_energy])
+	return l
+# --- end SS2 WORLD
 
 ## Una tira animada (ventilador, llamas): avanza de cuadro en _process.
 func animate(s: Sprite3D, fps: float) -> void:
@@ -332,7 +373,8 @@ func add_flyer(tex: String, px: float, from: Vector3, to: Vector3, dur: float, e
 func _update_flyers(delta: float) -> void:
 	for f in _flyers:
 		var s: Sprite3D = f["s"]
-		if night:
+		var fev := String(f.get("event", ""))   # --- SS2 WORLD
+		if night or (fev != "" and fev != flyer_event):
 			s.visible = false
 			continue
 		if float(f["wait"]) > 0.0:
@@ -575,12 +617,23 @@ func warm_groups(probe := "all") -> Array:
 		for g in by_key[k]:
 			g.visible = false
 		out.append([k, by_key[k]])
+	# --- SS2 WORLD: las luces que se prenden después (mejoras, fiesta, neón), encendidas mientras se calienta
+	_warm_energy.clear()
+	for pair in toggle_lights:
+		var l: OmniLight3D = pair[0]
+		if is_instance_valid(l):
+			_warm_energy.append([l, l.light_energy])
+			l.light_energy = maxf(l.light_energy, float(pair[1]))
 	return out
 
 ## "all": todo lo escondido y la frase flotante (la tienda, de fondo); "flyers": solo las naves que pasan (se ven sobre
 ## el título: lo único escondido que puede aparecer ahí); "streaks": solo la lluvia de chatarra (la introducción, de
 ## noche). Lo demás (burbujas, frases) ya queda compilado con la tienda; en la calle, como mucho, falta un programa.
 func _probe_wanted(g: GeometryInstance3D, probe: String, bl: Node) -> bool:
+	# --- SS2 SEASON contract
+	if g in warm_extra:
+		return true
+	# --- end SS2 SEASON contract
 	match probe:
 		"all":
 			return true
@@ -602,6 +655,11 @@ func warm_end() -> void:
 				pr.get_parent().remove_child(pr)
 			pr.queue_free()
 	warm_probes.clear()
+	# --- SS2 WORLD: las luces vuelven a su energía de antes del calentamiento
+	for pair in _warm_energy:
+		if is_instance_valid(pair[0]):
+			(pair[0] as OmniLight3D).light_energy = float(pair[1])
+	_warm_energy.clear()
 
 ## La familia de shader de una geometría (lo que hace que Godot compile otro programa): el tipo de material y sus
 ## opciones de dibujo, no sus colores ni sus texturas. Si proyecta sombra, también (la pasada de sombra).

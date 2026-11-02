@@ -20,6 +20,8 @@ var time_limit := 8.0
 var part := ""                  # la pieza nueva (se ve en la esquina de la placa)
 var auto_until := -1.0          # bot / capturas: el soldador recorre solo hasta esta fracción (0..1); -1 = jugador
 var auto_wobble := 0.0          # bot torpe: cuánto se sale de la pista (px)
+var pad_k := 1.0                # --- SS2 BENCH: la Loupe Lamp agranda los puntos (radio de acierto y dibujo x pad_k)
+var hit_r := HIT_R              # --- SS2 BENCH: el radio de acierto de este trabajo (HIT_R x pad_k)
 
 var completed := false
 var accuracy := 1.0
@@ -43,11 +45,14 @@ func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 
 ## Una placa nueva: n puntos en zigzag (seed: siempre la misma para el mismo trabajo).
-func setup(pads: int, seed: int, part_id: String) -> void:
+## --- SS2 BENCH: pad_k (puntos más grandes) y solder_add (segundos de más: el Cool Coil), las ayudas del trabajo.
+func setup(pads: int, seed: int, part_id: String, pk := 1.0, solder_add := 0.0) -> void:
 	n_pads = clampi(pads, 3, 5)
 	_seed = seed
 	part = part_id
-	time_limit = 2.2 + 1.6 * n_pads
+	pad_k = clampf(pk, 0.5, 2.0)
+	hit_r = HIT_R * pad_k
+	time_limit = 2.2 + 1.6 * n_pads + maxf(0.0, solder_add)
 	completed = false
 	accuracy = 1.0
 	_next = 0
@@ -154,7 +159,7 @@ func _check(a: Vector2, b: Vector2) -> void:
 		_trail.append([b, 0.0, on_path])
 		if on_path and randf() < 0.35:
 			_smoke.append([b, Vector2(randf_range(-10, 10), randf_range(-50, -30)), 0.7])
-	while _state != 2 and _next < _pts.size() and _seg_dist(_pts[_next], a, b) <= HIT_R:
+	while _state != 2 and _next < _pts.size() and _seg_dist(_pts[_next], a, b) <= hit_r:
 		_light(_next)
 
 func _light(i: int) -> void:
@@ -294,17 +299,18 @@ func _draw() -> void:
 		var p: Vector2 = _pts[i]
 		var is_next := i == _next and _state != 2
 		var lit_now := i < _next
-		draw_circle(p, 22.0, Color(0.05, 0.1, 0.07))
-		draw_circle(p, 19.0, Color(0.8, 0.5, 0.25))
-		draw_circle(p, 12.0, Color(0.32, 0.18, 0.08))
+		var k := pad_k   # --- SS2 BENCH: los puntos crecen con la Loupe Lamp
+		draw_circle(p, 22.0 * k, Color(0.05, 0.1, 0.07))
+		draw_circle(p, 19.0 * k, Color(0.8, 0.5, 0.25))
+		draw_circle(p, 12.0 * k, Color(0.32, 0.18, 0.08))
 		if lit_now:
-			draw_circle(p, 16.0, Color(0.62, 0.64, 0.66))
-			draw_circle(p, 13.0, Color(0.85, 0.87, 0.88))
-			draw_circle(p + Vector2(-5, -5), 4.0, Color(1, 1, 1))
+			draw_circle(p, 16.0 * k, Color(0.62, 0.64, 0.66))
+			draw_circle(p, 13.0 * k, Color(0.85, 0.87, 0.88))
+			draw_circle(p + Vector2(-5, -5) * k, 4.0 * k, Color(1, 1, 1))
 		elif is_next:
 			var pulse := 0.5 + 0.5 * sin(_anim * 9.0)
-			draw_arc(p, 28.0 + pulse * 6.0, 0, TAU, 28, Color(1.0, 0.78, 0.35, 0.5 + 0.5 * pulse), 4.0)
-		draw_string(UIKit.font_bold, p + Vector2(-6, -30), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 20,
+			draw_arc(p, (28.0 + pulse * 6.0) * k, 0, TAU, 28, Color(1.0, 0.78, 0.35, 0.5 + 0.5 * pulse), 4.0)
+		draw_string(UIKit.font_bold, p + Vector2(-6, -30.0 * k), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 20,
 			Color(0.95, 0.97, 0.9, 0.95 if (is_next or lit_now) else 0.55))
 	# humo
 	for s in _smoke:

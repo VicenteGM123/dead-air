@@ -9,6 +9,10 @@ class_name PodUI
 ##   signal finished(contents)  contents = [{"part": "cell"}, {"item": "radio", "fault": "tuner"}, ...]
 ##   close_now(), is_open(), bot_play() (asíncrono: abre, salta la animación y se lleva todo)
 ## PodUI NO toca Game: quien lo abre guarda las piezas (Game.add_part) y las cosas rotas (Game.add_junk).
+## --- SS2 BENCH: el contenido {"core": true} (el núcleo de lámpara: tarjeta "Lamp core (??)" que brilla) y los tipos
+## de cápsula pod["kind"]: "wreck" (tinte rojo óxido + sello WRECK), "bigfall" (borde dorado), "charity" (etiqueta
+## FREE). Hasta 5 cosas (el naufragio: una brújula rota + 3 piezas + un núcleo): las tarjetas se angostan. El
+## contenido vuelve tal cual en finished (quien abre la cápsula se ocupa del núcleo).
 ## Controles: clic en el botón o en la cápsula; Intro / Espacio / E (la acción del botón; durante la animación la
 ## salta); mando: A sobre el botón o la cápsula, X = Espacio.
 
@@ -34,6 +38,7 @@ var _cards: Array = []
 var _hints_box: Control
 var _pod_btn: Button
 var _last_pad := false
+var _title: Label             # --- SS2 BENCH: "SALVAGE POD" / "WRECK POD" / ...
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)   # (después de entrar al árbol: anclas Y márgenes)
@@ -49,9 +54,15 @@ func open(p: Dictionary) -> void:
 		pod["contents"] = BenchData.roll_pod()["contents"]
 	_cracked = false
 	_id_lbl.text = String(pod.get("id", "")).to_upper()
+	# --- SS2 BENCH: el tipo de cápsula
+	var kind := String(pod.get("kind", ""))
+	_title.text = {"wreck": "WRECK POD", "bigfall": "BIG FALL POD", "charity": "FREE POD"}.get(kind, "SALVAGE POD")
+	_view.kind = kind
 	_weight_lbl.text = "Weight: %s" % BenchData.POD_WEIGHT[clampi(int(pod.get("weight", 1)) - 1, 0, 2)]
 	_rattle_lbl.text = "Rattle: %s" % BenchData.POD_RATTLE[clampi(int(pod.get("rattle", 0)), 0, 2)]
-	_status.text = "Sealed since last night's starfall. What's inside?"
+	_status.text = {"wreck": "Fell off the big one last night. Still warm.",
+		"bigfall": "The Great Starfall's biggest catch. What's inside?",
+		"charity": "On the house. Raker says: pay me back in stories."}.get(kind, "Sealed since last night's starfall. What's inside?")
 	BenchKit.set_text(_btn, "Crack it open")
 	BenchKit.enable(_btn, true)
 	_layout_cards()
@@ -125,6 +136,7 @@ func _build() -> void:
 	var t := BenchKit.shadow(UIKit.label("SALVAGE POD", 26, UIKit.ACCENT, UIKit.font_bold))
 	t.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	h.add_child(t)
+	_title = t   # --- SS2 BENCH
 	_id_lbl = UIKit.label("", 18, UIKit.MUTED, UIKit.font_mono)
 	_id_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	h.add_child(_id_lbl)
@@ -161,7 +173,7 @@ func _build() -> void:
 	tray.add_theme_stylebox_override("panel", BenchKit.inset_style(Color(0.1, 0.085, 0.07, 0.9), 6))
 	BenchKit.at(tray, TRAY)
 	_canvas.add_child(tray)
-	for i in 4:
+	for i in 5:   # --- SS2 BENCH: hasta 5 cosas (el naufragio)
 		var c := _make_card()
 		_canvas.add_child(c)
 		_cards.append(c)
@@ -205,7 +217,10 @@ func _make_card() -> Panel:
 func _layout_cards() -> void:
 	var cs: Array = pod.get("contents", [])
 	var n := mini(cs.size(), _cards.size())
-	var total := n * CARD.x + maxi(0, n - 1) * 14.0
+	# --- SS2 BENCH: con 5 cosas las tarjetas se angostan (caben en la bandeja)
+	var cw := CARD.x if n <= 4 else 140.0
+	var gap := 14.0 if n <= 4 else 12.0
+	var total := n * cw + maxi(0, n - 1) * gap
 	var x0 := TRAY.position.x + (TRAY.size.x - total) / 2.0
 	var targets: Array = []
 	var icons: Array = []
@@ -216,10 +231,13 @@ func _layout_cards() -> void:
 		if i >= n:
 			continue
 		var c: Dictionary = cs[i]
-		card.position = Vector2(x0 + i * (CARD.x + 14.0), TRAY.position.y)
+		card.size = Vector2(cw, CARD.y)
+		card.position = Vector2(x0 + i * (cw + gap), TRAY.position.y)
 		var icon: TextureRect = card.find_child("Icon", false, false)
 		var nm: Label = card.find_child("Name", false, false)
 		var sub: Label = card.find_child("Sub", false, false)
+		nm.size.x = cw - 8.0
+		sub.size.x = cw - 8.0
 		var sb := StyleBoxFlat.new()
 		sb.set_corner_radius_all(6)
 		sb.set_border_width_all(2)
@@ -234,12 +252,23 @@ func _layout_cards() -> void:
 			sub.add_theme_color_override("font_color", Color(0.72, 0.9, 0.62))
 			sb.bg_color = Color(0.13, 0.15, 0.12, 0.95)
 			sb.border_color = Color(0.45, 0.6, 0.4)
+		elif c.has("core"):
+			# --- SS2 BENCH: el núcleo de lámpara (una bombita con su filamento), con un brillo suave
+			tex = BenchKit.tex("res://assets/items/lamp_core.png")
+			sc = 2.0
+			nm.text = "Lamp core (??)"
+			sub.text = "It glows a little"
+			sub.add_theme_color_override("font_color", Color(1.0, 0.88, 0.55))
+			sb.bg_color = Color(0.22, 0.18, 0.1, 0.95)
+			sb.border_color = Color(1.0, 0.82, 0.4)
+			sb.shadow_color = Color(1.0, 0.8, 0.35, 0.45)
+			sb.shadow_size = 10
 		else:
 			var it := String(c.get("item", ""))
 			tex = BenchKit.tex("res://assets/items/%s_closed.png" % it)
 			sc = 2.0
 			nm.text = BenchData.item_name(it)
-			sub.text = "Broken: fix it, sell it"
+			sub.text = "Broken: fix it, sell it" if cw >= CARD.x else "Broken: fix it"
 			sub.add_theme_color_override("font_color", Color(1.0, 0.68, 0.5))
 			sb.bg_color = Color(0.2, 0.13, 0.1, 0.95)
 			sb.border_color = Color(0.85, 0.5, 0.3)
@@ -248,8 +277,8 @@ func _layout_cards() -> void:
 		if tex:
 			var s := Vector2(tex.get_width(), tex.get_height()) * sc
 			icon.size = s
-			icon.position = Vector2((CARD.x - s.x) / 2.0, 6 + (112 - s.y) / 2.0)
-		targets.append(card.position + Vector2(CARD.x / 2.0, 62))
+			icon.position = Vector2((cw - s.x) / 2.0, 6 + (112 - s.y) / 2.0)
+		targets.append(card.position + Vector2(cw / 2.0, 62))
 		icons.append([tex, sc])
 	_view.reset(POD_CENTER, targets, icons)
 
@@ -280,7 +309,7 @@ func _on_landed(i: int) -> void:
 		return
 	var c: Panel = _cards[i]
 	c.visible = true
-	c.pivot_offset = CARD / 2.0
+	c.pivot_offset = c.size / 2.0
 	c.scale = Vector2(0.8, 0.8)
 	var tw := c.create_tween()
 	tw.tween_property(c, "scale", Vector2.ONE, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -289,13 +318,18 @@ func _on_all_landed() -> void:
 	var cs: Array = pod.get("contents", [])
 	var parts := 0
 	var items := 0
+	var cores := 0
 	for c in cs:
 		if c.has("part"):
 			parts += 1
 		elif c.has("item"):
 			items += 1
+		elif c.has("core"):
+			cores += 1
 	var msg := UIKit.plural(parts, "part")
-	if items > 0:
+	if cores > 0:
+		msg += ", a fix and a glow!" if items > 0 else " and a glow!"   # --- SS2 BENCH: el núcleo (corto: cabe)
+	elif items > 0:
 		msg += " and something to fix!"
 	else:
 		msg += "."

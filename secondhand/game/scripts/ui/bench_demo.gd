@@ -10,6 +10,10 @@ class_name BenchDemo
 ##   --demo=pod | pod_reveal [--step=closed|crack|open]
 ##   --pad: las ayudas como si se usara el mando
 ##   --demo=benchtest: sin pantalla, juega todo con los bots y revisa el contrato; "BENCHTEST ok fails=0", sale 0 / 1.
+## --- SS2 BENCH: --demo=bench_jukebox | bench_navbox | bench_graded (la inspección) | bench_riddle (un acertijo de Old
+##   Seven) | bench_favour (el pulidor de Buff) [--step=...] [--aids] (con las ayudas de todas las mejoras);
+##   --demo=haggle_sell --who=singer | timekeeper | tracker --step=tell (las señales nuevas);
+##   --demo=pod_wreck [--step=closed|crack|open] (el naufragio con su núcleo); benchtest cubre las 5 familias.
 ## Usa las pantallas de main (main.bench / main.haggle / main.pod_ui) si existen; si no, arma las suyas.
 
 const JOBS := {
@@ -17,7 +21,14 @@ const JOBS := {
 	"bench_bot": ["helperbot", "chip", "pipip", 23],
 	"bench_thruster": ["thruster", "coil", "rook", 37],
 	"bench_clatter": ["helperbot", "servo", "clatter", 41],   # --- SS MERGE: Clatter se arregla a sí mismo
+	# --- SS2 BENCH
+	"bench_jukebox": ["jukebox", "drum", "singer", 51],
+	"bench_navbox": ["navbox", "gyro", "timekeeper", 53],
+	"bench_graded": ["radio", "tuner", "inspector", 57],
+	"bench_riddle": ["navbox", "needle", "hermit", 59],
+	"bench_favour": ["helperbot", "servo", "rival", 61],
 }
+const AIDS_ALL := {"zone_k": 1.25, "pad_k": 1.4, "solder_add": 2.0, "sweep_k": 0.85}   # todas las mejoras del banco
 
 var main: Node
 var bench: BenchUI
@@ -32,7 +43,8 @@ var _last := {}
 var _got := false
 
 static func handles(d: String) -> bool:
-	return d in ["bench_radio", "bench_bot", "bench_thruster", "bench_clatter", "haggle_buy", "haggle_sell", "pod", "pod_reveal", "benchtest"]
+	return d in ["bench_radio", "bench_bot", "bench_thruster", "bench_clatter", "haggle_buy", "haggle_sell", "pod", "pod_reveal", "benchtest",
+		"bench_jukebox", "bench_navbox", "bench_graded", "bench_riddle", "bench_favour", "pod_wreck"]   # --- SS2 BENCH
 
 static func arg(name: String, def := "") -> String:
 	for a in OS.get_cmdline_user_args():
@@ -59,11 +71,12 @@ func start(m: Node, d: String) -> void:
 	match demo:
 		"benchtest":
 			_benchtest()
-		"bench_radio", "bench_bot", "bench_thruster", "bench_clatter":
+		"bench_radio", "bench_bot", "bench_thruster", "bench_clatter", "bench_jukebox", "bench_navbox", "bench_graded", \
+			"bench_riddle", "bench_favour":
 			_demo_bench()
 		"haggle_buy", "haggle_sell":
 			_demo_haggle()
-		"pod", "pod_reveal":
+		"pod", "pod_reveal", "pod_wreck":
 			_demo_pod()
 
 func _find_screens(use_main := true) -> void:
@@ -112,6 +125,20 @@ func _demo_bench() -> void:
 		job["label"] = String(Data.SELF_REPAIR[j[2]].get("label", "Clatter"))
 		job["sub"] = String(Data.SELF_REPAIR[j[2]].get("sub", "fixing himself"))
 		job["symptom"] = Data.self_symptom(String(j[2]), String(j[1]))
+	# --- SS2 BENCH: las claves nuevas del trabajo
+	match demo:
+		"bench_graded":
+			job["graded"] = true
+		"bench_riddle":
+			job["riddle"] = true
+		"bench_favour":
+			var tw: Dictionary = CastData.CAST["rival"]["twist"]
+			job["label"] = String(tw["label"])
+			job["sub"] = String(tw["sub"])
+			job["symptom"] = String(tw["symptom"])
+			job["power"] = String(tw["power"])
+	if arg("aids") != "":
+		job["aids"] = AIDS_ALL.duplicate()
 	if step == "patch":
 		Game.parts.erase(j[1])
 	elif not Game.has_part(j[1]):
@@ -120,7 +147,7 @@ func _demo_bench() -> void:
 	if step == "" or step == "open":
 		return
 	Engine.time_scale = 5.0     # hasta llegar al paso (las capturas bajo carga tardan menos cuadros)
-	bench.demo_to("swap" if step == "patch" else step)
+	bench.demo_to("swap" if step == "patch" else ("result" if step == "power" else step))   # --- SS2 BENCH: power
 
 func _demo_haggle() -> void:
 	var d := {}
@@ -137,6 +164,15 @@ func _demo_haggle() -> void:
 		haggle.demo_to(step)
 
 func _demo_pod() -> void:
+	if demo == "pod_wreck":
+		# --- SS2 BENCH: el naufragio del día 7 (una brújula rota, 3 piezas y un núcleo de lámpara)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 7
+		pod_ui.open(BenchData.roll_pod_for(rng, "pod-707", BenchData.ITEM_ORDER, BenchData.PART_ORDER,
+			{"kind": "wreck", "force_item": "navbox", "min_parts": 3, "core": true, "price": 40}))
+		if step == "crack" or step == "open":
+			pod_ui.demo_to(step)
+		return
 	pod_ui.open(_sample_pod())
 	if step == "crack" or step == "open":
 		pod_ui.demo_to(step)
@@ -146,7 +182,7 @@ func _sample_pod() -> Dictionary:
 		"contents": [{"part": "speaker"}, {"part": "coil"}, {"part": "lens"}, {"item": "helperbot", "fault": "servo"}]}
 
 ## Cuadros que se espera después de llegar al paso antes de sacar la captura (que se vean el globo, el brillo...).
-const SETTLE := {"diagnose": 20, "wrong": 10, "swap": 4, "patch": 30, "solder": 2, "test": 2, "result": 24,
+const SETTLE := {"diagnose": 20, "wrong": 10, "swap": 4, "patch": 30, "solder": 2, "test": 2, "result": 24, "power": 22,
 	"counter": 14, "deal": 12, "hover": 45, "tell": 8, "crack": 1, "open": 10, "closed": 20}
 
 var _settle := 0
@@ -170,6 +206,8 @@ func _process(_d: float) -> void:
 					done = bench.step == BenchUI.Step.TEST and bench._gauge._t > 1.1
 				"result":
 					done = bench.step == BenchUI.Step.RESULT
+				"power":   # --- SS2 BENCH: el efecto al probarla (luces, estrellas, notas, llama)
+					done = bench.step == BenchUI.Step.TEST and bench._power_line != ""
 		elif demo.begins_with("haggle") and haggle:
 			done = (step == "deal" and haggle._done) or (step == "counter" and haggle._round >= 1) or step == "hover" or \
 				(step == "tell" and haggle.demo_ready)
@@ -370,6 +408,7 @@ func _benchtest() -> void:
 	_key(KEY_E)
 	ok = await _wait_result(pod_ui, 3.0)
 	_check(ok and _last.get("contents", []).size() >= 2, "pod sin contenido: se sortea al abrir; teclado Espacio / E")
+	await _ss2_tests()   # --- SS2 BENCH
 	Engine.time_scale = 1.0
 	print("BENCHTEST %s checks=%d fails=%d %s" % ["ok" if _fails.is_empty() else "FAIL", _checks, _fails.size(), str(_fails)])
 	get_tree().quit(0 if _fails.is_empty() else 1)
@@ -428,3 +467,188 @@ func _until(cond: Callable, timeout: float) -> bool:
 		await get_tree().create_timer(0.05).timeout
 		t += 0.05
 	return bool(cond.call())
+
+# ------------------------------------------------------------------ --- SS2 BENCH: la temporada
+
+func _ss2_tests() -> void:
+	# los datos nuevos
+	_check(BenchData.ITEM_ORDER.size() == 5 and BenchData.PART_ORDER.size() == 13, "5 familias y 13 piezas")
+	for item in BenchData.ITEM_ORDER:
+		_check(BenchData.ITEMS[item].has("power_fx"), "%s: power_fx" % item)
+		_check(ResourceLoader.exists("res://assets/items/%s_closed.png" % item) and ResourceLoader.exists("res://assets/items/%s_open_empty.png" % item),
+			"%s: arte cerrado y abierto" % item)
+		for f in BenchData.FAULTS[item]:
+			_check((BenchData.SYMPTOM_LINES[item][f] as Array).size() == 3, "%s/%s: 3 síntomas" % [item, f])
+	for p in BenchData.PART_ORDER:
+		_check(ResourceLoader.exists("res://assets/parts/%s.png" % p) and ResourceLoader.exists("res://assets/parts/%s_bad.png" % p), "arte de la pieza %s" % p)
+	_check(ResourceLoader.exists("res://assets/items/lamp_core.png"), "arte del núcleo de lámpara")
+	_check(ResourceLoader.exists("res://assets/icons/emote_zz.png"), "emote_zz")
+	_check(BenchData.clue("jukebox", "speaker", "tap", 1)["text"] == "The horn speaker buzzes when thumped.", "pista por familia (rocola: parlante)")
+	_check(BenchData.clue("navbox", "chip", "listen", 1)["wave"] == "chirr" and BenchData.clue("radio", "chip", "listen", 1)["wave"] == "reverse",
+		"onda por familia (chip de la brújula = chirr)")
+	_check(BenchData.clue("navbox", "gyro", "listen", 1)["wave"] == "wobble" and BenchData.clue("navbox", "needle", "listen", 1)["wave"] == "tick",
+		"ondas del giroscopio y la aguja")
+	var prices := []
+	for it in BenchData.ITEM_ORDER:
+		prices.append(BenchData.asis_price(it))
+	_check(prices == [14, 16, 18, 20, 23], "precios as-is %s" % str(prices))
+	_check(BenchData.content_name({"core": true}) == "Lamp core", "content_name del núcleo")
+	_check(BenchData.haggle_rules_for("singer").get("rule", "") == "generic" and BenchData.haggle_rules_for("singer")["key"] == "lampwing",
+		"haggle_rules_for: Lune = lampwing genérica")
+	_check(BenchData.haggle_rules_for("gorrum").get("rule", "") == "insulted_by_quick_yes", "haggle_rules_for: Gorrum = hornback")
+	for it in ["radio", "navbox"]:
+		for f in BenchData.FAULTS[it]:
+			_check(BenchData.riddle(it, f) != "", "acertijo %s/%s" % [it, f])
+	for who in CastData.CAST:
+		var row: Dictionary = CastData.CAST[who]
+		_check(Data.SPECIES.has(row["species"]) or CastData.SPECIES.has(row["species"]), "especie de %s" % who)
+		_check(ResourceLoader.exists("res://assets/chars/%s_idle.png" % who) and ResourceLoader.exists("res://assets/chars/%s_walk.png" % who), "hoja de %s" % who)
+		if who in CastData.NEW_CUSTOMERS or who in CastData.P1_CUSTOMERS:
+			var ln: Dictionary = CastData.LINES.get(who, {})
+			for k in ["bring", "buy", "failed", "angry", "decline", "sold", "nodeal", "none", "full", "home"]:
+				_check(ln.has(k), "frase %s de %s" % [k, who])
+			_check((ln.get("thanks", []) as Array).size() == 4, "4 gracias de %s" % who)
+			for it in row["brings"]:
+				_check((ln.get("bring", {}) as Dictionary).has(it), "bring %s de %s" % [it, who])
+	_check(_ip_scan().is_empty(), "palabras prohibidas en CastData / BenchData: %s" % str(_ip_scan()))
+	# cápsulas de la temporada
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var wreck := BenchData.roll_pod_for(rng, "w", BenchData.ITEM_ORDER, BenchData.PART_ORDER,
+		{"kind": "wreck", "force_item": "navbox", "min_parts": 3, "core": true, "price": 40})
+	var has_core := false
+	var has_nav := false
+	for c in wreck["contents"]:
+		has_core = has_core or c.has("core")
+		has_nav = has_nav or String(c.get("item", "")) == "navbox"
+	_check(wreck["contents"].size() == 5 and has_core and has_nav and wreck["weight"] == 3 and wreck["rattle"] == 2 and wreck["price"] == 40 and wreck["kind"] == "wreck",
+		"naufragio: brújula + 3 piezas + núcleo (%s)" % str(wreck))
+	var locked_ok := true
+	for i in 30:
+		var pd := BenchData.roll_pod_for(rng, "", ["radio"], ["cell", "tuner"], {})
+		for c in pd["contents"]:
+			if c.has("part") and not String(c["part"]) in ["cell", "tuner"]:
+				locked_ok = false
+			if c.has("item") and String(c["item"]) != "radio":
+				locked_ok = false
+	_check(locked_ok, "roll_pod_for: solo familias y piezas desbloqueadas")
+	var ch := BenchData.roll_pod_for(rng, "", [], [], {"kind": "charity"})
+	_check(int(ch["price"]) == 0 and ch["kind"] == "charity", "cápsula de regalo: precio 0")
+	_got = false
+	pod_ui.open(wreck)
+	pod_ui.bot_play()
+	var ok := await _wait_result(pod_ui, 8.0)
+	_check(ok and _last.get("contents", []) == wreck["contents"], "PodUI: el naufragio (5 cosas, núcleo) vuelve igual")
+	# el banco: calificado, ayudas, acertijo, label ajeno
+	Game.new_game_state()
+	Game.add_part("tuner", 1)
+	var job := BenchData.make_job("radio", "tuner", "inspector")
+	job["graded"] = true
+	job["aids"] = AIDS_ALL.duplicate()
+	_got = false
+	bench.open(job)
+	_check(bench._stamp.visible, "graded: el sello se ve")
+	bench.bot_play(1.0)
+	await _until(func(): return bench.step == BenchUI.Step.SOLDER, 10.0)
+	_check(is_equal_approx(bench._solder.time_limit, 2.2 + 1.6 * 3 + 2.0) and is_equal_approx(bench._solder.hit_r, BenchSolder.HIT_R * 1.4),
+		"aids: soldadura +2 s y puntos x1.4 (%s, %s)" % [bench._solder.time_limit, bench._solder.hit_r])
+	await _until(func(): return bench.step == BenchUI.Step.TEST, 15.0)
+	_check(is_equal_approx(bench._gauge.zone_w, 0.24 * 1.25) and is_equal_approx(bench._gauge.speed, 0.8 * 0.85),
+		"aids: zona verde x1.25 y aguja x0.85 (%s, %s)" % [bench._gauge.zone_w, bench._gauge.speed])
+	ok = await _wait_result(bench, 20.0)
+	_check(ok and _last.get("graded", false) and int(_last.get("stars", 0)) == 3, "graded: el resultado lo dice (%s)" % str(_last))
+	Game.add_part("needle", 1)
+	job = BenchData.make_job("navbox", "needle", "hermit")
+	job["riddle"] = true
+	_got = false
+	bench.open(job)
+	_check(bench._ticket_hdr.text == "A RIDDLE" and BenchData.riddle("navbox", "needle") in bench._ticket_txt.text, "riddle: la nota es el acertijo")
+	_check(not bench._stamp.visible, "sin graded: sin sello")
+	bench._use_tool("listen")
+	_check(bool(bench._scope.data.get("clear", false)) and int(bench._scope.data.get("fault", -1)) == 1, "riddle: LISTEN dice la verdad")
+	bench.close_now()
+	var fj := BenchData.make_job("helperbot", "servo", "rival")
+	var tw: Dictionary = CastData.CAST["rival"]["twist"]
+	fj["label"] = tw["label"]
+	fj["sub"] = tw["sub"]
+	fj["power"] = tw["power"]
+	_got = false
+	bench.open(fj)
+	_check(bench._head_item.text == "Buff's buffer" and not bench._talks(), "favor: el label y la cosa no habla")
+	bench.bot_play(1.0)
+	ok = await _wait_result(bench, 20.0)
+	_check(ok and _last.get("ok", false), "favor: termina")
+	# el regateo: las señales nuevas
+	for who in ["singer", "timekeeper", "tracker", "farmer"]:
+		var fxn := String(BenchData.haggle_rules_for(who).get("tell_fx", ""))
+		var kk := KEY_3
+		var seen := false
+		for attempt in 4:
+			Game.new_game_state()
+			_got = false
+			haggle.open(BenchData.make_deal("sell", "Song box", who, 50, {"seed": 20 + attempt}))
+			_check(haggle._sp == BenchData.haggle_key_for(who), "%s: clave de regateo %s" % [who, haggle._sp])
+			await _sleep(0.2)
+			for i in 3:
+				if haggle._done:
+					break
+				_key(kk)
+				await _sleep(0.5)
+				if haggle._portrait.last_fx == fxn:
+					seen = true
+					break
+			if not haggle._done:
+				haggle._walk_away()
+			ok = await _wait_result(haggle, 4.0)
+			if seen:
+				break
+		_check(seen, "%s: la señal %s se ve" % [who, fxn])
+		_got = false
+		haggle.open(BenchData.make_deal("sell", "Song box", who, 50))
+		haggle.bot_play()
+		ok = await _wait_result(haggle, 12.0)
+		_check(ok and _last.has_all(["deal", "price", "mood"]), "%s: el bot regatea (%s)" % [who, str(_last)])
+
+## Las palabras del §10.3 (palabras enteras, sin mayúsculas) en los textos del elenco nuevo y del banco.
+func _ip_scan() -> Array:
+	var words := ["droid", "jedi", "sith", "lightsaber", "blaster", "tatooine", "mos", "jawa", "tusken", "raider", "sandcrawler",
+		"podrace", "podracer", "speeder", "landspeeder", "swoop", "vaporator", "cantina", "hutt", "wookiee", "ewok", "gungan",
+		"holonet", "holocron", "hologram", "hyperspace", "hyperdrive", "lightspeed", "parsec", "repulsor", "spice", "sabacc",
+		"kessel", "corellian", "mandalorian", "mando", "coruscant", "naboo", "endor", "hoth", "dagobah", "jakku", "skywalker",
+		"kenobi", "falcon", "senate", "empire", "imperial", "rebel", "rebels", "republic", "moff", "trooper", "bounty",
+		"astromech", "bacta", "carbonite", "kyber", "beskar", "nerf", "bantha", "dewback", "krayt", "mynock", "porg",
+		"concord", "hammerhead", "bellwether", "hitchhiker", "saltmarch", "saltmarsh", "dustline", "lumi", "fennick",
+		"collector", "42"]
+	var strs := []
+	for d in [CastData.CAST, CastData.LINES, CastData.RIDDLES, CastData.HAGGLE, CastData.HAGGLE_LINES, CastData.SPECIES,
+			BenchData.ITEMS, BenchData.PARTS, BenchData.SYMPTOM_LINES, BenchData.TOOL_CLUES, BenchData.TOOL_CLUES_BY_ITEM]:
+		_strings_of(d, strs)
+	var blob := " ".join(strs).to_lower()
+	var rx := RegEx.new()
+	rx.compile("[a-z0-9-]+")
+	var seen := {}
+	for m in rx.search_all(blob):
+		seen[m.get_string()] = true
+	var out := []
+	for w in words:
+		if seen.has(w):
+			out.append(w)
+	for phrase in ["sand people", "moisture farm", "x-wing", "tie fighter", "death star", "star destroyer", "outer rim",
+			"core worlds", "wild space", "protocol bot", "power converter", "womp rat", "fix-it", "inner rim", "mid rim"]:
+		if blob.find(phrase) >= 0:
+			out.append(phrase)
+	if " ".join(strs).contains("Force"):
+		out.append("Force")
+	return out
+
+## Solo los textos (los números de los datos no cuentan: "42" es el precio base del propulsor).
+func _strings_of(v, out: Array) -> void:
+	if v is String:
+		out.append(v)
+	elif v is Dictionary:
+		for k in v:
+			_strings_of(v[k], out)
+	elif v is Array:
+		for e in v:
+			_strings_of(e, out)
+# --- end SS2 BENCH

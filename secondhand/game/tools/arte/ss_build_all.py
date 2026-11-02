@@ -10,6 +10,8 @@
   out/tex/*.png                                    -> game/assets/tex/
   out/icons/emote_*.png (8 emociones)              -> game/assets/icons/
   out/icon.png (icono de la app, 64x64)            -> game/icon.png
+  (ronda 2: ss_cast2.py -> chars/, ss_props2.py -> props/ + tex/, ss_rank_art.py -> ui/; el audio va aparte:
+   python3 make_audio.py ../../audio --set=all)
   tools/arte/fonts/*.ttf + OFL                     -> game/assets/fonts/ SOLO con --fonts (el logo ya es PNG)
 """
 import sys, os, subprocess, shutil, glob
@@ -66,6 +68,17 @@ def main():
         run('ss_world.py', '--out', out, 'tex')          # texturas
         run('ss_props.py', '--out', out)                 # props del taller y la calle (+ props.json)
         run('ss_emotes.py', '--out', out)                # emociones sobre la cabeza + icono de la app
+        # --- SS2 MERGE: los generadores nuevos de la ronda 2 (el elenco nuevo, los props de WORLD, el arte del ranking)
+        run('ss_cast2.py', '--out', out)                 # B: los 7 personajes nuevos + 5 P1 (chars/)
+        run('ss_props2.py', '--out', os.path.join(out, 'props'))   # W: props de la ronda 2 + props.json + tex/
+        pt = os.path.join(out, 'props', 'tex')           # ss_props2 deja sus texturas (enamel, sand_blow) en props/tex
+        if os.path.isdir(pt):
+            os.makedirs(os.path.join(out, 'tex'), exist_ok=True)
+            for f in glob.glob(os.path.join(pt, '*.png')):
+                shutil.move(f, os.path.join(out, 'tex', os.path.basename(f)))
+            shutil.rmtree(pt)
+        run('ss_rank_art.py', '--out', os.path.join(out, 'ui'))     # R: Lantern Board, cinta, iconos, pictogramas
+        # --- end SS2 MERGE
     if game:
         for sub in ('chars', 'props', 'items', 'parts', 'ui', 'tex', 'icons'):
             src = os.path.join(out, sub)

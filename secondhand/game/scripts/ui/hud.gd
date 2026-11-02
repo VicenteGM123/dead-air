@@ -12,6 +12,7 @@ class_name Hud
 
 signal menu_pressed
 signal prompt_pressed      # un clic en el aviso "[E] ..." (= apretar la tecla)
+signal rank_pressed        # --- SS2 SEASON: el chip del tablero ("★ #14 ▲3"): abre el tablero entero
 
 const TOP_W := 700.0
 
@@ -47,6 +48,10 @@ var _chips := {}          # id -> PanelContainer
 var _credits_shown := 0
 var _credits_tw: Tween
 var mode := "morning"      # "morning" | "open" | "closing" | "night"
+# --- SS2 SEASON
+var _rank_btn: Button
+var _dues_head: Label
+var _event_name := ""
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -54,6 +59,7 @@ func _ready() -> void:
 	theme = UIKit.theme()
 	_build_top()
 	_build_menu_button()
+	_build_rank_chip()   # --- SS2 SEASON
 	_build_hint()
 	_build_toast()
 	_build_tip()
@@ -106,18 +112,21 @@ func _build_top() -> void:
 	# la cuota del puerto (dock dues): barra + número
 	var dvv := UIKit.vbox(2)
 	dvv.alignment = BoxContainer.ALIGNMENT_CENTER
+	# --- SS2 SEASON: "DUES · NIGHT 6" arriba; la barra y "134 / 200" abajo (cabe junto al menú a 1024 de ancho)
+	_dues_head = UIKit.label("DUES", 13, Color(0.77, 0.81, 0.8), UIKit.font_bold)
+	dvv.add_child(_dues_head)
 	var dh := UIKit.hbox(6)
-	dh.add_child(UIKit.label("DUES", 13, Color(0.77, 0.81, 0.8), UIKit.font_bold))
-	_dues_lbl = UIKit.label("0 / 300", 13, Color(0.93, 0.89, 0.78), UIKit.font_bold)
-	dh.add_child(_dues_lbl)
-	dvv.add_child(dh)
 	_dues_bar = ProgressBar.new()
 	_dues_bar.max_value = 1.0
 	_dues_bar.step = 0.001
 	_dues_bar.show_percentage = false
-	_dues_bar.custom_minimum_size = Vector2(120, 10)
+	_dues_bar.custom_minimum_size = Vector2(84, 10)
+	_dues_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_dues_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dvv.add_child(_dues_bar)
+	dh.add_child(_dues_bar)
+	_dues_lbl = UIKit.label("0 / 300", 13, Color(0.93, 0.89, 0.78), UIKit.font_bold)
+	dh.add_child(_dues_lbl)
+	dvv.add_child(dh)
 	h.add_child(dvv)
 	# la fila (solo con la tienda abierta)
 	_line_box = UIKit.hbox(6)
@@ -158,10 +167,46 @@ func _build_menu_button() -> void:
 		menu_pressed.emit())
 	add_child(_menu_btn)
 
+## --- SS2 SEASON: el chip del Lantern Board a la izquierda del menú: puesto y flecha de la última noche.
+func _build_rank_chip() -> void:
+	_rank_btn = Button.new()
+	_rank_btn.focus_mode = Control.FOCUS_NONE
+	_rank_btn.text = "★ #30"
+	_rank_btn.tooltip_text = "The Lantern Board"
+	_rank_btn.add_theme_font_size_override("font_size", 17)
+	_rank_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	UIKit.place(_rank_btn, Vector2(1.0, 0.0), Vector2(-132, 66), Vector2(118, 40), Control.GROW_DIRECTION_BEGIN)   # bajo el menú
+	_rank_btn.pressed.connect(func():
+		Sfx.play("click", 0.05, -4.0)
+		rank_pressed.emit())
+	add_child(_rank_btn)
+
+## El texto del chip: "★ #14 ▲3" (la flecha de la última noche).
+func set_rank(pos: int, delta: int) -> void:
+	if _rank_btn == null:
+		return
+	var arrow := ""
+	if delta > 0:
+		arrow = " ▲%d" % delta
+	elif delta < 0:
+		arrow = " ▼%d" % -delta
+	_rank_btn.text = "★ #%d%s" % [pos, arrow]
+	# --- SS2 MERGE: el botón es de crema (como "Menu"): letra oscura; verde azulado oscuro si subió, rojo si bajó
+	# (el menta claro sobre crema casi no se leía)
+	var col := Color(0.1, 0.46, 0.42) if delta > 0 else (Color(0.7, 0.2, 0.14) if delta < 0 else UIKit.INK)
+	for k in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color", "font_hover_pressed_color"]:
+		_rank_btn.add_theme_color_override(k, col)
+
+func rank_text() -> String:
+	return _rank_btn.text if _rank_btn else ""
+# --- end SS2 SEASON
+
 ## Muestra u oculta la placa de arriba y el botón de menú (el título y las pantallas grandes la esconden).
 func show_top(on: bool) -> void:
 	_plate.visible = on
 	_menu_btn.visible = on
+	if _rank_btn:
+		_rank_btn.visible = on   # --- SS2 SEASON
 
 ## --- SS MERGE: el banco, el regateo y la cápsula tapan casi toda la pantalla y su placa asomaba por arriba, a
 ## medias: mientras están abiertos la placa y el menú se apagan (sin tocar show_top).
@@ -170,11 +215,23 @@ func set_covered(on: bool) -> void:
 	if _plate.modulate.a != a:
 		_plate.modulate.a = a
 		_menu_btn.modulate.a = a
+		if _rank_btn:
+			_rank_btn.modulate.a = a   # --- SS2 SEASON
 
 # ------------------------------------------------------------------ datos
 
 func refresh() -> void:
-	_day.text = "DAY %d OF %d" % [Game.day, Data.DAYS]
+	# --- SS2 SEASON: "DAY 5 OF 10" (sin fin: "DAY 12"), el evento de hoy debajo, la próxima cuota (o el pago de
+	# mantenimiento del modo sin fin) con su noche, el chip del tablero
+	_day.text = ("DAY %d OF %d" % [Game.day, SeasonData.LAST_DAY]) if Game.is_campaign() else "DAY %d" % Game.day
+	_event_name = String(Season.event_def().get("name", ""))
+	var nd: Dictionary = Season.next_dues()
+	if _dues_head:
+		_dues_head.text = "%s · NIGHT %d" % ["UPKEEP" if bool(nd.get("upkeep", false)) else "DUES", int(nd.get("night", 0))]
+	set_rank(Ranking.position(), int(Ranking.last_move().get("delta", 0)))
+	if mode in ["morning", "open"] and _event_name != "":
+		_place.text = _event_name
+	# --- end SS2 SEASON
 	_set_credits_text(Game.credits)
 	_dues_bar.value = Game.dues_progress()
 	_dues_lbl.text = "%s / %s" % [UIKit.num(Game.credits), UIKit.num(Game.dues_goal)]
@@ -213,6 +270,8 @@ func set_clock(minutes: int, m := "open") -> void:
 			_clock.text = clock_text(minutes)
 	_place.text = {"morning": "Starfall Market", "open": "Open for business", "closing": "Closing time",
 		"night": "The ledger"}.get(m, "Rustwater")
+	if m in ["morning", "open"] and _event_name != "":
+		_place.text = _event_name   # --- SS2 SEASON: el día especial
 	_line_box.visible = m == "open" or m == "closing"
 
 static func clock_text(minutes: int) -> String:
@@ -260,10 +319,12 @@ func set_hint(walking: bool, extra := "") -> void:
 			_hint_pair(["Stick"], "Walk")
 			_hint_pair(["A"], "Use")
 			_hint_pair(["LB"], "Point")
+			_hint_pair(["Y"], "Board")   # --- SS2 SEASON
 			_hint_pair(["Start"], "Menu")
 		else:
 			_hint_pair(["A", "D"], "Walk")
 			_hint_pair(["E"], "Use")
+			_hint_pair(["R"], "Board")   # --- SS2 SEASON
 			_hint_pair(["Esc"], "Menu")
 	if extra != "":
 		_hint_row.add_child(UIKit.shadow(UIKit.label(extra, UIKit.FS_SMALL, UIKit.MUTED)))

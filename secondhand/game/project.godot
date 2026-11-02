@@ -25,6 +25,8 @@ Game="*res://scripts/game.gd"
 Data="*res://scripts/data.gd"
 BenchData="*res://scripts/bench_data.gd"
 Sfx="*res://scripts/sfx.gd"
+Season="*res://scripts/season.gd"
+Ranking="*res://scripts/ranking.gd"
 
 [display]
 

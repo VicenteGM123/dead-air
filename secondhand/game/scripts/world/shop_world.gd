@@ -71,7 +71,7 @@ func build() -> void:
 ## --- BOOT: el armado en pasos cortos (main.gd hace uno por cuadro al arrancar; build() los hace todos juntos).
 func build_steps() -> Array[Callable]:
 	return [_build_base, _build_room, _build_outside, _build_counter, _build_nell_side, _build_customer_side,
-		_build_ceiling, _build_people_and_shelf]
+		_build_ceiling, _build_people_and_shelf, _build_round2]   # --- SS2 WORLD: + 1 paso (los 4 armados de la ronda 2)
 
 func _build_base() -> void:
 	name = "ShopWorld"
@@ -118,7 +118,7 @@ func _build_room() -> void:
 	box_b(wx0, dx0 - 0.1, 0.0, 0.75, z1, z1 + 0.04, plate)
 	box_b(dx1 + 0.1, X1, 0.0, 0.75, z1, z1 + 0.04, plate)
 	# marcos de la ventana y de la puerta (chapa oscura)
-	var frame_m := flat(Color(0.3, 0.27, 0.25))
+	var frame_m := flat(Color(0.22, 0.34, 0.34))   # --- SS2 WORLD: marcos de chapa verde azulada (enfría el naranja)
 	box_b(wx0 - 0.1, wx1 + 0.1, wy0 - 0.12, wy0, z1 - 0.02, z1 + 0.12, frame_m)
 	box_b(wx0 - 0.1, wx1 + 0.1, wy1, wy1 + 0.1, z1 - 0.02, z1 + 0.08, frame_m)
 	box_b(wx0 - 0.1, wx0, wy0, wy1, z1 - 0.02, z1 + 0.08, frame_m)
@@ -135,10 +135,12 @@ func _build_room() -> void:
 	box_b(X1 - 0.04, X1, 0.0, 0.75, WALL_Z, FLOOR_Z1, rust)
 	box_b(X0 - 0.3, X1 + 0.3, H, H + 0.25, WALL_Z - 0.3, FLOOR_Z1 + 7.0, flat(Color(0.12, 0.09, 0.08)))
 	# parches de chapa en el adobe y un caño de ventilación
-	prop("scrap_patch_a", Vector3(-4.1, 2.75, z1 + 0.05), 0.035, "center")
-	prop("scrap_patch_b", Vector3(4.95, 1.4, z1 + 0.05), 0.035, "center")
+	# --- SS2 WORLD: los parches y el caño se corren para la pizarra (x 5.0), el tablero de sombras (sobre el banco) y el
+	# afiche del Derby (rincón del té)
+	prop("scrap_patch_a", Vector3(-3.95, 3.35, z1 + 0.05), 0.035, "center")
+	prop("scrap_patch_b", Vector3(7.25, 1.5, z1 + 0.05), 0.035, "center")
 	prop("scrap_patch_a", Vector3(7.9, 3.0, z1 + 0.05), 0.032, "center")
-	prop("vent_pipe", Vector3(-6.3, 2.55, z1 + 0.06), 0.04)
+	prop("vent_pipe", Vector3(-6.45, 2.9, z1 + 0.06), 0.04)
 
 
 ## El puerto a pleno sol detrás de la ventana y de la puerta: arena, casas con cúpula, una plataforma con su nave, el
@@ -274,13 +276,15 @@ func _build_ceiling() -> void:
 
 # ------------------------------------------------------------------ el estante, el banco y el mostrador
 
-## Pone en el estante las cosas de Game.shelf (hasta 6: dos por tabla), con sus estrellas.
+## Pone en el estante las cosas de Game.shelf (hasta 6: dos por tabla), con sus estrellas. --- SS2 WORLD: con el
+## Display Case, la 7.ª y la 8.ª van a la vitrina (shelf_slots()).
 func refresh_shelf() -> void:
 	if shelf_root == null:
 		return
 	for c in shelf_root.get_children():
 		c.queue_free()
 	var slots := [Vector2(-1.75, 1.6), Vector2(-1.08, 1.6), Vector2(-1.75, 1.05), Vector2(-1.08, 1.05), Vector2(-1.75, 0.5), Vector2(-1.08, 0.5)]
+	_refresh_case()
 	UIKit.load_fonts()
 	for i in mini(Game.shelf.size(), slots.size()):
 		var e: Dictionary = Game.shelf[i]
@@ -370,8 +374,11 @@ func set_night(on: bool) -> void:
 		n.visible = on
 	for n in _day_only:
 		n.visible = not on
-	for pair in interior_lights:
-		(pair[0] as OmniLight3D).light_energy = float(pair[1]) * (1.25 if on else 1.0)
+	_apply_lamps()   # --- SS2 WORLD: (las lámparas también según el evento)
+	if _door_drift:
+		_door_drift.modulate = Color(0.42, 0.36, 0.42) if on else Color(0.8, 0.66, 0.55)
+	if not on and not _win.is_empty():
+		set_window_sky("")   # --- SS2 WORLD: de día no hay lunas en la ventana
 	env.ambient_light_color = Color(0.42, 0.42, 0.62) if on else Color(0.56, 0.55, 0.62)
 	env.ambient_light_energy = 0.45 if on else 0.55
 	fill.light_energy = 0.32 if on else 0.45
@@ -402,3 +409,316 @@ func tea_walk(on_pass: Callable) -> void:
 		await get_tree().create_timer(0.35).timeout
 	await kettle.walk_path([Vector3(1.05, 0, 0.75), Vector3(-0.35, 0, 0.75)], 2.8)
 	kettle_follow = true
+
+
+# ==================================================================================================================
+# --- SS2 WORLD: la tienda de la ronda 2 (SS2_DESIGN §6.1-6.5, §8.10): el taller vivido, las 8 mejoras, las cosas de
+# las historias, la ventana de noche. Todo se arma en los 4 pasos nuevos, escondido lo que todavía no está, y queda en
+# warm_extra; después solo cambian visibilidad, cuadro, color, posición, escala y la energía de las 2 luces nuevas.
+
+## Dónde se estrena cada mejora (la cámara se desliza ahí; §4.1).
+const UPGRADE_POINTS := {"samovar": Vector3(-6.95, 0.46, -3.22), "seats": Vector3(3.2, 0.0, -3.72), "podlamp": Vector3(5.15, 3.3, -3.9),
+	"coolcoil": Vector3(2.9, 3.78, -2.2), "display": Vector3(1.15, 0.0, -3.7), "partswall": Vector3(-3.05, 2.55, -3.97),
+	"loupe": Vector3(-5.75, 0.79, -2.9), "neon": Vector3(3.1, 2.55, -3.97)}
+const SUN_BEAM_POS := Vector3(2.7, 1.45, -3.05)
+const TROPHY_Y := 2.77   # la tabla del estante de los trofeos (sobre la puerta)
+
+var upgrades := {}                # id de la mejora -> Node3D (su prop)
+var story := {}                   # id de la historia -> Node3D
+var _fan: Sprite3D
+var _niche: Sprite3D
+var _chalk: Sprite3D
+var _sunbeam: Sprite3D
+var _moonbeam: Sprite3D
+var _door_drift: Sprite3D
+var _haze: Sprite3D
+var _bunting_in: Sprite3D
+var _case_items: Array = []       # los 2 lugares de la vitrina (Display Case)
+var _display_light: OmniLight3D   # luz nueva 1 de 2: la vitrina (0 -> 0.5)
+var _neon_light: OmniLight3D      # luz nueva 2 de 2: el neón (0 -> 0.9)
+var _reveal_sparks: Array = []
+var _reveal_tw: Tween
+var _win := {}                    # la ventana de noche: "copper", "tin", "halos", "ring", "bigfall", "streaks"
+var _sky_kind := ""
+var _event := ""
+var _night_ok := false
+
+## El paso nuevo (~9 ms de script): el taller vivido, las mejoras, las cosas de las historias y la ventana de noche.
+func _build_round2() -> void:
+	_build_clutter()
+	_build_upgrades()
+	_build_story_props()
+	_build_window_sky()
+
+## El taller vivido (primer plano, pared del fondo, rayo de sol, rincones).
+func _build_clutter() -> void:
+	var z := WALL_Z + 0.03
+	# primer plano (lo borra el desenfoque de abajo): enmarca la escena sin tapar el mostrador ni la fila
+	prop("fg_bike_frame", Vector3(-6.9, H - 0.02, 2.4))
+	prop("fg_cable_coil", Vector3(-6.7, 0.0, 2.75))
+	prop("fg_pod_shells", Vector3(-5.6, 0.0, 3.0))
+	prop("fg_engine_block", Vector3(-2.65, 0.0, 3.05))
+	prop("fg_oil_drum", Vector3(3.45, 0.0, 3.0))
+	# la pared del fondo llena de vida
+	prop("shadow_board", Vector3(-5.15, 2.75, z))
+	_niche = prop("wall_niche", Vector3(-3.05, 2.55, z))
+	for x in [-5.68, -1.84, 2.0, 5.84]:
+		prop("pipe_run", Vector3(x, 3.72, z + 0.01))
+	_chalk = prop("chalkboard", Vector3(5.03, 1.6, z))
+	prop("radio_wall", Vector3(-0.3, 2.62, z))
+	prop("trophy_shelf", Vector3(6.18, 2.62, z))
+	prop("coat_rack", Vector3(6.95, 0.0, -3.3))
+	prop("bot_torso", Vector3(7.6, 0.0, -2.6))
+	# el afiche del Glasspan Derby en el rincón del té (el pictograma de R y una línea de texto)
+	prop("poster_frame", Vector3(-7.3, 2.2, z), 0.028)
+	sprite("res://assets/ui/event_race.png", 0.018, Vector3(-7.3, 2.36, z + 0.012), "center")
+	UIKit.load_fonts()
+	var lb := Label3D.new()
+	lb.text = "GLASSPAN DERBY\nDAY 9"
+	lb.font = UIKit.font_bold
+	lb.font_size = 24
+	lb.pixel_size = 0.0026
+	lb.modulate = Color(0.55, 0.2, 0.16)
+	lb.outline_size = 0
+	lb.shaded = true
+	lb.position = Vector3(-7.32, 1.9, z + 0.014)
+	add_child(lb)
+	# el ventilador del techo (quieto; gira con el Cool Coil)
+	_fan = prop("ceiling_fan", Vector3(2.9, H - 0.02, -2.2), 0.03, "top", 0, false)
+	_fan.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# la arena que entra por la puerta (acostada en el piso; más grande en el Scour)
+	_door_drift = glow("sand_drift", Vector3(6.05, 0.012, -3.15), 0.03, "center")
+	_door_drift.rotation_degrees.x = -90.0
+	_door_drift.modulate = Color(0.8, 0.66, 0.55)
+	# el rayo de sol con polvo (de día) y el de luna (de noche): un cuadro inclinado de la ventana al piso, sin luz y con
+	# alfa (la familia de la lluvia de chatarra), sin partículas
+	_sunbeam = soft("sunbeam", SUN_BEAM_POS, 0.022)
+	_sunbeam.rotation_degrees.z = -20.0
+	_sunbeam.modulate = Color(1.75, 1.5, 1.15, 1.0)
+	animate(_sunbeam, 1.25)
+	_day_only.append(_sunbeam)
+	_moonbeam = soft("moonbeam", SUN_BEAM_POS, 0.022)
+	_moonbeam.rotation_degrees.z = -20.0
+	_moonbeam.modulate = Color(1.4, 1.4, 1.7, 1.0)
+	later(_moonbeam)
+	_night_nodes.append(_moonbeam)
+
+## Las 8 mejoras (escondidas hasta comprarlas), sus 2 luces y las chispas del estreno.
+func _build_upgrades() -> void:
+	upgrades["samovar"] = prop("up_samovar", UPGRADE_POINTS["samovar"])
+	upgrades["seats"] = prop("up_seats", UPGRADE_POINTS["seats"])
+	upgrades["podlamp"] = prop("up_podlamp", UPGRADE_POINTS["podlamp"])
+	upgrades["coolcoil"] = prop("up_coolring", UPGRADE_POINTS["coolcoil"])
+	var case := Node3D.new()
+	case.name = "DisplayCase"
+	add_child(case)
+	case.position = UPGRADE_POINTS["display"]
+	prop("up_display", Vector3.ZERO, -1.0, "", 0, true, case)
+	for i in 2:
+		var it := sprite("res://assets/items/radio_closed.png", 0.0062, Vector3(-0.25 + i * 0.5, 0.95, 0.04), "bottom", case)
+		it.name = "CaseItem%d" % i
+		_case_items.append(it)
+	upgrades["display"] = case
+	upgrades["partswall"] = prop("up_partswall", UPGRADE_POINTS["partswall"] + Vector3(0.0, 0.0, 0.03))
+	upgrades["loupe"] = prop("up_loupe", UPGRADE_POINTS["loupe"])
+	var neon := glow("up_neon", UPGRADE_POINTS["neon"] + Vector3(0.0, 0.0, 0.05))
+	animate(neon, 0.7)
+	upgrades["neon"] = neon
+	for id in upgrades:
+		(upgrades[id] as Node3D).name = "Up_" + id
+		later(upgrades[id])
+	_display_light = toggle_omni(Vector3(1.15, 1.95, -3.15), Color(1.0, 0.9, 0.72), 0.5, 2.6)
+	_display_light.name = "DisplayLight"
+	_neon_light = toggle_omni(Vector3(3.1, 2.3, -3.3), Color(1.0, 0.55, 0.85), 0.9, 4.6)
+	_neon_light.name = "NeonLight"
+	for i in 8:
+		var sp := soft("spark", Vector3.ZERO, 0.03)
+		sp.name = "RevealSpark%d" % i
+		_reveal_sparks.append(later(sp))
+
+## Las cosas de las historias (el cajón de Rook, el certificado, los trofeos, la placa, los núcleos,
+## la banda por la ventana) y el decorado de los eventos adentro (bruma del Scour, banderines de Bronzemoon).
+func _build_story_props() -> void:
+	var z := WALL_Z + 0.04
+	story["crate"] = prop("crate_sealed", Vector3(-7.25, 0.0, -2.4))
+	story["certificate"] = prop("frame_certificate", Vector3(0.95, 2.5, z))
+	story["cup"] = prop("trophy_cup", Vector3(5.75, TROPHY_Y, z + 0.06))
+	story["key"] = prop("lucky_key", Vector3(6.18, TROPHY_Y, z + 0.06))
+	story["ribbon"] = prop("ribbon_bronze", Vector3(6.6, TROPHY_Y, z + 0.06))
+	story["plaque"] = prop("plaque_paid", Vector3(4.92, 1.0, z), 0.019)
+	story["cores"] = prop("lamp_core_prop", Vector3(3.1, 1.24, -3.86))
+	var band := prop("band_trio", Vector3(4.3, 0.0, -9.5))
+	animate(band, 2.2)
+	story["band"] = band
+	for id in story:
+		(story[id] as Node3D).name = "Story_" + id
+		later(story[id])
+	_haze = glow("window_haze", Vector3(3.1, 2.2, -3.93))
+	_haze.name = "ScourHaze"
+	later(_haze)
+	_bunting_in = prop("bunting", Vector3(3.1, 3.02, -3.9), 0.014, "top")
+	_bunting_in.name = "BuntingInside"
+	later(_bunting_in)
+
+## La ventana de noche (las lunas Copper y Tin, el anillo, la gran estela de Bigfall, la lluvia de la Gran
+## Lluvia): sprites lejos, detrás de la ventana, que solo se ven de noche.
+func _build_window_sky() -> void:
+	var zz := -16.1
+	_win["halos"] = [later(glow("moon_halo", Vector3(-0.6, 2.85, zz - 0.15), 0.022)), later(glow("moon_halo", Vector3(2.45, 3.25, zz - 0.15), 0.0095))]
+	_win["copper"] = later(glow("moon_copper", Vector3(-0.6, 2.85, zz), 0.022, "", 1))
+	_win["tin"] = later(glow("moon_tin", Vector3(2.45, 3.25, zz), 0.022, "", 2))
+	var ring_s := glow("sky_ring", Vector3(0.9, 2.3, zz - 0.1), 0.013)
+	ring_s.modulate = Color(0.85, 0.85, 1.25)
+	_win["ring"] = later(ring_s)
+	var big := soft("starfall", Vector3(0.6, 3.05, zz + 0.05), 0.075)
+	big.modulate = Color(1.9, 1.15, 0.6, 1.0)
+	_win["bigfall"] = later(big)
+	var streaks: Array = []
+	for spec in [[Vector3(-1.4, 3.5, zz), 0.035], [Vector3(0.4, 2.7, zz), 0.03], [Vector3(1.8, 3.6, zz), 0.04], [Vector3(2.9, 2.5, zz), 0.03],
+			[Vector3(-0.2, 1.9, zz), 0.028]]:
+		var st := soft("starfall", spec[0], float(spec[1]))
+		st.modulate = Color(1.4, 1.2, 0.9, 1.0)
+		streaks.append(later(st))
+	_win["streaks"] = streaks
+
+# ------------------------------------------------------------------ la API (§8.10)
+
+## Las mejoras compradas, visibles (Game.has_fitting); las 2 luces por energía; el ventilador gira con el Cool Coil; la
+## pared de latitas reemplaza al nicho y se llena con el cajón de piezas.
+func refresh_upgrades() -> void:
+	if upgrades.is_empty():
+		return
+	for id in upgrades:
+		var n: Node3D = upgrades[id]
+		n.visible = Game.has_fitting(id)
+		n.scale = Vector3.ONE
+	_niche.visible = not Game.has_fitting("partswall")
+	var pw: Sprite3D = upgrades["partswall"]
+	var pt := Game.parts_total()
+	pw.frame = 0 if pt < 6 else (1 if pt < 14 else 2)
+	if Game.has_fitting("coolcoil"):
+		if not _anim_has(_fan):
+			animate(_fan, 9.0)
+	else:
+		_anim_drop(_fan)
+		_fan.frame = 0
+	_display_light.light_energy = 0.5 if Game.has_fitting("display") else 0.0
+	_neon_light.light_energy = 0.9 if Game.has_fitting("neon") else 0.0
+	_refresh_case()
+
+func _anim_has(s: Sprite3D) -> bool:
+	for a in _anim_sprites:
+		if a[0] == s:
+			return true
+	return false
+
+func _anim_drop(s: Sprite3D) -> void:
+	for a in _anim_sprites.duplicate():
+		if a[0] == s:
+			_anim_sprites.erase(a)
+
+## La vitrina (Display Case): la 7.ª y la 8.ª cosa del estante, con su luz.
+func _refresh_case() -> void:
+	if _case_items.is_empty():
+		return
+	var owned := Game.has_fitting("display")
+	for i in _case_items.size():
+		var s: Sprite3D = _case_items[i]
+		var k := 6 + i
+		s.visible = owned and k < mini(Game.shelf.size(), shelf_slots())
+		if s.visible:
+			s.texture = load("res://assets/items/%s_closed.png" % String(Game.shelf[k].get("item", "radio")))
+
+## El estreno de una mejora: un pop de escala y 8 chispas que saltan alrededor (sprites armados al arrancar).
+func reveal_upgrade(id: String) -> void:
+	var n: Node3D = upgrades.get(id)
+	if n == null:
+		return
+	n.visible = true
+	n.scale = Vector3.ONE * 0.6
+	if _reveal_tw and _reveal_tw.is_valid():
+		_reveal_tw.kill()
+	_reveal_tw = create_tween().set_parallel(true)
+	_reveal_tw.tween_property(n, "scale", Vector3.ONE * 1.12, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_reveal_tw.tween_property(n, "scale", Vector3.ONE, 0.3).set_delay(0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var c := upgrade_point(id) + Vector3(0.0, 0.6 if UPGRADE_POINTS[id].y < 0.5 else 0.0, 0.25)
+	for i in _reveal_sparks.size():
+		var s: Sprite3D = _reveal_sparks[i]
+		var a := TAU * i / _reveal_sparks.size()
+		s.position = c
+		s.visible = true
+		s.modulate = Color(1.7, 1.45, 1.0, 1.0)
+		var to := c + Vector3(cos(a) * 0.9, sin(a) * 0.7 + 0.2, 0.05)
+		_reveal_tw.tween_property(s, "position", to, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_reveal_tw.tween_property(s, "modulate:a", 0.0, 0.35).set_delay(0.4)
+	_reveal_tw.chain().tween_callback(func():
+		for s in _reveal_sparks:
+			(s as Sprite3D).visible = false)
+	refresh_upgrades.call_deferred()
+
+func upgrade_point(id: String) -> Vector3:
+	return UPGRADE_POINTS.get(id, Vector3(0.0, 1.5, -3.5))
+
+## "crate" bool, "certificate" bool, "cup" / "key" / "ribbon" bool, "plaque" bool, "cores" 0..3, "band" bool
+func set_story_prop(id: String, value) -> void:
+	var n: Node3D = story.get(id)
+	if n == null:
+		return
+	if id == "cores":
+		var c := clampi(int(value), 0, 3)
+		n.visible = c > 0
+		(n as Sprite3D).frame = c
+	else:
+		n.visible = bool(value)
+
+## "" | sandstorm | festival | finale (lo de adentro): la bruma ocre en la ventana y la arena grande en la puerta; los
+## banderines en la ventana; las lámparas más cálidas en la Gran Lluvia.
+func set_event(id: String) -> void:
+	_event = id
+	if _haze == null:
+		return
+	_haze.visible = id == "sandstorm"
+	_door_drift.frame = 1 if id == "sandstorm" else 0
+	_door_drift.pixel_size = 0.04 if id == "sandstorm" else 0.03
+	_bunting_in.visible = id == "festival"
+	_apply_lamps()
+
+## Las lámparas de adentro según la noche y el evento (el Scour las baja un poco; la Gran Lluvia las calienta).
+func _apply_lamps() -> void:
+	var k := 1.25 if night else 1.0
+	if _event == "sandstorm":
+		k *= 0.85
+	elif _event == "finale":
+		k *= 1.1
+	var col := Color(1.0, 0.66, 0.36) if _event == "finale" else Color(1.0, 0.72, 0.42)
+	for pair in interior_lights:
+		(pair[0] as OmniLight3D).light_energy = float(pair[1]) * k
+		(pair[0] as OmniLight3D).light_color = col
+
+## "" | "moons" | "bigfall" | "bronzemoon" | "starfall": lo que se ve por la ventana de noche (Copper gibosa y Tin
+## media; la gran estela la noche antes de Bigfall; las dos llenas con halo de bronce; muchas estelas).
+func set_window_sky(kind: String) -> void:
+	_sky_kind = kind
+	if _win.is_empty():
+		return
+	var on := kind != ""
+	var full := kind == "bronzemoon"
+	(_win["copper"] as Sprite3D).visible = on
+	(_win["tin"] as Sprite3D).visible = on
+	(_win["copper"] as Sprite3D).frame = 0 if full else 1
+	(_win["tin"] as Sprite3D).frame = 0 if full else 2
+	(_win["ring"] as Sprite3D).visible = on
+	for h in _win["halos"]:
+		(h as Sprite3D).visible = full
+	(_win["bigfall"] as Sprite3D).visible = kind == "bigfall"
+	for st in _win["streaks"]:
+		(st as Sprite3D).visible = kind == "starfall"
+
+## Cuántas cosas caben a la vista en el estante (6 + el Display Case).
+func shelf_slots() -> int:
+	return 6 + Season.n("shelf_slots")
+
+## Las reparaciones de hoy en la pizarra: 0, 1-2, 3-5, 6 o más rayitas.
+func set_chalk(n: int) -> void:
+	if _chalk:
+		_chalk.frame = 0 if n <= 0 else (1 if n <= 2 else (2 if n <= 5 else 3))

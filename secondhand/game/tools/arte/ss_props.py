@@ -832,7 +832,7 @@ STREET.update({
     'canopy_edge_red': (lambda: canopy_edge('stripe'), 0.04, 'top'), 'canopy_edge_teal': (lambda: canopy_edge('teal'), 0.04, 'top'),
     'well_tower': (well_tower, 0.045, 'bottom'), 'shop_plate': (shop_plate, 0.02, 'center'),
     'ship_hammerhead': (ship_hammerhead, 0.06, 'center'), 'ship_beetle': (ship_beetle, 0.06, 'center'),
-    'ship_needle': (ship_needle, 0.06, 'center'), 'sky_ring': (sky_ring, 0.1, 'center'), 'sun': (sun_disc, 0.1, 'center'),
+    'ship_needle': (ship_needle, 0.06, 'center'), 'sun': (sun_disc, 0.1, 'center'),   # --- SS2 WORLD: sky_ring v2 en ss_props2.py
     'starfall': (starfall, 0.06, 'center'),
 })
 for _n in range(6):

@@ -22,7 +22,7 @@ signal day_started(day: int)
 
 const SAVE_PATH := "user://secondhand_save.json"
 const SETTINGS_PATH := "user://secondhand_settings.json"   # --- SS CORE
-const SAVE_VERSION := 2   # --- SS CORE: 2 = con los datos de la partida (cápsulas, cartel, historial...)
+const SAVE_VERSION := 3   # --- SS2: 3 = la temporada (mejoras, cuotas en partes, historias, el tablero) (2 = el prototipo)
 
 var day := 1
 var credits := 0
@@ -45,6 +45,21 @@ var history: Array = []    # las estadísticas de cada día cerrado (la pantalla
 var tips_seen := {}        # consejos del tutorial ya mostrados
 var last_summary := {}     # el libro de cuentas de la última noche (para mostrarlo otra vez)
 # --- end SS CORE
+# --- SS2 SEASON
+var mode := "campaign"        # "campaign" (días 1..SeasonData.LAST_DAY) | "endless" (después de la noche del cometa)
+var fittings: Array = []      # ids comprados (SeasonData.FITTINGS), en orden de compra
+var fittings_new: Array = []  # comprados y todavía no mostrados (se revelan al abrir la tienda)
+var dues_paid: Array = []     # noches en que se pagó a tiempo: [3, 6]
+var debt := 0                 # lo que quedó debiendo (+10 %): se suma a la próxima cuota
+var late_marks := 0           # cuotas atrasadas (el sello LATE)
+var flags := {}               # hilos de historia (§5.5)
+var beats_seen := {}          # beat_id -> true
+var unlocked := {}            # id -> día en que se abrió ("New today")
+var ending_seen := false      # la noche del cometa de la noche 10 ya se jugó
+var crown_seen := false       # la versión campeona ya se jugó (en la noche 10, o la primera noche #1 del modo sin fin)
+var charity_day := -99        # último día con cápsula de regalo
+var migrated_from := 0        # versión de la partida cargada (2 = el prototipo): la nota, una vez
+# --- end SS2 SEASON
 
 func _ready() -> void:
 	load_settings()   # --- SS CORE
@@ -72,8 +87,26 @@ func new_game_state() -> void:
 	last_summary = {}
 	# --- end SS CORE
 	junk = []
+	# --- SS2 SEASON: la temporada desde cero (Season y Ranking arman sus datos en _init: se pueden llamar ya)
+	mode = "campaign"
+	fittings = []
+	fittings_new = []
+	dues_paid = []
+	debt = 0
+	late_marks = 0
+	flags = {}
+	beats_seen = {}
+	unlocked = {}
+	ending_seen = false
+	crown_seen = false
+	charity_day = -99
+	migrated_from = 0
+	Season.reset()
+	Ranking.reset(run_seed)
+	# --- end SS2 SEASON
 	reset_today()
 	roll_pods()   # --- SS CORE
+	_update_dues_goal()   # --- SS2 SEASON
 
 # ------------------------------------------------------------------ piezas
 
@@ -198,21 +231,66 @@ func reset_today() -> void:
 		"repair_pay": 0,      # lo cobrado por reparaciones
 		"sale_pay": 0,        # lo cobrado por ventas
 		# --- end SS CORE
+		# --- SS2 SEASON (§8.4: todos enteros, por stat())
+		"served": 0,          # reparaciones entregadas (bien) + ventas hechas
+		"repair_stars": 0,    # estrellas de las reparaciones entregadas
+		"sale_stars": 0,      # estrellas de lo vendido del estante
+		"event_stars": 0,     # lo de la temporada (inspección, carrera, banda, la caja...)
+		"event_credits": 0,   # (créditos de los eventos: el libro de cuentas)
+		"racers": 0,          # propulsores de los corredores entregados antes de las 2 PM
+		"racer_stars": 0,
+		"after_hours": 0,     # arreglados de noche, después de cerrar
+		"patched": 0,         # reparaciones con parche
+		"tea_used": 0,        # tés servidos (el viejo "tea" sigue en true si > 0)
+		"fittings_spent": 0,  # lo gastado en mejoras
+		"asis": 0,            # cosas compradas "tal cual"
+		"dues_due": 0,
+		"dues_paid": 0,
+		"dues_short": 0,
+		"clean": 0,           # día limpio: nadie se fue, nadie se perdió, nada falló
+		# --- end SS2 SEASON
 	}
 
 ## Suma n a una estadística numérica del día.
 func stat(key: String, n := 1) -> void:
 	today[key] = int(today.get(key, 0)) + n
 
-## Pasa al día siguiente (CORE decide cuándo; el día 3 es el último del prototipo).
+## Pasa al día siguiente (main.gd decide cuándo).
 func next_day() -> void:
 	day += 1
 	reset_today()
 	roll_pods()   # --- SS CORE
+	_update_dues_goal()   # --- SS2 SEASON
 	day_started.emit(day)
 
+## --- SS2 SEASON: la campaña termina en el día SeasonData.LAST_DAY (después, el modo sin fin no tiene último día).
 func is_last_day() -> bool:
-	return day >= Data.DAYS
+	return is_campaign() and day >= SeasonData.LAST_DAY
+
+func is_campaign() -> bool:
+	return mode == "campaign"
+
+func has_fitting(id: String) -> bool:
+	return id in fittings
+
+## Una mejora comprada: queda para revelarla cuando abra la tienda (fittings_new).
+func add_fitting(id: String) -> void:
+	if id in fittings:
+		return
+	fittings.append(id)
+	fittings_new.append(id)
+
+func flag(key: String, default = null):
+	return flags.get(key, default)
+
+func set_flag(key: String, value) -> void:
+	flags[key] = value
+
+## La barra DUES del HUD: la próxima cuota + lo que se debe.
+func _update_dues_goal() -> void:
+	var nd: Dictionary = Season.next_dues()
+	dues_goal = maxi(1, int(nd.get("amount", 0)) + int(nd.get("debt", debt)))
+# --- end SS2 SEASON
 
 ## Cuánto de la cuota del puerto (dock dues) cubren los créditos (0..1).
 func dues_progress() -> float:
@@ -224,21 +302,10 @@ func dues_met() -> bool:
 # --- SS CORE: la mañana, el cierre del día y la partida -------------------------------------------------------------
 
 ## Las cápsulas de esta mañana en el puesto de Raker: las del día 1 fijas (Data.DAY1_PODS); las demás, sorteadas con
-## la semilla de la partida (BenchData.roll_pod), así Continue ofrece las mismas.
+## la semilla de la partida, así Continue ofrece las mismas. --- SS2 SEASON: las arma Season.pods_for (solo familias
+## abiertas; el naufragio del día 7, la Gran Caída del día 10; ninguna el día de la Scour).
 func roll_pods() -> void:
-	pods_today = []
-	if day <= 1:
-		for p in Data.DAY1_PODS:
-			pods_today.append(p.duplicate(true))
-		return
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash("%d-pods-%d" % [run_seed, day])
-	for i in Data.PODS_PER_DAY:
-		var pod: Dictionary = BenchData.roll_pod(rng, "pod-%d%02d" % [day, i + 1])    # el número de serie que PodUI estampa ("POD-201")
-		pods_today.append(pod)
-	# que no sean iguales en peso: una pesada y una liviana (la decisión tiene gracia)
-	if pods_today.size() >= 2 and int(pods_today[0].get("weight", 1)) == int(pods_today[1].get("weight", 1)):
-		pods_today.sort_custom(func(a, b): return int(a.get("price", 0)) > int(b.get("price", 0)))
+	pods_today = Season.pods_for(day)
 
 ## Cierra el día: arma el resumen del libro de cuentas, decide si fue un día bueno (enciende una punta del cartel) y
 ## lo guarda en el historial. Devuelve el resumen.
@@ -252,11 +319,29 @@ func close_day() -> Dictionary:
 	s["avg_stars_x10"] = int(round(10.0 * float(today.get("stars", 0)) / float(maxi(1, int(today.get("repairs", 0))))))
 	var good := int(s["rep_delta"]) >= Data.GOOD_DAY_REP
 	s["good"] = good
-	if good and sign_points < Data.SIGN_POINTS:
-		sign_points += 1
+	# --- SS2 SEASON: el día limpio, la noche del tablero, las puntas del cartel por hitos (no por días buenos), el
+	# tramo de reputación nuevo
+	var clean := int(today.get("walkouts", 0)) == 0 and int(today.get("missed", 0)) == 0 and int(today.get("failed", 0)) == 0
+	today["clean"] = 1 if clean else 0
+	s["clean"] = today["clean"]
+	var tier_before := String(Season.rep_tier(int(today.get("rep_start", rep)))["id"])
+	var tier_now: Dictionary = Season.rep_tier()
+	if String(tier_now["id"]) != tier_before and int(tier_now["rep"]) > int(Season.rep_tier(int(today.get("rep_start", rep)))["rep"]):
+		s["tier"] = String(tier_now["id"])
+	var sign_before := sign_points
+	var move: Dictionary = Ranking.commit_day()
+	s["rank"] = move.duplicate(true)
+	s["day_stars"] = int(move.get("stars", 0))
+	sign_points = clampi(maxi(sign_points, Ranking.milestone_points()), 0, Data.SIGN_POINTS)
+	s["sign_new"] = sign_points if sign_points > sign_before else 0
 	s["sign_points"] = sign_points
+	var nd: Dictionary = Season.next_dues()
+	s["dues_tonight"] = Season.dues_due(day)
+	s["dues_next"] = nd.duplicate()
 	s["dues"] = dues_goal
-	s["dues_met"] = dues_met()
+	s["dues_met"] = credits >= dues_goal
+	s["mode"] = mode
+	# --- end SS2 SEASON
 	history.append(s)
 	last_summary = s
 	return s
@@ -264,20 +349,33 @@ func close_day() -> Dictionary:
 ## Los totales de la partida (la pantalla final).
 func totals() -> Dictionary:
 	var t := {"repairs": 0, "stars": 0, "sales": 0, "earned": 0, "spent": 0, "walkouts": 0, "missed": 0,
-		"customers": 0, "arrived": 0, "refurbished": 0, "pods": 0, "tips": 0, "good_days": 0, "best_day": 0, "best_net": -99999}
+		"customers": 0, "arrived": 0, "refurbished": 0, "pods": 0, "tips": 0, "good_days": 0, "best_day": 0, "best_net": -99999,
+		"season_stars": 0, "best_stars": 0, "best_stars_day": 0, "after_hours": 0, "served": 0}   # --- SS2 SEASON
 	for s in history:
 		for k in ["repairs", "stars", "sales", "earned", "spent", "walkouts", "missed", "customers", "arrived",
-				"refurbished", "pods", "tips"]:
+				"refurbished", "pods", "tips", "after_hours", "served"]:
 			t[k] = int(t[k]) + int(s.get(k, 0))
 		if bool(s.get("good", false)):
 			t["good_days"] = int(t["good_days"]) + 1
 		if int(s.get("net", 0)) > int(t["best_net"]):
 			t["best_net"] = int(s.get("net", 0))
 			t["best_day"] = int(s.get("day", 0))
+		# --- SS2 SEASON: las estrellas de la temporada y el mejor día del tablero
+		t["season_stars"] = int(t["season_stars"]) + int(s.get("day_stars", 0))
+		if int(s.get("day_stars", 0)) > int(t["best_stars"]):
+			t["best_stars"] = int(s.get("day_stars", 0))
+			t["best_stars_day"] = int(s.get("day", 0))
 	t["credits"] = credits
 	t["rep"] = rep
 	t["sign_points"] = sign_points
 	t["dues_met"] = dues_met()
+	# --- SS2 SEASON
+	t["fittings"] = fittings.size()
+	t["dues_on_time"] = Season.dues_on_time()
+	t["position"] = Ranking.position()
+	t["score"] = Ranking.score()
+	t["cores"] = int(flag("cores", 0))
+	# --- end SS2 SEASON
 	return t
 
 ## Un consejo del tutorial se muestra una sola vez: true la primera vez que se pide.
@@ -312,6 +410,22 @@ func to_dict() -> Dictionary:
 		"tips_seen": tips_seen.duplicate(),
 		"last_summary": last_summary.duplicate(true),
 		# --- end SS CORE
+		# --- SS2 SEASON
+		"mode": mode,
+		"fittings": fittings.duplicate(),
+		"fittings_new": fittings_new.duplicate(),
+		"dues_paid": dues_paid.duplicate(),
+		"debt": debt,
+		"late_marks": late_marks,
+		"flags": flags.duplicate(true),
+		"beats_seen": beats_seen.duplicate(),
+		"unlocked": unlocked.duplicate(),
+		"ending_seen": ending_seen,
+		"crown_seen": crown_seen,
+		"charity_day": charity_day,
+		"season": Season.save_data(),
+		"rank": Ranking.save_data(),
+		# --- end SS2 SEASON
 	}
 
 ## Carga un diccionario guardado (JSON: los números llegan como float y se pasan a int).
@@ -351,6 +465,55 @@ func from_dict(d: Dictionary) -> void:
 	if not d.has("pods_today"):
 		roll_pods()
 	# --- end SS CORE
+	# --- SS2 SEASON: la temporada (las partidas del prototipo, versión 2, cargan con valores por defecto: el mismo
+	# día de la campaña, las cuotas en tres partes desde ahora, el tablero rehecho con su historial)
+	var v := int(d.get("version", 1))
+	migrated_from = v if v < SAVE_VERSION else 0
+	mode = str(d.get("mode", "campaign"))
+	if mode != "endless":
+		mode = "campaign"
+	fittings = []
+	for id in d.get("fittings", []):
+		if SeasonData.FITTINGS.has(str(id)) and not (str(id) in fittings):
+			fittings.append(str(id))
+	fittings_new = []
+	for id in d.get("fittings_new", []):
+		if str(id) in fittings and not (str(id) in fittings_new):
+			fittings_new.append(str(id))
+	dues_paid = []
+	for x in d.get("dues_paid", []):
+		dues_paid.append(int(x))
+	debt = maxi(0, int(d.get("debt", 0)))
+	late_marks = maxi(0, int(d.get("late_marks", 0)))
+	flags = _ints(d["flags"]) if d.get("flags") is Dictionary else {}
+	beats_seen = {}
+	if d.get("beats_seen") is Dictionary:
+		for k in d["beats_seen"]:
+			beats_seen[str(k)] = true
+	unlocked = {}
+	if d.get("unlocked") is Dictionary:
+		for k in d["unlocked"]:
+			unlocked[str(k)] = int(d["unlocked"][k])
+	ending_seen = bool(d.get("ending_seen", false))
+	crown_seen = bool(d.get("crown_seen", false))
+	charity_day = int(d.get("charity_day", -99))
+	if not today.has("tea_used") or int(today.get("tea_used", 0)) == 0:
+		today["tea_used"] = 1 if bool(today.get("tea", false)) else 0
+	for k in ["served", "repair_stars", "sale_stars", "event_stars"]:
+		today[k] = int(today.get(k, 0))
+	Season.load_data(d.get("season", {}))
+	if d.get("rank") is Dictionary and (d["rank"] as Dictionary).has("scores"):
+		Ranking.load_data(d["rank"])
+	else:
+		Ranking.reset(run_seed)
+		Ranking.rebuild_from_history(history)
+	if migrated_from > 0 and migrated_from < SAVE_VERSION:
+		# el prototipo: lo que ya pasó cuenta para lo que se abre; las puntas del cartel no bajan
+		for dd in range(1, day + 1):
+			Season.update_unlocks(dd)
+		sign_points = clampi(maxi(sign_points, Ranking.milestone_points()), 0, Data.SIGN_POINTS)
+	_update_dues_goal()
+	# --- end SS2 SEASON
 
 ## --- SS CORE: JSON devuelve todos los números como float; los enteros vuelven a ser int (también dentro de listas y
 ## diccionarios: las cápsulas y el historial).
@@ -407,6 +570,16 @@ func can_continue() -> bool:
 		return false
 	var d = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
 	return d is Dictionary and str(d.get("resume", "morning")) != "done"
+
+## --- SS2 SEASON: la nota del título una vez: una partida terminada del prototipo (versión 2, "done") no se continúa
+## ("The prototype is over. A whole season awaits: New game."). "" si no hay nada que decir.
+func save_note() -> String:
+	if not has_save():
+		return ""
+	var d = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
+	if d is Dictionary and int(d.get("version", 1)) < SAVE_VERSION and str(d.get("resume", "")) == "done":
+		return String(SeasonData.TEXT["prototype_over"])
+	return ""
 
 ## Los volúmenes en su propio archivo (valen para todas las partidas).
 func save_settings() -> void:

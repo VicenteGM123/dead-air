@@ -10,6 +10,12 @@ class_name BenchPortrait
 ##   calc   (bot): una pantallita "CALC..." sobre la cabeza
 ##   tongue (Dune Raker): saca la lengua (rosada), rápido
 ## --- SS BENCH (nuevo). Los puntos de la cabeza de cada personaje salen de mirar sus hojas (en píxeles del cuadro).
+## --- SS2 BENCH: las señales de las especies nuevas (regla "generic" de HaggleUI) y sus anclas
+## (CastData.PORTRAIT_ANCHORS):
+##   still   (Sandglass): la arena deja de caer (el cuadro se congela y los granos del cuello se detienen)
+##   flutter (Lampwing): las alas aletean (la zona de las alas tiembla arriba y abajo) y sueltan polvito
+##   ears    (Brushtail): las orejas se aplastan (la franja de las orejas se dibuja a media altura)
+## La Sandglass siempre deja caer arena por el cuello del reloj (salvo con "still").
 
 const SCALE := 3.0
 const FRAME := Vector2(64, 96)
@@ -28,6 +34,7 @@ const ANCHORS := {
 }
 
 var char_id := ""
+var last_fx := ""        # --- SS2 BENCH: la última señal que se mostró (benchtest)
 var _frames: Array = []
 var _t := 0.0
 var _fx := {}            # efecto -> tiempo que queda
@@ -57,10 +64,16 @@ func set_char(id: String) -> void:
 	_crest = ""
 	_hide = 0.0
 	_hide_on = false
+	last_fx = ""
 
 ## Una señal: snort | watch | calc | tongue | shake (dura secs).
 func fx(name: String, secs := 1.2) -> void:
 	_fx[name] = secs
+	last_fx = name   # --- SS2 BENCH (la prueba mira cuál fue la última señal)
+
+## --- SS2 BENCH: apaga una señal que dura (la arena quieta de la Sandglass).
+func clear_fx(name: String) -> void:
+	_fx.erase(name)
 
 func set_crest(mode: String) -> void:
 	_crest = mode
@@ -84,13 +97,19 @@ func set_hiding(on: bool) -> void:
 func to_local_px(p: Vector2) -> Vector2:
 	return _origin() + p * SCALE
 
+## --- SS2 BENCH: las anclas propias o las del elenco nuevo.
+func _anchors() -> Dictionary:
+	if ANCHORS.has(char_id):
+		return ANCHORS[char_id]
+	return CastData.PORTRAIT_ANCHORS.get(char_id, {})
+
 func head_point() -> Vector2:
-	var a: Dictionary = ANCHORS.get(char_id, {})
+	var a: Dictionary = _anchors()
 	return to_local_px(a.get("head", Vector2(32, 30)))
 
 ## Lo más alto del personaje (para el globo), en coordenadas de este control.
 func top_point() -> Vector2:
-	var a: Dictionary = ANCHORS.get(char_id, {})
+	var a: Dictionary = _anchors()
 	var h: Vector2 = a.get("head", Vector2(32, 30))
 	return to_local_px(Vector2(h.x, maxf(8.0, h.y - 16.0)))
 
@@ -127,10 +146,26 @@ func _draw() -> void:
 	var o := _origin()
 	if _fx.has("snort") or _fx.has("shake"):
 		o.x += (3.0 if fmod(_t, 0.1) < 0.05 else -3.0)
+	var a2: Dictionary = _anchors()
 	if not _frames.is_empty() and _frames[0]:
-		var fr: Texture2D = _frames[0 if fmod(_t, 1.2) < 0.8 else 1]
-		draw_texture_rect(fr, Rect2(o, FRAME * SCALE), false)
-	var a2: Dictionary = ANCHORS.get(char_id, {})
+		var fi := 0 if fmod(_t, 1.2) < 0.8 else 1
+		if _fx.has("still"):
+			fi = 0          # --- SS2 BENCH: la arena se detiene (no respira)
+		var fr: Texture2D = _frames[fi]
+		if _fx.has("ears") and a2.has("ears"):
+			_draw_ears_flat(fr, o, a2["ears"])
+		else:
+			draw_texture_rect(fr, Rect2(o, FRAME * SCALE), false)
+		if _fx.has("flutter") and a2.has("wings"):
+			_draw_flutter(fr, o, a2["wings"])
+	# --- SS2 BENCH: la arena que cae por el cuello de la Sandglass (quieta con "still")
+	if a2.has("sand"):
+		_draw_sand(o + (a2["sand"] as Vector2) * SCALE)
+	# P1: el pimpollo que florece (Thornfolk) y las espinas que se erizan
+	if _fx.has("bloom") and a2.has("bud"):
+		_draw_bloom(o + (a2["bud"] as Vector2) * SCALE)
+	if _fx.has("bristle"):
+		_draw_bristle(o, a2)
 	# la cúpula de Oona
 	if _glow.a > 0.02 and a2.has("dome"):
 		var c := o + (a2["dome"] as Vector2) * SCALE
@@ -195,3 +230,56 @@ func _draw() -> void:
 	while x < size.x:
 		draw_rect(Rect2(x, top + 18, 2, 52), Color(0.25, 0.15, 0.09))
 		x += 64.0
+
+# --- SS2 BENCH: las señales nuevas
+
+## Las orejas aplastadas: el cuadro sin la franja de las orejas, y la franja dibujada a media altura pegada a la cabeza.
+func _draw_ears_flat(fr: Texture2D, o: Vector2, er: Rect2) -> void:
+	var below := Rect2(0, er.end.y, FRAME.x, FRAME.y - er.end.y)
+	var above := Rect2(0, 0, FRAME.x, er.position.y)
+	draw_texture_rect_region(fr, Rect2(o + below.position * SCALE, below.size * SCALE), below)
+	if above.size.y > 0:
+		draw_texture_rect_region(fr, Rect2(o + above.position * SCALE + Vector2(0, er.size.y * 0.5 * SCALE), above.size * SCALE), above)
+	var h := ceilf(er.size.y * 0.5)
+	var dst := Rect2(o + Vector2(er.position.x - 2.0, er.end.y - h) * SCALE, Vector2(er.size.x + 4.0, h) * SCALE)
+	draw_texture_rect_region(fr, dst, er)
+
+## Las alas aletean: la zona de las alas se vuelve a dibujar corrida 1-2 píxeles, rápido, y suelta polvito.
+func _draw_flutter(fr: Texture2D, o: Vector2, wr: Rect2) -> void:
+	var dy := (-2.0 if fmod(_t, 0.12) < 0.06 else 1.0) * SCALE
+	draw_texture_rect_region(fr, Rect2(o + wr.position * SCALE + Vector2(0, dy), wr.size * SCALE), wr)
+	for k in 5:
+		var ph := fmod(_t * 1.3 + k * 0.21, 1.0)
+		var p := _px(o + (wr.position + Vector2(wr.size.x * (0.1 + 0.2 * k), wr.size.y * 0.2)) * SCALE + Vector2(sin(k * 2.0 + _t * 3.0) * 8.0, -ph * 40.0))
+		draw_rect(Rect2(p, Vector2(SCALE, SCALE)), Color(1.0, 0.92, 0.8, 0.8 * (1.0 - ph)))
+
+## P1: una flor rosa de cinco pétalos que se abre en el pimpollo.
+func _draw_bloom(c: Vector2) -> void:
+	var k := clampf(float(_fx.get("bloom", 0.0)) * 3.0, 0.0, 1.0)
+	var r := roundf(2.0 + 2.0 * k) * SCALE * 0.5
+	for i in 5:
+		var a := -PI / 2.0 + i * TAU / 5.0
+		draw_rect(Rect2(_px(c + Vector2(cos(a), sin(a)) * r - Vector2(SCALE, SCALE)), Vector2(SCALE * 2.0, SCALE * 2.0)), Color(0.95, 0.5, 0.65))
+	draw_rect(Rect2(_px(c - Vector2(SCALE, SCALE) * 0.5), Vector2(SCALE, SCALE)), Color(1.0, 0.9, 0.5))
+
+## P1: espinas blancas que saltan alrededor del cuerpo (se eriza).
+func _draw_bristle(o: Vector2, a2: Dictionary) -> void:
+	var h: Vector2 = a2.get("head", Vector2(32, 60))
+	var c := o + Vector2(h.x, h.y + 6.0) * SCALE
+	for i in 8:
+		var a := i * TAU / 8.0 + 0.2
+		var p0 := c + Vector2(cos(a), sin(a) * 0.8) * 13.0 * SCALE
+		var p1 := c + Vector2(cos(a), sin(a) * 0.8) * 16.0 * SCALE
+		draw_line(_px(p0), _px(p1), Color(0.96, 0.92, 0.82), SCALE)
+
+## La arena del reloj: granitos dorados que caen del cuello (con "still" quedan quietos y se ven tres puntos fijos).
+func _draw_sand(neck: Vector2) -> void:
+	var col := Color(0.93, 0.76, 0.38)
+	if _fx.has("still"):
+		for k in 3:
+			draw_rect(Rect2(_px(neck + Vector2(0, k * 2.0 * SCALE)), Vector2(SCALE, SCALE)), col)
+		return
+	for k in 4:
+		var ph := fmod(_t * 2.4 + k * 0.25, 1.0)
+		draw_rect(Rect2(_px(neck + Vector2(0, ph * 8.0 * SCALE)), Vector2(SCALE, SCALE)), Color(col.r, col.g, col.b, 1.0 - ph * 0.5))
+# --- end SS2 BENCH

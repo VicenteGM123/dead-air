@@ -41,6 +41,16 @@ var pad: PadCursor
 var bench          # BenchUI
 var haggle         # HaggleUI
 var pod_ui         # PodUI
+# --- SS2 SEASON: el tablero (RankScreens) y la noche del cometa (GalaScene): se arman escondidos de fondo y se reusan
+var rank           # RankScreens
+var gala           # GalaScene
+var _revealing := false       # el estreno de las mejoras al abrir (cualquier tecla lo salta)
+var _reveal_skip := false
+var after_hours := false      # de noche, el banco después de cerrar (§2.7)
+var _story_actor: Actor       # quien habla en un momento de historia en la calle (se borra al terminar)
+var night_boards := 0         # (el bot) cuántas veces se abrió el tablero de la noche
+var galas_played := 0         # (el bot) cuántas veces se jugó la noche del cometa
+# --- end SS2 SEASON
 
 var busy := false            # una transición o un paso automático (no se camina ni se usa nada)
 var menu_open := false
@@ -55,7 +65,7 @@ var shot_path := ""
 var shot_frames := 0
 var frame := 0
 var demo := ""
-var autoplay_days := 3
+var autoplay_days := 10   # --- SS2 SEASON: la campaña (era 3)
 var errors := 0
 
 # --- BOOT: el arranque por pasos (ver _boot)
@@ -70,6 +80,7 @@ var _boot_bg_n := 0          # pasos de fondo hechos / previstos (la barrita si 
 var _boot_bg_total := 1
 var _boot_pscale := 0.5      # --- BOOT2: la parte del título llena la barra hasta la mitad; lo de fondo, el resto
 var _last_input_ms := -100000
+var _ship_walk_was := false   # --- SS2 SHIP: se podía caminar el cuadro anterior (el cursor del mando, ver _process)
 var _warm_vp: SubViewport    # la tienda se arma y se calienta aquí (otro mundo 3D) mientras el título está en pantalla
 var _boot_shot := ""         # --bootshot=<carpeta>: una captura por paso (escritorio; las pruebas de arranque)
 var _boot_jump := ""         # --bootjump=night | closing (pruebas: ver _boot_test_jump)
@@ -93,6 +104,8 @@ func _ready() -> void:
 	_make_haggle()
 	_make_pod_ui()
 	_make_dialogs_screens()
+	_make_rank()   # --- SS2 SEASON
+	_make_gala()
 	_build_fade()
 	_make_day()
 	day.setup(shop, hud)
@@ -101,6 +114,8 @@ func _ready() -> void:
 	boot_ready = true
 	fade.color.a = 0.0
 	if _bench_demo(demo):
+		return
+	if _lane_demo(demo):   # --- SS2 SEASON: las demos de las líneas de la ronda 2 (scripts/demos/*_demo.gd)
 		return
 	var d = load("res://scripts/demo_kit.gd").new()   # (--- BOOT: por ruta: el juego no lo compila al arrancar)
 	d.name = "Demo"
@@ -131,6 +146,7 @@ func _make_hud() -> void:
 	hud = Hud.new()
 	_layer(2).add_child(hud)
 	hud.menu_pressed.connect(open_menu)
+	hud.rank_pressed.connect(open_rank_board)   # --- SS2 SEASON: el chip del tablero
 	hud.prompt_pressed.connect(func():
 		if can_walk() and world and world.walker.current != "" and bool(station_verb(world.walker.current)[1]):
 			use_station(world.walker.current))
@@ -149,6 +165,30 @@ func _make_pod_ui() -> void:
 	pod_ui = load("res://scripts/ui/pod_ui.gd").new()
 	modal_root.add_child(pod_ui)
 	pod_ui.finished.connect(_on_pod_finished)
+
+# --- SS2 SEASON: el tablero y la gala (scripts que reemplaza la línea RANK; se cargan por ruta)
+func _make_rank() -> void:
+	rank = load("res://scripts/ui/rank_screens.gd").new()
+	rank.name = "RankScreens"
+	_layer(7).add_child(rank)
+
+func _make_gala() -> void:
+	gala = load("res://scripts/world/gala_scene.gd").new()
+	gala.name = "GalaScene"
+	add_child(gala)
+
+## Las demos de las líneas (S: season_demo, R: rank_demo, W: world_demo): static handles(name) / run(main, name).
+func _lane_demo(name: String) -> bool:
+	for lane in ["season", "rank", "world"]:
+		var path := "res://scripts/demos/%s_demo.gd" % lane
+		if not ResourceLoader.exists(path):
+			continue
+		var sc: Script = load(path)
+		if sc and sc.handles(name):
+			sc.run(self, name)
+			return true
+	return false
+# --- end SS2 SEASON
 
 func _make_dialogs_screens() -> void:
 	dialogs = Dialogs.new()
@@ -179,7 +219,12 @@ func _make_pad() -> void:
 	# --- SS SHIP: la A del mando también avanza la cápsula («A / X open») y la tarjeta del banco («A done») aunque el
 	# cursor no esté sobre el botón (antes la A hacía clic en el vacío y no pasaba nada)
 	# (--- BOOT: el banco y la cápsula pueden no existir todavía en el título)
-	pad.dialog_waiting = func(): return dialogs.is_open() or screens.is_open() or (pod_ui != null and pod_ui.is_open()) or (bench != null and bench.is_open() and bench.step == bench.get_script().Step.RESULT)
+	pad.dialog_waiting = func(): return dialogs.is_open() or screens.is_open() or (pod_ui != null and pod_ui.is_open()) or (bench != null and bench.is_open() and bench.step == bench.get_script().Step.RESULT) or (rank != null and rank.is_open())   # --- SS2 SEASON: A = Espacio en el tablero (pedido de RANK)
+	# --- SS2 RANK: en la noche del cometa A también es Espacio (siguiente / el botón elegido), como en el tablero
+	var dw: Callable = pad.dialog_waiting
+	pad.dialog_waiting = func(): return dw.call() or (gala != null and gala.is_open())
+	# --- end SS2 RANK
+	pad.y_key = KEY_R   # --- SS2 SEASON: Y = el tablero (como la tecla R)
 	add_child(pad)
 	pad.device_changed.connect(func(_on): hud.hide_prompt())
 
@@ -351,6 +396,7 @@ func _boot() -> void:
 	await _warm_world(street, "street_day", 0.4, 0.72, false, "flyers")
 	street.set_night(true)
 	await _warm_world(street, "street_night", 0.72, 0.94, false, "streaks")
+	await _warm_gala_night()   # --- SS2 MERGE
 	street.set_night(false)
 	# --- BOOT2: lo de fondo (la tienda, el banco, el regateo, la cápsula, la música), aquí, bajo la pantalla de carga
 	# (la calle sigue a 1/4 de resolución: nadie la ve)
@@ -371,6 +417,40 @@ func _boot() -> void:
 	print("BOOT title %d ms" % (Time.get_ticks_msec() - _boot_t0))
 	if _boot_jump != "":   # --- BOOT2: (pruebas) ahora después del título
 		_boot_test_jump(_boot_jump)
+
+## --- SS2 MERGE: dos cuadros más de la calle de noche, bajo la pantalla de carga. _warm_world calienta con TODAS las
+## luces que se prenden después (la de los farolitos, el neón de Shine Again: SetKit.toggle_lights), así que (1) la noche
+## de siempre, con esas luces apagadas (la introducción), y (2) la noche de la gala (el decorado de la final, Shine
+## Again abierta, la banda, gente en los lugares de la gala con un corazón encima) compilaban sus variantes de luz
+## recién en la gala (3 programas en medio de la fiesta en la web). Cada cuadro compila pocas: los dos van enteros.
+func _warm_gala_night() -> void:
+	var was := street.process_mode
+	street.process_mode = Node.PROCESS_MODE_DISABLED
+	await _warm_frame(false, "street_night_plain", 0.95)
+	street.set_event("finale")
+	street.set_rival_open(true)
+	street.set_vendor_open(true)
+	street.set_band(true)
+	street.set_night(true)
+	var probes: Array = []
+	var ids := ["gorrum", "zib", "oona", "pipip", "rook", "clatter", "singer", "timekeeper", "tracker", "inspector",
+		"hermit", "dockmaster", "raker", "mags"]
+	var spots: Array = street.gala_spots()
+	for i in mini(spots.size(), ids.size()):
+		if not ResourceLoader.exists("res://assets/chars/%s_idle.png" % ids[i]):
+			continue
+		var a: Actor = street.make_actor(String(ids[i]), spots[i], 1 if i % 2 == 0 else -1)
+		a.quiet = true
+		a.emote("heart", 9.0)
+		probes.append(a)
+	await _warm_frame(false, "street_night_gala", 0.96)
+	for a in probes:
+		a.queue_free()
+	street.set_band(false)
+	street.set_vendor_open(false)
+	street.set_rival_open(false)
+	street.set_event("")
+	street.process_mode = was
 
 ## Un paso hecho: anota cuánto trabajó en este cuadro, mueve la barra y espera el cuadro siguiente.
 func _boot_step(step: String, progress := -1.0, text := "") -> void:
@@ -446,7 +526,7 @@ func _boot_background() -> void:
 	_warm_vp.add_child(ws)
 	ws.visible = false
 	var steps := ws.build_steps()
-	_boot_bg_total = steps.size() + 50 + 18
+	_boot_bg_total = steps.size() + 50 + 22   # --- SS2 SEASON: + 4 pasos (2 scripts, el tablero, la gala)
 	for i in steps.size():
 		steps[i].call()
 		await _bg_step("shop_%d" % i)
@@ -471,18 +551,25 @@ func _boot_background() -> void:
 	# con todas sus piezas en un solo cuadro eran ~0,3 s); keep los mantiene cargados hasta crear las ventanas
 	var keep: Array = []
 	for f in ["bench_kit", "bench_bubble", "bench_gauge", "bench_kettle", "bench_portrait", "bench_scope", "bench_solder",
-			"bench_stage", "bench_pod_view", "pod_ui", "haggle_ui", "bench_ui"]:
-		var path := "res://scripts/ui/%s.gd" % f
+			"bench_stage", "bench_pod_view", "pod_ui", "haggle_ui", "bench_ui", "res://scripts/ui/rank_screens.gd",
+			"res://scripts/world/gala_scene.gd"]:   # --- SS2 SEASON: + el tablero y la gala
+		var path: String = f if f.begins_with("res://") else "res://scripts/ui/%s.gd" % f
 		if ResourceLoader.exists(path):
 			keep.append(load(path))
-		await _bg_step("script_" + f)
+		await _bg_step("script_" + f.get_file().get_basename())
 	_make_bench()
 	await _bg_step("bench")
 	_make_haggle()
 	await _bg_step("haggle")
 	_make_pod_ui()
 	await _bg_step("pod_ui")
-	for n in ["music_market", "amb_port", "music_shop"]:
+	# --- SS2 SEASON: el tablero y la gala, escondidos (se reusan; nunca new() de noche)
+	_make_rank()
+	await _bg_step("rank")
+	_make_gala()
+	await _bg_step("gala")
+	# --- end SS2 SEASON
+	for n in Sfx.BG_LOOPS:   # --- SS2 MERGE: la lista vive en sfx.gd (R): music_market, amb_port, music_shop
 		Sfx.prewarm_one(n)
 		await _bg_step("audio_" + n)
 	Sfx.prewarm_report()
@@ -510,6 +597,8 @@ func _boot_test_jump(where: String) -> void:
 		show_night()
 	elif where == "closing":
 		show_closing()
+	else:
+		await _season_jump(where)   # --- SS2 SEASON: event_<id>, upgrades, bench_<family>, board, report, gala_win/lose
 	fade_to(0.0, 0.5)
 	print("BOOT jump %s" % where)
 
@@ -528,6 +617,9 @@ func _bg_step(step: String) -> void:
 func _input(ev: InputEvent) -> void:
 	if not boot_ready and (ev is InputEventMouseMotion or ev is InputEventMouseButton or ev is InputEventKey or ev is InputEventJoypadButton):
 		_last_input_ms = Time.get_ticks_msec()
+	# --- SS2 SEASON: cualquier tecla, clic o botón salta el estreno de las mejoras
+	if _revealing and ((ev is InputEventKey and ev.pressed) or (ev is InputEventMouseButton and ev.pressed) or (ev is InputEventJoypadButton and ev.pressed)):
+		_reveal_skip = true
 
 ## 5. Si algo necesita lo de fondo antes de que termine: espera (detrás del fundido) con una barrita.
 func _wait_boot() -> void:
@@ -565,7 +657,7 @@ func show_title() -> void:
 	hud.hide_prompt()
 	hud.clear_tip()
 	hud.set_hint(false)
-	screens.show_title(Game.can_continue())
+	screens.show_title(Game.can_continue(), Game.save_note())   # --- SS2 SEASON: la nota del prototipo terminado
 	Sfx.music("title")
 	Sfx.ambience("wind")
 
@@ -589,6 +681,7 @@ func _on_title_choice(id: String) -> void:
 				open_shop_now()
 			else:
 				begin_morning()
+			_prewarm_today()   # --- SS2 SEASON: el bucle del evento de hoy, bajo el fundido
 			fade_to(0.0, 0.5)
 		"new":
 			Game.new_game_state()
@@ -613,7 +706,7 @@ func show_intro() -> void:
 	street.camera.look_at(Vector3(-1.0, 10.5, -40.0), Vector3.UP)
 	hud.show_top(false)
 	hud.set_hint(false)
-	screens.show_intro(Data.INTRO)
+	screens.show_intro(SeasonData.INTRO)   # --- SS2 SEASON: las 4 líneas de la temporada
 	Sfx.music("title")
 	Sfx.ambience("wind")
 
@@ -644,15 +737,42 @@ func begin_morning() -> void:
 	street.snap_camera()
 	street.refresh_sign()
 	street.set_door_open_sign(false)
+	# --- SS2 SEASON: la mañana de la temporada: lo nuevo, la pieza gratis, la cápsula de regalo, el decorado del día,
+	# el cartel "Day 5 · The Scour" (+ "New today: ..."), la nota de la partida vieja, los momentos de la mañana
+	var m := Season.on_morning()
+	Game._update_dues_goal()
+	var ev := Season.event()
+	street.set_event(ev)
+	street.set_vendor_open(Season.is_unlocked("vendor"))
+	street.set_rival_open(Season.is_unlocked("rival"))
+	street.set_upgrade_looks()
+	street.set_moons("")
+	# el globo de cromo de Glint (§3.5): flota todo el día 8; si Nell iba delante después de la noche 7, la noche 8
+	# es la comidilla del Drift (R suma sus +12); si no, revienta y el día 9 cuelga del techo. --- SS2 MERGE: manda
+	# el resultado de la noche 8 del tablero (Ranking.balloon_result(): "talk" | "popped"; sin la regla del stub)
+	if Game.day == 9 and not Game.flags.has("balloon"):
+		var br := Ranking.balloon_result()
+		Game.set_flag("balloon", br if br != "" else "popped")
+	street.set_balloon("up" if Game.day == 8 else ("popped" if Game.day == 9 and Game.flag("balloon", "") == "popped" else ""))
+	street.set_band(Season.band_today())
+	set_post(_street_post(ev))
 	street.set_pods_left(Game.pods_today.size())
 	hud.show_top(true)
 	hud.refresh()
 	hud.set_clock(Data.OPEN_MIN, "morning")
-	hud.banner("Day %d" % Game.day, "Morning at the Starfall Market")
+	var sub := Season.subtitle()
+	if not (m.get("new", []) as Array).is_empty():
+		sub = "New today: " + " · ".join(m["new"])
+	# --- SS2 MERGE: un día sin fin sin evento se llama "Day 11" (el cartel decía "Day 11 · Day 11")
+	var ttl := Season.title()
+	hud.banner("Day %d" % Game.day if ttl == "Day %d" % Game.day else "Day %d · %s" % [Game.day, ttl], sub, 2.6)
+	var ed := Season.event_def()
 	Sfx.music("market")
-	Sfx.ambience("port")
+	Sfx.ambience(String(ed.get("amb", "")) if String(ed.get("amb", "")) != "" else "port")
 	Game.resume = "morning"
 	Game.save_game()
+	if not Game.history.is_empty() and int(Game.history.back().get("sign_new", 0)) > 0 and not bool(m.get("repeat", false)):
+		street.celebrate_sign()
 	if Game.day == 1 and Game.tip_once("walk"):
 		get_tree().create_timer(2.6).timeout.connect(func():
 			if phase == Phase.MORNING:
@@ -660,17 +780,22 @@ func begin_morning() -> void:
 	elif Game.day > 1:
 		get_tree().create_timer(2.6).timeout.connect(func():
 			if phase == Phase.MORNING:
-				street.blurt(street.raker, Data.MARKET_LINES["raker_hello"]))
+				street.blurt(street.raker, String(SeasonData.TEXT["raker_storm"]) if int(Season.plan().get("pods", 2)) <= 0 else Data.MARKET_LINES["raker_hello"]))
+	_morning_notes(m)
+	# --- end SS2 SEASON
 
 ## El puesto de Raker: las cápsulas de hoy (peso y traqueteo), elegir una y regatear.
 func pods_stall() -> void:
+	if int(Season.plan().get("pods", 2)) <= 0 and Game.pods_today.is_empty():   # --- SS2 SEASON: la Scour
+		street.blurt(street.raker, String(SeasonData.TEXT["raker_storm"]))
+		return
 	if Game.pods_today.is_empty():
 		street.blurt(street.raker, Data.MARKET_LINES["raker_sold_out"])
 		return
 	var cheapest := 9999
 	for p in Game.pods_today:
 		cheapest = mini(cheapest, int(p.get("price", 30)))
-	if Game.credits < int(cheapest * 0.7):
+	if Game.credits < int(cheapest * 0.7) and cheapest > 0:   # (--- SS2 SEASON: la de regalo cuesta 0)
 		street.blurt(street.raker, Data.MARKET_LINES["raker_broke"])
 		hud.toast("Not enough credits for a pod.", UIKit.BAD)
 		return
@@ -690,7 +815,15 @@ func pod_label(p: Dictionary) -> String:
 	var w: String = ["Light", "Heavy", "Very heavy"][clampi(int(p.get("weight", 1)) - 1, 0, 2)]
 	var r: String = ["quiet", "rattles a bit", "rattles a lot"][clampi(int(p.get("rattle", 0)), 0, 2)]
 	var ask := float(BenchData.HAGGLE.get("duneraker", {}).get("ask", 1.0))
-	return "%s · %s · asks ~%d cr" % [w, r, int(round(float(p.get("price", 30)) * ask))]
+	# --- SS2 SEASON: las cápsulas especiales y la lámpara de cápsulas (Pod Lamp: una cosa de adentro)
+	var kind := String(p.get("kind", ""))
+	var head: String = {"wreck": "WRECK · ", "bigfall": "BIG FALL · ", "charity": "FREE · "}.get(kind, "")
+	var price_txt := "on the house" if kind == "charity" else "asks ~%d cr" % int(round(float(p.get("price", 30)) * ask))
+	var txt := "%s%s · %s · %s" % [head, w, r, price_txt]
+	if Season.n("pod_peek") > 0:
+		txt += "\n" + Season.pod_peek_text(p)
+	return txt
+	# --- end SS2 SEASON
 
 func _on_pod_choice(id: String) -> void:
 	if not id.begins_with("pod"):
@@ -699,13 +832,29 @@ func _on_pod_choice(id: String) -> void:
 	if i < 0 or i >= Game.pods_today.size():
 		return
 	var pod: Dictionary = Game.pods_today[i]
+	# --- SS2 SEASON: la cápsula de regalo no se regatea: se abre ya
+	if String(pod.get("kind", "")) == "charity" or int(pod.get("price", 30)) <= 0:
+		Game.pods_today.remove_at(i)
+		Game.stat("pods")
+		street.set_pods_left(Game.pods_today.size())
+		street.blurt(street.raker, String(SeasonData.TEXT["raker_charity"]))
+		pod_ui.open(pod)
+		return
+	# --- end SS2 SEASON
 	pod_pick = {"index": i, "pod": pod}
-	var deal := BenchData.make_deal("buy", "Salvage pod", "raker", int(pod.get("price", 30)))
+	var deal := BenchData.make_deal("buy", "Wreck pod" if String(pod.get("kind", "")) == "wreck" else "Salvage pod", "raker", int(pod.get("price", 30)))
 	deal["pod"] = pod.duplicate(true)      # (opcional en el contrato: la pantalla puede mostrar la cápsula)
 	haggle.open(deal)
 
 func parts_stall() -> void:
-	dialogs.open({"kind": "parts", "width": 760})
+	# --- SS2 SEASON: el surtido de hoy (hasta 8, con la rebaja de la Scour) y el cajón de "tal cual" (desde el día 3)
+	var asis := Season.asis_for()
+	var line := String(SeasonData.TEXT["mags_storm"]) if Season.n("part_price_add") < 0 else String(Data.MARKET_LINES["mags_hello"])
+	if Season.event(Game.day + 1) == "festival" and not asis.is_empty():
+		line = String(SeasonData.TEXT["mags_eve"])
+	dialogs.open({"kind": "parts", "width": 780, "stock": Season.mags_stock(), "asis": asis, "line": line})
+	if not asis.is_empty() and Game.tip_once("asis"):
+		hud.tip(Data.tip("asis"), 6.0)
 
 # ------------------------------------------------------------------ abrir la tienda
 
@@ -724,6 +873,8 @@ func open_shop() -> void:
 func open_shop_now() -> void:
 	phase = Phase.OPEN
 	close_everything()
+	Season.on_morning()   # --- SS2 SEASON: (idempotente) lo que se abre hoy, si la partida se cargó ya abierta
+	Game._update_dues_goal()
 	Game.resume = "open"
 	Game.save_game()
 	use_world(shop)
@@ -742,18 +893,37 @@ func open_shop_now() -> void:
 	tea_running = false
 	_last_minute = -1
 	var tutorial := Game.day == 1 and not Game.tips_seen.has("first_done")
-	day.open_day(Game.day, tutorial)
+	# --- SS2 SEASON: la tienda de hoy: las mejoras, el decorado del evento, las cosas de las historias; el estreno de
+	# las mejoras nuevas (la cámara va a cada una) ANTES de que abra el día
+	var ev := Season.event()
+	shop.refresh_upgrades()
+	shop.set_event(ev if ev in ["sandstorm", "festival", "finale"] else "")
+	shop.set_window_sky("")
+	shop.set_chalk(0)
+	_story_props()
 	hud.show_top(true)
 	hud.refresh()
 	hud.set_clock(Data.OPEN_MIN, "open")
 	hud.set_line(0, Data.MAX_LINE)
+	if not Game.fittings_new.is_empty():
+		await _reveal_new_fittings()
+		if phase != Phase.OPEN:
+			return
+	if Season.band_today() and not Game.flag("band_stars_%d" % Game.day, false):
+		Game.set_flag("band_stars_%d" % Game.day, true)
+		Game.stat("event_stars", SeasonData.BAND_STARS)
+	# --- end SS2 SEASON
+	day.open_day(Game.day, tutorial)
 	hud.banner("Open!", "We close at 6 PM")
-	Sfx.music("shop")
-	Sfx.ambience("port")
+	var music := String(Season.event_def().get("music", ""))
+	Sfx.music(music if music != "" else "shop")
+	var amb := String(Season.event_def().get("amb", ""))
+	Sfx.ambience(amb if amb != "" else "port")
 	if not Game.junk.is_empty() and not tutorial and Game.tip_once("junk"):
 		get_tree().create_timer(3.2).timeout.connect(func():
 			if phase == Phase.OPEN:
 				hud.tip(Data.tip("junk"), 7.0))
+	_open_notes()   # --- SS2 SEASON
 
 # ------------------------------------------------------------------ el mostrador
 
@@ -782,6 +952,18 @@ func talk(v: Dictionary) -> void:
 	day.begin_talk()
 	hud.clear_tip()
 	var who := String(v["who"])
+	# --- SS2 SEASON: los momentos al llegar al mostrador (Tolle y la caja) y el favor secreto de Glint
+	var ex: Dictionary = v.get("extra", {})
+	for b in Season.beats(Game.day, "open", {"at_counter": who}):
+		busy = true
+		await _beat(b)
+		busy = false
+		if day.counter.is_empty() or int(day.counter.get("id", -1)) != int(v["id"]):
+			return
+	if String(v.get("kind", "")) == "favour" or bool(ex.get("favour", false)):
+		_favour_talk(v)
+		return
+	# --- end SS2 SEASON
 	var sp: Dictionary = Data.SPECIES.get(Data.species_of(who), {})
 	var sub := String(sp.get("name", ""))
 	if bool(v.get("grumpy", false)):
@@ -790,6 +972,7 @@ func talk(v: Dictionary) -> void:
 		var j := BenchData.make_job(String(v["item"]), String(v["fault"]), who)
 		if day.hold:
 			j["tutorial"] = true               # (opcional: el primer trabajo del día 1, Kettle explica más)
+		_job_keys(j, v)   # --- SS2 SEASON: graded, riddle, aids
 		# --- SS MERGE: Clatter viene a arreglarse A SÍ MISMO (no trae nada): el banco lo dice (job "self")
 		var me := Data.is_self_repair(who)
 		if me:
@@ -806,8 +989,16 @@ func talk(v: Dictionary) -> void:
 			note = Data.tip("counter")
 		elif me:
 			note = "No gadget this time: Clatter wants himself fixed. He opens his chest panel on the bench."
+		# --- SS2 SEASON: lo que hace distinto este trabajo
+		elif bool(ex.get("graded", false)):
+			note = Data.tip("graded")
+		elif bool(ex.get("riddle", false)):
+			note = "Old Seven speaks in riddles. The tools still tell the truth."
+		elif ex.has("deadline_min"):
+			note = "A racer: the thruster must be back by %s." % String(SeasonData.RACE["deadline_text"])
+		# --- end SS2 SEASON
 		dialogs.open({"kind": "talk", "who": who, "sub": sub, "line": Data.line(who, "bring", String(v["item"])),
-			"tag": String(j.get("symptom", "")), "item": "" if me else String(v["item"]), "note": note,
+			"tag": String(j.get("symptom", "")), "tag_head": "A RIDDLE" if bool(j.get("riddle", false)) else "", "item": "" if me else String(v["item"]), "note": note,
 			"options": [{"id": "repair", "text": "Fix him" if me else "Repair it", "primary": true, "min_w": 170},
 				{"id": "decline", "text": "Not today", "min_w": 150}], "cancel": "later"},
 			func(c): _on_talk_choice(v, c, j))
@@ -864,7 +1055,7 @@ func _on_talk_choice(v: Dictionary, c: String, j: Dictionary) -> void:
 					day.end_talk()
 					return
 				var e: Dictionary = Game.shelf[i]
-				var base := BenchData.sale_price(String(e["item"]), int(e["stars"]))
+				var base := int(round(BenchData.sale_price(String(e["item"]), int(e["stars"])) * Season.k("sale_k")))   # --- SS2 SEASON
 				day.start_work()
 				sale = {"v": v, "index": i, "item": String(e["item"]), "stars": int(e["stars"]), "base": base}
 				var deal := BenchData.make_deal("sell", BenchData.item_name(String(e["item"])), String(v["who"]), base)
@@ -889,6 +1080,8 @@ func go_bench_job() -> void:
 		return
 	job["stage"] = "bench"
 	shop.nell.face(-1)
+	if bool(job["job"].get("graded", false)) and Game.tip_once("graded"):
+		hud.tip(Data.tip("graded"), 5.0)   # --- SS2 SEASON
 	bench.open(job["job"])
 
 func use_bench() -> void:
@@ -922,7 +1115,9 @@ func refurb(i: int) -> void:
 	job = {"kind": "refurb", "item": String(jk["item"]), "fault": String(jk["fault"]), "stage": "bench", "result": {}}
 	shop.set_bench_item(String(jk["item"]))
 	shop.nell.face(-1)
-	bench.open(BenchData.make_job(String(jk["item"]), String(jk["fault"]), ""))
+	var rj := BenchData.make_job(String(jk["item"]), String(jk["fault"]), "")
+	rj["aids"] = Season.bench_aids()   # --- SS2 SEASON: las mejoras del banco también para reacondicionar
+	bench.open(rj)
 
 func _on_bench_finished(r: Dictionary) -> void:
 	check_keys("bench", r, ["ok", "stars", "time", "fault_found", "patched", "parts_used"])
@@ -931,16 +1126,23 @@ func _on_bench_finished(r: Dictionary) -> void:
 		return
 	var ok := bool(r.get("ok", false))
 	var stars := clampi(int(r.get("stars", 0)), 0, 3)
+	if bool(r.get("patched", false)):
+		Game.stat("patched")   # --- SS2 SEASON
 	if String(job["kind"]) == "refurb":
 		if ok:
 			Game.shelf_add(String(job["item"]), stars)
 			Game.stat("refurbished")
+			if after_hours:
+				Game.stat("after_hours")   # --- SS2 SEASON
 			hud.toast("%s %s is on the shelf." % [BenchData.item_name(String(job["item"])), stars_text(stars)], UIKit.GOOD)
 			shop.kettle.emote("star", 1.2)
 		else:
 			Game.add_junk(String(job["item"]), String(job["fault"]))
 			hud.toast("Not this time. It goes back on the junk pile.")
 		job = {}
+		return
+	if String(job["kind"]) == "favour":
+		_favour_done(r)   # --- SS2 SEASON
 		return
 	job["result"] = r
 	job["stage"] = "done" if ok else "failed"
@@ -970,6 +1172,11 @@ func handover() -> void:
 		# bot mide igual que una persona, caminatas incluidas)
 		var secs := maxf(1.0, day.shop_t - float(v.get("t_job", day.shop_t)))
 		var pay := repair_pay(item, stars, secs)
+		# --- SS2 SEASON: lo que paga de más la reputación y el Neon Star, las mañas de los clientes nuevos, los
+		# corredores, la nota de Tolle
+		var tw := Season.on_handover(v, stars, secs, day.minutes())
+		pay = maxi(1, int(round(pay * Season.k("repair_k") * float(tw.get("pay_k", 1.0)))))
+		# --- end SS2 SEASON
 		Game.stat("job_secs", int(round(secs)))   # --- SS MERGE: para el balance (segundos de cada trabajo, sumados)
 		var tip := 0
 		match who:
@@ -985,6 +1192,9 @@ func handover() -> void:
 		Game.stat("repairs")
 		Game.stat("stars", stars)
 		Game.stat("repair_pay", pay)
+		Game.stat("served")              # --- SS2 SEASON (§8.4)
+		Game.stat("repair_stars", stars)
+		shop.set_chalk(int(Game.today.get("repairs", 0)))
 		if tip > 0:
 			Game.stat("tips", tip)
 		Game.add_rep(int(Data.REP_STARS[stars]))
@@ -996,12 +1206,24 @@ func handover() -> void:
 		var msg := "+%d cr" % pay + ((" (+%d tip)" % tip) if tip > 0 else "")
 		var what := Data.char_name(who) if Data.is_self_repair(who) else BenchData.item_name(item)   # (--- SS MERGE)
 		hud.toast("%s · %s %s" % [msg, what, stars_text(stars)], UIKit.GOOD)
-		day.leave(v, "done", Data.line(who, "thanks", stars), Color(0.85, 1.0, 0.8))
+		var say := String(tw.get("say", "")) if String(tw.get("say", "")) != "" else Data.line(who, "thanks", stars)
+		# --- SS2 MERGE: la charla del tablero (Ranking.RANK_CHATTER, P1 de R): 1 de cada 4 entregas contentas, cuando
+		# Nell ya está entre las 20 del Lantern Board, el cliente comenta el puesto en vez de dar las gracias
+		if String(tw.get("say", "")) == "" and stars >= 2 and not who in ["hermit", "inspector", "rival"]:
+			var cseed := absi(hash("%d-%s-%d" % [Game.day, who, int(Game.today.get("repairs", 0))]))
+			if cseed % 4 == 0:
+				var ch := Ranking.chatter(cseed / 4)
+				if ch != "":
+					say = ch
+		# --- end SS2 MERGE
+		day.leave(v, "done", say, Color(0.85, 1.0, 0.8))
+		_after_handover(v, stars, true, tw)   # --- SS2 SEASON
 	else:
 		Game.stat("failed")
 		Game.add_rep(Data.REP_GAVE_UP)
 		hud.toast("No luck with that one. %s takes it back." % Data.char_name(who), UIKit.BAD)
 		day.leave(v, "done", Data.line(who, "failed"))
+		_after_handover(v, 0, false, {})   # --- SS2 SEASON
 	job = {}
 	_end_tutorial()
 
@@ -1013,9 +1235,7 @@ func _end_tutorial() -> void:
 		hud.tip(Data.tip("clock"), 6.0)
 
 func repair_pay(item: String, stars: int, secs: float) -> int:
-	if BenchData.has_method("repair_pay"):
-		return int(BenchData.repair_pay(item, stars, secs))
-	return int(round(30.0 * [0.35, 0.7, 1.0, 1.3][stars]))
+	return int(BenchData.repair_pay(item, stars, secs))
 
 # ------------------------------------------------------------------ el regateo y las cápsulas
 
@@ -1034,6 +1254,8 @@ func _on_haggle_finished(r: Dictionary) -> void:
 			Game.add_credits(price)
 			Game.stat("sales")
 			Game.stat("sale_pay", price)
+			Game.stat("served")                           # --- SS2 SEASON (§8.4)
+			Game.stat("sale_stars", int(sale["stars"]))
 			Game.add_rep(Data.REP_SALE)
 			var extra := ""
 			var barter := String(r.get("barter", ""))
@@ -1042,6 +1264,7 @@ func _on_haggle_finished(r: Dictionary) -> void:
 				var bn := maxi(1, int(r.get("barter_n", 1)))
 				Game.add_part(barter, bn)
 				extra = (" + a %s" % BenchData.part_name(barter).to_lower()) if bn == 1 else (" + %d %ss" % [bn, BenchData.part_name(barter).to_lower()])
+				extra = extra.replace("lenss", "lenses")   # --- SS2 SHIP: el plural de "lens" ("Traded: ... for 3 lenses")
 			Sfx.play("coins", 0.05, -2.0)
 			var a: Actor = v["actor"]
 			if is_instance_valid(a):
@@ -1085,6 +1308,7 @@ func _find_shelf(item: String, stars: int, hint: int) -> int:
 func _on_pod_finished(contents: Array) -> void:
 	var got := []
 	var broken := false
+	var core := false
 	for c in contents:
 		if not (c is Dictionary):
 			contract_error("pod: contenido que no es un diccionario: %s" % str(c))
@@ -1094,7 +1318,15 @@ func _on_pod_finished(contents: Array) -> void:
 		elif c.has("item"):
 			Game.add_junk(String(c["item"]), String(c.get("fault", "")))
 			broken = true
+		elif c.has("core"):
+			# --- SS2 SEASON: el núcleo de lámpara del naufragio (no es una pieza: es de la historia de Old Seven)
+			Season.add_core("wreck")
+			core = true
+			got.append("Lamp core")
+			continue
 		got.append(BenchData.content_name(c))
+	if core:
+		hud.toast(SeasonData.CORE_TOAST, UIKit.GOOD, 3.5)
 	if got.is_empty():
 		hud.toast("The pod was empty. Rakers!")
 		return
@@ -1107,17 +1339,24 @@ func _on_pod_finished(contents: Array) -> void:
 
 func use_tea() -> void:
 	var someone := day.line_count() > 0 or not day.counter.is_empty()
-	if bool(Game.today.get("tea", false)) or not someone or tea_running:
+	var out := not tea_left()   # --- SS2 SEASON: el Samovar (y el último día) dan un té más
+	if out or not someone or tea_running:
 		shop.kettle.hop(1)
 		Sfx.play("whistle", 0.08, -10.0)
-		hud.toast(Data.KETTLE_TEA_DONE if bool(Game.today.get("tea", false)) else String(Data.KETTLE_TALK[randi() % Data.KETTLE_TALK.size()]))
+		hud.toast(Data.KETTLE_TEA_DONE if out else String(Data.KETTLE_TALK[randi() % Data.KETTLE_TALK.size()]))
 		return
 	Game.today["tea"] = true
+	Game.stat("tea_used")
 	tea_running = true
 	Sfx.play("tea", 0.02, -4.0)
 	hud.toast(Data.KETTLE_TEA, UIKit.GOOD)
-	await shop.tea_walk(func(i): day.tea_boost(i))
+	var boost := Data.TEA_BOOST + Season.nf("tea_boost_add")
+	await shop.tea_walk(func(i): day.tea_boost(i, boost))
 	tea_running = false
+
+## --- SS2 SEASON: ¿queda té hoy? (1 + Season.n("tea_uses") por día)
+func tea_left() -> bool:
+	return int(Game.today.get("tea_used", 0)) < 1 + Season.n("tea_uses")
 
 func show_drawer() -> void:
 	var rows: Array = []
@@ -1191,24 +1430,35 @@ func show_night() -> void:
 	hud.set_clock(Data.CLOSE_MIN, "night")
 	hud.set_hint(false)
 	hud.clear_tip()
+	# --- SS2 SEASON: la ventana de noche (las dos lunas; la gran estela la noche antes de Bigfall, Bronzemoon...), la
+	# música de noche; DESPUÉS DE CERRAR el banco para el estante (sin reloj); recién entonces se cierra el día (el
+	# tablero cuenta lo de la noche) y el libro de cuentas (sin la fila del tablero en la noche final: sin spoiler)
+	shop.set_window_sky(_window_sky())
+	Sfx.music("night")
+	Sfx.ambience("wind")
+	if not Game.junk.is_empty():
+		await _after_hours()
+		if phase != Phase.NIGHT:
+			return
 	var s := Game.close_day()
 	street.refresh_sign()
-	screens.show_ledger(s, Game.is_last_day())
-	Sfx.music("title")
-	Sfx.ambience("wind")
+	var ln := Ranking.ledger_line(s.get("rank", {}))
+	if Ranking.ending_due():
+		ln = String(SeasonData.TEXT["signal_counting"])
+	s["board_line"] = ln
+	s["preview"] = Season.night_preview(Game.day)
+	if Game.day == 7:
+		s["kettle"] = SeasonData.KETTLE_BEFORE_FESTIVAL
+	if Game.day == 1:
+		s["dues_note"] = String(SeasonData.TEXT["dues_note_d1"])
+	screens.show_ledger(s, false)
+	_prewarm_tomorrow()
+	# --- end SS2 SEASON
 
 func _on_ledger_done() -> void:
 	if phase != Phase.NIGHT:
 		return
-	busy = true
-	await fade_to(1.0, 0.5)
-	busy = false
-	if Game.is_last_day():
-		show_closing()
-	else:
-		Game.next_day()
-		begin_morning()
-	fade_to(0.0, 0.6)
+	await _night_chain()   # --- SS2 SEASON: la cuota, el tablero, el Report, los momentos de la noche, la gala
 
 func show_closing() -> void:
 	phase = Phase.END
@@ -1257,11 +1507,13 @@ func open_menu() -> void:
 	hud.hide_prompt()
 	# por la mañana no corre ningún reloj: otra línea (la del reloj solo con la tienda abierta)
 	var sub := "The clock stops while this is open." if phase == Phase.OPEN else "The market waits for you. Take your time."
-	dialogs.open({"kind": "menu", "sub": sub}, func(c):
+	dialogs.open({"kind": "menu", "sub": sub, "calendar": true}, func(c):
 		menu_open = false
 		day.paused = false
 		if c == "title":
-			to_title())
+			to_title()
+		elif c == "calendar":
+			open_calendar())   # --- SS2 SEASON
 
 func to_title() -> void:
 	busy = true
@@ -1277,6 +1529,8 @@ func close_everything() -> void:
 			m.close_now()
 	if dialogs.is_open():
 		dialogs.close_now()
+	if rank and rank.is_open():   # --- SS2 SEASON
+		rank.close_now()
 	menu_open = false
 	day.paused = false
 	screens.hide_all()
@@ -1293,7 +1547,8 @@ func close_everything() -> void:
 # ------------------------------------------------------------------ estaciones, el aviso "[E] ..." y la entrada
 
 func modal_open() -> bool:
-	return _work_ui_open() or dialogs.is_open() or screens.is_open() or menu_open
+	return _work_ui_open() or dialogs.is_open() or screens.is_open() or menu_open or (rank != null and rank.is_open()) \
+		or (gala != null and gala.is_open())   # --- SS2 SEASON
 
 ## --- BOOT: el banco, el regateo o la cápsula abiertos (en el título pueden no existir todavía).
 func _work_ui_open() -> bool:
@@ -1306,6 +1561,12 @@ func can_walk() -> bool:
 func _pad_root() -> Control:
 	if dialogs.is_open():
 		return dialogs
+	if rank != null and rank.is_open():   # --- SS2 SEASON
+		return rank
+	# --- SS2 RANK: la noche del cometa (sus botones: Continue, Keep trading, Title; LB / RB saltan entre ellos)
+	if gala != null and gala.is_open() and gala.has_method("pad_root"):
+		return gala.pad_root()
+	# --- end SS2 RANK
 	if screens.is_open():
 		return screens
 	if _work_ui_open():
@@ -1331,10 +1592,19 @@ func use_station(id: String) -> void:
 				pods_stall()
 			"parts":
 				parts_stall()
+			"fittings":   # --- SS2 SEASON
+				fittings_stall()
+			"rival":
+				visit_rival()
+			"board":
+				open_calendar()
 	elif phase == Phase.OPEN:
 		match id:
 			"counter":
-				use_counter()
+				if _can_close_early():   # --- SS2 SEASON
+					ask_close_early()
+				else:
+					use_counter()
 			"bench":
 				use_bench()
 			"drawer":
@@ -1351,9 +1621,19 @@ func station_verb(id: String) -> Array:
 			"door":
 				return ["Open shop", true]
 			"pods":
+				if int(Season.plan().get("pods", 2)) <= 0 and Game.pods_today.is_empty():
+					return ["Closed: Scour", false]   # --- SS2 SEASON
 				return ["Buy pods", true] if not Game.pods_today.is_empty() else ["Sold out", false]
 			"parts":
 				return ["Buy parts", true]
+			# --- SS2 SEASON: el patio de Dolly, la vecina, el tablón de anuncios
+			"fittings":
+				return ["Fittings", true] if Season.is_unlocked("vendor") else ["Opens tomorrow", false]
+			"rival":
+				return ["Visit", true] if Season.is_unlocked("rival") else ["Coming soon", false]
+			"board":
+				return ["Read", true]
+			# --- end SS2 SEASON
 	elif phase == Phase.OPEN:
 		match id:
 			"counter":
@@ -1366,7 +1646,11 @@ func station_verb(id: String) -> Array:
 					return ["Working...", false]
 				var v := day.waiting_at_counter()
 				if not v.is_empty():
+					if String(v["kind"]) == "favour":
+						return ["Talk", true]   # --- SS2 SEASON: el favor de Glint
 					return ["Repair" if String(v["kind"]) == "repair" else "Sell", true]
+				if _can_close_early():
+					return ["Close up early", true]   # --- SS2 SEASON
 				if not sale.is_empty():
 					return ["Haggling...", false]
 				# --- SS SHIP: quien se acaba de ir sigue en el mostrador despidiéndose ("Lovely work, little star."): sin
@@ -1388,7 +1672,7 @@ func station_verb(id: String) -> Array:
 				return ["Check shelf", true]
 			"tea":
 				var someone := day.line_count() > 0 or not day.counter.is_empty()
-				if not bool(Game.today.get("tea", false)) and someone and not tea_running:
+				if tea_left() and someone and not tea_running:   # --- SS2 SEASON
 					return ["Tea", true]
 				return ["Talk", true]
 	return ["", false]
@@ -1414,6 +1698,12 @@ func _unhandled_input(ev: InputEvent) -> void:
 		return
 	if modal_open() or busy:
 		return
+	# --- SS2 SEASON: R (o Y del mando) = el tablero entero (nunca sobre el banco, el regateo, la cápsula o un diálogo)
+	if ev is InputEventKey and ev.pressed and not ev.echo and ev.physical_keycode == KEY_R:
+		open_rank_board()
+		get_viewport().set_input_as_handled()
+		return
+	# --- end SS2 SEASON
 	if ev.is_action_pressed("interact") and not ev.is_echo():
 		if world.walker.current != "":
 			var vb := station_verb(world.walker.current)
@@ -1431,6 +1721,14 @@ func _unhandled_input(ev: InputEvent) -> void:
 
 func _process(_d: float) -> void:
 	frame += 1
+	# --- SS2 SHIP: de vuelta a caminar (se cerró una ventana o Nell camina con el stick), el cursor del mando se esconde
+	# y A vuelve a ser "interactuar". Antes, después de usar LB / RB (el tablero, una pieza de Mags) el cursor quedaba a
+	# la vista y A hacía clic donde había quedado: el aviso decía "[A] Buy pods" y A no abría nada.
+	var walk_now := can_walk()
+	if PadCursor.active and walk_now and world != null and (not _ship_walk_was or world.walker._input_dir() != 0.0):
+		pad.hide_cursor()
+	_ship_walk_was = walk_now
+	# --- end SS2 SHIP
 	_update_prompt()
 	if modal_open():
 		hud.hide_banner()
@@ -1441,8 +1739,9 @@ func _process(_d: float) -> void:
 			_last_minute = m / 5
 			hud.set_clock(m, "closing" if day.closing else "open")
 		hud.set_line(day.line_count(), Data.MAX_LINE)
-		if day.line_count() >= 3 and not bool(Game.today.get("tea", false)) and not day.hold and Game.tip_once("tea"):
+		if day.line_count() >= 3 and tea_left() and not day.hold and Game.tip_once("tea"):
 			hud.tip(Data.tip("tea", UIKit.interact_key()), 7.0)
+		_season_tick(m)   # --- SS2 SEASON: la carrera (las 2 PM, las 3 PM), cerrar antes
 	hud.set_hint(can_walk(), "Sound: click or press a key" if pad.needs_gesture else "")
 	if shot_path != "" and frame == maxi(shot_frames, 20):
 		get_viewport().get_texture().get_image().save_png(shot_path)
@@ -1491,3 +1790,597 @@ func _parse_args() -> void:
 			_boot_shot = a.substr(11)
 		elif a.begins_with("--bootjump="):
 			_boot_jump = a.substr(11)
+		elif a == "--pad=1" and demo != "":
+			PadCursor.pad_in_use = true   # --- SS2 MERGE: capturas de cualquier demo con los avisos del mando
+
+# ==================================================================================================================
+# --- SS2 SEASON: la temporada en el flujo (SS2_DESIGN §8.11): la mañana, el estreno de las mejoras, los días
+# especiales, los momentos de historia, después de cerrar, la cadena de la noche (la cuota, el tablero, el Report, la
+# gala), el tablero con R / Y, Dolly, la vecina, el calendario, cerrar antes. Todo lo de la temporada lo decide Season.
+# ==================================================================================================================
+
+## El post-proceso de la calle con el del evento de hoy (StreetWorld.EVENT_POST de WORLD).
+func _street_post(ev: String) -> Dictionary:
+	var p := POST_STREET.duplicate()
+	var ep: Dictionary = StreetWorld.EVENT_POST.get(ev, {}) if ev != "" else {}
+	p.merge(ep, true)
+	return p
+
+## Los avisos de la mañana (uno por vez) y después los momentos de historia de la mañana, uno por uno.
+func _morning_notes(m: Dictionary) -> void:
+	var notes: Array = []
+	if Game.migrated_from > 0 and Game.tip_once("migrated"):
+		notes.append([String(SeasonData.TIPS["migrated"]), UIKit.ACCENT])
+	if String(m.get("kettle", "")) != "" and not bool(m.get("repeat", false)):
+		notes.append([String(m["kettle"]), UIKit.TEXT])
+	if String(m.get("free_part", "")) != "" and not bool(m.get("repeat", false)):
+		notes.append(["Parts Wall: a spare %s" % BenchData.part_name(String(m["free_part"])).to_lower(), UIKit.GOOD])
+	if bool(m.get("charity", false)) and not bool(m.get("repeat", false)):
+		notes.append(["Raker saved a pod for you. On the house.", UIKit.GOOD])
+	var day_now := Game.day
+	await get_tree().create_timer(2.8).timeout
+	for nt in notes:
+		if phase != Phase.MORNING or Game.day != day_now:
+			return
+		hud.toast(String(nt[0]), nt[1], 3.2)
+		await get_tree().create_timer(3.4).timeout
+	if phase != Phase.MORNING or Game.day != day_now:
+		return
+	# los consejos de la temporada (una vez cada uno): el tablero el día 2 (después de la primera noche), las cuotas
+	# el día 3 (la primera se cobra esa noche); el de las mejoras sale con el primer estreno
+	if Game.day >= 2 and Game.tip_once("board"):
+		hud.tip(Data.tip("board"), 6.0)
+	elif Game.day >= 3 and Game.tip_once("dues"):
+		hud.tip(Data.tip("dues"), 6.0)
+	await _morning_beats()
+
+func _morning_beats() -> void:
+	# (de a uno: cada momento puede cambiar las marcas que decide el siguiente)
+	for _i in 6:
+		var bs := Season.beats(Game.day, "morning")
+		if bs.is_empty():
+			return
+		var b: Dictionary = bs[0]
+		# espera a que Nell esté libre (sin otra ventana abierta)
+		var t := 0.0
+		while (modal_open() or busy) and t < 30.0:
+			await get_tree().create_timer(0.25).timeout
+			t += 0.25
+			if phase != Phase.MORNING:
+				return
+		if phase != Phase.MORNING:
+			return
+		busy = true
+		await _beat(b)
+		busy = false
+
+## Lo que dice al abrir: la nota de la partida vieja, los consejos de la carrera y de cerrar antes.
+func _open_notes() -> void:
+	if Game.migrated_from > 0 and Game.tip_once("migrated"):
+		hud.toast(String(SeasonData.TIPS["migrated"]), UIKit.ACCENT, 4.0)
+	if Season.event() == "race" and Game.tip_once("deadline"):
+		get_tree().create_timer(2.6).timeout.connect(func():
+			if phase == Phase.OPEN:
+				hud.tip(Data.tip("deadline"), 6.0))
+
+## Las cosas de las historias en la tienda (W: set_story_prop), según las marcas.
+func _story_props() -> void:
+	shop.set_story_prop("crate", Game.flag("crate", "") in ["kept", "covered"])
+	shop.set_story_prop("certificate", Game.flag("grade", "") == "certified")
+	shop.set_story_prop("cup", Game.flag("race", "") == "podium")
+	shop.set_story_prop("key", bool(Game.flag("rook_key", false)))
+	shop.set_story_prop("ribbon", bool(Game.flag("band", false)) and Game.day >= 8)
+	shop.set_story_prop("plaque", bool(Game.flag("paid_in_full", false)))
+	shop.set_story_prop("cores", int(Game.flag("cores", 0)))
+	shop.set_story_prop("band", Season.band_today())
+
+func _apply_props(props: Dictionary) -> void:
+	for k in props:
+		shop.set_story_prop(String(k), props[k])
+
+## El estreno de las mejoras compradas esta mañana: la cámara va a cada una, un pop, un aviso (cualquier tecla salta).
+func _reveal_new_fittings() -> void:
+	busy = true
+	_revealing = true
+	_reveal_skip = false
+	for id in Game.fittings_new.duplicate():
+		if not SeasonData.FITTINGS.has(id):
+			continue
+		shop.cam_fixed = true
+		if not _reveal_skip:
+			await _glide_camera(shop.upgrade_point(id).x, 0.6)
+		shop.reveal_upgrade(id)
+		var f: Dictionary = SeasonData.FITTINGS[id]
+		hud.toast("New: %s · %s" % [String(f["name"]), String(f["desc"])], UIKit.GOOD, 2.2)
+		Sfx.play("upgrade", 0.02, -4.0)
+		if not _reveal_skip:
+			var t := 0.0
+			while t < 1.0 and not _reveal_skip:
+				await get_tree().process_frame
+				t += get_process_delta_time()
+	Game.fittings_new.clear()
+	shop.cam_fixed = false
+	shop.snap_camera()
+	_revealing = false
+	busy = false
+	if Game.tip_once("fittings"):
+		hud.tip(Data.tip("fittings"), 5.0)
+
+func _glide_camera(x: float, secs: float) -> void:
+	var from := shop.camera.position.x
+	var tw := create_tween()
+	tw.tween_method(func(v: float): shop.place_camera(v), from, clampf(x, shop.cam_x0 - 1.5, shop.cam_x1 + 1.5), secs).set_trans(Tween.TRANS_SINE)
+	await tw.finished
+
+## Las claves opcionales del trabajo del banco (BenchUI, §8.9): calificado, acertijo, las ayudas de las mejoras.
+func _job_keys(j: Dictionary, v: Dictionary) -> void:
+	var ex: Dictionary = v.get("extra", {})
+	j["aids"] = Season.bench_aids()
+	if bool(ex.get("graded", false)):
+		j["graded"] = true
+	if bool(ex.get("riddle", false)):
+		var rd := Data.riddle(String(v.get("item", "")), String(v.get("fault", "")))
+		if rd != "":
+			j["riddle"] = true
+			j["symptom"] = rd
+	if ex.has("deadline_min"):
+		j["deadline"] = true
+
+## El favor secreto de Glint (día 5): el momento con sus dos opciones es el diálogo del mostrador.
+func _favour_talk(v: Dictionary) -> void:
+	var bs := Season.beats(Game.day, "open", {"favour": String(v["who"])})
+	if bs.is_empty():
+		day.leave(v, "declined", Data.line(String(v["who"]), "decline"))
+		return
+	busy = true
+	var c: String = await _beat(bs[0])
+	busy = false
+	if day.counter.is_empty() or int(day.counter.get("id", -1)) != int(v["id"]):
+		return
+	if c == "fix":
+		var fj: Dictionary = SeasonData.FAVOUR_JOB
+		var j := BenchData.make_job(String(fj["item"]), String(fj["fault"]), String(v["who"]))
+		j["label"] = String(fj["label"])
+		j["sub"] = String(fj["sub"])
+		j["symptom"] = String(fj["symptom"])
+		j["aids"] = Season.bench_aids()
+		day.start_work()
+		job = {"kind": "favour", "v": v, "item": String(fj["item"]), "fault": String(fj["fault"]), "stage": "accepted",
+			"job": j, "result": {}}
+		shop.set_counter_item("")
+		go_bench_job()
+	else:
+		day.leave(v, "declined", String(SeasonData.BEATS["glint_favour"]["options"][1].get("reply", "")))
+
+## El cepillo de Buff, hecho: 40 cr si salió (≥ 1 ★), el bono de Glint en el tablero (+8 esta noche).
+func _favour_done(r: Dictionary) -> void:
+	var v: Dictionary = job["v"]
+	var ok := bool(r.get("ok", false)) and int(r.get("stars", 0)) >= 1
+	job = {}
+	if phase == Phase.OPEN:
+		busy = true
+		await shop.walker.go_station("counter")
+		busy = false
+	if ok:
+		var fj: Dictionary = SeasonData.FAVOUR_JOB
+		Game.add_credits(int(fj["pay"]))
+		Game.stat("repair_pay", int(fj["pay"]))
+		Game.stat("repairs")
+		Game.stat("served")
+		Game.stat("repair_stars", clampi(int(r.get("stars", 0)), 0, 3))
+		Game.set_flag("favour", "done")
+		Ranking.add_bonus(Ranking.RIVAL, int(fj["bonus"]))
+		Sfx.play("coins", 0.05, -2.0)
+		hud.toast("+%d cr · Buff's buffer spins again. Glint owes you." % int(fj["pay"]), UIKit.GOOD)
+		day.leave(v, "done", Data.line(String(v["who"]), "thanks", clampi(int(r.get("stars", 0)), 0, 3)), Color(0.85, 1.0, 0.8))
+	else:
+		Game.set_flag("favour", "failed")
+		Game.stat("failed")
+		day.leave(v, "done", Data.line(String(v["who"]), "failed"))
+
+## Después de entregar: la mañas (bis de Lune, el pago rápido de Brisk), la nota de Tolle, los momentos de Old Seven.
+func _after_handover(v: Dictionary, stars: int, ok: bool, tw: Dictionary) -> void:
+	var who := String(v["who"])
+	var ex: Dictionary = v.get("extra", {})
+	if float(tw.get("line_patience", 0.0)) > 0.0:
+		for i in day.line_count():
+			day.tea_boost(i + 1, float(tw["line_patience"]))
+	if String(tw.get("toast", "")) != "":
+		get_tree().create_timer(1.6).timeout.connect(func(): hud.toast(String(tw["toast"]), UIKit.GOOD, 2.6))
+	if bool(ex.get("graded", false)):
+		var g := Season.on_graded(stars, ok)
+		Sfx.play("stamp", 0.02, -3.0)
+		var a: Actor = v.get("actor")
+		if is_instance_valid(a):
+			shop.blurt(a, String(g["line"]), Color(1.0, 0.92, 0.6))
+		var bits: Array = ["Tally Office: %s" % String(g["name"])]
+		if int(g["stars"]) > 0:
+			bits.append("+%d ★" % int(g["stars"]))
+		if int(g["credits"]) > 0:
+			bits.append("+%d cr" % int(g["credits"]))
+		if int(g["rep"]) < 0:
+			bits.append("%d rep" % int(g["rep"]))
+		get_tree().create_timer(1.2).timeout.connect(func(): hud.toast(" · ".join(bits), UIKit.GOOD if String(g["grade"]) != "noted" else UIKit.TEXT, 3.0))
+		_apply_props(g.get("prop", {}))
+		if String(g.get("crate_line", "")) != "":
+			get_tree().create_timer(3.6).timeout.connect(func(): hud.toast("Tolle: \"%s\"" % String(g["crate_line"]), UIKit.TEXT, 3.5))
+	var bs := Season.beats(Game.day, "open", {"after_handover": who, "stars": stars if ok else 0})
+	if not bs.is_empty():
+		await get_tree().create_timer(1.4).timeout
+		for b in bs:
+			var t := 0.0
+			while (modal_open() or busy) and t < 20.0:
+				await get_tree().create_timer(0.25).timeout
+				t += 0.25
+			if phase != Phase.OPEN:
+				return
+			day.paused = true
+			busy = true
+			await _beat(b)
+			busy = false
+			day.paused = false
+
+## Cada cuadro con la tienda abierta: la carrera (a las 2 PM se van los corredores; a las 3 PM se corre).
+func _season_tick(minute: int) -> void:
+	if Season.event() == "race" and not bool(Season.state.get("race_called", false)) and minute >= int(SeasonData.RACE["call_min"]):
+		_race_call()
+	if Game.tips_seen.has("first_done") and _can_close_early() and Game.tip_once("close"):
+		hud.tip(Data.tip("close", UIKit.interact_key()), 6.0)
+
+func _race_call() -> void:
+	var r := Season.race_result()
+	hud.banner("The Glasspan Derby", "Zib: \"%s\"" % String(SeasonData.RACE_LINES["call"]), 2.4)
+	Sfx.play("cheer", 0.02, -3.0)
+	await get_tree().create_timer(3.0).timeout
+	hud.toast(String(r["line"]), UIKit.GOOD if String(r["result"]) != "none" else UIKit.TEXT, 4.0)
+	if String(r.get("pipip_line", "")) != "":
+		await get_tree().create_timer(4.2).timeout
+		hud.toast("Pipip: \"%s\"" % String(r["pipip_line"]), UIKit.TEXT, 3.5)
+	_story_props()
+
+## Cerrar antes (desde las 4 PM, sin nadie en la fila ni en el mostrador, sin trabajo y sin nadie más por llegar).
+func _can_close_early() -> bool:
+	return phase == Phase.OPEN and day.running and not day.closing and not day.hold and day.minutes() >= 960 \
+		and day.line_count() == 0 and day.counter.is_empty() and day.leaving.is_empty() and job.is_empty() \
+		and sale.is_empty() and day.pending_arrivals() == 0
+
+func ask_close_early() -> void:
+	dialogs.open({"kind": "talk", "who": "nell", "title": "Close up early", "sub": "%s" % Hud.clock_text(day.minutes()),
+		"line": String(SeasonData.TEXT["close_line"]), "options": [{"id": "close", "text": String(SeasonData.TEXT["close_yes"]), "primary": true, "min_w": 170},
+			{"id": "no", "text": String(SeasonData.TEXT["close_no"]), "min_w": 150}], "cancel": "no"}, func(c):
+		if c == "close" and _can_close_early():
+			Season.state["close_early"] = true
+			day.force_close())
+
+## Lo que se ve por la ventana de noche (W: set_window_sky).
+func _window_sky() -> String:
+	match Game.day:
+		6:
+			return "bigfall"
+		8:
+			return "bronzemoon"
+		10:
+			return "starfall"
+	return "moons"
+
+## Después de cerrar (§2.7): Nell en el banco, Kettle dormido; hasta 2 arreglos para el estante, sin reloj ni fila.
+func _after_hours() -> void:
+	after_hours = true
+	var bx: float = ShopWorld.STATIONS["bench"]["x"]
+	shop.walker.frozen = false
+	shop.walker.teleport(bx, -1)
+	shop.walker.frozen = true
+	shop.nell.face(-1)
+	shop.kettle.position = Vector3(-6.6, 0, ShopWorld.LANE_Z + SetKit.KETTLE_DZ)
+	shop.kettle.emote("zz", 0.0)
+	shop.cam_fixed = true
+	shop.place_camera(clampf(bx + shop.cam_bias, shop.cam_x0, shop.cam_x1))
+	await get_tree().create_timer(0.6).timeout
+	if Game.tip_once("afterhours"):
+		hud.tip(Data.tip("afterhours"), 6.0)
+	var done := 0
+	var max_n := SeasonData.AFTER_HOURS_MAX + int(SeasonData.AFTER_HOURS_BONUS.get(Game.day, 0))
+	while done < max_n and not Game.junk.is_empty() and phase == Phase.NIGHT:
+		var opts: Array = []
+		for i in mini(Game.junk.size(), 3):
+			opts.append({"id": "j%d" % i, "text": "Fix: %s" % BenchData.item_name(String(Game.junk[i]["item"])), "primary": i == 0, "min_w": 220})
+		opts.append({"id": "sleep", "text": String(SeasonData.TEXT["after_sleep"]), "min_w": 140})
+		dialogs.open({"kind": "talk", "who": "kettle", "title": String(SeasonData.TEXT["after_title"]),
+			"sub": "%d of %d tonight" % [done + 1, max_n], "line": String(SeasonData.TEXT["after_line"]),
+			"options": opts, "cancel": "sleep", "per_row": 2})
+		var c: String = await dialogs.closed
+		if not c.begins_with("j") or phase != Phase.NIGHT:
+			break
+		refurb(int(c.substr(1)))
+		if not bench.is_open():
+			break
+		await bench.finished
+		await get_tree().process_frame
+		done += 1
+	if done >= max_n and not Game.junk.is_empty():
+		hud.toast(String(SeasonData.TEXT["after_done"]), UIKit.TEXT, 2.6)
+	shop.kettle.clear_emote()
+	after_hours = false
+	job = {}
+	# de vuelta a la ventana (el libro de cuentas)
+	shop.walker.frozen = false
+	shop.walker.teleport(ShopWorld.STATIONS["counter"]["x"], -1)
+	shop.walker.frozen = true
+	shop.nell.position = ShopWorld.NIGHT_NELL
+	shop.nell.face(1)
+	shop.kettle.position = ShopWorld.NIGHT_KETTLE
+	shop.kettle.face(1)
+	shop.night_camera()
+	hud.clear_tip()
+
+## La cadena de la noche (§8.11): la cuota (noches 3, 6, 9; después cada 3), el tablero de la noche, el Report, los
+## momentos de la noche; la noche final (o la primera #1 del modo sin fin): sin tablero ni Report, la gala.
+func _night_chain() -> void:
+	busy = true
+	var due := Season.dues_due(Game.day)
+	if due > 0:
+		await _dues_beat(due)
+	var ending := Ranking.ending_due()
+	if not ending:
+		night_boards += 1
+		rank.open_night(Game.last_summary.get("rank", {}))
+		await rank.done
+		if Ranking.report_due():
+			rank.open_report(Ranking.report())
+			await rank.done
+	if Ranking.report_due():
+		Ranking.mark_report_read()
+	for _i in 4:
+		var nb := Season.beats(Game.day, "night")
+		if nb.is_empty():
+			break
+		await _beat(nb[0])
+	if ending:
+		var champion := Ranking.position() == 1
+		galas_played += 1
+		var choice: String = await gala.play(self, champion)
+		if Game.is_campaign():
+			Game.ending_seen = true
+			Game.crown_seen = champion
+			Game.mode = "endless"
+		else:
+			Game.crown_seen = true
+		if choice == "title":
+			Game.next_day()
+			Game.resume = "morning"
+			Game.save_game()
+			busy = false
+			to_title()
+			return
+	await fade_to(1.0, 0.5)
+	busy = false
+	Game.next_day()
+	begin_morning()
+	_prewarm_today()
+	fade_to(0.0, 0.6)
+
+## La cuota de esta noche con Dockmaster Hesk (o el icono de la cuota si todavía no hay su hoja): pagar (o pagar lo
+## que se pueda con la regla blanda) y su respuesta.
+func _dues_beat(due: int) -> void:
+	var hesk: Dictionary = SeasonData.HESK
+	var short := Game.credits < due
+	var who := "dockmaster" if ResourceLoader.exists("res://assets/chars/dockmaster_idle.png") else ""
+	var line := String(hesk["ask_short"] if short else hesk["ask"]).replace("{due}", str(due)).replace("{have}", str(Game.credits))
+	var notes: Array = []
+	if Game.debt > 0:
+		notes.append("Includes %d cr carried over from last time." % Game.debt)
+	if short:
+		notes.append("Short? Hesk takes all but %d cr and carries the rest, plus 10 %%." % int(SeasonData.SOFT_RULE["keep"]))
+	var pay_text := "Pay %d" % due if not short else "Pay what I can (%d)" % maxi(0, Game.credits - int(SeasonData.SOFT_RULE["keep"]))
+	var upkeep := not SeasonData.DUES.has(Game.day)
+	dialogs.open({"kind": "talk", "who": who, "icon": "" if who != "" else "res://assets/ui/icon_dues.png",
+		"title": String(hesk["name"]), "sub": "%s · night %d" % [String(SeasonData.TEXT["upkeep_sub"]) if upkeep else String(hesk["sub"]), Game.day],
+		"line": line, "note": " ".join(notes), "options": [{"id": "pay", "text": pay_text, "primary": true, "min_w": 230}],
+		"cancel": "pay"})
+	await dialogs.closed
+	var r := Season.collect_dues()
+	Sfx.play("stamp", 0.02, -3.0)
+	Sfx.play("coins", 0.05, -4.0)
+	Game._update_dues_goal()
+	hud.refresh()
+	var note2 := ""
+	if bool(r.get("late", false)):
+		note2 = "LATE: %d cr carried to the next dues. The Board docks you 3 ★." % int(r.get("debt", 0))
+	elif bool(r.get("paid_in_full", false)):
+		note2 = "PAID IN FULL. A brass plaque goes up by the door."
+		shop.set_story_prop("plaque", true)
+	else:
+		var nd := Season.next_dues()
+		if int(nd["night"]) > 0 and int(nd["night"]) <= SeasonData.LAST_DAY:
+			note2 = "Next: %d cr on night %d." % [int(nd["amount"]) + int(nd["debt"]), int(nd["night"])]
+	dialogs.open({"kind": "talk", "who": who, "icon": "" if who != "" else "res://assets/ui/icon_dues.png",
+		"title": String(hesk["name"]), "sub": "Paid %d cr" % int(r.get("paid", 0)), "line": String(r.get("line", "")),
+		"note": note2, "options": [{"id": "ok", "text": "Goodnight", "primary": true, "min_w": 170}], "cancel": "ok"})
+	await dialogs.closed
+
+## Un momento de historia (§5.5): dos líneas y hasta dos opciones (Dialogs "talk"). Uno con dos opciones no se cierra
+## con Esc / B (§5.5): solo avisa "Choose one: 1 or 2". Devuelve la opción elegida.
+func _beat(b: Dictionary) -> String:
+	var opts: Array = []
+	var src: Array = b.get("options", [])
+	for i in src.size():
+		opts.append({"id": String(src[i]["id"]), "text": String(src[i]["text"]), "primary": i == 0, "min_w": 200})
+	if opts.is_empty():
+		opts = [{"id": "ok", "text": "Okay", "primary": true, "min_w": 160}]
+	var must := bool(b.get("must_choose", false)) and opts.size() > 1
+	var who := String(b.get("who", ""))
+	var lines: Array = b.get("lines", [])
+	_beat_actor(who)
+	var sp: Dictionary = Data.SPECIES.get(Data.species_of(who), {})
+	var spec := {"kind": "talk", "who": who, "sub": String(SeasonData.ROLE_SUB.get(who, sp.get("name", ""))), "line": String(lines[0]) if lines.size() > 0 else "",
+		"line2": String(lines[1]) if lines.size() > 1 else "", "options": opts, "per_row": 2, "beat": String(b.get("id", ""))}
+	if must:
+		spec["must_choose"] = true
+	else:
+		spec["cancel"] = String(opts[-1]["id"]) if opts.size() == 1 else String(opts[0]["id"])
+	dialogs.open(spec)
+	var c: String = await dialogs.closed
+	if c == "":
+		c = String(opts[0]["id"])
+	var r := Season.apply_beat(String(b.get("id", "")), c, bool(b.get("low", false)))
+	_apply_props(r.get("prop", {}))
+	if int(r.get("cores", 0)) > 0:
+		shop.set_story_prop("cores", int(r["cores"]))
+	if String(r.get("reply", "")) != "":
+		hud.toast("%s: \"%s\"" % [Data.char_name(who), String(r["reply"])], UIKit.TEXT, 3.0)
+	elif String(r.get("toast", "")) != "":
+		hud.toast(String(r["toast"]), UIKit.GOOD, 3.2)
+	if int(r.get("stars", 0)) > 0:
+		Sfx.play("good", 0.02, -6.0)
+	if _story_actor and is_instance_valid(_story_actor):
+		_story_actor.queue_free()
+	_story_actor = null
+	return c
+
+## Quien habla en la calle aparece a un lado de Nell mientras dura el momento (los actores son lo único que se crea
+## en marcha: §8.13).
+func _beat_actor(who: String) -> void:
+	if phase != Phase.MORNING or who == "" or who == "nell":
+		return
+	if who == "rival" and street.rival_actor() and street.rival_actor().visible:
+		return
+	var pos := Vector3(street.nell.position.x + 1.5, 0.0, StreetWorld.LANE_Z - 0.35)
+	if who == "hermit":
+		pos = street.hermit_spot()
+	_story_actor = street.make_actor(who, pos, -1)
+
+## El tablero entero (el chip del HUD, R, Y): de mañana y con la tienda abierta, nunca sobre otra ventana. El reloj
+## espera mientras está abierto.
+func open_rank_board() -> void:
+	if phase not in [Phase.MORNING, Phase.OPEN] or modal_open() or _work_ui_open() or busy or menu_open or rank == null:
+		return
+	if Game.tip_once("board"):
+		pass
+	day.paused = true
+	hud.hide_prompt()
+	rank.open_board()
+	await rank.done
+	day.paused = false
+
+## El calendario de la temporada (el tablón de la calle y el menú).
+func open_calendar() -> void:
+	if dialogs.is_open():
+		return
+	var paused_before := day.paused
+	day.paused = true
+	dialogs.open({"kind": "calendar"}, func(_c): day.paused = paused_before)
+
+## El patio de Dolly: las 8 mejoras, a precio fijo (desde el día 2).
+func fittings_stall() -> void:
+	if not Season.is_unlocked("vendor"):
+		street.blurt(street.vendor_actor() if street.vendor_actor() else street.nell, String(SeasonData.DOLLY["closed"]))
+		return
+	dialogs.open({"kind": "fittings", "width": 820})
+	if Game.tip_once("dolly_kettle"):
+		get_tree().create_timer(0.8).timeout.connect(func():
+			if dialogs.is_open() and String(dialogs.spec.get("kind", "")) == "fittings":
+				hud.toast("Kettle: \"%s\"" % String(SeasonData.DOLLY["kettle"]), UIKit.TEXT, 3.5))
+
+## La vecina (desde el día 3): su frase del día y quién va delante.
+func visit_rival() -> void:
+	if not Season.is_unlocked("rival"):
+		street.blurt(street.nell, String(SeasonData.RIVAL_VISIT["closed"]))
+		return
+	var gap := Ranking.score(Ranking.RIVAL) - Ranking.score()
+	var key := "neutral"
+	if gap > 4:
+		key = "ahead"
+	elif gap < -4:
+		key = "behind"
+	var note := "Shine Again: %d ★ ahead of you." % gap if gap > 0 else ("You lead Shine Again by %d ★." % -gap if gap < 0 else "Neck and neck with Shine Again.")
+	dialogs.open({"kind": "talk", "who": "rival", "sub": "Shine Again, next door", "line": String(SeasonData.RIVAL_VISIT[key]),
+		"note": note, "options": [{"id": "ok", "text": "See you, Glint", "primary": true, "min_w": 180}], "cancel": "ok"})
+
+## La música del evento de hoy (al continuar una partida: bajo el fundido) y la de mañana (bajo el libro de cuentas).
+func _prewarm_today() -> void:
+	var ed := Season.event_def()
+	for k in ["music", "amb"]:
+		if String(ed.get(k, "")) != "":
+			Sfx.prewarm_late(String(ed[k]))
+
+func _prewarm_tomorrow() -> void:
+	for alias in Season.tomorrow_loops(Game.day):
+		Sfx.prewarm_late(String(alias))
+	if Game.day == 1:
+		Sfx.prewarm_late("night")
+	if Ranking.ending_due():
+		Sfx.prewarm_late("gala")
+
+## (Pruebas: --bootjump=...) los caminos nuevos de la ronda 2, después del arranque de verdad.
+func _season_jump(where: String) -> void:
+	if where.begins_with("event_"):
+		var ev := where.substr(6)
+		var d := 5
+		for k in SeasonData.PLAN:
+			if String(SeasonData.PLAN[k].get("event", "")) == ev:
+				d = int(k)
+		Season.debug_state(d, "good")
+		begin_morning()
+		await get_tree().create_timer(2.0).timeout
+		open_shop_now()
+	elif where == "upgrades":
+		Season.debug_state(9, "good")
+		for id in SeasonData.FITTING_ORDER:
+			if not Game.has_fitting(id):
+				Game.fittings.append(id)
+		Game.fittings_new = ["neon"]
+		open_shop_now()
+	elif where.begins_with("bench_"):
+		Season.debug_state(8, "good")
+		open_shop_now()
+		day.clear()
+		var item := where.substr(6)
+		bench.open(BenchData.make_job(item, String(BenchData.FAULTS[item].keys()[0]), "gorrum"))
+	elif where == "board":
+		Season.debug_state(5, "good")
+		begin_morning()
+		await get_tree().create_timer(1.0).timeout
+		open_rank_board()
+	elif where == "report":
+		Season.debug_state(4, "good")
+		open_shop_now()
+		show_night()
+		await get_tree().create_timer(1.0).timeout
+		rank.open_report(Ranking.report())
+	elif where in ["gala_win", "gala_lose"]:
+		Season.debug_state(10, "good")
+		show_night()
+		screens.hide_all()
+		gala.play(self, where == "gala_win")
+	elif where.begins_with("nightst_"):
+		# --- SS2 MERGE: (pruebas) la calle de noche con partes del estado de la gala: e = el decorado de la final,
+		# b = la banda, r = Shine Again abierta, n = Nell y Kettle en la puerta, c = la cámara de la gala
+		var f := where.substr(8)
+		Season.debug_state(10, "good")
+		screens.hide_all()
+		hud.show_top(false)
+		use_world(street)
+		street.set_night(true)
+		if "e" in f:
+			street.set_event("finale")
+		if "b" in f:
+			street.set_band(true)
+		if "r" in f:
+			street.set_rival_open(true)
+			street.set_vendor_open(true)
+		if "n" in f:
+			street.walker.frozen = true
+			street.kettle_follow = false
+			street.nell.global_position = Vector3(StreetWorld.SHOP_X, 0.0, -2.05)
+			street.kettle.global_position = Vector3(StreetWorld.SHOP_X + 0.65, 0.0, -1.75)
+		if "c" in f:
+			street.cam_fixed = true
+			street.place_camera(-5.0)
+	elif where.begins_with("galastep_"):
+		# --- SS2 MERGE: (pruebas) la gala sola, quieta en un momento (count_done, walk_done, comet_on, ring_...),
+		# para saber qué momento compila algo después del arranque
+		Season.debug_state(10, "good")
+		screens.hide_all()
+		gala.demo_stop = where.substr(9)
+		gala.play(self, true)
+# --- end SS2 SEASON

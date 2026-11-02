@@ -28,17 +28,37 @@ const PACE_REAL := {"bench": 30.0, "haggle": 7.0, "pod": 3.0}
 ##   good   = una persona que entendió el juego: ~25-30 s por reparación, casi siempre 3 estrellas, regatea.
 ##   sloppy = una persona distraída: ~40-45 s por reparación, se equivoca de pieza, suelda torcido, acepta el primer
 ##            precio, no usa el té ni compra piezas.
+## --- SS2 SEASON: + human (el ritmo del cliente: ~35-45 s por reparación, piensa más en los dos primeros trabajos de
+## cada familia, habilidad = good x 0.85) y las claves de la temporada (§8.14): fittings ("order" | "max1" | "basic"),
+## asis (compra lo de "tal cual" si el estante tiene < 3), after (arreglos de noche), beats ("first" | "random"),
+## close (cierra antes si se puede), income (lo que espera ganar al día: la reserva para la próxima cuota),
+## eve_hold (la víspera de Bronzemoon no vende del estante mientras tenga <= 5: lo guarda para la fiesta),
+## dues_guard (la noche de la cuota no gasta en cápsulas ni "tal cual" lo que le falta para pagarla).
 const PROFILES := {
 	"perfect": {"wait": {"bench": 0.0, "haggle": 0.0, "pod": 0.0}, "skill": {"bench": 1.0, "haggle": 1.0},
-		"react": 0.0, "tea": true, "parts": true, "refurb": true, "pods": "best"},
+		"react": 0.0, "tea": true, "parts": true, "refurb": true, "pods": "best",
+		"fittings": "order", "asis": true, "after": 2, "beats": "first", "close": true, "income": 160.0, "think_first": 1.0,
+		"eve_hold": true, "dues_guard": true},
 	"good": {"wait": {"bench": 17.0, "haggle": 6.0, "pod": 3.0}, "skill": {"bench": 0.85, "haggle": 0.9},
-		"react": 2.0, "tea": true, "parts": true, "refurb": true, "pods": "best"},
+		"react": 2.0, "tea": true, "parts": true, "refurb": true, "pods": "best",
+		"fittings": "order", "asis": true, "after": 2, "beats": "first", "close": true, "income": 130.0, "think_first": 1.0,
+		"eve_hold": true, "dues_guard": true},
+	"human": {"wait": {"bench": 25.0, "haggle": 8.0, "pod": 4.0}, "skill": {"bench": 0.72, "haggle": 0.77},
+		"react": 3.0, "tea": true, "parts": true, "refurb": true, "pods": "best",
+		"fittings": "max1", "asis": true, "after": 2, "beats": "random", "close": true, "income": 110.0, "think_first": 1.5,
+		"dues_guard": true},
 	"sloppy": {"wait": {"bench": 31.0, "haggle": 9.0, "pod": 4.0}, "skill": {"bench": 0.45, "haggle": 0.35},
-		"react": 5.0, "tea": false, "parts": false, "refurb": true, "pods": "first"},
+		"react": 5.0, "tea": false, "parts": false, "refurb": true, "pods": "first",
+		"fittings": "basic", "asis": false, "after": 1, "beats": "random", "close": false, "income": 70.0, "think_first": 1.0},
 }
 var bot := "perfect"
 var prof: Dictionary = PROFILES["perfect"]
 # --- end SS MERGE
+# --- SS2 SEASON: los argumentos del bot de la campaña
+var _endless := 0
+var _from := 1
+var _timescale := 6.0
+var _seed_arg := -1
 
 func run(main, name: String) -> void:
 	m = main
@@ -52,6 +72,13 @@ func run(main, name: String) -> void:
 		elif a.begins_with("--seed="):
 			_rng.seed = int(a.substr(7))
 			seed(int(a.substr(7)))
+			_seed_arg = int(a.substr(7))
+		elif a.begins_with("--endless="):   # --- SS2 SEASON
+			_endless = maxi(0, int(a.substr(10)))
+		elif a.begins_with("--from="):
+			_from = maxi(1, int(a.substr(7)))
+		elif a.begins_with("--timescale="):
+			_timescale = maxf(1.0, float(a.substr(12)))
 	match name:
 		"title":
 			m.show_title()
@@ -268,15 +295,18 @@ func _wait(secs: float) -> void:
 
 # ------------------------------------------------------------------ savetest
 
-## --demo=savetest (sin pantalla): la API de Game, el guardado JSON (ida y vuelta, con la partida de 3 días), que los
-## datos cuadren (agenda, frases, elenco, piezas) y las reglas del día.
+## --demo=savetest (sin pantalla): la API de Game, el guardado v3 (ida y vuelta), las 3 partidas v2 del prototipo
+## (SP/ss2/fixtures), un archivo basura, que los datos cuadren (agendas de 12 días, frases, elenco, piezas, mejoras,
+## momentos) y la búsqueda de palabras prohibidas (§10.3) en Data, CastData, SeasonData y Ranking. --- SS2 SEASON
+const FIXTURES := "/tmp/claude-0/-home-user-dead-air/84a550d9-2edd-52f7-8fa3-04790d444022/scratchpad/ss2/fixtures"
+
 func _savetest() -> void:
 	var fails: Array = []
 	var chk := func(cond: bool, what: String):
 		if not cond:
 			fails.append(what)
 	Game.new_game_state()
-	chk.call(Game.day == 1 and Game.credits == Data.START_CREDITS and Game.dues_goal == Data.DUES_GOAL, "estado inicial")
+	chk.call(Game.day == 1 and Game.credits == Data.START_CREDITS and Game.dues_goal == int(SeasonData.DUES[3]), "estado inicial (cuota 100 la noche 3)")
 	chk.call(Game.pods_today.size() == Data.DAY1_PODS.size(), "cápsulas del día 1")
 	Game.add_credits(25)
 	chk.call(Game.credits == Data.START_CREDITS + 25 and int(Game.today["earned"]) == 25, "add_credits")
@@ -288,10 +318,23 @@ func _savetest() -> void:
 	Game.add_junk("thruster", "coil")
 	Game.add_rep(4)
 	Game.stat("repairs", 2)
+	Game.stat("served", 2)
+	Game.stat("repair_stars", 5)
 	var s := Game.close_day()
-	chk.call(int(s["day"]) == 1 and bool(s["good"]) and Game.sign_points == 1 and Game.history.size() == 1, "close_day / cartel")
+	chk.call(int(s["day"]) == 1 and Game.history.size() == 1 and s.has("rank") and int(s["rank"].get("pos", 0)) == Ranking.position(), "close_day / el tablero")
+	# (la jugada del tablero suma el bono de la noche y el LATE: aquí se comparan las del día solas, como pide RANK)
+	var mv: Dictionary = s["rank"]
+	chk.call(int(s["day_stars"]) - int(mv.get("bonus", 0)) - int(mv.get("late", 0)) == int(Ranking.day_stars(Game.today)["total"]), "las estrellas del día")
+	chk.call(Ranking.commit_day() == Ranking.last_move(), "commit_day idempotente")
 	Game.next_day()
-	chk.call(Game.day == 2 and Game.pods_today.size() == Data.PODS_PER_DAY, "next_day / cápsulas sorteadas")
+	chk.call(Game.day == 2 and Game.pods_today.size() == Season.pods_for(2).size(), "next_day / cápsulas")
+	Season.on_morning()
+	chk.call(Season.is_unlocked("vendor") and not Season.is_unlocked("rival"), "lo que se abre el día 2")
+	Game.add_credits(200)
+	chk.call(Season.buy_fitting("seats") and Game.has_fitting("seats") and "seats" in Game.fittings_new, "Liner Seats")
+	chk.call(absf(Season.k("line_drain_k") - 0.75) < 0.001 and Season.n("appeal") >= 1, "los efectos de las mejoras")
+	Game.set_flag("crate", "kept")
+	Game.beats_seen["crate_ask"] = true
 	var pods_before := JSON.stringify(Game.pods_today)
 	Game.resume = "open"
 	Game.tip_once("walk")
@@ -299,80 +342,160 @@ func _savetest() -> void:
 	chk.call(Game.save_game(), "save_game")
 	Game.new_game_state()
 	chk.call(Game.load_game(), "load_game")
-	chk.call(JSON.stringify(Game.to_dict()) == before, "ida y vuelta del JSON")
+	chk.call(JSON.stringify(Game.to_dict()) == before, "ida y vuelta del JSON v3")
 	chk.call(Game.day == 2 and Game.shelf.size() == 2 and Game.junk[0]["fault"] == "coil" and Game.rep == 4, "valores cargados")
 	chk.call(JSON.stringify(Game.pods_today) == pods_before and Game.pods_today[0]["weight"] is int, "cápsulas guardadas (enteros)")
-	chk.call(Game.history[0]["repairs"] is int and Game.sign_points == 1 and not Game.tip_once("walk"), "historial / consejos")
+	chk.call(Game.history[0]["repairs"] is int and not Game.tip_once("walk"), "historial / consejos")
+	chk.call(Game.has_fitting("seats") and Game.flag("crate", "") == "kept" and Game.beats_seen.has("crate_ask") and Game.migrated_from == 0, "la temporada cargada")
+	chk.call(Ranking.position() == int(Game.history[0]["rank"]["pos"]), "el tablero cargado")
 	chk.call(Game.can_continue(), "can_continue")
 	Game.resume = "done"
 	Game.save_game()
-	chk.call(not Game.can_continue(), "no continuar una partida terminada")
+	chk.call(not Game.can_continue() and Game.save_note() == "", "no continuar una partida terminada (v3, sin nota)")
 	Game.delete_save()
 	chk.call(not Game.has_save(), "delete_save")
 	# una partida vieja de la semilla (versión 1, sin los datos de CORE) carga con valores por defecto
 	Game.from_dict({"day": 2, "credits": 77, "parts": {"cell": 1.0}, "shelf": [], "today": {"repairs": 1.0}})
-	chk.call(Game.day == 2 and Game.credits == 77 and Game.pods_today.size() == Data.PODS_PER_DAY, "partida de la semilla")
+	chk.call(Game.day == 2 and Game.credits == 77 and Game.pods_today.size() == Season.pods_for(2).size() and Game.migrated_from == 1, "partida de la semilla")
+	# las tres partidas del prototipo (v2) y un archivo basura
+	for f in ["v2_day2_morning", "v2_day3_open", "v2_done"]:
+		var path := "%s/%s.json" % [FIXTURES, f]
+		if not FileAccess.file_exists(path):
+			fails.append("falta el fixture %s" % f)
+			continue
+		var txt := FileAccess.get_file_as_string(path)
+		var w := FileAccess.open(Game.SAVE_PATH, FileAccess.WRITE)
+		w.store_string(txt)
+		w.close()
+		var d0 = JSON.parse_string(txt)
+		Game.new_game_state()
+		match f:
+			"v2_day2_morning":
+				chk.call(Game.can_continue() and Game.load_game(), "v2 día 2: carga")
+				chk.call(Game.day == 2 and Game.resume == "morning" and Game.migrated_from == 2 and Game.credits == int(d0["credits"]), "v2 día 2: el mismo día")
+				chk.call(Game.dues_goal == 100 and Season.next_dues()["night"] == 3, "v2 día 2: la cuota de la noche 3")
+				chk.call(Season.is_unlocked("vendor") and Game.sign_points >= int(d0["sign_points"]), "v2 día 2: lo abierto y el cartel")
+				chk.call(int(Ranking.last_move().get("day", 0)) == 1 and Ranking.position() < 30, "v2 día 2: el tablero rehecho")
+				chk.call(Game.save_game() and Game.load_game() and Game.migrated_from == 0, "v2 día 2: se guarda como v3")
+			"v2_day3_open":
+				chk.call(Game.load_game() and Game.day == 3 and Game.resume == "open" and Game.migrated_from == 2, "v2 día 3 abierto")
+				chk.call(Season.is_unlocked("rival") and Season.is_unlocked("asis"), "v2 día 3: Shine Again y el cajón de Mags")
+				chk.call(int(Ranking.last_move().get("day", 0)) == 2 and Season.dues_due(3) == 100, "v2 día 3: el tablero y la cuota de esta noche")
+			"v2_done":
+				chk.call(not Game.can_continue(), "v2 terminada: no se continúa")
+				chk.call(Game.save_note() == String(SeasonData.TEXT["prototype_over"]), "v2 terminada: la nota del título")
+	for junk in ["not json {{", "[1, 2, 3]", ""]:
+		var w2 := FileAccess.open(Game.SAVE_PATH, FileAccess.WRITE)
+		w2.store_string(junk)
+		w2.close()
+		Game.new_game_state()
+		chk.call(not Game.load_game() and not Game.can_continue() and Game.day == 1, "archivo basura: %s" % junk)
+	Game.delete_save()
+	Game.new_game_state()
 	# los datos
 	for item in BenchData.ITEMS:
 		for p in BenchData.ITEMS[item]["slots"]:
 			chk.call(BenchData.PARTS.has(p), "pieza %s de %s" % [p, item])
-		for f in BenchData.FAULTS[item]:
-			chk.call(f in BenchData.ITEMS[item]["slots"], "falla %s de %s" % [f, item])
+		for fl in BenchData.FAULTS[item]:
+			chk.call(fl in BenchData.ITEMS[item]["slots"], "falla %s de %s" % [fl, item])
 	for id in Data.CAST:
 		chk.call(Data.SPECIES.has(Data.CAST[id]["species"]), "especie de %s" % id)
-		chk.call(BenchData.HAGGLE.has(Data.CAST[id]["species"]), "regateo de %s" % id)
 	for id in Data.CHAR_IDS:
 		chk.call(ResourceLoader.exists("res://assets/chars/%s_idle.png" % id) and ResourceLoader.exists("res://assets/chars/%s_walk.png" % id), "hoja de %s" % id)
-	chk.call(Data.SCHEDULE.size() == Data.DAYS, "agenda de %d días" % Data.DAYS)
-	var counts := []
-	for d in Data.DAYS:
-		var sch := Data.schedule_for(d + 1)
-		counts.append(sch.size())
-		for e in sch:
-			chk.call(Data.CUSTOMERS.has(e["who"]), "cliente %s" % e["who"])
-			chk.call(float(e["t"]) < Data.DAY_SECONDS * 0.85, "llega a tiempo: %s día %d" % [e["who"], d + 1])
-			if e["kind"] == "repair":
-				chk.call(BenchData.FAULTS.get(e["item"], {}).has(e["fault"]), "falla %s/%s" % [e["item"], e["fault"]])
-				chk.call(Data.line(e["who"], "bring", e["item"]) != "", "frase bring %s/%s" % [e["who"], e["item"]])
-			else:
-				for w in e["wants"]:
-					chk.call(BenchData.ITEMS.has(w), "quiere %s" % w)
-	chk.call(counts[0] >= 6 and counts[-1] <= 9 and counts[0] <= counts[1] and counts[1] <= counts[2], "agenda 6-9 creciente %s" % str(counts))
 	for who in Data.CUSTOMERS:
 		for k in ["buy", "failed", "angry", "decline", "sold", "nodeal", "none", "full", "home"]:
-			chk.call(Data.LINES[who].has(k), "frase %s de %s" % [k, who])
-		chk.call((Data.LINES[who]["thanks"] as Array).size() == 4, "4 gracias de %s" % who)
-	for p in Data.DAY1_PODS:
-		for c in p["contents"]:
-			chk.call((c.has("part") and BenchData.PARTS.has(c["part"])) or (c.has("item") and BenchData.FAULTS[c["item"]].has(c["fault"])), "cápsula del día 1")
-	# palabras prohibidas (la lista del brief) en los textos que se ven
+			chk.call(Data.LINES.get(who, {}).has(k), "frase %s de %s" % [k, who])
+		chk.call((Data.LINES.get(who, {}).get("thanks", []) as Array).size() == 4, "4 gracias de %s" % who)
+	for fid in SeasonData.FITTING_ORDER:
+		chk.call(SeasonData.FITTINGS.has(fid), "mejora %s" % fid)
+	for bid in SeasonData.BEAT_ORDER:
+		var b: Dictionary = SeasonData.BEATS[bid]
+		chk.call(Data.CAST.has(String(b["who"])), "quién habla en %s" % bid)
+		chk.call((b["lines"] as Array).size() == 2 and (b["options"] as Array).size() <= 2, "dos líneas y <= 2 opciones: %s" % bid)
+	# las agendas de 12 días (con lo abierto de una partida típica)
+	Season.debug_state(1, "good")
+	for d in range(1, 13):
+		Game.day = d
+		Season.update_unlocks(d)
+		var sch := Season.schedule_for(d)
+		chk.call(sch.size() <= SeasonData.ARRIVALS_CAP and sch.size() >= 5, "llegadas del día %d: %d" % [d, sch.size()])
+		for e in sch:
+			chk.call(Data.CAST.has(e["who"]), "cliente %s día %d" % [e["who"], d])
+			chk.call(float(e["t"]) < Data.DAY_SECONDS * 0.87, "llega a tiempo: %s día %d (t %d)" % [e["who"], d, int(e["t"])])
+			if e["kind"] in ["repair", "favour"]:
+				chk.call(BenchData.FAULTS.get(e["item"], {}).has(e["fault"]), "falla %s/%s día %d" % [e["item"], e["fault"], d])
+			elif e["kind"] == "buy":
+				chk.call(not (e["wants"] as Array).is_empty(), "quiere algo: %s día %d" % [e["who"], d])
+				for w in e["wants"]:
+					chk.call(BenchData.ITEMS.has(w), "quiere %s" % w)
+		chk.call(Season.schedule_for(d) == sch, "la agenda del día %d es la misma dos veces" % d)
+		for p in Season.pods_for(d):
+			for c in p["contents"]:
+				chk.call(c.has("core") or (c.has("part") and BenchData.PARTS.has(c["part"])) or (c.has("item") and BenchData.FAULTS[c["item"]].has(c["fault"])), "cápsula del día %d" % d)
+	Game.new_game_state()
+	# palabras prohibidas (§10.3) en los textos que se ven
 	var bad := _ip_words()
 	chk.call(bad.is_empty(), "palabras prohibidas: %s" % str(bad))
 	print("SAVETEST %s checks_failed=%d %s" % ["ok" if fails.is_empty() else "FAIL", fails.size(), str(fails)])
 	_quit(0 if fails.is_empty() else 1)
 
-## Busca palabras de la saga en todos los textos de Data (y en los nombres de BenchData).
+## Busca las palabras de la saga (§10.3: palabras enteras, sin mayúsculas salvo "Force") en Data, CastData, SeasonData
+## y Ranking, y los dígitos "42" en las frases.
 func _ip_words() -> Array:
-	var words := ["droid", "jedi", "force", "lightsaber", "blaster", "tatooine", "mos ", "jawa", "tusken", "sandcrawler",
-		"podracer", "speeder", "vaporator", "moisture", "cantina", "hutt", "wookiee", "sith", "rebel", "empire", "galaxy",
-		"skywalker", "r2", "c-3po", "bb-8", "x-wing", "tie fighter", "falcon", "star destroyer"]
+	var words := ["droid", "jedi", "sith", "lightsaber", "blaster", "tatooine", "mos", "jawa", "tusken", "raider",
+		"sand people", "sandcrawler", "podrace", "podracer", "speeder", "landspeeder", "swoop", "vaporator", "moisture farm",
+		"cantina", "hutt", "wookiee", "ewok", "gungan", "holonet", "holocron", "hologram", "holo", "hyperspace", "hyperdrive",
+		"lightspeed", "parsec", "repulsor", "spice", "sabacc", "kessel", "corellian", "mandalorian", "mando", "coruscant",
+		"naboo", "endor", "hoth", "dagobah", "jakku", "skywalker", "kenobi", "falcon", "x-wing", "tie fighter", "death star",
+		"star destroyer", "wayfinder", "outer rim", "mid rim", "inner rim", "core worlds", "wild space", "senate", "empire",
+		"imperial", "rebel", "rebels", "republic", "moff", "trooper", "bounty", "astromech", "protocol bot", "power converter",
+		"bacta", "carbonite", "kyber", "beskar", "nerf", "bantha", "dewback", "krayt", "womp rat", "mynock", "porg", "concord",
+		"hammerhead", "bellwether", "hitchhiker", "fix-it", "saltmarch", "saltmarsh", "dustline", "lumi", "fennick", "collector"]
 	var blob := ""
-	for d in [Data.LINES, Data.MARKET_LINES, Data.TIPS, Data.CAST, Data.PLACES, Data.SPECIES]:
-		blob += JSON.stringify(d).to_lower() + " "
+	for d in [Data.LINES, Data.MARKET_LINES, Data.TIPS, Data.CAST, Data.PLACES, Data.SPECIES, Data.RIDDLES]:
+		blob += JSON.stringify(d) + " "
 	for a in [Data.INTRO, Data.KETTLE_TALK, [Data.KETTLE_TEA, Data.KETTLE_TEA_DONE]]:
-		blob += JSON.stringify(a).to_lower() + " "
+		blob += JSON.stringify(a) + " "
+	var sd: Dictionary = (load("res://scripts/season_data.gd") as Script).get_script_constant_map()
+	for k in sd:
+		blob += JSON.stringify(sd[k]) + " "
+	var rk: Dictionary = (Ranking.get_script() as Script).get_script_constant_map()
+	for k in ["SHOPS", "WORLDS", "BOARD_NAME", "REGION", "SHOW", "REPORT"]:
+		if rk.has(k):
+			blob += JSON.stringify(rk[k]) + " "
+	for k in ["REPORTS", "LINES", "ROSA", "SCANDALS", "HEADLINES", "ADS", "POOLS"]:
+		if rk.has(k):
+			blob += JSON.stringify(rk[k]) + " "
+	if ResourceLoader.exists(Data.CAST_DATA_PATH):
+		var cd: Dictionary = (load(Data.CAST_DATA_PATH) as Script).get_script_constant_map()
+		for k in cd:
+			blob += JSON.stringify(cd[k]) + " "
+	blob = blob.replace("\\n", " ").replace("ship_hammerhead", "")
+	var low := blob.to_lower()
 	var out := []
+	var re := RegEx.new()
 	for w in words:
-		if blob.find(w) >= 0:
+		re.compile("(?<![a-z0-9_])" + w.replace("-", "\\-") + "(?![a-z0-9_])")
+		if re.search(low) != null:
 			out.append(w)
+	re.compile("(?<![A-Za-z])Force(?![A-Za-z])")
+	if re.search(blob) != null:
+		out.append("Force")
+	re.compile("(?<![0-9])42(?![0-9])")
+	var lines_blob := JSON.stringify(Data.LINES) + JSON.stringify(sd.get("BEATS", {})) + JSON.stringify(sd.get("TEXT", {}))
+	if re.search(lines_blob) != null:
+		out.append("42")
 	return out
 
 # ------------------------------------------------------------------ smoke
 
 ## --demo=smoke (sin pantalla): cada pantalla y cada camino corto del flujo, con las pantallas de BENCH por su bot.
+## --- SS2 SEASON: + después de cerrar, el tablero (R), el calendario, Dolly, la vecina, la cuota, la gala, "Keep trading".
 func _smoke() -> void:
 	Engine.time_scale = 4.0
-	_watchdog(120.0)
+	_watchdog(240.0)
+	m.rank.auto = true
+	m.gala.auto = true
 	Game.delete_save()
 	m.show_title()
 	await _wait(0.3)
@@ -382,6 +505,7 @@ func _smoke() -> void:
 	m.screens.press("skip")
 	await _until(func(): return _phase() == "MORNING" and not m.busy, 8.0, "mañana tras la introducción")
 	_expect(Game.save_game() and Game.has_save(), "guardado de la mañana")
+	await _wait(1.0)
 	m.parts_stall()
 	_expect(m.dialogs.is_open() and m.dialogs.buy_part("cell"), "comprar en el puesto de Mags")
 	m.dialogs.choose("close")
@@ -390,6 +514,12 @@ func _smoke() -> void:
 	m.dialogs.choose("pod0")
 	await _bot_ui(m.haggle, "haggle")
 	await _bot_ui(m.pod_ui, "pod", true)
+	m.open_calendar()
+	_expect(m.dialogs.is_open() and String(m.dialogs.spec.get("kind", "")) == "calendar", "el calendario")
+	m.dialogs.choose("close")
+	m.open_rank_board()
+	# (el de RANK, con auto, se cierra solo al rato; el stub enseguida)
+	await _until(func(): return not m.rank.is_open(), 8.0, "el tablero se cierra solo (auto)")
 	m.open_shop()
 	await _until(func(): return _phase() == "OPEN" and not m.busy, 8.0, "abrir la tienda")
 	await _until(func(): return not m.day.waiting_at_counter().is_empty(), 20.0, "el primer cliente en el mostrador")
@@ -399,154 +529,445 @@ func _smoke() -> void:
 	await _bot_ui(m.bench, "bench")
 	await _until(func(): return m.job.is_empty() and not m.busy, 15.0, "entregar la reparación")
 	_expect(int(Game.today.get("repairs", 0)) + int(Game.today.get("failed", 0)) == 1, "una reparación entregada")
+	_expect(int(Game.today.get("served", 0)) == int(Game.today.get("repairs", 0)), "served")
 	m.show_drawer()
 	m.dialogs.choose("close")
 	m.show_shelf()
 	m.dialogs.choose("close")
 	m.open_menu()
-	_expect(m.dialogs.is_open() and m.day.paused, "menú de pausa")
+	_expect(m.dialogs.is_open() and m.day.paused and "calendar" in m.dialogs.option_ids(), "menú de pausa (con el calendario)")
 	m.dialogs.choose("resume")
+	Game.add_junk("radio", "tuner")
 	m.day.force_close()
-	await _until(func(): return _phase() == "NIGHT", 30.0, "el cierre y la noche")
-	_expect(m.screens.current == "ledger", "libro de cuentas")
+	await _until(func(): return _phase() == "NIGHT" and m.dialogs.is_open(), 30.0, "después de cerrar")
+	_expect(String(m.dialogs.spec.get("title", "")) == String(SeasonData.TEXT["after_title"]), "el diálogo de después de cerrar")
+	m.dialogs.choose("sleep")
+	await _until(func(): return m.screens.current == "ledger", 10.0, "libro de cuentas")
+	_expect(String(Game.last_summary.get("board_line", "")) != "", "la fila del tablero en el libro")
 	m.screens.press("next")
-	await _until(func(): return _phase() == "MORNING" and not m.busy, 8.0, "día 2")
-	_expect(Game.day == 2, "día 2")
+	await _until(func(): return _phase() == "MORNING" and not m.busy, 12.0, "día 2")
+	_expect(Game.day == 2 and m.night_boards == 1, "día 2 (un tablero de noche)")
+	# Dolly el día 2
+	await _until(func(): return not m.dialogs.is_open() and not m.busy, 20.0, "la mañana libre")
+	while m.dialogs.is_open():
+		m.dialogs.choose(m.dialogs.option_ids()[0])
+		await _wait(0.3)
+	await _wait(8.0)
+	while m.dialogs.is_open():
+		m.dialogs.choose(m.dialogs.option_ids()[0])
+		await _wait(0.5)
+	Game.add_credits(100)
+	m.fittings_stall()
+	_expect(m.dialogs.is_open() and String(m.dialogs.spec.get("kind", "")) == "fittings", "el patio de Dolly")
+	_expect(m.dialogs.buy_fitting("samovar") and Game.has_fitting("samovar"), "comprar el Samovar")
+	_expect(not m.dialogs.buy_fitting("display"), "el Display Case todavía no (día 3, rep 15)")
+	m.dialogs.choose("close")
+	m.visit_rival()
+	_expect(not m.dialogs.is_open(), "Shine Again todavía cerrada el día 2")
+	# la noche 3: la cuota
+	Season.debug_state(3, "good")
+	Game.credits = 60
+	m.open_shop_now()
+	await _until(func(): return _phase() == "OPEN" and not m.busy, 8.0, "abrir el día 3")
+	m.day.force_close()
+	await _until(func(): return _phase() == "NIGHT", 30.0, "la noche 3")
+	while m.screens.current != "ledger":
+		if m.dialogs.is_open():
+			m.dialogs.choose("sleep")
+		await _wait(0.3)
+	m.screens.press("next")
+	await _until(func(): return m.dialogs.is_open(), 6.0, "la cuota de la noche 3")
+	_expect(m.dialogs.option_ids() == ["pay"], "pagar la cuota")
+	m.dialogs.choose("pay")
+	await _wait(0.4)
+	_expect(Game.debt > 0 and Game.late_marks == 1, "la regla blanda: deuda y LATE (%d cr, %d)" % [Game.debt, Game.late_marks])
+	m.dialogs.choose("ok")
+	await _until(func(): return _phase() == "MORNING" and Game.day == 4 and not m.busy, 12.0, "día 4")
+	# la noche 10: la gala, sin tablero; Keep trading -> el día 11
+	Season.debug_state(10, "good")
+	m.open_shop_now()
+	await _until(func(): return _phase() == "OPEN" and not m.busy, 8.0, "abrir el día 10")
+	m.day.force_close()
+	await _until(func(): return _phase() == "NIGHT", 30.0, "la noche 10")
+	while m.screens.current != "ledger":
+		if m.dialogs.is_open():
+			m.dialogs.choose("sleep")
+		await _wait(0.3)
+	_expect(String(Game.last_summary.get("board_line", "")) == String(SeasonData.TEXT["signal_counting"]), "sin spoiler en el libro de la noche 10")
+	var boards := int(m.night_boards)
+	m.screens.press("next")
+	await _until(func(): return _phase() == "MORNING" and Game.day == 11 and not m.busy, 20.0, "Keep trading: el día 11")
+	_expect(m.galas_played == 1 and int(m.night_boards) == boards and Game.mode == "endless" and Game.ending_seen, "la gala una vez, sin tablero")
 	m.show_closing()
-	_expect(m.screens.current == "closing", "pantalla final")
+	_expect(m.screens.current == "closing", "pantalla final (la vieja)")
 	m.screens.press("title")
 	await _until(func(): return _phase() == "TITLE", 8.0, "volver al título")
 	Game.delete_save()
 	print("SMOKE %s errors=%d frames=%d credits=%d" % ["ok" if m.errors == 0 else "FAIL", m.errors, m.frame, Game.credits])
 	_quit(0 if m.errors == 0 else 1)
 
-# ------------------------------------------------------------------ el bot de los 3 días
+# ------------------------------------------------------------------ el bot de la campaña (--- SS2 SEASON)
 
 var _bot_log := []
+var _trace := OS.get_cmdline_user_args().has("--trace")
+var _stars_by_day := {}      # día -> estrellas del tablero (la tabla de NOTES)
+var _shelf_d8 := -1
 
-## --demo=autoplay [--days=N]: juega la partida entera por el flujo real (como un jugador: camina a cada estación y la
-## usa; las pantallas de BENCH se juegan con su bot_play()). Errores: los del contrato (main.contract_error) y los del
-## flujo (algo que no se abrió, un día que no terminó, un guardado que no vuelve igual).
+## --demo=autoplay [--days=10] [--endless=2] [--bot=perfect|good|human|sloppy] [--seed=N] [--from=N] [--timescale=6]:
+## juega la campaña entera por el flujo real (como un jugador: camina a cada estación y la usa; las pantallas de BENCH
+## con su bot_play(); los diálogos de la temporada con dialogs.choose(); el tablero y la gala con auto). Errores: los
+## del contrato y los del flujo (algo que no se abrió, un día que no terminó, un guardado que no vuelve igual, la
+## cuota que no se cobró, la gala que no se abrió una vez la noche 10).
 func _autoplay() -> void:
-	Engine.time_scale = 6.0
-	_watchdog(900.0)
+	Engine.time_scale = _timescale
+	_watchdog(7200.0)   # (una máquina cargada: hasta 2 h reales)
+	m.rank.auto = true
+	m.gala.auto = true
 	Game.delete_save()
+	var last_day := mini(maxi(1, m.autoplay_days), SeasonData.LAST_DAY) if m.autoplay_days < 99 else SeasonData.LAST_DAY
+	var stop_day := last_day + (_endless if last_day >= SeasonData.LAST_DAY else 0)
 	m.show_title()
 	await _wait(0.4)
-	m.screens.press("new")
-	await _until(func(): return _phase() == "INTRO", 6.0, "la introducción")
-	await _wait(1.5)
-	m.screens.press("skip")
-	var days := mini(maxi(1, m.autoplay_days), Data.DAYS)
-	for d in days:
-		await _until(func(): return _phase() == "MORNING" and not m.busy and m.fade.color.a < 0.5, 10.0, "la mañana del día %d" % (d + 1))
+	if _from > 1:
+		# --from=N: una partida típica en la mañana del día N (Season.debug_state), guardada, y Continue
+		Season.debug_state(_from, "human" if bot == "human" else ("sloppy" if bot == "sloppy" else "good"))
+		Game.resume = "morning"
+		Game.save_game()
+		m.show_title()
+		await _wait(0.3)
+		m.screens.press("continue")
+	else:
+		m.screens.press("new")
+		await _until(func(): return _phase() == "INTRO", 6.0, "la introducción")
+		await _wait(1.5)
+		m.screens.press("skip")
+	var galas_before := int(m.galas_played)
+	var start := Game.day if _from > 1 else 1
+	for d in range(start, stop_day + 1):
+		await _until(func(): return _phase() == "MORNING" and not m.busy and m.fade.color.a < 0.5, 20.0, "la mañana del día %d" % d)
 		if _phase() != "MORNING":
 			break
-		_expect(Game.day == d + 1, "día %d (Game.day=%d)" % [d + 1, Game.day])
-		if d > 0:
-			# la partida se guardó esta mañana: cargarla da lo mismo
-			var cr := Game.credits
-			var parts := Game.parts_total()
-			_expect(Game.can_continue() and Game.load_game() and Game.credits == cr and Game.parts_total() == parts and Game.resume == "morning", "Continue el día %d" % (d + 1))
+		_expect(Game.day == d, "día %d (Game.day=%d)" % [d, Game.day])
+		if d > start:
+			_check_reload(d)
 		await _bot_morning()
-		await _until(func(): return _phase() == "OPEN" and not m.busy, 10.0, "abrir el día %d" % (d + 1))
+		await _until(func(): return _phase() == "OPEN" and not m.busy, 30.0, "abrir el día %d" % d)
+		if d == 8 and _from < 8:   # --- SS2 MERGE: con --from=8 el estante es el del estado típico (no lo llenó el bot)
+			_shelf_d8 = Game.shelf.size()
+			if bot == "good" and _shelf_d8 < 5:
+				_err("el estante tiene %d cosas al abrir el día 8 (el bot good necesita >= 5)" % _shelf_d8)
 		await _bot_open_day()
-		await _until(func(): return _phase() == "NIGHT" and m.screens.current == "ledger", 30.0, "el libro de cuentas del día %d" % (d + 1))
+		await _bot_night()
 		var s: Dictionary = Game.last_summary
-		_expect(int(s.get("day", 0)) == d + 1 and Game.history.size() == d + 1, "resumen del día %d" % (d + 1))
-		var line := "AUTOPLAY day=%d credits=%d rep=%d earned=%d (repairs %d, sales %d, tips %d, job %ds avg) spent=%d repairs=%d stars=%d sales=%d declined=%d walkouts=%d missed=%d pods=%d refurb=%d parts=%d shelf=%d junk=%d tea=%s good=%s" % [
-			Game.day, Game.credits, Game.rep, int(s.get("earned", 0)), int(s.get("repair_pay", 0)), int(s.get("sale_pay", 0)),
-			int(s.get("tips", 0)), int(s.get("job_secs", 0)) / maxi(1, int(s.get("repairs", 0)) + int(s.get("failed", 0))), int(s.get("spent", 0)), int(s.get("repairs", 0)),
-			int(s.get("stars", 0)), int(s.get("sales", 0)), int(s.get("declined", 0)), int(s.get("walkouts", 0)),
-			int(s.get("missed", 0)), int(s.get("pods", 0)), int(s.get("refurbished", 0)), Game.parts_total(), Game.shelf.size(),
-			Game.junk.size(), str(s.get("tea", false)), str(s.get("good", false))]
-		print(line)
-		await _wait(0.6)
-		if d < days - 1 or Game.is_last_day():
-			m.screens.press("next")
-	if Game.is_last_day():
-		await _until(func(): return _phase() == "END" and m.screens.current == "closing", 10.0, "la pantalla final")
-		var t := Game.totals()
-		_expect(not Game.can_continue(), "la partida terminada no se continúa")
-		print("AUTOPLAY end bot=%s dues_met=%s credits=%d/%d repairs=%d stars=%d sales=%d walkouts=%d missed=%d earned=%d spent=%d tips=%d good_days=%d sign=%d" % [bot, str(t["dues_met"]),
-			Game.credits, Game.dues_goal, int(t["repairs"]), int(t["stars"]), int(t["sales"]), int(t["walkouts"]), int(t["missed"]),
-			int(t["earned"]), int(t["spent"]), int(t["tips"]), int(t["good_days"]), int(t["sign_points"])])
+		_expect(int(s.get("day", 0)) == d, "resumen del día %d" % d)
+		var move: Dictionary = s.get("rank", {})
+		_expect(int(move.get("pos", -1)) == Ranking.position(), "el puesto del tablero (%d) == Ranking.position() (%d)" % [int(move.get("pos", -1)), Ranking.position()])
+		_stars_by_day[d] = int(s.get("day_stars", 0))
+		var due_tonight := Season.dues_due(d)
+		var boards_before := int(m.night_boards)
+		var gala_before := int(m.galas_played)
+		var ending := Ranking.ending_due()
 		await _wait(0.5)
-		m.screens.press("title")
-		await _until(func(): return _phase() == "TITLE", 6.0, "volver al título")
+		m.screens.press("next")
+		await _bot_night_chain(d)
+		if due_tonight > 0:
+			_expect(d in Season.state.get("dues_done", []), "la cuota de la noche %d se cobró" % d)
+		if d == SeasonData.LAST_DAY:
+			_expect(ending, "la noche 10 es la noche del cometa")
+			_expect(int(m.galas_played) == gala_before + 1, "la gala se jugó una vez la noche 10 (%d)" % (int(m.galas_played) - gala_before))
+			_expect(int(m.night_boards) == boards_before, "sin tablero de noche la noche 10")
+		elif ending:
+			_expect(int(m.night_boards) == boards_before, "sin tablero la noche de la corona")
+		var line := "CAMPAIGN day=%d event=%s rank=%d stars=%d score=%d credits=%d dues=%s fittings=%d rep=%d tier=%s served=%d walkouts=%d" % [
+			d, Season.event(d) if Season.event(d) != "" else "-", int(move.get("pos", 30)), int(s.get("day_stars", 0)), int(move.get("score", 0)),
+			Game.credits, _dues_word(d), Game.fittings.size(), Game.rep, String(Season.rep_tier()["id"]), int(s.get("served", 0)), int(s.get("walkouts", 0))]
+		print(line)
+		print("ECON day=%d earned=%d repairs=%d sales=%d tips=%d events=%d spent=%d fittings_spent=%d repairs_n=%d sales_n=%d stars_avg=%.2f shelf=%d junk=%d refurb=%d after=%d asis=%d declined=%d missed=%d job_s=%d arrived=%d patched=%d racers=%d/%d" % [
+			d, int(s.get("earned", 0)), int(s.get("repair_pay", 0)), int(s.get("sale_pay", 0)), int(s.get("tips", 0)), int(s.get("event_credits", 0)),
+			int(s.get("spent", 0)), int(s.get("fittings_spent", 0)), int(s.get("repairs", 0)), int(s.get("sales", 0)),
+			float(s.get("avg_stars_x10", 0)) / 10.0, Game.shelf.size(), Game.junk.size(), int(s.get("refurbished", 0)), int(s.get("after_hours", 0)),
+			int(s.get("asis", 0)), int(s.get("declined", 0)), int(s.get("missed", 0)),
+			int(s.get("job_secs", 0)) / maxi(1, int(s.get("repairs", 0)) + int(s.get("failed", 0))), int(s.get("arrived", 0)), int(s.get("patched", 0)),
+			int(s.get("racers", 0)), int(s.get("racer_stars", 0))])
+		if _phase() == "TITLE":
+			break
+	_expect(int(m.galas_played) - galas_before <= 2, "la gala se jugó %d veces" % (int(m.galas_played) - galas_before))
+	# el final: menú -> volver al título
+	await _until(func(): return _phase() == "MORNING" and not m.busy and m.fade.color.a < 0.5, 20.0, "la última mañana")
+	if _phase() == "MORNING":
+		m.open_menu()
+		await _wait(0.2)
+		_expect(m.dialogs.is_open(), "el menú")
+		m.dialogs.choose("title")
+		await _until(func(): return _phase() == "TITLE", 8.0, "volver al título")
+	var tt := Game.totals()
+	print("CAMPAIGN end bot=%s seed=%d rank=%d award=%s dues_on_time=%d/3 fittings=%d sign=%d cores=%d score=%d best_rank=%d errors=%d" % [
+		bot, _seed_arg, Ranking.position(), String(Ranking.award().get("id", "")), Season.dues_on_time(), Game.fittings.size(),
+		Game.sign_points, int(Game.flag("cores", 0)), Ranking.score(), int(Ranking.get("best_pos") if Ranking.get("best_pos") != null else 0), m.errors])
+	var st: Array = []
+	for d in _stars_by_day:
+		st.append("%d:%d" % [d, int(_stars_by_day[d])])
+	print("STARS bot=%s seed=%d %s" % [bot, _seed_arg, " ".join(st)])
+	print("FLAGS %s" % JSON.stringify(Game.flags))
 	Game.delete_save()
-	print("AUTOPLAY done days=%d errors=%d pace=%s bot=%s log=%s" % [days, m.errors, pace, bot, str(_bot_log)])
+	print("AUTOPLAY done days=%d errors=%d pace=%s bot=%s log=%s" % [_stars_by_day.size(), m.errors, pace, bot, str(_bot_log)])
 	_quit(0 if m.errors == 0 else 1)
 
-## La mañana: una cápsula (la más pesada que alcance), una pieza de Mags si sobra, y abrir.
+func _dues_word(d: int) -> String:
+	if Season.dues_of(d) <= 0:
+		return "-"
+	return "paid" if d in Game.dues_paid else "late"
+
+## La partida de esta mañana se guardó: cargarla da lo mismo (créditos, piezas, mejoras, puesto, marcas).
+func _check_reload(d: int) -> void:
+	var before := {"credits": Game.credits, "parts": Game.parts_total(), "fittings": Game.fittings.duplicate(),
+		"pos": Ranking.position(), "score": Ranking.score(), "flags": JSON.stringify(Game.flags), "day": Game.day,
+		"pods": JSON.stringify(Game.pods_today), "rep": Game.rep}
+	if not (Game.can_continue() and Game.load_game()):
+		_err("Continue el día %d: no cargó" % d)
+		return
+	var after := {"credits": Game.credits, "parts": Game.parts_total(), "fittings": Game.fittings.duplicate(),
+		"pos": Ranking.position(), "score": Ranking.score(), "flags": JSON.stringify(Game.flags), "day": Game.day,
+		"pods": JSON.stringify(Game.pods_today), "rep": Game.rep}
+	for k in before:
+		if str(before[k]) != str(after[k]):
+			_err("Continue el día %d: %s %s != %s" % [d, k, str(before[k]), str(after[k])])
+	_expect(Game.resume == "morning", "Continue el día %d: resume=%s" % [d, Game.resume])
+
+## Responde lo que esté abierto mientras espera algo (momentos, la cuota, después de cerrar, el banco de noche...).
+func _bot_any_ui() -> bool:
+	if _trace and (m.dialogs.is_open() or (m.bench != null and m.bench.is_open())):
+		_tr("ui dialog=%s %s" % [str(m.dialogs.is_open()), str(m.dialogs.option_ids()) if m.dialogs.is_open() else ""])
+	if m.bench != null and m.bench.is_open():
+		await _bot_ui(m.bench, "bench")
+		return true
+	if m.haggle != null and m.haggle.is_open():
+		await _bot_ui(m.haggle, "haggle")
+		return true
+	if m.pod_ui != null and m.pod_ui.is_open():
+		await _bot_ui(m.pod_ui, "pod", true)
+		return true
+	if m.dialogs.is_open():
+		await _wait(0.3)
+		if m.dialogs.is_open():
+			_bot_dialog()
+		return true
+	return false
+
+## La mañana: los momentos de historia, las cápsulas, Mags (+ lo de "tal cual"), Dolly, el tablón (el día 2), abrir.
 func _bot_morning() -> void:
 	var st: StreetWorld = m.street
-	# --- SS MERGE: las cápsulas según el perfil (una o dos: la segunda si sobra para una pieza y un margen)
-	var tries := 0
-	while not Game.pods_today.is_empty() and String(prof["pods"]) != "none" and tries < 2:
-		tries += 1
-		if tries == 2 and (String(prof["pods"]) != "best" or Game.credits < 60):
+	# los avisos y los momentos de la mañana (aparecen solos al rato): esperarlos y contestarlos
+	var t := 0.0
+	while t < 40.0:
+		if await _bot_any_ui():
+			t = 0.0
+			continue
+		if Season.beats(Game.day, "morning").is_empty() and t > 1.0:
 			break
-		if await st.walker.go_station("pods"):
-			m.use_station("pods")
-			await _wait(0.2)
-			if m.dialogs.is_open():
-				var best := ""
-				var best_w := -1
-				for i in Game.pods_today.size():
-					var p: Dictionary = Game.pods_today[i]
-					var ask := int(round(float(p.get("price", 30)) * float(BenchData.HAGGLE["duneraker"]["ask"])))
-					if String(prof["pods"]) == "first":
-						if Game.credits >= ask:
-							best = "pod%d" % i
-							break
-					elif int(p.get("weight", 1)) > best_w and Game.credits >= int(p.get("price", 30)) + 4:
-						best_w = int(p.get("weight", 1))
-						best = "pod%d" % i
-				m.dialogs.choose(best if best != "" else "later")
-				if best != "":
-					await _bot_ui(m.haggle, "haggle")
-					await _bot_ui(m.pod_ui, "pod", true)
-				else:
-					break
-			elif Game.credits >= 20:
+		await _wait(0.25)
+		t += 0.25
+	# Dolly primero (las mejoras son para toda la temporada), con la reserva para la próxima cuota; la víspera de
+	# Bronzemoon los que guardan el estante (eve_hold) van primero a Mags y a las cápsulas y a Dolly después
+	var festival_eve := Season.event(Game.day + 1) == "festival"
+	var stock_first := festival_eve and bool(prof.get("eve_hold", false))
+	if not stock_first:
+		await _bot_dolly()
+	if festival_eve:
+		await _bot_mags()
+	# las cápsulas según el perfil (la de regalo siempre; una o dos: la segunda si sobra para una pieza y un margen)
+	var tries := 0
+	while not Game.pods_today.is_empty() and String(prof["pods"]) != "none" and tries < 3:
+		tries += 1
+		var has_gift := false
+		for p in Game.pods_today:
+			if String(p.get("kind", "")) == "charity":
+				has_gift = true
+		if tries >= 2 and not has_gift and (String(prof["pods"]) != "best" or Game.credits < 60):
+			break
+		if not await _walk("pods"):
+			break
+		m.use_station("pods")
+		await _wait(0.2)
+		if not m.dialogs.is_open():
+			if Game.credits >= 20:
 				_err("el puesto de cápsulas no abrió su diálogo")
-	# --- end SS MERGE
-	if bool(prof["parts"]) and Game.credits >= 45:   # (--- SS MERGE: según el perfil)
-		if await st.walker.go_station("parts"):
-			m.use_station("parts")
-			await _wait(0.2)
-			if m.dialogs.is_open():
-				# lo que más falta: la pieza de la que menos hay (entre las que más se rompen); hasta dos si sobra
-				# (--- SS MERGE: dos, y solo con margen: las piezas son baratas pero la cuota manda)
-				for k in 2:
-					var want := "cell"
-					for p in ["cell", "chip", "lens", "tuner", "coil", "servo", "fan"]:
-						if Game.part_count(p) < Game.part_count(want):
-							want = p
-					if Game.part_count(want) > 0 or Game.credits < 40 + BenchData.part_price(want):
-						break
-					if not m.dialogs.buy_part(want):
-						_err("no se pudo comprar %s con %d cr" % [want, Game.credits])
-					await _wait(0.2)
-				m.dialogs.choose("close")
-			else:
-				_err("el puesto de Mags no abrió")
-	if await st.walker.go_station("door"):
+			break
+		var best := ""
+		var best_w := -1
+		var gift := false
+		for i in Game.pods_today.size():
+			var p: Dictionary = Game.pods_today[i]
+			if String(p.get("kind", "")) == "charity":
+				best = "pod%d" % i
+				gift = true
+				break
+			var ask := int(round(float(p.get("price", 30)) * float(BenchData.HAGGLE["duneraker"]["ask"])))
+			if _dues_guard(int(p.get("price", 30))):
+				continue
+			if String(prof["pods"]) == "first":
+				if Game.credits >= ask:
+					best = "pod%d" % i
+					break
+			elif int(p.get("weight", 1)) > best_w and Game.credits >= int(p.get("price", 30)) + 4:
+				best_w = int(p.get("weight", 1))
+				best = "pod%d" % i
+		m.dialogs.choose(best if best != "" else "later")
+		if best == "":
+			break
+		if not gift:
+			await _bot_ui(m.haggle, "haggle")
+		await _bot_ui(m.pod_ui, "pod", true)
+		_bot_log.append("pod d%d %s" % [Game.day, "gift" if gift else best])
+	if not festival_eve:
+		await _bot_mags()
+	if stock_first:
+		await _bot_dolly()
+	# el tablón de anuncios (el calendario) una vez, el día 2; la vecina el día 3
+	if Game.day == 2 and await _walk("board"):
+		m.use_station("board")
+		await _wait(0.3)
+		_expect(m.dialogs.is_open() and String(m.dialogs.spec.get("kind", "")) == "calendar", "el calendario del tablón")
+		m.dialogs.choose("close")
+	if Game.day == 3 and await _walk("rival"):
+		m.use_station("rival")
+		await _wait(0.3)
+		_expect(m.dialogs.is_open(), "la visita a Shine Again")
+		m.dialogs.choose("ok")
+	while await _bot_any_ui():
+		pass
+	if await _walk("door"):
 		m.use_station("door")
 	else:
 		_err("no llegó a la puerta")
 
-## El día abierto: atender el mostrador, el banco, el té y lo roto de las cápsulas hasta que cierre.
+func _tr(msg: String) -> void:
+	if _trace:
+		print("TRACE d%d %s %s" % [Game.day, _phase(), msg])
+
+## Dolly: las mejoras según el perfil, guardando para la próxima cuota.
+func _bot_dolly() -> void:
+	if Season.is_unlocked("vendor") and String(prof.get("fittings", "")) != "":
+		var cand := _fitting_to_buy()
+		if cand != "":
+			if await _walk("fittings"):
+				m.use_station("fittings")
+				await _wait(0.3)
+				if m.dialogs.is_open() and String(m.dialogs.spec.get("kind", "")) == "fittings":
+					var bought := 0
+					while cand != "" and (String(prof["fittings"]) != "max1" or bought < 1):
+						if not m.dialogs.buy_fitting(cand):
+							_err("Dolly no vendió %s con %d cr" % [cand, Game.credits])
+							break
+						bought += 1
+						_bot_log.append("fit d%d %s" % [Game.day, cand])
+						await _wait(0.2)
+						cand = _fitting_to_buy()
+					m.dialogs.choose("close")
+				else:
+					_err("el patio de Dolly no abrió")
+
+## Mags: las piezas que faltan (con margen) y lo de "tal cual" si el estante está flaco (o la víspera de Bronzemoon).
+func _bot_mags() -> void:
+	if bool(prof["parts"]) or bool(prof.get("asis", false)):
+		if await _walk("parts"):
+			m.use_station("parts")
+			await _wait(0.2)
+			if m.dialogs.is_open():
+				if bool(prof["parts"]) and Game.credits >= 45:
+					var stock: Array = []
+					for e in m.dialogs.spec.get("stock", []):
+						stock.append(String(e["part"]))
+					for k in 2:
+						var want := ""
+						for p in ["cell", "chip", "lens", "tuner", "coil", "servo", "fan", "speaker", "nozzle", "drum", "coingate", "gyro", "needle"]:
+							if p in stock and (want == "" or Game.part_count(p) < Game.part_count(want)):
+								want = p
+						if want == "" or Game.part_count(want) > 0 or Game.credits < 40 + BenchData.part_price(want) + _reserve_now() * 0.2:
+							break
+						if not m.dialogs.buy_part(want):
+							_err("no se pudo comprar %s con %d cr" % [want, Game.credits])
+						await _wait(0.2)
+				# lo de "tal cual": con el estante flaco, o la víspera de Bronzemoon (Kettle: "Fill the shelf!")
+				if bool(prof.get("asis", false)) and (Game.shelf.size() < 3 or Season.event(Game.day + 1) == "festival"):
+					var asis: Array = m.dialogs.spec.get("asis", [])
+					for k in asis.size():
+						if Game.shelf.size() + Game.junk.size() >= (7 if Season.event(Game.day + 1) == "festival" else 4):
+							break
+						var cushion := 0 if Season.event(Game.day + 1) == "festival" else 30 + int(_reserve_now() * 0.3)
+						if Game.credits >= int(asis[k]["price"]) + cushion and not _dues_guard(int(asis[k]["price"])):
+							if m.dialogs.buy_asis(k):
+								_bot_log.append("asis d%d %s" % [Game.day, String(asis[k]["item"])])
+						await _wait(0.2)
+				m.dialogs.choose("close")
+			else:
+				_err("el puesto de Mags no abrió")
+
+## Camina a una estación de la calle o la tienda (contestando lo que se abra por el camino).
+func _walk(id: String) -> bool:
+	_tr("walk " + id)
+	for k in 3:
+		while await _bot_any_ui():
+			pass
+		if m.world == null:
+			return false
+		if await m.world.walker.go_station(id):
+			if not m.modal_open():
+				return true
+		await _wait(0.2)
+	return false
+
+## Cuánto guardar para la próxima cuota: la cuota menos el 70 % de lo que espera ganar hasta esa noche (§8.14).
+## La noche de la cuota (3, 6, 9) los perfiles que planean (dues_guard) no gastan en cápsulas ni en lo de "tal cual"
+## lo que les haga falta esta noche (la cuota menos el 70 % de lo que esperan ganar hoy): el HUD la muestra todo el día.
+func _dues_guard(price: int) -> bool:
+	if not bool(prof.get("dues_guard", false)):
+		return false
+	if int(Season.next_dues()["night"]) != Game.day:
+		return false
+	return float(Game.credits - price) < _reserve_now()
+
+func _reserve_now() -> float:
+	var nd := Season.next_dues()
+	if int(nd["night"]) <= 0:
+		return 0.0
+	var days_left := maxi(1, int(nd["night"]) - Game.day + 1)
+	return maxf(0.0, float(int(nd["amount"]) + int(nd["debt"])) - 0.7 * float(prof.get("income", 100.0)) * days_left)
+
+## La próxima mejora que compraría este perfil ("" = ninguna hoy).
+func _fitting_to_buy() -> String:
+	var mode := String(prof.get("fittings", "order"))
+	for f in Season.fittings_on_sale():
+		if bool(f["owned"]) or bool(f["locked"]):
+			continue
+		if mode == "basic" and not (String(f["id"]) in ["samovar", "seats"]):
+			continue
+		if Game.credits - int(f["cost"]) >= _reserve_now() + 40.0:   # (40: lo de las cápsulas de hoy)
+			return String(f["id"])
+		return ""   # en orden: si la primera que falta no alcanza, espera
+	return ""
+
+## El día abierto: atender el mostrador, el banco, el té, lo roto de las cápsulas, cerrar antes si se puede.
 func _bot_open_day() -> void:
 	var sh: ShopWorld = m.shop
 	var guard := 0
 	while _phase() == "OPEN":
 		guard += 1
-		if guard > 6000:
+		if guard > 9000:
 			_err("el día abierto no termina")
 			return
 		await _wait(0.25)
+		if _trace and guard % 20 == 0:
+			_tr("open busy=%s menu=%s job=%s dlg=%s bench=%s line=%d counter=%s min=%d running=%s closing=%s pend=%d walking=%s cur=%s" % [
+				str(m.busy), str(m.menu_open), str(m.job.get("stage", "")), str(m.dialogs.is_open()), str(m.bench.is_open()),
+				m.day.line_count(), str(m.day.counter.get("state", "-")), m.day.minutes(), str(m.day.running), str(m.day.closing),
+				m.day.pending_arrivals(), str(sh.walker.is_walking()), sh.walker.current])
+		# (un momento de historia abre su diálogo con busy = true: se contesta igual, como lo haría una persona)
+		if m.dialogs.is_open():
+			await _wait(0.2)
+			if m.dialogs.is_open():
+				_bot_dialog()
+			continue
 		if m.busy or m.menu_open:
 			continue
 		if m.bench.is_open():
@@ -554,9 +975,6 @@ func _bot_open_day() -> void:
 			continue
 		if m.haggle.is_open():
 			await _bot_ui(m.haggle, "haggle")
-			continue
-		if m.dialogs.is_open():
-			_bot_dialog()
 			continue
 		if not m.job.is_empty():
 			var stage := String(m.job.get("stage", ""))
@@ -568,7 +986,7 @@ func _bot_open_day() -> void:
 			continue
 		if not m.day.waiting_at_counter().is_empty():
 			if float(prof["react"]) > 0.0:
-				await _wait(float(prof["react"]) * _rng.randf_range(0.7, 1.3))   # --- SS MERGE: lo que tarda en reaccionar
+				await _wait(float(prof["react"]) * _rng.randf_range(0.7, 1.3))
 			if await sh.walker.go_station("counter"):
 				m.use_station("counter")
 			continue
@@ -577,6 +995,15 @@ func _bot_open_day() -> void:
 			if await sh.walker.go_station("tea"):
 				m.use_station("tea")
 				_bot_log.append("tea day %d" % Game.day)
+			continue
+		# cerrar antes (desde las 4 PM, sin nadie más)
+		if bool(prof.get("close", false)) and m._can_close_early():
+			if await sh.walker.go_station("counter"):
+				m.use_station("counter")
+				await _wait(0.2)
+				if m.dialogs.is_open():
+					m.dialogs.choose("close")
+					_bot_log.append("close d%d %s" % [Game.day, Hud.clock_text(m.day.minutes())])
 			continue
 		# lo roto de las cápsulas: si no hay nadie en camino al mostrador
 		if bool(prof["refurb"]) and not Game.junk.is_empty() and m.day.counter.is_empty() and m.day.line_count() == 0 and not m.day.closing:
@@ -587,23 +1014,86 @@ func _bot_open_day() -> void:
 		if sh.walker.current != "counter" and not sh.walker.is_walking():
 			sh.walker.go_station("counter")
 
-## Elige en el diálogo abierto como un jugador razonable.
+## La noche hasta el libro de cuentas: después de cerrar (los arreglos de noche según el perfil).
+func _bot_night() -> void:
+	var t := 0.0
+	var fixed := 0
+	while t < 120.0:
+		if _phase() == "NIGHT" and m.screens.current == "ledger":
+			return
+		if m.bench != null and m.bench.is_open():
+			await _bot_ui(m.bench, "bench")
+			fixed += 1
+			t = 0.0
+			continue
+		if m.dialogs.is_open():
+			await _wait(0.3)
+			if not m.dialogs.is_open():
+				continue
+			var ids: Array = m.dialogs.option_ids()
+			if "sleep" in ids:
+				var pick := "sleep"
+				if fixed < int(prof.get("after", 2)) + int(SeasonData.AFTER_HOURS_BONUS.get(Game.day, 0)):
+					for id in ids:
+						if String(id).begins_with("j"):
+							pick = String(id)
+							break
+				m.dialogs.choose(pick)
+			else:
+				_bot_dialog()
+			t = 0.0
+			continue
+		await _wait(0.25)
+		t += 0.25
+	_err("el libro de cuentas del día %d no apareció (fase %s)" % [Game.day, _phase()])
+
+## Después del libro de cuentas: la cuota, el tablero (auto), los momentos de la noche, la gala, hasta la mañana.
+func _bot_night_chain(d: int) -> void:
+	var t := 0.0
+	while t < 90.0:
+		if (_phase() == "MORNING" and Game.day == d + 1 and not m.busy) or _phase() == "TITLE":
+			return
+		if m.dialogs.is_open():
+			await _wait(0.3)
+			if m.dialogs.is_open():
+				_bot_dialog()
+			t = 0.0
+			continue
+		await _wait(0.25)
+		t += 0.25
+	_err("la noche %d no terminó (fase %s)" % [d, _phase()])
+
+## Elige en el diálogo abierto como un jugador razonable (los momentos: la primera opción o al azar, según el perfil).
 func _bot_dialog() -> void:
 	var ids: Array = m.dialogs.option_ids()
 	var kind := String(m.dialogs.spec.get("kind", ""))
-	if kind in ["info", "parts"]:
+	if kind in ["info", "parts", "fittings", "calendar"]:
 		m.dialogs.choose("close")
 		return
 	if kind == "menu":
 		m.dialogs.choose("resume")
 		return
-	if "repair" in ids:
-		m.dialogs.choose("repair")
+	if String(m.dialogs.spec.get("beat", "")) != "":
+		var pick: String = ids[0] if not ids.is_empty() else ""
+		if String(prof.get("beats", "first")) == "random" and ids.size() > 1:
+			pick = String(ids[_rng.randi() % ids.size()])
+		_bot_log.append("beat %s=%s" % [String(m.dialogs.spec["beat"]), pick])
+		m.dialogs.choose(pick)
 		return
+	for want in ["pay", "ok", "close", "repair"]:
+		if want in ids:
+			m.dialogs.choose(want)
+			return
+	# la víspera de Bronzemoon el bueno guarda el estante para mañana (60 % compradores, venta x1.2; el calendario lo dice)
+	var eve_hold := bool(prof.get("eve_hold", false)) and Season.event(Game.day + 1) == "festival" and Game.shelf.size() <= 5 and "none" in ids
 	for id in ids:
-		if String(id).begins_with("sell"):
+		if String(id).begins_with("sell") and not eve_hold:
 			m.dialogs.choose(id)
 			return
+	if eve_hold and ids.any(func(x): return String(x).begins_with("sell")):
+		_bot_log.append("eve hold d%d" % Game.day)
+		m.dialogs.choose("none")
+		return
 	for id in ids:
 		if String(id).begins_with("j"):
 			m.dialogs.choose(id)
@@ -627,10 +1117,13 @@ func _bot_ui(ui, what: String, optional := false) -> void:
 			_err("%s: no se abrió" % what)
 		return
 	await _wait(0.3)
+	var w := float(prof["wait"].get(what, 0.0))
+	if what == "bench" and m.job.get("item", "") != "" and Season.family_jobs(String(m.job["item"])) < 2:
+		w *= float(prof.get("think_first", 1.0))   # el humano piensa más los dos primeros de cada familia
 	if pace == "real":
 		await _wait(float(PACE_REAL.get(what, 2.0)) * _rng.randf_range(0.8, 1.2))
-	elif float(prof["wait"].get(what, 0.0)) > 0.0:
-		await _wait(float(prof["wait"][what]) * _rng.randf_range(0.85, 1.15))   # --- SS MERGE: el perfil
+	elif w > 0.0:
+		await _wait(w * _rng.randf_range(0.85, 1.15))
 	if not ui.is_open():
 		return
 	if what in ["bench", "haggle"]:

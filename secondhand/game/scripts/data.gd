@@ -11,8 +11,9 @@ const SHOP_NAME := "The Secondhand Star"
 const PORT_NAME := "Rustwater"
 const PLANET_NAME := "Saffra"
 
-# --- el prototipo: 3 días, pagar la cuota del puerto (dock dues) al final del día 3 --------------------------------
-const DAYS := 3
+# --- el prototipo eran 3 días; --- SS2 SEASON: la campaña tiene SeasonData.LAST_DAY (10) y las cuotas van en tres
+# partes (SeasonData.DUES). DUES_GOAL queda para las partidas viejas (el número de la barra lo da Season.next_dues()).
+const DAYS := 10
 const DUES_GOAL := 300
 const DAY_SECONDS := 300.0        # el día abierto dura 5 minutos reales
 const OPEN_MIN := 540             # 9:00 AM
@@ -50,8 +51,8 @@ const PLACES := {
 	"port": {"name": "Rustwater", "about": "A dusty spaceport on the desert planet Saffra."},
 }
 
-## Especies (la paciencia es un factor: 1.0 = normal).
-const SPECIES := {
+## Especies (la paciencia es un factor: 1.0 = normal). --- SS2 SEASON: BASE_SPECIES + las de CastData (var SPECIES).
+const BASE_SPECIES := {
 	"human": {"name": "Human", "patience": 1.0},
 	"bot": {"name": "Bot", "patience": 1.2},
 	"hornback": {"name": "Hornback", "patience": 1.3},
@@ -64,7 +65,8 @@ const SPECIES := {
 ## El elenco: una hoja de 64x96 cada uno en assets/chars/<id>_idle.png (2 cuadros) y <id>_walk.png (4 cuadros).
 ## role: player | sidekick | customer | market. brings: lo que trae roto; buys: lo que compra del estante.
 ## patience: factor propio (además del de la especie; Rook: su nave sale pronto).
-const CAST := {
+## --- SS2 SEASON: BASE_CAST + los de CastData (scripts/cast_data.gd, de BENCH) en la var CAST (ver _init).
+const BASE_CAST := {
 	"nell": {"name": "Nell", "species": "human", "role": "player",
 		"about": "A young mechanic. Buys junk at dawn, fixes it, sells it secondhand."},
 	"kettle": {"name": "Kettle", "species": "bot", "role": "sidekick",
@@ -86,16 +88,17 @@ const CAST := {
 	"mags": {"name": "Mags", "species": "human", "role": "market",
 		"about": "A stocky parts seller with a welding visor pushed up. Fixed prices."},
 }
-const CUSTOMERS := ["gorrum", "zib", "oona", "pipip", "rook", "clatter"]
+const BASE_CUSTOMERS := ["gorrum", "zib", "oona", "pipip", "rook", "clatter"]
 const MARKET_CAST := ["raker", "mags"]
 ## Todos los ids con hoja de personaje (el arte de ART llega con estos nombres).
-const CHAR_IDS := ["nell", "kettle", "gorrum", "zib", "oona", "pipip", "rook", "clatter", "raker", "mags"]
+const BASE_CHAR_IDS := ["nell", "kettle", "gorrum", "zib", "oona", "pipip", "rook", "clatter", "raker", "mags"]
 
 ## Lo que dice cada cliente. bring: al traer algo roto (por familia); buy: al pedir algo del estante;
 ## thanks: al recibir la reparación según las estrellas (0..3); failed: si Nell no pudo; angry: se cansó de esperar;
 ## decline: Nell no puede atenderlo; sold / nodeal / none: la venta (hecha, sin trato, no hay nada en el estante);
 ## full: la fila está llena; home: dieron las 6 y se va a casa.
-const LINES := {
+## --- SS2 SEASON: BASE_LINES + las de CastData en la var LINES.
+const BASE_LINES := {
 	"gorrum": {
 		"bring": {"radio": "My radio is sick. Fix it. Not fast. Right.",
 			"thruster": "Thruster. My hoverbike sulks. Gorrum does not like sulking."},
@@ -228,12 +231,8 @@ const KETTLE_TALK := [
 const KETTLE_TEA := "Kettle pours tea for everyone in line."
 const KETTLE_TEA_DONE := "Tea's done for today. Kettle needs a nap."
 
-## La introducción (3 frases sobre el anillo de restos y la lluvia de chatarra).
-const INTRO := [
-	"Every night, the old shipyard in the sky drops a little more of itself on Saffra.",
-	"At dawn, scavengers sell what fell. Nell fixes it and sells it secondhand.",
-	"Rustwater's landlord wants 300 credits of dock dues in three days. No pressure.",
-]
+## La introducción. --- SS2 SEASON: las 4 líneas de la temporada (SeasonData.INTRO).
+const INTRO := SeasonData.INTRO
 
 ## Consejos del primer día (cada uno sale una sola vez por partida). {key} = la tecla de interactuar del aparato.
 const TIPS := {
@@ -320,13 +319,84 @@ func line(who: String, key: String, extra = null) -> String:
 			"nodeal": "No deal.", "none": "Nothing? Okay.", "full": "Too busy.", "home": "Closed? Tomorrow."}.get(key, "...")
 	return str(v)
 
-## La agenda de un día (1..DAYS): copia, ordenada por hora de llegada.
+## La agenda de un día. --- SS2 SEASON: la arma Season (días 1-3 = SCHEDULE + invitados; 4+ generada).
 func schedule_for(day: int) -> Array:
-	var i := clampi(day - 1, 0, SCHEDULE.size() - 1)
-	var out: Array = SCHEDULE[i].duplicate(true)
-	out.sort_custom(func(a, b): return float(a["t"]) < float(b["t"]))
-	return out
+	return Season.schedule_for(day)
 
-## Un consejo con las teclas del aparato en uso.
+## Un consejo con las teclas del aparato en uso. --- SS2 SEASON: también los de la temporada (SeasonData.TIPS);
+## {board} = la tecla del tablero (R o Y).
 func tip(key: String, interact := "E", walk := "A/D") -> String:
-	return String(TIPS.get(key, "")).replace("{key}", "[%s]" % interact).replace("{walk}", walk)
+	var t := String(TIPS.get(key, SeasonData.TIPS.get(key, "")))
+	return t.replace("{key}", "[%s]" % interact).replace("{walk}", walk).replace("{board}", "[%s]" % ("Y" if PadCursor.pad_in_use else "R"))
+
+# --- SS2 SEASON: el elenco de la temporada ------------------------------------------------------------------------
+## Data junta su elenco con el de CastData (scripts/cast_data.gd, de la línea BENCH; se lee por ruta).
+const CAST_DATA_PATH := "res://scripts/cast_data.gd"
+var SPECIES := {}
+var CAST := {}
+var LINES := {}
+var CUSTOMERS: Array = []
+var CHAR_IDS: Array = []
+var RIDDLES := {}
+var has_cast_data := false
+
+func _init() -> void:
+	SPECIES = BASE_SPECIES.duplicate(true)
+	CAST = BASE_CAST.duplicate(true)
+	LINES = BASE_LINES.duplicate(true)
+	CUSTOMERS = BASE_CUSTOMERS.duplicate()
+	CHAR_IDS = BASE_CHAR_IDS.duplicate()
+	var extra := {}
+	if ResourceLoader.exists(CAST_DATA_PATH):
+		var sc = load(CAST_DATA_PATH)
+		if sc is Script:
+			extra = (sc as Script).get_script_constant_map()
+			has_cast_data = extra.has("CAST")
+	if not has_cast_data:
+		push_error("Data: falta scripts/cast_data.gd (el elenco de la ronda 2)")
+	for k in extra.get("SPECIES", {}):
+		SPECIES[k] = extra["SPECIES"][k]
+	for k in extra.get("CAST", {}):
+		CAST[k] = extra["CAST"][k]
+		if not CHAR_IDS.has(k):
+			CHAR_IDS.append(k)
+		var role := String(extra["CAST"][k].get("role", ""))
+		if role == "customer" and not CUSTOMERS.has(k):
+			CUSTOMERS.append(k)
+	for k in extra.get("LINES", {}):
+		LINES[k] = extra["LINES"][k]
+	# los de siempre con las familias nuevas (CastData.CAST_ADD: se SUMAN a brings / buys; LINES_ADD: se juntan las
+	# frases por clave, p. ej. la de Oona cuando trae la rocola)
+	var add: Dictionary = extra.get("CAST_ADD", {})
+	for k in add:
+		if not CAST.has(k):
+			continue
+		var row: Dictionary = CAST[k]
+		for key in ["brings", "buys"]:
+			var arr: Array = (row.get(key, []) as Array).duplicate()
+			for it in add[k].get(key, []):
+				if not arr.has(it):
+					arr.append(it)
+			row[key] = arr
+	var ladd: Dictionary = extra.get("LINES_ADD", {})
+	for k in ladd:
+		var d: Dictionary = LINES.get(k, {}).duplicate(true)
+		for key in ladd[k]:
+			var v = ladd[k][key]
+			if v is Dictionary and d.get(key, null) is Dictionary:
+				var merged: Dictionary = (d[key] as Dictionary).duplicate()
+				merged.merge(v, true)
+				d[key] = merged
+			else:
+				d[key] = v
+		LINES[k] = d
+	for k in extra.get("NEW_CHAR_IDS", []):
+		if CAST.has(k) and not CHAR_IDS.has(k):
+			CHAR_IDS.append(k)
+	RIDDLES = extra.get("RIDDLES", {})
+
+## El acertijo de Old Seven para una falla ("" si no hay): la nota del cliente con el rótulo "A RIDDLE".
+func riddle(item: String, fault: String) -> String:
+	return String(RIDDLES.get(item, RIDDLES.get("radio", {})).get(fault, ""))
+
+# --- SS2 MERGE: los stubs del elenco (CAST2_STUB*, RIDDLES_STUB) se borraron: CastData existe en el árbol unido.

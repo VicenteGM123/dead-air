@@ -23,6 +23,15 @@ class_name BenchUI
 ## principal, P parche, flechas / WASD el soldador, Esc rendirse (pide confirmación); mando: el cursor de PadCursor
 ## (LB / RB saltan entre botones y zócalos, A toca, X = Espacio, B = Esc), el stick mueve el soldador.
 ## Se arma UNA vez en _ready (abrir el banco no crea nodos ni carga texturas: sin tirones).
+## --- SS2 BENCH: claves opcionales del trabajo (el contrato open / finished / close_now / bot_play no cambia):
+##   "graded": true   un sello GRADED sobre la nota y Kettle "Tolle's watching. Steady." (la inspección)
+##   "aids": {"zone_k", "pad_k", "solder_add", "sweep_k"}   las ayudas de las mejoras (zona verde más ancha, puntos
+##                    más grandes, segundos de más para soldar, aguja más lenta)
+##   "riddle": true   la nota es un acertijo de Old Seven (cabecera "A RIDDLE"; el texto de CastData.RIDDLES salvo que
+##                    el trabajo traiga "riddle_text")
+##   "label" / "sub"  el nombre y la línea de la cabecera (Clatter, "Buff's buffer"); con "label" y sin "self" la cosa
+##                    no habla (el pulidor de Buff no dice nada); "power": la frase al probarla (si no, la de la familia)
+##   El efecto al probarla sale de BenchData.ITEMS[item].power_fx (notes | flame | lights | stars | "").
 
 signal finished(result: Dictionary)
 
@@ -66,6 +75,13 @@ var _tutorial := false
 var _self := false            # --- SS MERGE: el trabajo es el propio cliente (Clatter)
 var _head_verb: Label         # --- SS SHIP: "REPAIR" o "REFURBISH"
 var _ticket_hdr: Label        # --- SS SHIP: "CUSTOMER NOTE" o "POD FIND"
+# --- SS2 BENCH
+var _graded := false          # trabajo calificado (la inspección)
+var _riddle := false          # la nota es un acertijo
+var _mute := false            # la cosa no habla (un "label" que no es el propio cliente)
+var _aids := {}               # {"zone_k", "pad_k", "solder_add", "sweep_k"}
+var _stamp: Control           # el sello GRADED sobre la nota
+# --- end SS2 BENCH
 
 # nodos (se arman una vez)
 var _dim: ColorRect
@@ -162,9 +178,27 @@ func open(j: Dictionary) -> void:
 		_head_item.text = String(job.get("label", Data.char_name(who)))
 		_head_who.text = String(job.get("sub", "fixing himself"))
 	# --- end SS MERGE
+	# --- SS2 BENCH: las claves nuevas del trabajo
+	_graded = bool(job.get("graded", false))
+	_riddle = bool(job.get("riddle", false))
+	_aids = job.get("aids", {}) if job.get("aids", {}) is Dictionary else {}
+	_mute = job.has("label") and not _self
+	if job.has("label") and not _self:
+		_head_item.text = String(job["label"])
+		_head_who.text = String(job.get("sub", _head_who.text))
+	# --- end SS2 BENCH
 	var sym := String(job.get("symptom", ""))
 	if sym == "":
 		sym = BenchData.symptom(item, fault)
+	# --- SS2 BENCH: el acertijo (la mejor herramienta sigue diciendo la verdad)
+	if _riddle:
+		var rt := String(job.get("riddle_text", BenchData.riddle(item, fault)))
+		if rt != "":
+			sym = rt
+		_ticket_hdr.text = "A RIDDLE"
+	_ticket_hdr.add_theme_color_override("font_color", Color("9a3a2a") if _riddle else Color("7a6656"))
+	_stamp.visible = _graded
+	# --- end SS2 BENCH
 	_ticket_txt.text = "“%s”" % sym
 	_ticket_sig.text = ("— %s" % Data.char_name(who)) if who != "" else ""
 	_stage.setup(item, fault_i)
@@ -176,7 +210,10 @@ func open(j: Dictionary) -> void:
 	UIKit.pop_in(_canvas)
 	Sfx.play("ratchet", 0.05, -4.0)
 	# Kettle: el consejo de la herramienta la primera vez de cada familia (o en el tutorial)
-	if _tutorial:
+	if _graded:
+		# --- SS2 BENCH: la inspectora mira
+		_kettle.say(String(CastData.CAST["inspector"]["twist"].get("kettle", "Steady.")), 4.0)
+	elif _tutorial:
 		_kettle.say(BenchData.KETTLE_TUTORIAL["diagnose"], 5.0)
 	elif not seen_families.has(item):
 		_kettle.say(String(BenchData.ITEMS[item].get("kettle_tip", "")), 5.0)
@@ -363,6 +400,35 @@ func _build_left() -> void:
 	_kettle = BenchKettle.new()
 	_kettle.position = Vector2(LEFT.position.x + 4, LEFT.end.y - 156)
 	_canvas.add_child(_kettle)
+	# --- SS2 BENCH: el sello GRADED (tinta roja, torcido) sobre la esquina de la nota
+	_stamp = _make_stamp("GRADED")
+	_stamp.position = LEFT.position + Vector2(LEFT.size.x - 118, -6)   # --- SS2 MERGE: (-84, -26) tapaba el título del banco y el borde de la mesa
+	_stamp.visible = false
+	_canvas.add_child(_stamp)
+
+## --- SS2 BENCH: un sello de goma (marco y letras en tinta roja, un poco torcido). Sin texturas: se dibuja.
+func _make_stamp(txt: String) -> Control:
+	var c := Control.new()
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	c.size = Vector2(112, 40)
+	c.pivot_offset = c.size / 2.0
+	c.rotation = deg_to_rad(-9.0)
+	var ink := Color(0.72, 0.16, 0.12, 0.92)
+	var p := Panel.new()
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.95, 0.9, 0.8, 0.35)
+	sb.border_color = ink
+	sb.set_border_width_all(4)
+	sb.set_corner_radius_all(4)
+	p.add_theme_stylebox_override("panel", sb)
+	p.size = c.size
+	c.add_child(p)
+	var l := UIKit.label(txt, 21, ink, UIKit.font_bold, HORIZONTAL_ALIGNMENT_CENTER)
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.size = c.size
+	c.add_child(l)
+	return c
 
 func _build_stage() -> void:
 	_stage = BenchStage.new()
@@ -424,36 +490,39 @@ func _build_drawer() -> void:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.add_theme_stylebox_override("panel", BenchKit.inset_style(Color(0.09, 0.08, 0.07, 0.95), 6))
 	bg.position = Vector2.ZERO
-	bg.size = Vector2(RIGHT.size.x, 330)
+	bg.size = Vector2(RIGHT.size.x, 370)
 	_drawer.add_child(bg)
 	var ttl := UIKit.label("PARTS DRAWER", 16, UIKit.ACCENT, UIKit.font_bold)
-	ttl.position = Vector2(14, 10)
+	ttl.position = Vector2(14, 8)
 	_drawer.add_child(ttl)
+	# --- SS2 BENCH: 13 piezas en 3 columnas x 5 filas (la pieza a x2 y la cuenta encima, abajo a la derecha)
 	var cw := 70.0
-	var chh := 92.0
+	var chh := 64.0
 	for i in BenchData.PART_ORDER.size():
 		var p: String = BenchData.PART_ORDER[i]
 		var cell := Panel.new()
 		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cell.position = Vector2(12 + (i % 3) * (cw + 6), 38 + (i / 3) * (chh + 4))
+		cell.position = Vector2(12 + (i % 3) * (cw + 6), 32 + (i / 3) * (chh + 2))
 		cell.size = Vector2(cw, chh)
 		_drawer.add_child(cell)
 		var icon := BenchKit.pixel_rect(BenchKit.tex("res://assets/parts/%s.png" % p), 2.0)
-		icon.position = Vector2(3, 2)
+		icon.position = Vector2(3, 0)
 		icon.size = Vector2(64, 64)
 		icon.name = "Icon"
 		cell.add_child(icon)
-		var cnt := UIKit.label("x0", 16, BenchKit.CREAM, UIKit.font_mono, HORIZONTAL_ALIGNMENT_CENTER)
+		var cnt := UIKit.label("x0", 15, BenchKit.CREAM, UIKit.font_mono, HORIZONTAL_ALIGNMENT_RIGHT)
 		cnt.name = "Count"
-		cnt.position = Vector2(0, 64)
-		cnt.size = Vector2(cw, 22)
+		cnt.position = Vector2(0, chh - 20)
+		cnt.size = Vector2(cw - 4, 20)
+		cnt.add_theme_color_override("font_outline_color", Color(0.05, 0.04, 0.03))
+		cnt.add_theme_constant_override("outline_size", 5)
 		cell.add_child(cnt)
 		_drawer_cells[p] = cell
-	_swap_btn = BenchKit.key_button("Swap it", "E", func(): _do_swap(), Vector2(RIGHT.size.x, 60), "", true, 21)
-	_swap_btn.position = Vector2(0, 342)
+	_swap_btn = BenchKit.key_button("Swap it", "E", func(): _do_swap(), Vector2(RIGHT.size.x, 58), "", true, 21)
+	_swap_btn.position = Vector2(0, 378)
 	_drawer.add_child(_swap_btn)
 	_patch_btn = BenchKit.key_button("Patch it", "P", func(): _do_patch(), Vector2(RIGHT.size.x, 54), "", false, 20)
-	_patch_btn.position = Vector2(0, 412)
+	_patch_btn.position = Vector2(0, 444)
 	_drawer.add_child(_patch_btn)
 
 func _paint_drawer() -> void:
@@ -631,7 +700,7 @@ func _use_tool(t: String) -> void:
 			Sfx.play("ratchet", 0.1, -4.0)
 		"scan":
 			Sfx.play_pitched("blip", 1.5, -6.0)
-	if BenchData.ITEMS[item].get("talks", false):
+	if _talks():
 		if t == "tap":
 			var ow: Array = BenchData.BOT_TALK["tap"]
 			_stage.bot_say(String(ow[randi() % ow.size()]), 1.4)
@@ -730,7 +799,8 @@ func _swap_primary() -> void:
 # --- 3 soldar
 
 func _enter_solder() -> void:
-	_solder.setup(int(BenchData.ITEMS[item].get("pads", 4)), _seed, fault)
+	_solder.setup(int(BenchData.ITEMS[item].get("pads", 4)), _seed, fault, float(_aids.get("pad_k", 1.0)),
+		float(_aids.get("solder_add", 0.0)))   # --- SS2 BENCH: las ayudas
 	_scope.show_mode("solder", "SOLDER", "Trace the pads in order.", {"lit": 0, "n": _solder.n_pads, "acc": -1.0})
 	_set_instr("Solder it: run the iron over the pads, in order.")
 	_tip_lbl.text = BenchData.KETTLE_TUTORIAL["solder"] if _tutorial else "Stay on the copper line for a clean joint."
@@ -760,7 +830,8 @@ func _on_solder_done(completed: bool, acc: float) -> void:
 
 func _enter_test() -> void:
 	var d: Dictionary = BenchData.ITEMS[item]
-	_gauge.setup(float(d.get("sweep", 0.9)), float(d.get("zone", 0.2)), _seed + 7)
+	_gauge.setup(float(d.get("sweep", 0.9)), float(d.get("zone", 0.2)), _seed + 7, float(_aids.get("zone_k", 1.0)),
+		float(_aids.get("sweep_k", 1.0)))   # --- SS2 BENCH: las ayudas
 	_scope.show_mode("test", "POWER TEST", "Stop it in the green.", {"verdict": ""})
 	_set_instr("Power test: stop the needle in the green!")
 	_tip_lbl.text = BenchData.KETTLE_TUTORIAL["test"] if _tutorial else "The bright middle is perfect."
@@ -784,23 +855,22 @@ func _on_test_stopped(v: String) -> void:
 	tw.tween_property(_stage, "dim", 0.0, 0.2)
 	# ¡funciona! (o casi)
 	if v != "miss":
-		match item:
-			"radio":
-				_stage.power("notes")
-				Sfx.play("good", 0.02, -4.0)
-			"thruster":
-				_stage.power("flame")
-				Sfx.play("takeoff", 0.05, -10.0)
-			_:
-				Sfx.play("good", 0.02, -4.0)
-		_power_line = String(BenchData.ITEMS[item].get("power", "It works!"))
-		if BenchData.ITEMS[item].get("talks", false):
+		# --- SS2 BENCH: el efecto sale de ITEMS[item].power_fx (no de un match por familia)
+		var fx := BenchData.power_fx(item)
+		if fx != "":
+			_stage.power(fx)
+		if fx == "flame":
+			Sfx.play("takeoff", 0.05, -10.0)
+		else:
+			Sfx.play("good", 0.02, -4.0)
+		_power_line = String(job.get("power", BenchData.ITEMS[item].get("power", "It works!")))
+		if _talks():
 			var after := String(_bot_talk().get(fault, {}).get("after", "Hello!"))
 			if "%s" in after:
 				after = after % Data.char_name(String(job.get("customer", ""))) if String(job.get("customer", "")) != "" else after.replace(", %s", "")
 			_stage.bot_say(after, 2.4)
 			_power_line = "“%s”" % after
-		_set_instr(String(_bot_talk().get("power", "")) if _self else String(BenchData.ITEMS[item].get("power", "It works!")))
+		_set_instr(String(_bot_talk().get("power", "")) if _self else String(job.get("power", BenchData.ITEMS[item].get("power", "It works!"))))
 	else:
 		_stage.power("sputter")
 		Sfx.play("bad", 0.02, -6.0)
@@ -833,7 +903,7 @@ func _enter_result() -> void:
 	var stars := BenchData.stars_for(_score())
 	_result = {"ok": true, "stars": stars, "time": _time_total(), "fault_found": _found, "patched": _patched,
 		"parts_used": _parts_used.duplicate(), "wrong": _wrong, "solder": snappedf(_solder_acc, 0.01), "test": _test,
-		"tools": _tools_used.duplicate()}
+		"tools": _tools_used.duplicate(), "graded": _graded}   # --- SS2 BENCH: graded
 	_card_title.text = ["FIXED... SORT OF", "FIXED", "NICE REPAIR", "GOOD AS NEW"][stars]
 	_stage.hide_bubble()
 	_card_quote.text = _power_line
@@ -870,6 +940,10 @@ func _enter_result() -> void:
 		_kettle.say(String(dl[stars]), 3.0)
 	_set_instr("")
 	Sfx.play("coins" if stars >= 2 else "blip", 0.03, -4.0)
+
+## --- SS2 BENCH: ¿la cosa del banco habla? (el bot de bolsillo sí; con un "label" ajeno, no: el pulidor de Buff)
+func _talks() -> bool:
+	return bool(BenchData.ITEMS[item].get("talks", false)) and not _mute
 
 ## --- SS MERGE: lo que dice el bot del banco (el de bolsillo, o el propio cliente si viene a arreglarse él).
 func _bot_talk() -> Dictionary:

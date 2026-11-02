@@ -8,7 +8,7 @@ cabeza (la colita del globo la toca) sin cambiar actor.gd.
 actor.gd las pinta como Sprite3D sin sombreado a pixel_size 0.04, encima de la cabeza; tienen que leerse igual sobre el
 taller oscuro que sobre la arena clara: todas llevan contorno de tinta (#2a2024) de 1 px. Los globos son los del kit de
 UI (crema #f4ecd8, sombra #d8ccb0, misma tinta) y los acentos son los de la paleta (ámbar, teja, verde azulado).
-Nombres que usa el juego: question, excl, dots, heart, angry, steam, note, star.
+Nombres que usa el juego: question, excl, dots, heart, angry, steam, note, star (--- SS2 BENCH: + zz, Kettle dormido).
 
 icon.png (64x64): la estrella de chapa remendada del logo con su estela, sobre una placa remachada verde azulado.
 """
@@ -159,8 +159,23 @@ def e_note():
     return outline4(arr)
 
 
+def e_zz():
+    """--- SS2 BENCH: Kettle dormita después de hora: una Z grande y una chiquita en el globo (tinta verde azulado)."""
+    a = bubble16()
+    grid(["#####",
+          "...#.",
+          "..#..",
+          ".#...",
+          "#####"], 3, 5, a, '#2a6662')
+    grid(["####",
+          "..#.",
+          ".#..",
+          "####"], 9, 2, a, '#2a6662')
+    return a
+
+
 EMOTES = {'question': e_question, 'excl': e_excl, 'dots': e_dots, 'heart': e_heart, 'angry': e_angry,
-          'steam': e_steam, 'note': e_note, 'star': e_star}
+          'steam': e_steam, 'note': e_note, 'star': e_star, 'zz': e_zz}   # --- SS2 BENCH: + zz
 
 
 def app_icon(px=2, S0=32):

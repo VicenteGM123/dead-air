@@ -25,6 +25,7 @@ var _landed := 0
 var _dust: Array = []                  # [pos, vel, vida]
 var _closed_tex: Texture2D
 var _open_tex: Texture2D
+var kind := ""                         # --- SS2 BENCH: "" | wreck | bigfall | charity (PodUI lo pone al abrir)
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -111,10 +112,21 @@ func _draw() -> void:
 	elif state == "opening" and _t < SHAKE:
 		var amp := 2.0 + 6.0 * (_t / SHAKE)
 		off.x = roundf(sin(_t * 70.0) * amp / 2.0) * 2.0
+	# --- SS2 BENCH: el tinte del tipo de cápsula (naufragio: rojo óxido; Gran Caída: dorado)
+	var tint: Color = {"wreck": Color(1.0, 0.6, 0.48), "bigfall": Color(1.0, 0.9, 0.6)}.get(kind, Color.WHITE)
+	var pr := Rect2((pod_center - size_px / 2.0 + off).round(), size_px)
+	if kind == "bigfall" and tex:
+		# un borde dorado: la silueta dibujada corrida a los cuatro lados, detrás
+		for d in [Vector2(-4, 0), Vector2(4, 0), Vector2(0, -4), Vector2(0, 4)]:
+			draw_texture_rect(tex, Rect2(pr.position + d, pr.size), false, Color(1.0, 0.8, 0.3, 0.9))
 	if tex:
-		draw_texture_rect(tex, Rect2((pod_center - size_px / 2.0 + off).round(), size_px), false)
+		draw_texture_rect(tex, pr, false, tint)
 	else:
 		draw_circle(pod_center, 100.0, Color(0.5, 0.52, 0.55))
+	if kind == "wreck":
+		_stamp_txt(pod_center + Vector2(150, 62), "WRECK", Color(0.75, 0.2, 0.12))
+	elif kind == "charity":
+		_stamp_txt(pod_center + Vector2(150, 62), "FREE", Color(0.25, 0.6, 0.35))
 	# destello al abrirse
 	if state == "opening" and _t >= SHAKE and _t < SHAKE + 0.35:
 		var k := (_t - SHAKE) / 0.35
@@ -137,3 +149,15 @@ func _draw() -> void:
 			if t2:
 				var s := Vector2(t2.get_width(), t2.get_height()) * float(ic[1])
 				draw_texture_rect(t2, Rect2((p - s / 2.0).round(), s), false)
+
+## --- SS2 BENCH: un sello torcido (marco y letras) junto a la cápsula.
+func _stamp_txt(c: Vector2, txt: String, ink: Color) -> void:
+	var f: Font = UIKit.font_bold
+	var fs := 30
+	var w := f.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 28.0
+	draw_set_transform(c, deg_to_rad(-12.0), Vector2.ONE)
+	var r := Rect2(Vector2(-w / 2.0, -26), Vector2(w, 52))
+	draw_rect(r, Color(0.95, 0.9, 0.8, 0.25))
+	draw_rect(r, ink, false, 5.0)
+	draw_string(f, Vector2(-w / 2.0 + 14.0, 11), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, ink)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)

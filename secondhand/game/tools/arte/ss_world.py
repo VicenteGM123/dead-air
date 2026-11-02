@@ -237,6 +237,26 @@ def tex_tile(w=128, h=128, seed=41):
     return to_img(idx, TILE)
 
 
+def tex_tile_v2(w=128, h=128, seed=41):
+    """--- SS2 WORLD (§6.1, la pasada de textura): el mismo piso, 20 % menos saturado y con variación gris-parda (una
+    de cada cinco baldosas más gris), para que el naranja no lo tape todo y el metal verde agua respire."""
+    img = tex_tile(w, h, seed)
+    a = np.array(img.convert('RGBA')).astype(np.float32)
+    rgb = a[..., :3]
+    lum = (rgb * np.array([0.299, 0.587, 0.114])).sum(axis=2, keepdims=True)
+    rgb = rgb * 0.8 + lum * 0.2
+    rng = np.random.RandomState(seed + 7)
+    grey = np.array([128.0, 112.0, 100.0])
+    for ty in range(0, h, 16):
+        for tx in range(0, w, 16):
+            if rng.rand() < 0.2:
+                sub = rgb[ty:ty + 16, tx:tx + 16]
+                l = (sub * np.array([0.299, 0.587, 0.114])).sum(axis=2, keepdims=True) / 128.0
+                rgb[ty:ty + 16, tx:tx + 16] = sub * 0.6 + grey * l * 0.4
+    a[..., :3] = np.clip(rgb, 0, 255)
+    return Image.fromarray(a.astype(np.uint8), 'RGBA')
+
+
 def tex_canopy(w=64, h=64, seed=51, a='#b4452e', b='#ece0c4'):
     """Lona de los puestos: rayas verticales de 8 px gastadas por el sol, trama fina y pliegues suaves."""
     ra = [a, '#ffffff', '#ffffff']
@@ -283,7 +303,7 @@ def tex_wood(w=64, h=64, seed=61):
 
 
 TEXTURES = {'sand': tex_sand, 'adobe': tex_adobe, 'metal_plate': tex_metal_plate, 'rusted_panel': tex_rusted_panel,
-            'tile': tex_tile, 'canopy_fabric': tex_canopy,
+            'tile': tex_tile_v2, 'canopy_fabric': tex_canopy,   # --- SS2 WORLD: tile v2 (pasada de textura)
             'canopy_fabric_teal': lambda: tex_canopy(seed=53, a='#3e8a86'), 'wood': tex_wood}
 
 

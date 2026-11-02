@@ -207,7 +207,9 @@ func bot_say(text: String, dur := 2.2) -> void:
 func hide_bubble() -> void:
 	_bubble.hide_now()
 
-## Al probarla bien: notes (radio), talk (bot: lo dice bot_say aparte), flame (propulsor).
+## Al probarla bien: notes (radio), talk (bot: lo dice bot_say aparte), flame (propulsor); --- SS2 BENCH: lights
+## (rocola: las bombitas de colores parpadean y suben notas) y stars (brújula: un mapa de estrellas de puntos dibujado
+## PLANO sobre el dial, con un anillo que se expande; nunca proyectado arriba de la cosa).
 func power(kind: String) -> void:
 	_power = kind
 	_power_t = 0.0
@@ -481,6 +483,10 @@ func _draw_power() -> void:
 				var ph := fmod(t * 1.2 + k / 3.0, 1.0)
 				var y0 := base.y - 40.0 - ph * 70.0
 				draw_rect(Rect2(_px(Vector2(base.x - 10 + k * 14, y0)), Vector2(4, 14)), Color(0.85, 0.95, 1.0, 0.5 * (1.0 - ph)))
+		"lights":
+			_draw_lights(t, vr)
+		"stars":
+			_draw_star_map(t, vr)
 		"sputter":
 			var ni2 := 0
 			var r2 := slot_rect(ni2)
@@ -488,3 +494,72 @@ func _draw_power() -> void:
 				var ph := fmod(t * 1.4 + k * 0.25, 1.0)
 				var p := _px(r2.get_center() + Vector2(-20 - ph * 60.0, -30 - ph * 90.0 + k * 12))
 				draw_rect(Rect2(p, Vector2(14, 14) * (1.0 + ph)), Color(0.35, 0.33, 0.32, (1.0 - ph) * 0.8))
+
+# --- SS2 BENCH: los efectos de las familias nuevas
+
+func _slot_of(part: String) -> int:
+	for i in slots.size():
+		if slots[i]["part"] == part:
+			return i
+	return -1
+
+## La rocola: una guirnalda de bombitas de colores sobre el borde de arriba (parpadean en ola) y notas que suben del
+## parlante de bocina.
+func _draw_lights(t: float, vr: Rect2) -> void:
+	var cols := [Color(1.0, 0.72, 0.3), Color(0.95, 0.45, 0.55), Color(0.45, 0.85, 0.8), Color(1.0, 0.92, 0.65)]
+	var n := 11
+	var y := vr.position.y + 58.0
+	var grow := minf(t * 3.0, 1.0)
+	# la guirnalda: un cable que cuelga en dos comba entre los rieles de bronce
+	var prev := Vector2.ZERO
+	for k in n:
+		var x := vr.position.x + 40.0 + (vr.size.x - 80.0) * k / float(n - 1)
+		var sag := sin(PI * fmod(k / float(n - 1) * 2.0, 1.0)) * 18.0
+		var q := Vector2(x, y + sag)
+		if k > 0:
+			draw_line(prev, q, Color(0.1, 0.07, 0.05, 0.9 * grow), 3.0)
+		prev = q
+	for k in n:
+		var x := vr.position.x + 40.0 + (vr.size.x - 80.0) * k / float(n - 1)
+		var on := fmod(t * 4.0 - k * 0.35, 2.0) < 1.2
+		var c: Color = cols[k % cols.size()]
+		var sag2 := sin(PI * fmod(k / float(n - 1) * 2.0, 1.0)) * 18.0
+		var p := _px(Vector2(x, y + sag2 + 8.0))
+		draw_rect(Rect2(p - Vector2(8, 8), Vector2(16, 16)), Color(0.08, 0.05, 0.04, 0.8 * grow))
+		draw_rect(Rect2(p - Vector2(6, 6), Vector2(12, 12)), (c if on else c.darkened(0.6)) * Color(1, 1, 1, grow))
+		if on:
+			draw_rect(Rect2(p - Vector2(12, 12), Vector2(24, 24)), Color(c.r, c.g, c.b, 0.22 * grow))
+			draw_rect(Rect2(p - Vector2(4, 4), Vector2(4, 4)), Color(1, 1, 1, 0.9 * grow))
+	var si := _slot_of("speaker")
+	var src := slot_center(si) if si >= 0 else vr.get_center()
+	var f: Font = UIKit.font_bold
+	for k in 5:
+		var ph := fmod(t * 0.7 + k * 0.2, 1.0)
+		var pn := _px(src + Vector2(sin(ph * 6.0 + k) * 30.0 + k * 14.0 - 30.0, -50.0 - ph * 120.0))
+		draw_string(f, pn, "♪" if k % 2 == 0 else "♫", HORIZONTAL_ALIGNMENT_LEFT, -1, 34,
+			Color(cols[k % cols.size()].r, cols[k % cols.size()].g, cols[k % cols.size()].b, (1.0 - ph) * grow))
+
+## La brújula: estrellas de puntos que aparecen de a una sobre el dial (alrededor del giroscopio), unidas por líneas
+## finas (una constelación plana), y un anillo de "ping" que se abre desde el centro.
+const STAR_PTS := [Vector2(-150, -70), Vector2(-90, -120), Vector2(-20, -96), Vector2(60, -130), Vector2(140, -80),
+	Vector2(170, 10), Vector2(110, 90), Vector2(20, 120), Vector2(-80, 100), Vector2(-160, 40)]
+
+func _draw_star_map(t: float, vr: Rect2) -> void:
+	var gi := _slot_of("gyro")
+	var c := slot_center(gi) if gi >= 0 else vr.get_center()
+	var shown := mini(STAR_PTS.size(), int(t * 9.0))
+	var gold := Color(1.0, 0.86, 0.5)
+	for k in shown:
+		var p: Vector2 = c + STAR_PTS[k]
+		if k > 0:
+			draw_line(c + STAR_PTS[k - 1], p, Color(gold.r, gold.g, gold.b, 0.45), 2.0)
+	for k in shown:
+		var p2 := _px(c + STAR_PTS[k])
+		var tw := 0.75 + 0.25 * sin(t * 7.0 + k * 1.9)
+		draw_rect(Rect2(p2 - Vector2(3, 3), Vector2(6, 6)), Color(1, 0.97, 0.85, tw))
+		draw_rect(Rect2(p2 - Vector2(9, 1), Vector2(18, 2)), Color(gold.r, gold.g, gold.b, 0.6 * tw))
+		draw_rect(Rect2(p2 - Vector2(1, 9), Vector2(2, 18)), Color(gold.r, gold.g, gold.b, 0.6 * tw))
+	for k in 2:
+		var ph := fmod(t * 0.8 + k * 0.5, 1.0)
+		draw_arc(c, 40.0 + ph * 160.0, 0, TAU, 48, Color(0.55, 0.95, 0.85, 0.7 * (1.0 - ph)), 3.0)
+# --- end SS2 BENCH

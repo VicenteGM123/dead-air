@@ -129,7 +129,7 @@ func _ink(text: String, size := 20, font: Font = null, col := INK, align := HORI
 
 # ------------------------------------------------------------------ el título
 
-func show_title(can_continue: bool) -> void:
+func show_title(can_continue: bool, note := "") -> void:
 	_begin("title", false)
 	_confirm_new = false
 	# un velo suave arriba para que el logo se lea sobre el cielo
@@ -185,9 +185,14 @@ func show_title(can_continue: bool) -> void:
 		v.add_child(nb2)
 		_primary = "new"
 	v.add_child(_button("Settings", false, func(): title_choice.emit("settings"), 240, "S"))
-	var foot := _outlined("A prototype  ·  keyboard, mouse or pad", 17, Color(1.0, 0.95, 0.86), 6, UIKit.font_regular)
+	# --- SS2 SEASON: "Season one"; una partida terminada del prototipo lo dice una vez
+	var foot := _outlined(String(SeasonData.TEXT["title_footer"]), 17, Color(1.0, 0.95, 0.86), 6, UIKit.font_regular)
 	UIKit.place(foot, Vector2(0.5, 1.0), Vector2(-300, -46), Vector2(600, 26), Control.GROW_DIRECTION_BOTH, Control.GROW_DIRECTION_BEGIN)
 	_root.add_child(foot)
+	if note != "":
+		var nl := _outlined(note, 19, Color(1.0, 0.82, 0.46), 7, UIKit.font_bold)
+		UIKit.place(nl, Vector2(0.5, 1.0), Vector2(-420, -86), Vector2(840, 30), Control.GROW_DIRECTION_BOTH, Control.GROW_DIRECTION_BEGIN)
+		_root.add_child(nl)
 
 ## --- BOOT: dónde está el logo del título (en coordenadas de la pantalla) y mostrarlo / esconderlo.
 func title_logo_rect() -> Rect2:
@@ -284,9 +289,11 @@ func _end_intro() -> void:
 
 # ------------------------------------------------------------------ el libro de cuentas (de noche)
 
-## s: el resumen del día (Game.close_day()). last: es el último día (el botón lleva a la cuota).
-## Compacto (entra entero en 1280x720) y a la derecha: a la izquierda se ve la ventana con la lluvia de chatarra.
-func show_ledger(s: Dictionary, last: bool) -> void:
+## s: el resumen del día (Game.close_day()). last: (el prototipo: el último día; ya no se usa).
+## Compacto (entra entero en 1280x720 y 1024x576) y a la derecha: a la izquierda se ve la ventana con las lunas.
+## --- SS2 SEASON: las filas de la temporada: después de cerrar, el Lantern Board (sin spoiler la noche final), la
+## cuota de esta noche o la próxima, el tramo de reputación nuevo, la punta nueva del cartel, lo de mañana.
+func show_ledger(s: Dictionary, _last := false) -> void:
 	_begin("ledger")
 	var dim := ColorRect.new()
 	dim.color = Color(0.02, 0.02, 0.05, 0.18)
@@ -294,17 +301,19 @@ func show_ledger(s: Dictionary, last: bool) -> void:
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	_root.add_child(dim)
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _light_plate(28))
-	UIKit.place(panel, Vector2(1.0, 0.5), Vector2(-584, 0), Vector2(548, 0), Control.GROW_DIRECTION_BEGIN, Control.GROW_DIRECTION_BOTH)
+	panel.add_theme_stylebox_override("panel", _light_plate(24))
+	UIKit.place(panel, Vector2(1.0, 0.5), Vector2(-590, 0), Vector2(560, 0), Control.GROW_DIRECTION_BEGIN, Control.GROW_DIRECTION_BOTH)
 	_root.add_child(panel)
-	var v := UIKit.vbox(6)
+	var v := UIKit.vbox(4)
 	panel.add_child(v)
+	var dnum := int(s.get("day", 1))
 	var head := UIKit.hbox(10)
 	var hic := UIKit.ui_icon("ledger", 2.5)
 	hic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	head.add_child(hic)
 	var hv := UIKit.vbox(-4)
-	hv.add_child(_ink("NIGHT %d OF %d" % [int(s.get("day", 1)), Data.DAYS], 14, UIKit.font_bold, INK_SOFT))
+	var night_txt := ("NIGHT %d OF %d" % [dnum, SeasonData.LAST_DAY]) if String(s.get("mode", "campaign")) == "campaign" else "NIGHT %d" % dnum
+	hv.add_child(_ink(night_txt, 14, UIKit.font_bold, INK_SOFT))
 	hv.add_child(_ink("The ledger", 28, UIKit.font_bold))
 	head.add_child(hv)
 	v.add_child(head)
@@ -314,63 +323,104 @@ func show_ledger(s: Dictionary, last: bool) -> void:
 	var served := reps + int(s.get("sales", 0))
 	var lost := int(s.get("patience_lost", 0))
 	_ledger_row(v, "wrench", "Repairs", "%d" % reps, ("avg %.1f ★" % avg) if reps > 0 else "")
-	_ledger_row(v, "credits", "Sales", "%d" % int(s.get("sales", 0)),
-		("%d refurbished" % int(s.get("refurbished", 0))) if int(s.get("refurbished", 0)) > 0 else "")
-	_ledger_row(v, "star", "Customers served", "%d of %d" % [served, int(s.get("arrived", 0))], "")
-	_ledger_row(v, "sandtimer", "Patience lost", "%d" % lost, "left unhappy" if lost > 0 else "nobody walked out", Color(0.62, 0.22, 0.16) if lost > 0 else INK)
-	_ledger_row(v, "pod", "Parts used", "%d" % int(s.get("parts_used", 0)), ("%d pod%s bought" % [int(s.get("pods", 0)), "" if int(s.get("pods", 0)) == 1 else "s"]) if int(s.get("pods", 0)) > 0 else "")
+	var sales_note := ""
+	if int(s.get("refurbished", 0)) > 0:
+		sales_note = "%d refurbished" % int(s.get("refurbished", 0))
+	_ledger_row(v, "credits", "Sales", "%d" % int(s.get("sales", 0)), sales_note)
+	_ledger_row(v, "star", "Customers served", "%d of %d" % [served, int(s.get("arrived", 0))],
+		("%d left unhappy" % lost) if lost > 0 else "nobody walked out", Color(0.62, 0.22, 0.14) if lost > 0 else INK)
+	if int(s.get("after_hours", 0)) > 0:
+		_ledger_row(v, "tea", "After hours", "%d" % int(s.get("after_hours", 0)), "fixed for the shelf")
 	v.add_child(_rule())
-	_ledger_row(v, "credits", "Earned", "+%s cr" % UIKit.num(int(s.get("earned", 0))),
-		("incl. %d in tips" % int(s.get("tips", 0))) if int(s.get("tips", 0)) > 0 else "", Color(0.2, 0.42, 0.14))
-	_ledger_row(v, "credits", "Spent", "-%s cr" % UIKit.num(int(s.get("spent", 0))), "pods & parts", Color(0.62, 0.22, 0.16))
+	var tips := int(s.get("tips", 0))
+	var ev_cr := int(s.get("event_credits", 0))
+	var earn_note := ""
+	if tips > 0:
+		earn_note = "incl. %d in tips" % tips
+	if ev_cr > 0:
+		earn_note += (" · " if earn_note != "" else "") + "%d from events" % ev_cr
+	_ledger_row(v, "credits", "Earned", "+%s cr" % UIKit.num(int(s.get("earned", 0))), earn_note, Color(0.2, 0.42, 0.14))
+	var fit := int(s.get("fittings_spent", 0))
+	_ledger_row(v, "credits", "Spent", "-%s cr" % UIKit.num(int(s.get("spent", 0))), ("incl. %d on fittings" % fit) if fit > 0 else "pods & parts", Color(0.62, 0.22, 0.14))
 	var rd := int(s.get("rep_delta", 0))
-	_ledger_row(v, "rep", "Reputation", ("%+d" % rd), "total %d" % int(s.get("rep", 0)))
+	var tier_note := "total %d" % int(s.get("rep", 0))
+	if String(s.get("tier", "")) != "":
+		for t in SeasonData.REP_TIERS:
+			if String(t["id"]) == String(s["tier"]):
+				tier_note = "New: %s" % String(t["name"])
+	_ledger_row(v, "rep", "Reputation", ("%+d" % rd), tier_note, Color(0.5, 0.32, 0.06) if String(s.get("tier", "")) != "" else INK)
+	if String(s.get("tier", "")) != "":
+		for t in SeasonData.REP_TIERS:
+			if String(t["id"]) == String(s["tier"]) and String(t["unlocks"]) != "":
+				var un := _ink(String(t["unlocks"]).capitalize().substr(0, 1) + String(t["unlocks"]).substr(1) + ".", 14, UIKit.font_bold, INK_SOFT)
+				un.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				un.custom_minimum_size = Vector2(500, 0)
+				v.add_child(un)
 	v.add_child(_rule())
-	# la cuota del puerto
-	var dues := int(s.get("dues", Data.DUES_GOAL))
+	# el Lantern Board (la noche final: "The Signal is counting...")
+	var bl := String(s.get("board_line", ""))
+	if bl != "":
+		_ledger_row(v, "rank", "Lantern Board", bl, "", Color(0.5, 0.32, 0.06))
+	# la cuota: la de esta noche o la próxima
+	var dues_t := int(s.get("dues_tonight", 0))
 	var cr := int(s.get("credits", 0))
+	var nd: Dictionary = s.get("dues_next", {})
 	var dh := UIKit.hbox(10)
-	dh.add_child(_ink("Dock dues", 19, UIKit.font_bold))
+	var due_amt := dues_t if dues_t > 0 else int(nd.get("amount", 0)) + int(nd.get("debt", 0))
+	var dlabel := "Dues tonight" if dues_t > 0 else ("Next dues · night %d" % int(nd.get("night", 0)) if not bool(nd.get("upkeep", false)) else "Upkeep · night %d" % int(nd.get("night", 0)))
+	dh.add_child(_ink(dlabel, 18, UIKit.font_bold))
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	dh.add_child(spacer)
-	dh.add_child(_ink("%s / %s cr" % [UIKit.num(cr), UIKit.num(dues)], 19, UIKit.font_bold))
+	dh.add_child(_ink("%s / %s cr" % [UIKit.num(cr), UIKit.num(due_amt)], 18, UIKit.font_bold))
 	v.add_child(dh)
 	var bar := ProgressBar.new()
 	bar.max_value = 1.0
-	bar.value = clampf(float(cr) / float(maxi(1, dues)), 0.0, 1.0)
+	bar.value = clampf(float(cr) / float(maxi(1, due_amt)), 0.0, 1.0)
 	bar.show_percentage = false
-	bar.custom_minimum_size = Vector2(0, 14)
+	bar.custom_minimum_size = Vector2(0, 12)
 	var fill := StyleBoxFlat.new()
-	fill.bg_color = UIKit.GOOD.darkened(0.15) if cr >= dues else UIKit.ACCENT.darkened(0.1)
+	fill.bg_color = UIKit.GOOD.darkened(0.15) if cr >= due_amt else UIKit.ACCENT.darkened(0.1)
 	fill.set_corner_radius_all(4)
 	bar.add_theme_stylebox_override("fill", fill)
 	v.add_child(bar)
-	var left := Data.DAYS - int(s.get("day", 1))
 	var dues_note := ""
-	if cr >= dues:
-		dues_note = "Covered! Anything more is yours."
-	elif left > 0:
-		dues_note = "%s cr to go, %s left." % [UIKit.num(dues - cr), UIKit.plural(left, "day")]
-	else:
-		dues_note = "Short by %s cr." % UIKit.num(dues - cr)
-	v.add_child(_ink(dues_note, 16, UIKit.font_bold, INK_SOFT))
-	# el cartel: ¿se encendió una punta? + el botón
+	if dues_t > 0:
+		dues_note = ("Dues tonight: %d. You have %d." % [dues_t, cr]) if cr < dues_t else "Dues tonight: %d. Covered!" % dues_t
+	elif String(s.get("dues_note", "")) != "":
+		dues_note = String(s["dues_note"])
+	elif due_amt > 0:
+		dues_note = "Covered! Anything more is yours." if cr >= due_amt else "%s cr to go." % UIKit.num(due_amt - cr)
+	var dn := _ink(dues_note, 15, UIKit.font_bold, Color(0.6, 0.22, 0.14) if dues_t > 0 and cr < dues_t else INK_SOFT)
+	dn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	dn.custom_minimum_size = Vector2(500, 0)
+	v.add_child(dn)
+	# lo de mañana (y Kettle la noche antes de Bronzemoon)
+	var pv := String(s.get("preview", ""))
+	if String(s.get("kettle", "")) != "":
+		pv += ("  " if pv != "" else "") + "Kettle: \"%s\"" % String(s["kettle"])
+	if pv != "":
+		var pl := _ink(pv, 15, UIKit.font_bold, Color(0.36, 0.3, 0.5))
+		pl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		pl.custom_minimum_size = Vector2(500, 0)
+		v.add_child(pl)
+	# el cartel: ¿se encendió una punta? (por los hitos del tablero) + el botón
 	var bh := UIKit.hbox(12)
 	var sp := int(s.get("sign_points", 0))
-	var star := UIKit.icon("res://assets/props/star_sign_%d.png" % clampi(sp, 0, 5), 0.75)
+	var star := UIKit.icon("res://assets/props/star_sign_%d.png" % clampi(sp, 0, 5), 0.6)
 	star.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bh.add_child(star)
-	var good := bool(s.get("good", false))
-	var msg := ("A good day! The sign lights a point." if good else "A quiet day. The sign stays as it was.")
-	var ml := _ink(msg, 17, UIKit.font_bold, Color(0.5, 0.32, 0.06) if good else INK_SOFT)
+	var sn := int(s.get("sign_new", 0))
+	var msg := String(SeasonData.SIGN_LINES[clampi(sn, 0, 5)]) if sn > 0 else ("%d of 5 points lit. Climb the Board to light more." % sp if sp < 5 else "All five points lit.")
+	var ml := _ink(msg, 16, UIKit.font_bold, Color(0.5, 0.32, 0.06) if sn > 0 else INK_SOFT)
 	ml.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	ml.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ml.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bh.add_child(ml)
 	_primary = "next"
-	var btn := _button("Pay the dues" if last else "Sleep", true, func(): press("next"), 170, UIKit.interact_key())
+	var btxt := "Pay the dues" if dues_t > 0 else "Sleep"
+	var btn := _button(btxt, true, func(): press("next"), 170, UIKit.interact_key())
 	btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bh.add_child(btn)
 	v.add_child(bh)
