@@ -123,7 +123,8 @@ static func _ranktest(m) -> void:
 	var dsx: Dictionary = R.day_stars(ex)
 	chk.call(int(dsx["total"]) == 42 and int(dsx["base"]) == 34, "el ejemplo de §3.4 = 42 (base 34): %s" % str(dsx))
 	var bd: String = R.breakdown({"stars": 42, "parts": dsx["parts"]})
-	chk.call(bd.begins_with("Tonight +42 ★ · repairs 17 · sales 13 · events 8 · fittings 5"), "el desglose: %s" % bd)
+	# --- POLISH FIX (F10): cada parte con signo y estrella ("repairs 17" parecía una cantidad)
+	chk.call(bd.begins_with("Tonight +42 ★ · repairs +17★ · sales +13★ · events +8★ · fittings +5★"), "el desglose: %s" % bd)
 	ex["stars_k"] = 2.0
 	chk.call(int(R.day_stars(ex)["total"]) == 84, "la final x2")
 	# --- commit idempotente y el primer movimiento
@@ -666,6 +667,13 @@ static func _screen_demo(m, name: String) -> void:
 		_night_backdrop(m)
 		await tree.process_frame
 		rs.open_night(mv)
+		# --- POLISH LOOK (P11): --step=sweep: la captura sale a mitad del barrido ámbar de la fila de Nell
+		if arg("step", "") == "sweep":
+			while rs._animating:
+				await tree.process_frame
+			await tree.create_timer(0.32).timeout
+			m.shot_frames = m.frame + 1
+		# --- end POLISH LOOK
 		return
 	if name.begins_with("rank_board"):
 		Game.day = 7
@@ -760,7 +768,7 @@ static func _gala_demo(m, name: String) -> void:
 			g.press("next")
 		elif g.stage == "beats" and t > 1.0:
 			g.press("next")
-	await tree.create_timer(1.8).timeout
+	await tree.create_timer(float(arg("hold", "1.8"))).timeout   # --- POLISH LOOK (P3): --hold=0.6: la tarjeta contando
 	print("GALA DEMO frozen=%s stage=%s log=%s" % [str(g.frozen), g.stage, str(g.beats_log)])
 	if m.shot_path != "":
 		m.shot_frames = m.frame + 2

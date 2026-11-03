@@ -25,7 +25,9 @@ signal finished(choice: String)
 
 const BEAT := 3.4                # segundos por momento (E / A adelantan)
 const AUTO_BEAT := 0.08
-const CAM_X := -5.0              # la cámara fija de la fiesta: la fachada de Nell, el cartel, la gente y las lunas
+const CAM_X := -6.0              # la cámara fija de la fiesta: la fachada de Nell, el cartel, la gente y las lunas
+                                 # --- POLISH LOOK (P3): -5.0 -> -6.0: el letrero de Shine Again entra entero (se leía
+                                 # "HINE AGAIN" cortado en el borde); el público de la derecha sigue en cuadro
 const AMBER := Color(1.0, 0.72, 0.30)
 const AMBER_HI := Color(1.0, 0.86, 0.52)
 const PINK := Color(1.0, 0.56, 0.75)
@@ -163,6 +165,8 @@ var _end_title: Button
 var _end_keep_key: HBoxContainer
 var _end_title_key: HBoxContainer
 var _hint: HBoxContainer
+var _card_pulse: Tween           # --- POLISH LOOK (P3): el brillo del cometa en la tarjeta
+var _card_count: Tween           # --- POLISH LOOK (P3): los números que cuentan
 
 func _ready() -> void:
 	name = "GalaScene"
@@ -430,12 +434,45 @@ func _build_credits() -> void:
 	_credits.clip_contents = true
 	_credits.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_credits)
+	# --- POLISH LOOK (P3): una banda oscura en degradé detrás de los créditos (la calle sigue viéndose arriba)
+	var band := TextureRect.new()
+	var bg := Gradient.new()
+	bg.offsets = PackedFloat32Array([0.0, 0.35, 1.0])
+	bg.colors = PackedColorArray([Color(0.04, 0.03, 0.06, 0.0), Color(0.04, 0.03, 0.06, 0.7), Color(0.03, 0.02, 0.05, 0.9)])
+	var bt := GradientTexture2D.new()
+	bt.gradient = bg
+	bt.fill_from = Vector2(0.0, 0.0)
+	bt.fill_to = Vector2(0.0, 1.0)
+	bt.width = 4
+	bt.height = 128
+	band.texture = bt
+	band.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	band.stretch_mode = TextureRect.STRETCH_SCALE
+	band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	band.set_anchors_preset(Control.PRESET_FULL_RECT)
+	band.anchor_top = 0.3
+	band.offset_top = 0.0
+	_credits.add_child(band)
+	# --- end POLISH LOOK
 	_cred_box = VBoxContainer.new()
 	_cred_box.add_theme_constant_override("separation", 10)
 	_cred_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	UIKit.place(_cred_box, Vector2(0.5, 0.0), Vector2(-360, 720), Vector2(720, 0), Control.GROW_DIRECTION_BOTH)
 	_credits.add_child(_cred_box)
-	_cred_box.add_child(_ol(_lbl("SECONDHAND STARS", 38, AMBER, UIKit.font_bold, HORIZONTAL_ALIGNMENT_CENTER)))
+	# --- POLISH LOOK (P3): el logo de verdad (el del título) en vez del nombre en letra común
+	if ResourceLoader.exists("res://assets/ui/logo.png"):
+		var logo := TextureRect.new()
+		logo.texture = load("res://assets/ui/logo.png")
+		logo.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		logo.custom_minimum_size = Vector2(402, 130)   # (804 x 261 a la mitad: pixeles enteros)
+		logo.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_cred_box.add_child(logo)
+	else:
+		_cred_box.add_child(_ol(_lbl("SECONDHAND STARS", 38, AMBER, UIKit.font_bold, HORIZONTAL_ALIGNMENT_CENTER)))
+	# --- end POLISH LOOK
 	_cred_box.add_child(_ol(_lbl("Season one · the Starfall Season", 19, MUTED, null, HORIZONTAL_ALIGNMENT_CENTER)))
 	var sp := Control.new()
 	sp.custom_minimum_size = Vector2(0, 18)
@@ -1109,7 +1146,7 @@ func _comet() -> bool:
 				a.global_position = pair[1]
 			else:
 				_walk_after(a, pair[1], 0.0, 3.0)
-	_cam_to(shop_x + 0.5, _cam_dist0 - 1.8, 1.6)
+	_cam_to(shop_x - 0.15, _cam_dist0 - 1.8, 1.6)   # --- POLISH LOOK (P3): +0.5 -> -0.15: el cartel al centro y el letrero de Shine Again entero
 	_say("mags", LINES["mags_bolt"])
 	if await _hold(1.8):
 		return true
@@ -1248,6 +1285,7 @@ func _award_card() -> void:
 	for i in _card_vals.size():
 		(_card_vals[i][0] as Label).text = String(rows[i][0])
 		(_card_vals[i][1] as Label).text = String(rows[i][1])
+	_card_juice()   # --- POLISH LOOK (P3)
 	_card.modulate.a = 0.0
 	_card.visible = true
 	_dim.color.a = 0.0
@@ -1266,6 +1304,52 @@ func _award_card() -> void:
 		t += get_process_delta_time()
 	_next = false
 	_card.visible = false
+	_card_juice_stop()   # --- POLISH LOOK (P3)
+
+# --- POLISH LOOK (P3): la tarjeta viva. Los números cuentan desde 0 en ~0,8 s con el tic de las paletas (el sonido del
+# tablero), el arte del cometa late despacio, y una lluvia de chispas sale del cartel cuando aparece. Los bots (auto)
+# ven los valores finales al instante. Nada nuevo que compilar (labels, modulate; las chispas ya se calentaron).
+func _card_juice() -> void:
+	_card_juice_stop()
+	if auto:
+		return
+	var nums: Array = []   # [Label, valor, sufijo, con comas]
+	for pair in _card_vals:
+		var lv: Label = pair[1]
+		var tx := lv.text
+		var suffix := ""
+		var core := tx
+		if tx.ends_with(" cr"):
+			core = tx.trim_suffix(" cr")
+			suffix = " cr"
+		var plain := core.replace(",", "")
+		if plain.is_valid_int() and int(plain) > 0:
+			nums.append([lv, int(plain), suffix, core.contains(",") or int(plain) >= 1000])
+	if not nums.is_empty():
+		_card_count = create_tween()
+		_card_count.tween_interval(0.35)   # (después del fundido de entrada)
+		_card_count.tween_method(_count_step.bind(nums), 0.0, 1.0, 0.8).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		for i in 7:   # el tic de las paletas mientras cuentan
+			_card_count.parallel().tween_callback(func(): Sfx.play("flap", 0.08, -16.0)).set_delay(0.35 + i * 0.11)
+		for n in nums:
+			(n[0] as Label).text = "0" + String(n[2])
+	_card_pulse = create_tween().set_loops()
+	_card_pulse.tween_property(_card_art, "modulate", Color(1.22, 1.14, 0.96), 0.9).set_trans(Tween.TRANS_SINE)
+	_card_pulse.tween_property(_card_art, "modulate", Color.WHITE, 0.9).set_trans(Tween.TRANS_SINE)
+	_call(_street_node(), "play_sparks", [])
+
+func _count_step(k: float, nums: Array) -> void:
+	for n in nums:
+		var v := int(round(float(n[1]) * k))
+		(n[0] as Label).text = (UIKit.num(v) if bool(n[3]) else str(v)) + String(n[2])
+
+func _card_juice_stop() -> void:
+	if _card_count and _card_count.is_valid():
+		_card_count.kill()
+	if _card_pulse and _card_pulse.is_valid():
+		_card_pulse.kill()
+	_card_art.modulate = Color.WHITE
+# --- end POLISH LOOK
 
 func _credits_roll() -> void:
 	stage = "credits"
@@ -1393,15 +1477,17 @@ func _refresh_hint() -> void:
 		"beats":
 			pairs = [["A" if pad else "E", "next"], ["B" if pad else "Esc", "skip"]]
 		"card":
-			pairs = [["A" if pad else "E", "continue"]]
+			pairs = []   # --- POLISH LOOK (P3): la tarjeta ya trae su tecla junto a Continue (antes salía dos veces)
 		"credits":
 			pairs = [["A" if pad else "E", "skip"]]
 		"end":
 			pairs = [["LB/RB" if pad else "← →", "choose"], ["A" if pad else "E", "select"]]
 	for p in pairs:
-		var kc := UIKit.keycap(String(p[0]), 15)
-		kc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		_hint.add_child(kc)
+		# --- POLISH LOOK (P5): "LB/RB" son dos botones dibujados (antes una tecla con el texto)
+		for k in (String(p[0]).split("/") if String(p[0]) == "LB/RB" else PackedStringArray([String(p[0])])):
+			var kc := UIKit.keycap(k, 15)
+			kc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			_hint.add_child(kc)
 		var l := _lbl(String(p[1]), 17, CREAM)
 		l.add_theme_color_override("font_outline_color", Color(0.05, 0.03, 0.02))
 		l.add_theme_constant_override("outline_size", 6)

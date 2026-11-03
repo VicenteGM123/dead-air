@@ -162,6 +162,8 @@ static func refresh_keys(root: Node) -> void:
 
 ## El dibujo de un botón del mando: A / B (los de ART), X / Y (círculos de color), LB / RB, "Stick".
 static func pad_glyph(name: String, size := 16) -> Control:
+	if name in UIKit.PAD_NAMED or name in ["X", "Y"]:   # --- POLISH LOOK (P5): stick, LB / RB, Menu, X / Y como en la HUD
+		return UIKit.pad_glyph(name, size)
 	if name in ["A", "B"] and ResourceLoader.exists("res://assets/ui/glyph_pad_%s.png" % name.to_lower()):
 		return UIKit.icon("res://assets/ui/glyph_pad_%s.png" % name.to_lower(), roundf(size * 1.5 / 16.0))
 	var p := PanelContainer.new()

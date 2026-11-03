@@ -199,6 +199,9 @@ func _draw_test(g: Rect2) -> void:
 	var f: Font = UIKit.font_mono
 	var v := String(data.get("verdict", ""))
 	var big := "READY" if v == "" else v.to_upper()
+	# --- POLISH FIX (F10): mientras la aguja carga (BenchGauge.DELAY: el medidor dice "CHARGING"), la pantalla también
+	if v == "" and _bars_t < 0.5:
+		big = "CHARGING"
 	var col := BenchKit.AMBER
 	match v:
 		"perfect", "good":

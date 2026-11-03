@@ -16,7 +16,7 @@ extends RefCounted
 ##   title_v2done     el título con una partida terminada del prototipo (la nota "The prototype is over...")
 
 const NAMES := ["fittings", "calendar", "mags_asis", "mags_eve", "dues", "dues_short", "after_hours", "ledger", "ledger10",
-	"close_early", "rival_visit", "hud_pad", "title_v2done"]
+	"close_early", "rival_visit", "hud_pad", "title_v2done", "derby_podium"]
 
 static func handles(name: String) -> bool:
 	return name in NAMES or name.begins_with("season_day_") or name.begins_with("shop_day_") or name.begins_with("beat_")
@@ -29,6 +29,11 @@ static func run(m, name: String) -> void:
 		m.begin_morning()
 		m.street.walker.teleport(StreetWorld.SHOP_X + 2.5, 1)
 		m.street.snap_camera()
+		# --- POLISH LOOK (P1): --say2: Nell contesta a la vez que Raker (dos globos: uno sobre el otro, nunca encimados)
+		if "--say2" in OS.get_cmdline_user_args():
+			tree.create_timer(2.7).timeout.connect(func():
+				m.street.blurt(m.street.nell, "Morning, Raker! Save me a heavy one."))
+		# --- end POLISH LOOK
 		return
 	if name.begins_with("shop_day_") or name == "hud_pad":
 		var d2 := int(name.substr(9)) if name != "hud_pad" else 6
@@ -57,6 +62,20 @@ static func run(m, name: String) -> void:
 		m.shop.snap_camera()
 		m.hud.set_clock(m.day.minutes(), "open")
 		m.hud.refresh()
+		# --- POLISH LOOK (P7): --fly: un "+3★" sale del cliente del mostrador hacia el chip cada 0,9 s (la captura lo
+		# agarra en vuelo)
+		if "--fly" in OS.get_cmdline_user_args():
+			var t := Timer.new()
+			t.wait_time = 0.9
+			m.add_child(t)
+			t.timeout.connect(func():
+				var a = m.day.counter.get("actor") if m.day.counter is Dictionary else null
+				var at := Vector2(700, 330)
+				if a is Node3D and is_instance_valid(a):
+					at = m.shop.camera.unproject_position((a as Node3D).global_position + Vector3(0, 2.3, 0))
+				m.hud.fly_stars(at, 3))
+			t.start()
+		# --- end POLISH LOOK
 		return
 	if name.begins_with("beat_"):
 		var id := name.substr(5)
@@ -80,6 +99,26 @@ static func run(m, name: String) -> void:
 		m._beat(bd)
 		return
 	match name:
+		"derby_podium":
+			# --- POLISH LOOK (P14): el Derby con podio (tres corredores, promedio 2,7 ★): el cartel PODIUM! y la cámara
+			# que va a la copa. --step=glide: la captura sale cuando la copa ya apareció
+			Season.debug_state(9, "good")
+			await _open(m)
+			m.day.clear()
+			m.day.running = true
+			m.day.shop_t = 140.0
+			m.hud.set_clock(m.day.minutes(), "open")
+			Game.today["racers"] = 3
+			Game.today["racer_stars"] = 8
+			Season.state["racers"] = {"zib": 3, "brisk": 3, "pipip": 2}
+			Season.state["race_called"] = false
+			m._race_call()
+			if "--step=glide" in OS.get_cmdline_user_args():
+				while not m.derby_gliding:
+					await tree.process_frame
+				await tree.create_timer(1.1).timeout
+				m.shot_frames = m.frame + 1
+			return
 		"title_v2done":
 			var src := "/tmp/claude-0/-home-user-dead-air/84a550d9-2edd-52f7-8fa3-04790d444022/scratchpad/ss2/fixtures/v2_done.json"
 			if FileAccess.file_exists(src):
@@ -135,6 +174,8 @@ static func run(m, name: String) -> void:
 		"after_hours":
 			Season.debug_state(4, "good")
 			Game.junk = [{"item": "radio", "fault": "tuner"}, {"item": "thruster", "fault": "coil"}]
+			if "--twins" in OS.get_cmdline_user_args():   # --- POLISH FIX (F11): dos iguales (las etiquetas con el síntoma)
+				Game.junk = [{"item": "thruster", "fault": "fan"}, {"item": "thruster", "fault": "coil"}, {"item": "radio", "fault": "tuner"}]
 			await _open(m)
 			m.day.clear()
 			_fake_today(m)

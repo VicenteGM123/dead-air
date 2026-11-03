@@ -66,6 +66,7 @@ def main():
         run('ss_ui.py', '--out', out)                    # kit de interfaz + iconos + glifos
         run('ss_logo.py', '--out', out)                  # logo
         run('ss_world.py', '--out', out, 'tex')          # texturas
+        run('ss_world.py', '--out', out, 'horizon')      # --- POLISH LOOK (P13): la franja de dunas del fondo (props/)
         run('ss_props.py', '--out', out)                 # props del taller y la calle (+ props.json)
         run('ss_emotes.py', '--out', out)                # emociones sobre la cabeza + icono de la app
         # --- SS2 MERGE: los generadores nuevos de la ronda 2 (el elenco nuevo, los props de WORLD, el arte del ranking)

@@ -38,7 +38,11 @@ const RIVAL_ENDLESS_K := 0.95        # modo sin fin: 0.95 x la base media de Nel
 const BALLOON := 18                  # noche 8, después de SCALE, solo si Nell iba delante después de la noche 7
 const BALLOON_NIGHT := 8
 const CHAMPION := "gildedgear"
-const CHAMPION_PACE := {"pace": 34, "scandal_night": 7, "scandal": 8, "after": 19, "endless": 28, "wobble": 0.06}
+# --- POLISH LOOK (BAL): "after" 19 -> 27 (las noches 8-10, después del escándalo): con los arreglos de la ronda de
+# pulido (menos turnos muertos, cápsulas con algo adentro, manos calientes) un jugador "humano" sumaba ~30 estrellas
+# más y ganaba el cometa en ~97 % de las temporadas simuladas; así vuelve a ~88 % (ranksim con la tabla medida de
+# los bots), el primer #1 sigue siendo la noche 10 y el escándalo de la noche 7 sigue abriendo la puerta.
+const CHAMPION_PACE := {"pace": 34, "scandal_night": 7, "scandal": 8, "after": 27, "endless": 28, "wobble": 0.06}
 const DOUBLE_ON_FINALE := ["secondhandstar", "dunepocket"]
 const SCRIMP := "dunepocket"
 const RUSTWATER := ["secondhandstar", "shineagain", "dunepocket"]   # los tres faroles de Rustwater
@@ -167,12 +171,13 @@ const ROSA := {
 	"top1": "The Secondhand Star tops the Lantern Board! Lanterns up, Rustwater!",
 	"balloon_up": "Shine Again's chrome balloon: the whole Drift is looking up.",
 	"balloon_pop": "Shine Again's chrome balloon pops over the market. Buff inconsolable.",
+	"eve": "Secondhand Star: {o} tonight. Tomorrow counts double, Rustwater!",   # --- POLISH FIX (F6)
 }
 
 ## El Lantern Report (§3.9): 7 líneas de ≤ 70 caracteres con los nombres más largos. Los tres primeros, escritos.
 const REPORT1 := {
 	"top": "On top: {first}. Nothing ever changes up there. Yet.",
-	"nell_up": "Rustwater's Secondhand Star: up {n}, to {o}!",
+	"nell_up": "Secondhand Star: up {n} in three nights, to {o}!",   # --- POLISH FIX (F10): la temporada, no esta noche
 	"nell": "Rustwater's Secondhand Star: {o} and fixing hard.",
 	"news": "Shine Again moves to Rustwater. Glint: 'I watch. Closely.'",
 	"scandal": "Honest Holt sells the same bike to three people. On a Tuesday.",
@@ -548,6 +553,10 @@ func _rosa(night: int, prev: int, pos: int, passed: Array, passed_by: Array, ms_
 		t = String(ROSA["down"])
 	else:
 		t = String(ROSA["same"])
+	# --- POLISH FIX (F6): la víspera del cometa, si Nell no va primera: todavía se puede (mañana cuenta doble)
+	if night == LAST_DAY - 1 and pos > 1:
+		t = String(ROSA["eve"])
+	# --- end POLISH FIX
 	var ow := ord_word(pos)
 	return fill(t, {"n": str(absi(prev - pos)), "o": ow, "O": ow.left(1).to_upper() + ow.substr(1)})
 
@@ -742,7 +751,8 @@ func breakdown(move: Dictionary) -> String:
 			["clean", "clean day"], ["bonus", "bonus"], ["finale", "Starfall x2"], ["late", "late"], ["lost", "lost"]]:
 		var v := int(p.get(k[0], 0))
 		if v != 0:
-			bits.append("%s %s" % [k[1], ("%d" % v) if v > 0 else ("−%d" % -v)])
+			# --- POLISH FIX (F10): con signo y estrella en cada parte ("repairs +10★"; "repairs 10" parecía una cantidad)
+			bits.append("%s %s★" % [k[1], ("+%d" % v) if v > 0 else ("–%d" % -v)])   # ("–": "−" no está en las fuentes; web)
 	return " · ".join(bits)
 
 # ------------------------------------------------------------------ el Lantern Report (§3.9)
@@ -800,7 +810,7 @@ func report(night := -1) -> Dictionary:
 			var podium := String(_flag("race", "")) == "podium"
 			lines = [{"seg": "top", "text": fill(REPORT3["top"], {"first": first})},
 				{"seg": "nell", "text": fill(REPORT3["nell"], {"leader": rw3["leader_name"], "gap": str(rw3["gap"])}),
-					"note": "us!" if String(rw3["leader"]) == ME else "tomorrow."},
+					"note": "us!" if String(rw3["leader"]) == ME else "next!"},   # --- POLISH FIX (F10): era "tomorrow."
 				{"seg": "news", "text": fill(REPORT3["podium"], {"winner": race_winner()}) if podium else REPORT3["no_podium"],
 					"note": "Digger!" if podium else ""},
 				{"seg": "scandal", "text": REPORT3["scandal"], "note": "ha!"},

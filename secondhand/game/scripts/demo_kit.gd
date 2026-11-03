@@ -136,6 +136,33 @@ func run(main, name: String) -> void:
 			_shop_scene({"who": "oona", "kind": "buy", "wants": ["radio"]})
 			await _wait(0.6)
 			m.use_counter()
+		"shop_idle":
+			# --- POLISH FIX (F5): la tienda vacía a media mañana: la hora corre x3 con "»" (dos capturas, 5 s aparte)
+			_state(2)
+			m.open_shop_now()
+			m.day._arrivals = []
+			m.day.shop_t = 60.0
+			m.hud.hide_banner()
+		"buyer_empty":
+			# --- POLISH FIX (F4): un comprador ante el estante vacío ("Fix theirs instead"); --step=order lo elige
+			# (con la fila corta: "Fix theirs instead" solo se ofrece si esperan a lo sumo ORDER_MAX_LINE)
+			_state(2)
+			m.open_shop_now()
+			m.day.clear()
+			m.day.running = true
+			m.day.shop_t = 112.0
+			m.day.demo_fill([{"who": "zib", "kind": "repair", "item": "helperbot", "fault": "cell", "p": 0.8}],
+				{"who": "oona", "kind": "buy", "wants": ["radio"]})
+			m.shop.walker.teleport(ShopWorld.STATIONS["counter"]["x"], 1)
+			m.shop.snap_camera()
+			m.hud.set_clock(m.day.minutes(), "open")
+			Game.shelf.clear()
+			m.shop.refresh_shelf()
+			await _wait(0.6)
+			m.use_counter()
+			if "--step=order" in OS.get_cmdline_user_args():
+				await _wait(0.4)
+				m.dialogs.choose("order")
 		"counter_clatter":
 			# --- SS MERGE: Clatter viene a que lo arreglen a él (sin cosa en el mostrador)
 			_shop_scene({"who": "clatter", "kind": "repair", "item": "helperbot", "fault": "servo"})
@@ -211,6 +238,12 @@ func run(main, name: String) -> void:
 			_savetest()
 		"smoke":
 			_smoke()
+		"flowtest":   # --- POLISH FIX (F1)
+			_flowtest()
+		"podtest":    # --- POLISH FIX (F3)
+			_podtest()
+		"idletest":   # --- POLISH FIX (F5)
+			_idletest()
 		"autoplay":
 			_autoplay()
 		_:
@@ -292,6 +325,139 @@ func _quit(code: int) -> void:
 
 func _wait(secs: float) -> void:
 	await get_tree().create_timer(secs).timeout
+
+# --- POLISH FIX (F1) ------------------------------------------------ flowtest
+## --demo=flowtest (sin pantalla): una ráfaga de Espacio que viene de la introducción no abre la tienda; una pulsación
+## después de una pausa sí cuenta; "Open shop" con el momento de la mañana pendiente lo muestra primero y después abre.
+func _flowtest() -> void:
+	_watchdog(90.0)
+	var fails: Array = []
+	var press := func(k: Key):
+		for down in [true, false]:
+			var e := InputEventKey.new()
+			e.physical_keycode = k
+			e.pressed = down
+			Input.parse_input_event(e)
+			await get_tree().process_frame
+			await get_tree().process_frame
+	# 1) día 2: la ráfaga de Espacio empieza en la introducción y sigue cada 1.3 s después de la mañana
+	Season.debug_state(2, "good")
+	Game.tips_seen["walk"] = true
+	await press.call(KEY_SPACE)
+	await _wait(1.3)
+	m.begin_morning()
+	await _wait(0.3)
+	if m.street.walker.current != "door":
+		fails.append("Nell no empieza en la puerta (%s)" % m.street.walker.current)
+	for i in 3:
+		await press.call(KEY_SPACE)
+		if m.phase != m.Phase.MORNING:
+			fails.append("la tecla %d de la ráfaga abrió la tienda" % (i + 1))
+			break
+		await _wait(1.3)
+	# 2) el momento aparece en plena ráfaga: las pulsaciones de la ráfaga no lo contestan; una después de 2.5 s sí
+	if not m.dialogs.is_open():
+		m._run_morning_beats()
+	await _until(func(): return m.dialogs.is_open(), 8.0, "el momento crate_ask")
+	if String(m.dialogs.spec.get("beat", "")) != "crate_ask":
+		fails.append("crate_ask no se abrió")
+	await press.call(KEY_SPACE)
+	if not m.dialogs.is_open() or Game.beats_seen.has("crate_ask"):
+		fails.append("la ráfaga contestó el momento")
+	var since: int = Time.get_ticks_msec() - m.dialogs._opened_ms
+	await _wait(maxf(0.1, (2700 - since) / 1000.0))
+	await press.call(KEY_SPACE)
+	await _wait(0.3)
+	if m.dialogs.is_open() or not Game.beats_seen.has("crate_ask"):
+		fails.append("Espacio a los 2.8 s no contestó el momento")
+	# 3) día 3: después de una pausa, E en la puerta con rival_hello pendiente -> el momento primero, después abre
+	Season.debug_state(3, "good")
+	m.begin_morning()
+	await _wait(2.3)
+	if not Game.beats_seen.has("rival_hello"):
+		await press.call(KEY_E)
+		await _wait(0.4)
+		if not (m.dialogs.is_open() and String(m.dialogs.spec.get("beat", "")) == "rival_hello"):
+			fails.append("E en la puerta no mostró rival_hello (dialogo=%s fase=%s)" % [m.dialogs.is_open(), _phase()])
+		else:
+			m.dialogs.choose("ok")
+		await _until(func(): return m.phase == m.Phase.OPEN, 6.0, "la tienda abierta después del momento")
+		if not Game.beats_seen.has("rival_hello"):
+			fails.append("rival_hello no quedó visto")
+		# la tienda recién abierta: la ráfaga de la puerta no toca el mostrador
+		if m.phase == m.Phase.OPEN and not m._interact_blocked():
+			fails.append("recién abierta, interact no está bloqueado")
+	else:
+		fails.append("rival_hello salió solo antes de los 2.3 s")
+	for f in fails:
+		print("FLOWTEST fail: ", f)
+	print("FLOWTEST %s fails=%d errors=%d" % ["ok" if fails.is_empty() and m.errors == 0 else "FAIL", fails.size(), m.errors])
+	_quit(0 if fails.is_empty() else 1)
+# --- end POLISH FIX
+
+# --- POLISH FIX (F5) ------------------------------------------------ idletest
+## --demo=idletest (sin pantalla, tiempo real): el día 1, un jugador quieto. Gorrum (el tutorial) se va atendido y se
+## mide cuántos segundos reales pasan hasta que Zib llega al mostrador (BASE: ~60 s; la meta: <= 25 s).
+func _idletest() -> void:
+	_watchdog(120.0)
+	_state(1)
+	m.open_shop_now()
+	await _until(func(): return not m.day.counter.is_empty() and String(m.day.counter.get("state", "")) in ["counter", "talk"], 30.0, "Gorrum en el mostrador")
+	var g: Dictionary = m.day.counter
+	m.day.leave(g, "done", "")
+	m._end_tutorial()
+	var t0 := Time.get_ticks_msec()
+	var fast_seen := false
+	while Time.get_ticks_msec() - t0 < 90000:
+		await get_tree().process_frame
+		fast_seen = fast_seen or m.day.fast
+		var c: Dictionary = m.day.counter
+		if not c.is_empty() and String(c.get("who", "")) == "zib" and String(c.get("state", "")) == "counter":
+			break
+	var secs := (Time.get_ticks_msec() - t0) / 1000.0
+	print("IDLETEST %s zib_at_counter_after=%.1f s fast_forward_seen=%s shop_t=%.1f" % ["ok" if secs <= 25.0 and fast_seen else "FAIL", secs, fast_seen, m.day.shop_t])
+	_quit(0 if secs <= 25.0 else 1)
+# --- end POLISH FIX
+
+# --- POLISH FIX (F3) ------------------------------------------------- podtest
+## --demo=podtest (sin pantalla): las semillas 1-300 x los días 2-12 (sin la Scour): las dos primeras cápsulas nunca
+## pesan igual, al menos una trae una cosa rota, y la misma partida da las mismas cápsulas dos veces.
+func _podtest() -> void:
+	var fails: Array = []
+	var mornings := 0
+	var checks := 0
+	var light_first := 0
+	var w_hist := {}
+	for sd in range(1, 301):
+		Game.new_game_state()
+		Game.run_seed = sd
+		for d in range(2, 13):
+			Game.day = d
+			var a: Array = Season.pods_for(d)
+			if a.size() < 2:
+				continue
+			mornings += 1
+			var b: Array = Season.pods_for(d)
+			checks += 3
+			if JSON.stringify(a) != JSON.stringify(b):
+				fails.append("s%d d%d: no es determinista" % [sd, d])
+			var w0 := int(a[0].get("weight", 1))
+			var w1 := int(a[1].get("weight", 1))
+			if w0 == w1:
+				fails.append("s%d d%d: pesan igual (%d)" % [sd, d, w0])
+			if w0 < w1:
+				light_first += 1
+			if not (Season._pod_has_item(a[0]) or Season._pod_has_item(a[1])):
+				fails.append("s%d d%d: ninguna trae una cosa rota" % [sd, d])
+			var k := "%d/%d" % [w0, w1]
+			w_hist[k] = int(w_hist.get(k, 0)) + 1
+	Game.new_game_state()
+	for f in fails.slice(0, 12):
+		print("PODTEST fail: ", f)
+	print("PODTEST weights(first/second) ", w_hist, " light_first=", light_first)
+	print("PODTEST %s mornings=%d checks=%d fails=%d" % ["ok" if fails.is_empty() else "FAIL", mornings, checks, fails.size()])
+	_quit(0 if fails.is_empty() else 1)
+# --- end POLISH FIX
 
 # ------------------------------------------------------------------ savetest
 
@@ -1080,7 +1246,7 @@ func _bot_dialog() -> void:
 		_bot_log.append("beat %s=%s" % [String(m.dialogs.spec["beat"]), pick])
 		m.dialogs.choose(pick)
 		return
-	for want in ["pay", "ok", "close", "repair"]:
+	for want in ["pay", "ok", "close", "repair", "order"]:   # --- POLISH FIX (F4): "Fix theirs instead"
 		if want in ids:
 			m.dialogs.choose(want)
 			return

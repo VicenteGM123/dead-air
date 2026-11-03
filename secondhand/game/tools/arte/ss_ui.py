@@ -122,11 +122,9 @@ def tag(w, h):
     t, l, b, r = edges(inner)
     paint(arr, b | r, hexc('#d6c8a6'))
     paint(arr, t, hexc('#f6eedc'))
-    cy = h // 2
-    # ojal
-    for (dx, dy, c) in ((0, -1, '#b8a888'), (-1, 0, '#b8a888'), (1, 0, '#b8a888'), (0, 1, '#b8a888'),
-                        (0, 0, '#3a2e26'), (-1, -1, '#cfc2a4'), (1, 1, '#cfc2a4'), (1, -1, '#cfc2a4'), (-1, 1, '#cfc2a4')):
-        arr[cy + dy, 5 + dx] = hexc(c)
+    # --- POLISH LOOK (P9): sin el ojal. Caía en la franja del medio del 9-slice, que se estira a lo alto: en las
+    # etiquetas de dos o tres renglones se volvía una barra oscura vertical que parecía un error. La forma de etiqueta
+    # (las esquinas cortadas a la izquierda) ya alcanza.
     return arr
 
 
@@ -186,8 +184,8 @@ def build_panels(out):
     a = tag(28, 14)
     up(a).save(os.path.join(d, 'tag9.png'))
     spec['tag9.png'] = dict(margin_left=9 * S, margin_right=4 * S, margin_top=4 * S, margin_bottom=4 * S, text='#3a2e26',
-                            content_left=34, content_right=16, content_top=2, content_bottom=4,
-                            note='etiqueta de papel (texto a mano con Caveat); el ojal va en el margen izquierdo')
+                            content_left=26, content_right=16, content_top=2, content_bottom=9,
+                            note='etiqueta de papel (texto a mano con Caveat); sin ojal (POLISH P9: aire abajo)')
     # botones (teclas)
     for name, kw in KEYS.items():
         a = key(20, 14, **kw)

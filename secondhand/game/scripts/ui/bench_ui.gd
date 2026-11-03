@@ -691,7 +691,8 @@ func _use_tool(t: String) -> void:
 	if not t in _tools_used:
 		_tools_used.append(t)
 	_stage.show_clue(c)
-	var ttl := "%s%s" % [BenchData.tool_name(t).to_upper(), "  ✓ CLEAR" if bool(c.get("clear", false)) else ""]
+	# --- POLISH FIX (F10): "✓ DONE" (era "✓ CLEAR": sobre una falla sonaba a "no hay nada")
+	var ttl := "%s%s" % [BenchData.tool_name(t).to_upper(), "  ✓ DONE" if bool(c.get("clear", false)) else ""]
 	_scope.show_mode(t, ttl, String(c.get("text", "")), c)
 	match t:
 		"listen":
@@ -746,7 +747,8 @@ func _enter_swap() -> void:
 	BenchKit.set_text(_swap_btn, "Swap: %s" % pn)
 	BenchKit.enable(_swap_btn, have)
 	BenchKit.set_key(_swap_btn, "E" if have else "")
-	BenchKit.set_text(_patch_btn, "Patch it  (−1★)")
+	# --- POLISH FIX (F10): "–" (en las fuentes del juego) en vez de "−" (U+2212: en la web salía una cajita)
+	BenchKit.set_text(_patch_btn, "Patch it  (–1★)")
 	BenchKit.enable(_patch_btn, true)
 	BenchKit.set_key(_patch_btn, "P" if have else "E")
 	if have:

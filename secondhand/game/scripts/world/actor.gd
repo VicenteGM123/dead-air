@@ -157,7 +157,9 @@ func _process(delta: float) -> void:
 		_step_timer -= delta
 		if _step_timer <= 0.0:
 			_step_timer = 0.32
-			if char_id != "" and not quiet:   # --- WORLD: 'quiet' (gente de fondo, sin pasos)
+			# --- WORLD: 'quiet' (gente de fondo, sin pasos) --- POLISH FIX (F9): solo Nell (cuatro clientes a la vez
+			# eran una lluvia de pasos)
+			if char_id == "nell" and not quiet:
 				Sfx.step()
 
 func hop(times := 1, h := 0.18) -> void:

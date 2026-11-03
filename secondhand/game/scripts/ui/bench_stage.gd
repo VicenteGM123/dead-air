@@ -458,7 +458,8 @@ func _draw_power() -> void:
 			for k in 5:
 				var ph := fmod(t * 0.7 + k * 0.2, 1.0)
 				var p := _px(src + Vector2(sin(ph * 6.0 + k) * 30.0 + k * 22.0 - 40.0, -60.0 - ph * 140.0))
-				draw_string(f, p, "♪" if k % 2 == 0 else "♫", HORIZONTAL_ALIGNMENT_LEFT, -1, 34,
+				# --- POLISH FIX (F10): solo "♪" ("♫" no está en las fuentes: en la web salía una cajita)
+				draw_string(f, p, "♪", HORIZONTAL_ALIGNMENT_LEFT, -1, 34,
 					Color(1.0, 0.86, 0.45, (1.0 - ph) * minf(t * 3.0, 1.0)))
 		"flame":
 			# la llama sale por la tobera (a la izquierda de la vista del propulsor)
@@ -536,7 +537,7 @@ func _draw_lights(t: float, vr: Rect2) -> void:
 	for k in 5:
 		var ph := fmod(t * 0.7 + k * 0.2, 1.0)
 		var pn := _px(src + Vector2(sin(ph * 6.0 + k) * 30.0 + k * 14.0 - 30.0, -50.0 - ph * 120.0))
-		draw_string(f, pn, "♪" if k % 2 == 0 else "♫", HORIZONTAL_ALIGNMENT_LEFT, -1, 34,
+		draw_string(f, pn, "♪", HORIZONTAL_ALIGNMENT_LEFT, -1, 34,
 			Color(cols[k % cols.size()].r, cols[k % cols.size()].g, cols[k % cols.size()].b, (1.0 - ph) * grow))
 
 ## La brújula: estrellas de puntos que aparecen de a una sobre el dial (alrededor del giroscopio), unidas por líneas

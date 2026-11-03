@@ -71,6 +71,14 @@ var _n_key: HBoxContainer
 var _n_hint: Label
 var _n_move := {}
 var _n_flip_end := 0.0
+# --- POLISH LOOK (P11): cuando el cartel asienta, un barrido ámbar suave recorre la fila de Nell (encima, sin tocar el
+# armado de las filas) y su farol se enciende un poco más. Esc (saltar) no lo muestra.
+var _n_glow_clip: Control
+var _n_glow: TextureRect
+var _n_glow_tw: Tween
+var _n_me_row := -1
+var _n_skip := false
+# --- end POLISH LOOK
 # --- el tablero entero
 var _board: PanelContainer
 var _b_rows: Array = []          # [{"btn", "pos", "lantern", "crest", "name", "score", "arrow"}]
@@ -87,6 +95,7 @@ var _b_mark: ChartMark
 var _b_path: Label
 var _b_rosa: Label
 var _b_hint: Label
+var _b_hint_pad: HBoxContainer   # --- POLISH LOOK (P5): con el mando, la misma ayuda con los botones dibujados
 var _b_close: Button
 var _b_close_key: HBoxContainer
 # --- el Lantern Report
@@ -154,6 +163,11 @@ func _load_textures() -> void:
 	_sb_row_rival = _flat(Color(1.0, 0.56, 0.75, 0.08), Color(0, 0, 0, 0))
 	_sb_row_sel = _flat(Color(1.0, 0.86, 0.52, 0.14), Color(1.0, 0.72, 0.3, 0.8))
 	_sb_empty = StyleBoxEmpty.new()
+	# --- POLISH FIX (F7): la fila vacía con el mismo margen que las pintadas (_flat: 4 px), así la fila de Nell, la de
+	# Glint y la elegida con el mando no se corren 4-5 px a la derecha
+	_sb_empty.content_margin_left = 4
+	_sb_empty.content_margin_right = 4
+	# --- end POLISH FIX
 
 func _nine(tex: Texture2D, margin: int, content: int) -> StyleBox:
 	if tex == null:
@@ -183,7 +197,7 @@ func _flat(bg: Color, border: Color) -> StyleBoxFlat:
 	var f := StyleBoxFlat.new()
 	f.bg_color = bg
 	f.border_color = border
-	f.set_border_width_all(1 if border.a > 0 else 0)
+	f.set_border_width_all(1)   # --- POLISH FIX (F7): siempre 1 px (transparente si no hay borde): el mismo alto en todas
 	f.set_corner_radius_all(3)
 	f.content_margin_left = 4
 	f.content_margin_right = 4
@@ -236,6 +250,7 @@ func _build_night() -> void:
 	_night.mouse_filter = Control.MOUSE_FILTER_STOP
 	_night.gui_input.connect(_on_dim_input)   # un clic (o la A del mando sin apuntar) en el tablero = seguir
 	add_child(_night)
+	_build_row_glow()   # --- POLISH LOOK (P11)
 	var v := UIKit.vbox(4)
 	_night.add_child(v)
 	# cabecera: farol, título, la carta
@@ -503,6 +518,12 @@ func open_night(move: Dictionary) -> void:
 	_n_preview.visible = _n_preview.text != ""
 	_n_flip_end = t_end if animate else 0.0
 	_animating = animate and t_end > 0.0
+	# --- POLISH LOOK (P11)
+	_n_me_row = me_row
+	_n_skip = not animate
+	for r in _n_rows:
+		(r["lantern"] as TextureRect).modulate = Color.WHITE
+	# --- end POLISH LOOK
 	if not _animating:
 		_after_flips()
 	_night.visible = true
@@ -538,6 +559,13 @@ func _flap_sound_at(delay: float) -> void:
 ## El cartel terminó de girar (o se saltó): flechas, LATE, a quién pasó, el hito, la fila especial, el sonido.
 func _after_flips() -> void:
 	_animating = false
+	# --- POLISH LOOK (P11): el barrido (no si se saltó con Esc; recién armado, después del pop-in)
+	if not _n_skip:
+		_row_sweep(0.05 if _t > 0.5 else 0.45)
+	elif _n_me_row >= 0:
+		(_n_rows[_n_me_row]["lantern"] as TextureRect).modulate = Color(1.3, 1.2, 1.05)
+	_n_skip = false
+	# --- end POLISH LOOK
 	var now: Array = Ranking.table()
 	for r in _n_rows:
 		if not (r["box"] as Control).visible:
@@ -580,6 +608,62 @@ func _after_flips() -> void:
 		Sfx.play("sfx_rank_down", 0.0, -5.0)
 	if bool(Ranking.row(Ranking.ME).get("late", false)):
 		Sfx.play("sfx_stamp", 0.04, -4.0)
+
+# --- POLISH LOOK (P11): el barrido de la fila de Nell
+## Una franja ámbar (degradé transparente-ámbar-transparente) dentro de un recorte del tamaño de la fila: va de
+## izquierda a derecha en 0,6 s. Es un hijo de esta pantalla (no del contenedor de las filas): no mueve nada.
+func _build_row_glow() -> void:
+	_n_glow_clip = Control.new()
+	_n_glow_clip.name = "RowGlow"
+	_n_glow_clip.clip_contents = true
+	_n_glow_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_n_glow_clip.visible = false
+	add_child(_n_glow_clip)
+	_n_glow = TextureRect.new()
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.45, 0.55, 1.0])
+	g.colors = PackedColorArray([Color(1.0, 0.8, 0.4, 0.0), Color(1.0, 0.84, 0.48, 0.48), Color(1.0, 0.84, 0.48, 0.48), Color(1.0, 0.8, 0.4, 0.0)])
+	var gt := GradientTexture2D.new()
+	gt.gradient = g
+	gt.width = 128
+	gt.height = 4
+	_n_glow.texture = gt
+	_n_glow.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_n_glow.stretch_mode = TextureRect.STRETCH_SCALE
+	_n_glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_n_glow_clip.add_child(_n_glow)
+
+func _row_sweep(delay: float) -> void:
+	_stop_row_glow()
+	if _n_me_row < 0 or _n_glow_clip == null:
+		return
+	_n_glow_tw = create_tween()
+	_n_glow_tw.tween_interval(delay)
+	_n_glow_tw.tween_callback(func():
+		var box := _n_rows[_n_me_row]["box"] as Control
+		if _mode != "night" or not box.is_visible_in_tree():
+			return
+		var r := box.get_global_rect()
+		_n_glow_clip.global_position = r.position
+		_n_glow_clip.size = r.size
+		_n_glow.size = Vector2(minf(240.0, r.size.x * 0.4), r.size.y)
+		_n_glow.position = Vector2(-_n_glow.size.x, 0.0)
+		_n_glow_clip.visible = true
+		var lan := _n_rows[_n_me_row]["lantern"] as TextureRect
+		# (un Tween ya en marcha no admite pasos nuevos: el barrido es otro)
+		var tw := create_tween()
+		_n_glow_tw = tw
+		tw.tween_property(_n_glow, "position:x", r.size.x, 0.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		tw.parallel().tween_property(lan, "modulate", Color(1.7, 1.5, 1.15), 0.3)
+		tw.tween_callback(func(): _n_glow_clip.visible = false)
+		tw.tween_property(lan, "modulate", Color(1.3, 1.2, 1.05), 0.4))
+
+func _stop_row_glow() -> void:
+	if _n_glow_tw and _n_glow_tw.is_valid():
+		_n_glow_tw.kill()
+	if _n_glow_clip:
+		_n_glow_clip.visible = false
+# --- end POLISH LOOK
 
 # ================================================================== el tablero entero
 
@@ -680,6 +764,10 @@ func _build_board() -> void:
 	dv.add_child(_b_path)
 	_b_hint = _lbl("", 16, MUTED, UIKit.font_regular, HORIZONTAL_ALIGNMENT_CENTER)
 	v.add_child(_b_hint)
+	_b_hint_pad = UIKit.hbox(6)   # --- POLISH LOOK (P5)
+	_b_hint_pad.alignment = BoxContainer.ALIGNMENT_CENTER
+	_b_hint_pad.visible = false
+	v.add_child(_b_hint_pad)
 	_board.visible = false
 
 func _board_row(i: int) -> Dictionary:
@@ -864,8 +952,8 @@ func _build_report() -> void:
 	_r_notes.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_report.add_child(_r_notes)
 	for i in 3:
-		var nl := _lbl("", 30, PENCIL, UIKit.font_hand)
-		nl.rotation = -0.12
+		var nl := _lbl("", 27, PENCIL, UIKit.font_hand)   # --- POLISH LOOK (P6): 30 -> 27, girada -6°, sobre el papel
+		nl.rotation = deg_to_rad(-6.0)
 		nl.visible = false
 		_r_notes.add_child(nl)
 		var ring := PencilRing.new()
@@ -893,6 +981,12 @@ func open_report(rep: Dictionary) -> void:
 		var l: Label = _r_lines[i]
 		l.text = String(lines[i]["text"]) if i < lines.size() else ""
 		l.add_theme_font_override("font", UIKit.font_mono)
+		# --- POLISH LOOK (P6): la línea con nota de lápiz deja libre el margen derecho de la cinta (ahí va la nota, sobre
+		# el papel; antes flotaba fuera, sobre el cuarto oscuro). Las demás líneas usan todo el ancho.
+		var noted := i < lines.size() and String(lines[i].get("note", "")) != ""
+		l.custom_minimum_size.x = NOTE_LINE_W if noted else 420.0
+		l.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN if noted else Control.SIZE_FILL
+		# --- end POLISH LOOK
 	_r_body.custom_minimum_size.y = 0.0
 	_r_print_t = 0.0
 	_animating = true
@@ -934,8 +1028,14 @@ func _finish_print() -> void:
 	_r_body.custom_minimum_size.y = _paper_height()
 	_place_notes.call_deferred()
 
-## Las notas de lápiz: a la derecha de la cinta, a la altura de su línea; "us!" con un círculo.
+## Las notas de lápiz: en el margen derecho de la cinta (sobre el papel), a la altura de su línea; "us!" con un círculo.
+## --- POLISH LOOK (P6): antes en r.x + 456, fuera del papel; ahora en el hueco que deja la línea (NOTE_LINE_W) y
+## nunca más allá del borde perforado.
+const NOTE_LINE_W := 340.0
 func _place_notes() -> void:
+	var paper := _r_body.get_child(0) as Control
+	var pr := paper.get_global_rect()
+	var origin := _r_notes.get_global_rect().position
 	for n in _r_note_list:
 		var li := int(n["line"])
 		if li < 0:
@@ -943,12 +1043,15 @@ func _place_notes() -> void:
 		var line: Label = _r_lines[li]
 		var r := line.get_global_rect()
 		var lbl: Label = n["label"]
-		lbl.position = Vector2(r.position.x + 456, r.position.y - 6)
+		lbl.reset_size()
+		var w := lbl.get_combined_minimum_size().x
+		var x := clampf(r.position.x + NOTE_LINE_W + 10.0, r.position.x + NOTE_LINE_W, pr.end.x - 20.0 - w)
+		lbl.position = Vector2(x, r.position.y - 2.0) - origin
 		lbl.visible = true
 		var ring: PencilRing = n["ring"]
 		if lbl.text == "us!":
-			ring.position = lbl.position + Vector2(-10, 0)
-			ring.size = Vector2(66, 40)
+			ring.position = lbl.position + Vector2(-9, 1)
+			ring.size = Vector2(w + 18, 36)
 			ring.visible = true
 		else:
 			ring.visible = false
@@ -959,6 +1062,7 @@ func _begin(mode: String) -> void:
 	_mode = mode
 	_t = 0.0
 	_animating = false
+	_stop_row_glow()   # --- POLISH LOOK (P11)
 	visible = true
 	_dim.visible = true
 	_dim.color = Color(0.02, 0.02, 0.05, 0.42 if mode != "board" else 0.55)
@@ -976,6 +1080,7 @@ func close_now() -> void:
 		return
 	_mode = ""
 	_animating = false
+	_stop_row_glow()   # --- POLISH LOOK (P11)
 	visible = false
 	set_process(false)
 	done.emit()
@@ -1022,6 +1127,7 @@ func _back() -> void:
 			close_now()
 
 func _skip_flips() -> void:
+	_n_skip = true   # --- POLISH LOOK (P11): sin barrido
 	_after_flips()
 
 func _on_dim_input(ev: InputEvent) -> void:
@@ -1072,6 +1178,26 @@ func _refresh_keys() -> void:
 	_set_key(_b_close_key, "Esc", "B")
 	_n_hint.text = "B skip" if pad else "Esc skip"
 	_b_hint.text = "LB / RB rows · A pick · B or Y close" if pad else "↑ ↓ ← → or mouse pick a shop · Esc or R close"
+	# --- POLISH LOOK (P5): con el mando, [LB][RB] rows · [A] pick · [B] or [Y] close, con los botones dibujados
+	if _b_hint_pad:
+		for c in _b_hint_pad.get_children():
+			c.queue_free()
+		if pad:
+			for part in [["LB", ""], ["RB", "rows"], ["A", "pick"], ["B", "or"], ["Y", "close"]]:
+				var kc := UIKit.keycap(String(part[0]), 15)
+				kc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+				_b_hint_pad.add_child(kc)
+				if String(part[1]) != "":
+					var l := _lbl(String(part[1]), 16, MUTED, UIKit.font_regular)
+					l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+					_b_hint_pad.add_child(l)
+					if String(part[1]) != "or":
+						var gap := Control.new()
+						gap.custom_minimum_size = Vector2(8, 1)
+						_b_hint_pad.add_child(gap)
+		_b_hint_pad.visible = pad
+		_b_hint.visible = not pad
+	# --- end POLISH LOOK
 
 func _process(dt: float) -> void:
 	if _mode == "":

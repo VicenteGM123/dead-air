@@ -17,11 +17,12 @@ const AFTER_HOURS_BONUS := {7: 1}        # (tune) la noche antes de Bronzemoon, 
 ## segundos del día abierto) y su "extra"; beats: los momentos de historia que pueden pasar ese día; navbox_bias: estos
 ## clientes traen brújulas el doble de seguido. Los días 1-3 usan Data.SCHEDULE tal cual (+ los invitados).
 const PLAN := {
-	1: {"title": "Opening Day", "sub": "Learn the bench", "event": "", "arrivals": 6, "pods": 2, "guests": []},
+	# --- POLISH FIX (F10): los subtítulos del día 1 (era "Learn the bench") y del día 4 (repetía el título; nombra a Lune)
+	1: {"title": "Opening Day", "sub": "Buy a pod, open up, fix things", "event": "", "arrivals": 6, "pods": 2, "guests": []},
 	2: {"title": "Fittings for Sale", "sub": "Dolly sells fittings now", "event": "", "arrivals": 8, "pods": 2, "guests": []},
 	3: {"title": "New Neighbours", "sub": "Dues tonight: 100", "event": "", "arrivals": 10, "pods": 2,
 		"guests": [{"who": "timekeeper", "t": 130.0, "kind": "repair", "if_unlocked": true}]},
-	4: {"title": "Music Across the Street", "sub": "Music across the street", "event": "", "arrivals": 9,
+	4: {"title": "Music Across the Street", "sub": "Lune brings her song box", "event": "", "arrivals": 9,
 		"generated": 7, "buyers": 0.35, "pods": 2, "rush": 0.45,
 		"guests": [{"who": "singer", "t": 40.0, "kind": "repair", "item": "jukebox"},
 			{"who": "hermit", "t": 200.0, "kind": "repair", "item": "radio", "extra": {"riddle": true}}]},
@@ -60,19 +61,19 @@ const EVENTS := {
 		"amb": "storm", "icon": "event_sandstorm",
 		"announce": "Scour warning over Saffra tomorrow. Tie down your tortoises.",
 		"preview": "Tomorrow: the Scour. Pods closed, but nobody's in a hurry.",
-		"kettle": "Kettle hides under the bench. Wise kettle.",
+		"kettle": "Kettle ties a rag round his spout. Wise kettle.",   # --- POLISH FIX (F10): Kettle está a la vista
 		"flavour": "Close the door! You're letting the desert in."},
 	"inspection": {"name": "Inspection Day", "effects": {}, "fault_bias": [], "dressing": "inspection", "music": "",
 		"amb": "", "icon": "event_inspection",
-		"announce": "Tally Office notice: inspections in Rustwater tomorrow. Smile at the stamp.",
+		"announce": "Tally Office notice: inspections tomorrow. Smile at the stamp.",   # --- POLISH FIX (F10): 75 -> 62 (el Report pide <= 70)
 		"preview": "Tomorrow: a Tally Office inspection. Be tidy.",
-		"kettle": "Kettle hides behind the counter. Kettle has nothing to declare.",
+		"kettle": "Kettle practises looking innocent. Kettle has nothing to declare.",   # --- POLISH FIX (F10)
 		"flavour": ""},
 	"bigfall": {"name": "Bigfall", "effects": {}, "fault_bias": [], "dressing": "bigfall", "music": "", "amb": "",
 		"icon": "event_bigfall", "mags_extra": ["gyro", "needle"],
 		"announce": "Sky-watch: a big shadow on the Ring tonight. Keep your hats on.",
 		"preview": "Tomorrow: something big falls. Raker will have a wreck.",
-		"kettle": "The whole shop shakes. Kettle hides in a pot. Wrong pot.",
+		"kettle": "The whole street shakes. Kettle rattles his lid at the sky.",   # --- POLISH FIX (F10)
 		"flavour": "Big one last night. Gorrum felt it in his horns."},
 	"festival": {"name": "Bronzemoon", "effects": {"sale_k": 1.2}, "fault_bias": [], "dressing": "festival",
 		"music": "festival", "amb": "", "icon": "event_festival",

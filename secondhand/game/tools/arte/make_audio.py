@@ -5,9 +5,11 @@
              sfx_takeoff, sfx_tea                                (sfx_audio.py)
 --- SS2 RANK: y el audio nuevo de la ronda 2 (ss2_audio.py, 14 archivos): music_festival, music_gala, amb_storm y los
 efectos sfx_flap, sfx_signal, sfx_tape, sfx_stamp, sfx_upgrade, sfx_cheer, sfx_rumble, sfx_gust, sfx_comet,
-sfx_rank_up, sfx_rank_down. --set=base | ss2 | all (por defecto all).
+sfx_rank_up, sfx_rank_down. --set=base | ss2 | polish | all (por defecto all).
+--- POLISH FIX (F9): y los de la ronda de pulido (polish_audio.py, 4 archivos): sfx_step1..3 (los pasos de Nell) y
+sfx_squeak (el mástil de Dolly).
 Todo sale de ss_audio.py (síntesis propia, sin muestras externas). Determinista: las semillas son fijas.
-Uso:  python3 make_audio.py [carpeta_audio_del_juego] [--set=base|ss2|all]
+Uso:  python3 make_audio.py [carpeta_audio_del_juego] [--set=base|ss2|polish|all]
       sin argumento deja los .ogg en tools/arte/salida/audio; con argumento los copia también allí
       (p. ej. python3 make_audio.py ../../audio  desde game/tools/arte).
 Tarda ~2 min. Después: importar el proyecto (godot --headless --import) para crear los .import.
@@ -16,6 +18,7 @@ import os, sys, shutil, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import music_audio, amb_audio, sfx_audio
 import ss2_audio   # --- SS2 RANK
+import polish_audio   # --- POLISH FIX (F9)
 from ss_audio import OUT
 from levels import measure
 
@@ -46,6 +49,9 @@ def main():
         ss2_audio.build(None, OUT)
         files += ss2_audio.ALL
         loops += ss2_audio.LOOPS
+    if sel in ('polish', 'all'):   # --- POLISH FIX (F9)
+        polish_audio.build(None, OUT)
+        files += polish_audio.ALL
     print(f'== generado en {time.time() - t0:.0f} s -> {OUT}')
     for n in files:
         print(measure(os.path.join(OUT, n + '.ogg'), loop=n in loops))

@@ -190,13 +190,26 @@ func _draw() -> void:
 		elif fr2:
 			draw_texture_rect_region(fr2, rr, cr, Color(0.85, 1.0, 1.25, 1.0))   # quieta: un brillo frío y parejo
 	# el vapor de Gorrum
+	# --- POLISH LOOK (P9): dos bocanadas redondas (nubecitas de tres lóbulos con un canto de 1 px) que salen de la
+	# nariz, suben unos 10 px y se deshacen (se achican al final); antes eran dos rectángulos grises que parecían un error
 	if _fx.has("snort") and a2.has("nose"):
 		var n := o + (a2["nose"] as Vector2) * SCALE
-		var k2: float = 1.2 - float(_fx["snort"])
+		var k2 := clampf((1.2 - float(_fx["snort"])) / 1.2, 0.0, 1.0)   # 0 -> 1 en los 1,2 s del resoplido
 		for i in 2:
-			var p := _px(n + Vector2(10 + k2 * 60.0, 6 + i * 10 + k2 * 24.0))
-			var s := 12.0 + k2 * 26.0
-			draw_rect(Rect2(p, Vector2(s, s * 0.7)), Color(0.95, 0.95, 0.92, clampf(0.85 - k2 * 0.7, 0.0, 1.0)))
+			var ki := clampf(k2 * 1.25 - i * 0.25, 0.0, 1.0)              # la segunda sale un poquito después
+			if ki <= 0.0:
+				continue
+			var pc := (n + Vector2(14.0 + ki * 46.0 + i * 8.0, 6.0 + i * 12.0 - ki * 10.0)).round()
+			var rr := (5.0 + ki * 9.0 - i * 1.5) * (1.0 if ki < 0.7 else (1.0 - ki) / 0.3)
+			if rr < 1.5:
+				continue
+			var lobes := [Vector2(0, 0), Vector2(rr * 0.85, rr * 0.2), Vector2(-rr * 0.75, rr * 0.3), Vector2(rr * 0.1, -rr * 0.55)]
+			for lb in lobes:
+				draw_circle(pc + (lb as Vector2).round(), rr * 0.72 + 1.5, Color(0.5, 0.46, 0.43))
+			for lb in lobes:
+				draw_circle(pc + (lb as Vector2).round(), rr * 0.72, Color(0.97, 0.95, 0.9))
+			draw_circle(pc + Vector2(-rr * 0.25, -rr * 0.3).round(), rr * 0.3, Color(1.0, 1.0, 0.98))   # brillo
+	# --- end POLISH LOOK
 	# la lengua del Raker
 	if _fx.has("tongue") and a2.has("mouth"):
 		var m := o + (a2["mouth"] as Vector2) * SCALE

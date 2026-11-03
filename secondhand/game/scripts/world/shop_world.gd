@@ -223,16 +223,24 @@ func _build_nell_side() -> void:
 	var sign := Label3D.new()
 	sign.text = "FIXED · FOR SALE"
 	UIKit.load_fonts()
-	sign.font = UIKit.font_bold
-	sign.font_size = 40
-	sign.pixel_size = 0.0042
-	sign.modulate = Color(0.25, 0.19, 0.15)
+	# --- POLISH LOOK (P8): un tablón pintado a mano (madera oscura con canto, letras color crema con la letra de mano)
+	# en vez de texto de interfaz sobre una tabla clara que se perdía en la pared. Mismo material que las paredes
+	# (mat/flat triplanar): nada nuevo que compilar. El texto sigue siendo texto (regla del README).
+	sign.font = UIKit.font_hand
+	sign.font_size = 64
+	sign.pixel_size = 0.0028
+	sign.modulate = Color(0.97, 0.9, 0.72)
 	sign.outline_size = 0
-	sign.position = Vector3((sx0 + sx1) / 2.0, 2.2, sz0 + 0.03)
+	sign.position = Vector3((sx0 + sx1) / 2.0, 2.205, sz0 + 0.05)
 	sign.shaded = true
-	var board := box_b(sx0 + 0.02, sx1 - 0.02, 2.08, 2.33, sz0, sz0 + 0.025, flat(Color(0.9, 0.84, 0.7)))
+	var board := box_b(sx0 - 0.04, sx1 + 0.04, 2.05, 2.36, sz0, sz0 + 0.03, mat("res://assets/tex/wood.png", 0.7, Color(0.44, 0.34, 0.26)))
 	board.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var trim := flat(Color(0.2, 0.13, 0.09))
+	for yy in [Vector2(2.03, 2.06), Vector2(2.35, 2.38)]:   # el canto de arriba y de abajo, un poco más adelante
+		var t := box_b(sx0 - 0.05, sx1 + 0.05, yy.x, yy.y, sz0, sz0 + 0.04, trim)
+		t.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(sign)
+	# --- end POLISH LOOK
 	# una caja de chatarra al pie del banco y otra al frente (profundidad)
 	prop("crate", Vector3(-6.45, 0.0, -1.95), 0.03)
 	prop("crate_stack", Vector3(-7.3, 0.0, 1.6), 0.032)
@@ -273,6 +281,19 @@ func _build_ceiling() -> void:
 		lamp_sprites.append(lamp)
 		var l := omni(Vector3(lx, 2.85, lz + 0.2), Color(1.0, 0.72, 0.42), 1.5, 5.2, bool(spec[2]))
 		interior_lights.append([l, 1.5])
+
+# --- POLISH LOOK (P15): las lámparas colgantes se mecen apenas (±1,5°, lento, cada una a su ritmo): la tienda no se
+# ve congelada entre clientes. Solo con la tienda a la vista; la luz no se mueve (sin sombra que temble).
+const LAMP_SWAY_DEG := 1.5
+
+func _process(delta: float) -> void:
+	super._process(delta)
+	if lamp_sprites.is_empty() or not is_visible_in_tree():
+		return
+	for i in lamp_sprites.size():
+		var l: Sprite3D = lamp_sprites[i]
+		l.rotation.z = deg_to_rad(LAMP_SWAY_DEG) * sin(_t * (0.55 + 0.08 * i) + i * 1.7)
+# --- end POLISH LOOK
 
 # ------------------------------------------------------------------ el estante, el banco y el mostrador
 
@@ -374,6 +395,8 @@ func set_night(on: bool) -> void:
 		n.visible = on
 	for n in _day_only:
 		n.visible = not on
+	if _sunbeam and _event == "sandstorm":
+		_sunbeam.visible = false   # --- POLISH LOOK (P4): en el Scour no entra sol por la ventana
 	_apply_lamps()   # --- SS2 WORLD: (las lámparas también según el evento)
 	if _door_drift:
 		_door_drift.modulate = Color(0.42, 0.36, 0.42) if on else Color(0.8, 0.66, 0.55)
@@ -432,6 +455,7 @@ var _sunbeam: Sprite3D
 var _moonbeam: Sprite3D
 var _door_drift: Sprite3D
 var _haze: Sprite3D
+var _sun_e := -1.0                # --- POLISH LOOK (P4): la energía del sol de la ventana (el Scour la baja)
 var _bunting_in: Sprite3D
 var _case_items: Array = []       # los 2 lugares de la vitrina (Display Case)
 var _display_light: OmniLight3D   # luz nueva 1 de 2: la vitrina (0 -> 0.5)
@@ -465,7 +489,23 @@ func _build_clutter() -> void:
 	for x in [-5.68, -1.84, 2.0, 5.84]:
 		prop("pipe_run", Vector3(x, 3.72, z + 0.01))
 	_chalk = prop("chalkboard", Vector3(5.03, 1.6, z))
-	prop("radio_wall", Vector3(-0.3, 2.62, z))
+	# --- POLISH LOOK (P8): la radio de adorno ya no cuelga sobre el estante de "a la venta" (parecía mercadería): en su
+	# lugar, el afiche del Brass Comet (como el del Derby: el marco, el pictograma de R y una línea de texto), la meta
+	# de la temporada a la vista; la radio pasa a la pared de la izquierda, arriba del rincón del té
+	prop("radio_wall", Vector3(-6.75, 3.2, z))
+	prop("poster_frame", Vector3(-0.32, 2.98, z), 0.026)
+	sprite("res://assets/ui/event_finale.png", 0.017, Vector3(-0.32, 3.13, z + 0.012), "center")
+	var cl := Label3D.new()
+	cl.text = "THE BRASS COMET\nNIGHT 10"
+	cl.font = UIKit.font_bold
+	cl.font_size = 24
+	cl.pixel_size = 0.0027
+	cl.modulate = Color(0.55, 0.2, 0.16)
+	cl.outline_size = 0
+	cl.shaded = true
+	cl.position = Vector3(-0.32, 2.72, z + 0.014)
+	add_child(cl)
+	# --- end POLISH LOOK
 	prop("trophy_shelf", Vector3(6.18, 2.62, z))
 	prop("coat_rack", Vector3(6.95, 0.0, -3.3))
 	prop("bot_torso", Vector3(7.6, 0.0, -2.6))
@@ -678,6 +718,12 @@ func set_event(id: String) -> void:
 	if _haze == null:
 		return
 	_haze.visible = id == "sandstorm"
+	# --- POLISH LOOK (P4): el Scour tapa el sol: sin el rayo con polvo en el piso y con la luz de la ventana a un tercio
+	if _sun_e < 0.0:
+		_sun_e = sun.light_energy
+	sun.light_energy = _sun_e * (0.35 if id == "sandstorm" else 1.0)
+	_sunbeam.visible = not night and id != "sandstorm"
+	# --- end POLISH LOOK
 	_door_drift.frame = 1 if id == "sandstorm" else 0
 	_door_drift.pixel_size = 0.04 if id == "sandstorm" else 0.03
 	_bunting_in.visible = id == "festival"

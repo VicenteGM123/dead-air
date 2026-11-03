@@ -86,6 +86,17 @@ var _boot_shot := ""         # --bootshot=<carpeta>: una captura por paso (escri
 var _boot_jump := ""         # --bootjump=night | closing (pruebas: ver _boot_test_jump)
 var _draw_us := 0
 var _draw_ms := 0.0          # (con --bootlog) cuánto tardó el último dibujo: ahí se compilan los shaders
+# --- POLISH FIX (F1): una tecla de más (Espacio por la introducción, E por el tablero) ya no abre la tienda al llegar
+# la mañana. "interact" no cuenta durante 1 s después de begin_morning() / open_shop_now(), ni mientras siga la misma
+# ráfaga de pulsaciones que empezó antes (UIKit.mash_from_before: pulsaciones a menos de 2 s una de otra). Los clics
+# no se tocan.
+var _interact_block_ms := 0   # hasta cuándo no cuenta "interact"
+var _interact_from_ms := 0    # cuándo empezó la mañana / el día abierto
+var _beats_running := false   # un momento de historia de la mañana en curso (las notas o la puerta: nunca los dos)
+var _pad_a_was := false       # la A del mando el cuadro anterior (para contar sus pulsaciones en la ráfaga)
+var _sound_told := false      # --- POLISH FIX (F12): el aviso del sonido en la calle, una vez por sesión
+const ORDER_MAX_LINE := 1      # --- POLISH FIX (F4): "Fix theirs instead" solo si esperan a lo sumo tantos en la fila
+# --- end POLISH FIX
 
 func _ready() -> void:
 	get_window().title = GAME_TITLE
@@ -150,6 +161,11 @@ func _make_hud() -> void:
 	hud.prompt_pressed.connect(func():
 		if can_walk() and world and world.walker.current != "" and bool(station_verb(world.walker.current)[1]):
 			use_station(world.walker.current))
+	# --- POLISH LOOK (P1): las frases de la calle van en un globo de papel de la HUD (la tienda sigue con las suyas)
+	if street:
+		street.bubble_sink = func(a: Node3D, text: String, col: Color, secs: float, lift: float):
+			hud.bubble(a, text, col, secs, lift, street.camera)
+	# --- end POLISH LOOK
 
 func _make_bench() -> void:
 	bench = load("res://scripts/ui/bench_ui.gd").new()
@@ -325,6 +341,8 @@ func use_world(w: SetKit) -> void:
 	world = w
 	w.activate(true)
 	set_post(POST_STREET if w == street else POST_SHOP)
+	if hud:
+		hud.clear_bubbles()   # --- POLISH LOOK (P1): las frases de la calle no esperan a la mañana siguiente
 
 # ------------------------------------------------------------------ --- BOOT: el arranque, por pasos
 
@@ -365,6 +383,8 @@ func _boot() -> void:
 	Sfx.prewarm_one("music_title")
 	await _boot_step("audio_title", 0.1, "Tuning the radio...")
 	Sfx.prewarm_one("amb_wind")
+	for n in ["sfx_step1", "sfx_step2", "sfx_step3"]:   # --- POLISH FIX (F9): los pasos de Nell (cortos), en este mismo paso
+		Sfx.prewarm_sfx(n)
 	await _boot_step("audio_wind", 0.13)
 	# la calle (escondida mientras se arma: si no, su cámara la dibujaría a medias)
 	street = StreetWorld.new()
@@ -733,6 +753,7 @@ func begin_morning() -> void:
 	street.kettle.visible = true
 	street.cam_fixed = false
 	street.walker.teleport(StreetWorld.SHOP_X + 0.9, 1)
+	_block_interact()   # --- POLISH FIX (F1)
 	street.kettle.position = Vector3(StreetWorld.SHOP_X - 0.2, 0, StreetWorld.LANE_Z + SetKit.KETTLE_DZ)
 	street.snap_camera()
 	street.refresh_sign()
@@ -769,6 +790,11 @@ func begin_morning() -> void:
 	var ed := Season.event_def()
 	Sfx.music("market")
 	Sfx.ambience(String(ed.get("amb", "")) if String(ed.get("amb", "")) != "" else "port")
+	# --- POLISH FIX (F9): el cielo de Bigfall retumba una vez, bajo el fundido de la mañana
+	if ev == "bigfall" and not bool(m.get("repeat", false)):
+		Sfx.play("rumble", 0.0, -6.0)
+		if demo != "":
+			print("SFX rumble (bigfall morning)")
 	Game.resume = "morning"
 	Game.save_game()
 	if not Game.history.is_empty() and int(Game.history.back().get("sign_new", 0)) > 0 and not bool(m.get("repeat", false)):
@@ -777,12 +803,19 @@ func begin_morning() -> void:
 		get_tree().create_timer(2.6).timeout.connect(func():
 			if phase == Phase.MORNING:
 				hud.tip(Data.tip("walk", UIKit.interact_key(), "the stick" if PadCursor.pad_in_use else "A/D"), 9.0))
-	elif Game.day > 1:
+	elif Game.day > 1 and Season.beats(Game.day, "morning").is_empty():   # --- POLISH FIX (F1): con un momento, Raker calla
 		get_tree().create_timer(2.6).timeout.connect(func():
 			if phase == Phase.MORNING:
 				street.blurt(street.raker, String(SeasonData.TEXT["raker_storm"]) if int(Season.plan().get("pods", 2)) <= 0 else Data.MARKET_LINES["raker_hello"]))
 	_morning_notes(m)
 	# --- end SS2 SEASON
+	# --- POLISH FIX (F12): quien entró solo con el mando (la A del título ya arrancó el juego y el navegador sigue sin
+	# permiso para sonar) lo lee una vez también en la calle
+	if pad.needs_gesture and PadCursor.pad_in_use and not _sound_told:
+		_sound_told = true
+		get_tree().create_timer(0.5).timeout.connect(func():   # (antes de las notas de la mañana, a los 2.8 s)
+			if pad.needs_gesture and phase == Phase.MORNING:
+				hud.toast("Sound is off: press any key or click once.", UIKit.ACCENT, 2.2))
 
 ## El puesto de Raker: las cápsulas de hoy (peso y traqueteo), elegir una y regatear.
 func pods_stall() -> void:
@@ -861,9 +894,19 @@ func parts_stall() -> void:
 func open_shop() -> void:
 	if phase != Phase.MORNING or busy:
 		return
+	# --- POLISH FIX (F1): el momento de historia de esta mañana nunca se pierde: si todavía no salió, sale ahora (antes
+	# de "busy": _morning_beats espera mientras busy) y después se abre
+	if not Season.beats(Game.day, "morning").is_empty():
+		hud.hide_prompt()
+		await _run_morning_beats()
+		if phase != Phase.MORNING or busy:
+			return
+	# --- end POLISH FIX
 	busy = true
 	street.set_door_open_sign(true)
 	Sfx.play("bell", 0.04, -6.0)
+	if Season.event() == "sandstorm":   # --- POLISH FIX (F9): la puerta abierta en plena Scour
+		Sfx.play("gust", 0.05, -6.0)
 	hud.clear_tip()
 	await fade_to(1.0, 0.4)
 	busy = false
@@ -872,6 +915,7 @@ func open_shop() -> void:
 
 func open_shop_now() -> void:
 	phase = Phase.OPEN
+	_block_interact()   # --- POLISH FIX (F1)
 	close_everything()
 	Season.on_morning()   # --- SS2 SEASON: (idempotente) lo que se abre hoy, si la partida se cargó ya abierta
 	Game._update_dues_goal()
@@ -927,7 +971,14 @@ func open_shop_now() -> void:
 
 # ------------------------------------------------------------------ el mostrador
 
+var _f5_tut_ms := -1   # --- POLISH FIX (F5): cuándo terminó el tutorial del día 1 (solo para la medida del bot)
+
 func _on_at_counter(_v: Dictionary) -> void:
+	# --- POLISH FIX (F5): (--demo=autoplay) segundos "de persona" (reloj real x timescale) del tutorial al siguiente
+	if demo == "autoplay" and _f5_tut_ms >= 0:
+		print("FLOW d%d tutorial->%s at counter after %.1f s" % [Game.day, String(_v.get("who", "")), (Time.get_ticks_msec() - _f5_tut_ms) / 1000.0 * Engine.time_scale])
+		_f5_tut_ms = -1
+	# --- end POLISH FIX
 	if day.hold and Game.tip_once("open"):
 		hud.tip(Data.tip("open"), 0.0)
 	if shop.walker.current == "counter":
@@ -1015,16 +1066,28 @@ func talk(v: Dictionary) -> void:
 				opts.append({"id": "sell%d" % i, "text": "Sell %s %s" % [BenchData.item_name(item), stars_text(int(e.get("stars", 0)))],
 					"primary": opts.is_empty(), "min_w": 250})
 		var note := ""
+		# --- POLISH FIX (F4): sin nada que venderle, que no sea un turno muerto: si trae algo suyo roto, "Fix theirs
+		# instead" lo vuelve un trabajo del banco (la misma cosa en la misma partida); también la última noche
+		var order := {}
 		if opts.is_empty():
+			# (solo con la fila corta: con gente esperando, un arreglo de más llena la fila y se pierden clientes;
+			# en los bots, Old Seven el día de Bronzemoon. El turno muerto que importa es el de la tienda tranquila.)
+			if day.line_count() <= ORDER_MAX_LINE:
+				order = Season.order_for(who, int(v["id"]))
 			var names := []
 			for w in wants:
 				names.append(BenchData.item_name(String(w)))
 			note = "Nothing on your shelf they want (%s)." % " or ".join(names)
+			if not order.is_empty():
+				note += " Their %s needs a fix, though." % BenchData.item_name(String(order["item"])).to_lower()
+				opts.append({"id": "order", "text": "Fix theirs instead", "primary": true, "min_w": 200})
 		elif Game.tip_once("shelf"):
 			note = Data.tip("shelf")
 		opts.append({"id": "none", "text": "Sorry, none" if not opts.is_empty() else "Sorry, none today", "primary": opts.is_empty(), "min_w": 170})
+		var ord := order
 		dialogs.open({"kind": "talk", "who": who, "sub": sub, "line": Data.line(who, "buy"), "note": note,
-			"options": opts, "cancel": "later", "per_row": 2}, func(c): _on_talk_choice(v, c, {}))
+			"options": opts, "cancel": "later", "per_row": 2}, func(c): _on_talk_choice(v, c, ord))
+		# --- end POLISH FIX
 
 static func stars_text(n: int) -> String:
 	var s := ""
@@ -1042,6 +1105,19 @@ func _on_talk_choice(v: Dictionary, c: String, j: Dictionary) -> void:
 				"job": j, "result": {}}
 			shop.set_counter_item("")
 			go_bench_job()
+		"order":
+			# --- POLISH FIX (F4): el comprador pasa a cliente de arreglo (la tarjeta normal, con su síntoma)
+			if j.is_empty():
+				day.end_talk()
+				return
+			v["kind"] = "repair"
+			v["item"] = String(j["item"])
+			v["fault"] = String(j["fault"])
+			v["extra"] = {}
+			if not Data.is_self_repair(String(v["who"])):
+				shop.set_counter_item(String(v["item"]))
+			talk(v)
+			# --- end POLISH FIX
 		"decline", "none":
 			Game.stat("declined")
 			day.leave(v, "declined", Data.line(String(v["who"]), "decline" if c == "decline" else "none"))
@@ -1099,13 +1175,26 @@ func use_bench() -> void:
 		return
 	var opts: Array = []
 	for i in mini(Game.junk.size(), 4):
-		var jk: Dictionary = Game.junk[i]
-		opts.append({"id": "j%d" % i, "text": BenchData.item_name(String(jk["item"])), "primary": i == 0, "min_w": 220})
+		opts.append({"id": "j%d" % i, "text": _junk_label(i, 4), "primary": i == 0, "min_w": 220})   # --- POLISH FIX (F11)
 	opts.append({"id": "later", "text": "Later"})
 	dialogs.open({"kind": "talk", "who": "nell", "title": "Refurbish", "sub": "Broken finds from the pods",
 		"line": "Which one goes on the bench?", "options": opts, "cancel": "later", "per_row": 2}, func(c):
 			if String(c).begins_with("j"):
 				refurb(int(String(c).substr(1))))
+
+## --- POLISH FIX (F11): el nombre de una cosa rota para elegir; si otra de las primeras `shown` se llama igual, con su
+## síntoma ("Hoverbike thruster · Weak thrust"), así dos botones iguales no dejan adivinando.
+func _junk_label(i: int, shown: int) -> String:
+	var jk: Dictionary = Game.junk[i]
+	var item := String(jk.get("item", ""))
+	var name := BenchData.item_name(item)
+	for k in mini(Game.junk.size(), shown):
+		if k != i and String(Game.junk[k].get("item", "")) == item:
+			var sym := String(BenchData.FAULTS.get(item, {}).get(String(jk.get("fault", "")), "")).trim_suffix(".")
+			if sym != "":
+				return "%s · %s" % [name, sym]
+			break
+	return name
 
 ## Reacondicionar una cosa rota de las cápsulas: al banco; si sale bien, al estante.
 func refurb(i: int) -> void:
@@ -1165,6 +1254,7 @@ func handover() -> void:
 	var who := String(v["who"])
 	var item := String(job["item"])
 	shop.nell.face(1)
+	var s0 := int(Ranking.day_stars().get("total", 0))   # --- POLISH LOOK (P7): las estrellas de hoy antes de entregar
 	if String(job["stage"]) == "done":
 		var stars := clampi(int(r.get("stars", 0)), 0, 3)
 		# lo que tardó desde que aceptó el trabajo (el reloj del día; con el bot acelerado, el tiempo del banco)
@@ -1194,6 +1284,7 @@ func handover() -> void:
 		Game.stat("repair_pay", pay)
 		Game.stat("served")              # --- SS2 SEASON (§8.4)
 		Game.stat("repair_stars", stars)
+		_hot_hands(stars)   # --- POLISH FIX (F13)
 		shop.set_chalk(int(Game.today.get("repairs", 0)))
 		if tip > 0:
 			Game.stat("tips", tip)
@@ -1218,7 +1309,13 @@ func handover() -> void:
 		# --- end SS2 MERGE
 		day.leave(v, "done", say, Color(0.85, 1.0, 0.8))
 		_after_handover(v, stars, true, tw)   # --- SS2 SEASON
+		# --- POLISH LOOK (P7): "+N★" vuela del cliente al chip del tablero (lo que suma esta entrega esta noche)
+		if is_instance_valid(a):
+			hud.fly_stars(shop.camera.unproject_position(a.global_position + Vector3(0, 2.3, 0)),
+				int(Ranking.day_stars().get("total", 0)) - s0)
+		# --- end POLISH LOOK
 	else:
+		Game.today["hot_streak"] = 0   # --- POLISH FIX (F13): se corta la racha
 		Game.stat("failed")
 		Game.add_rep(Data.REP_GAVE_UP)
 		hud.toast("No luck with that one. %s takes it back." % Data.char_name(who), UIKit.BAD)
@@ -1227,9 +1324,25 @@ func handover() -> void:
 	job = {}
 	_end_tutorial()
 
+## --- POLISH FIX (F13): manos calientes: tres reparaciones de 3★ seguidas en un día dan +1 ★ en el tablero de esta
+## noche (una vez por día; la racha y la marca viven en Game.today con .get(): las partidas viejas cargan igual).
+func _hot_hands(stars: int) -> void:
+	var streak := int(Game.today.get("hot_streak", 0)) + 1 if stars >= 3 else 0
+	Game.today["hot_streak"] = streak
+	if streak >= 3 and int(Game.today.get("hot_hands", 0)) == 0:
+		Game.today["hot_hands"] = 1
+		Ranking.add_bonus(Ranking.ME, 1)
+		Sfx.play("whistle", 0.03, -4.0)
+		get_tree().create_timer(1.2).timeout.connect(func():
+			if phase == Phase.OPEN:
+				hud.toast("Hot hands! Three perfect fixes in a row. +1 ★", UIKit.ACCENT, 3.0))
+		if demo == "autoplay":
+			print("HOT d%d hot hands" % Game.day)
+
 ## El primer cliente del día 1 ya se fue (atendido o no): el reloj arranca.
 func _end_tutorial() -> void:
 	if day.hold:
+		_f5_tut_ms = Time.get_ticks_msec()   # --- POLISH FIX (F5): (el bot mide la espera hasta el siguiente cliente)
 		day.hold = false
 		Game.tips_seen["first_done"] = true
 		hud.tip(Data.tip("clock"), 6.0)
@@ -1251,6 +1364,7 @@ func _on_haggle_finished(r: Dictionary) -> void:
 			var idx := _find_shelf(String(sale["item"]), int(sale["stars"]), int(sale["index"]))
 			if idx >= 0:
 				Game.shelf_take(idx)
+			var ss0 := int(Ranking.day_stars().get("total", 0))   # --- POLISH LOOK (P7): las estrellas de hoy antes de vender
 			Game.add_credits(price)
 			Game.stat("sales")
 			Game.stat("sale_pay", price)
@@ -1269,6 +1383,10 @@ func _on_haggle_finished(r: Dictionary) -> void:
 			var a: Actor = v["actor"]
 			if is_instance_valid(a):
 				hud.fly_coins(shop.camera.unproject_position(a.global_position + Vector3(0, 1.3, 0)), 5)
+				# --- POLISH LOOK (P7): la venta también suma estrellas esta noche
+				hud.fly_stars(shop.camera.unproject_position(a.global_position + Vector3(0, 2.3, 0)),
+					int(Ranking.day_stars().get("total", 0)) - ss0)
+				# --- end POLISH LOOK
 			if price <= 0 and extra != "":
 				hud.toast("Traded: %s for%s" % [BenchData.item_name(String(sale["item"])), extra.substr(2)], UIKit.GOOD)
 			else:
@@ -1451,6 +1569,8 @@ func show_night() -> void:
 		s["kettle"] = SeasonData.KETTLE_BEFORE_FESTIVAL
 	if Game.day == 1:
 		s["dues_note"] = String(SeasonData.TEXT["dues_note_d1"])
+	if Game.is_last_day():   # --- POLISH FIX (F6): sin la cuota sin fin en la noche del cometa
+		s["finale_note"] = "Tonight the Signal counts every star twice."
 	screens.show_ledger(s, false)
 	_prewarm_tomorrow()
 	# --- end SS2 SEASON
@@ -1705,6 +1825,9 @@ func _unhandled_input(ev: InputEvent) -> void:
 		return
 	# --- end SS2 SEASON
 	if ev.is_action_pressed("interact") and not ev.is_echo():
+		if _interact_blocked():   # --- POLISH FIX (F1)
+			get_viewport().set_input_as_handled()
+			return
 		if world.walker.current != "":
 			var vb := station_verb(world.walker.current)
 			if bool(vb[1]):
@@ -1721,6 +1844,17 @@ func _unhandled_input(ev: InputEvent) -> void:
 
 func _process(_d: float) -> void:
 	frame += 1
+	# --- POLISH FIX (F1): la ráfaga de pulsaciones de "interact" (la vea quien la vea: el título, la introducción, el tablero)
+	# (la A del mando cuenta aunque haya hecho clic en un botón: el Continue del tablero, del título)
+	var pad_a := false
+	for jd in Input.get_connected_joypads():
+		if Input.is_joy_button_pressed(jd, JOY_BUTTON_A):
+			pad_a = true
+	var a_edge := pad_a and not _pad_a_was
+	_pad_a_was = pad_a
+	if Input.is_action_just_pressed("interact") or a_edge:
+		UIKit.note_press(Time.get_ticks_msec())
+	# --- end POLISH FIX
 	# --- SS2 SHIP: de vuelta a caminar (se cerró una ventana o Nell camina con el stick), el cursor del mando se esconde
 	# y A vuelve a ser "interactuar". Antes, después de usar LB / RB (el tablero, una pieza de Mags) el cursor quedaba a
 	# la vista y A hacía clic donde había quedado: el aviso decía "[A] Buy pods" y A no abría nada.
@@ -1732,7 +1866,15 @@ func _process(_d: float) -> void:
 	_update_prompt()
 	if modal_open():
 		hud.hide_banner()
-	hud.set_covered(_work_ui_open())   # --- SS MERGE (--- BOOT: _work_ui_open)
+	# --- SS MERGE (--- BOOT: _work_ui_open) --- POLISH FIX (F7): el tablero entero también tapa la placa de arriba
+	hud.set_covered(_work_ui_open() or (rank != null and rank.is_open()))
+	# --- POLISH LOOK (P1): los globos de la calle esperan escondidos bajo una ventana o el fundido
+	hud.bubble_block = modal_open() or world != street or phase != Phase.MORNING or fade.color.a > 0.5 or street.night
+	# --- POLISH FIX (F5): la tienda vacía adelanta la hora solo si Nell no está en medio de nada
+	day.idle_ok = phase == Phase.OPEN and job.is_empty() and sale.is_empty() and not modal_open() and not busy \
+		and not tea_running and not _revealing
+	hud.set_fast(phase == Phase.OPEN and day.running and day.fast)
+	# --- end POLISH FIX
 	if phase == Phase.OPEN and day.running:
 		var m := day.minutes()
 		if m / 5 != _last_minute:
@@ -1743,6 +1885,8 @@ func _process(_d: float) -> void:
 			hud.tip(Data.tip("tea", UIKit.interact_key()), 7.0)
 		_season_tick(m)   # --- SS2 SEASON: la carrera (las 2 PM, las 3 PM), cerrar antes
 	hud.set_hint(can_walk(), "Sound: click or press a key" if pad.needs_gesture else "")
+	if phase == Phase.TITLE:   # --- POLISH FIX (F12): la placa del sonido para quien llega solo con el mando
+		screens.set_sound_plate(pad.needs_gesture and (PadCursor.pad_in_use or not Input.get_connected_joypads().is_empty()))
 	if shot_path != "" and frame == maxi(shot_frames, 20):
 		get_viewport().get_texture().get_image().save_png(shot_path)
 		print("SHOT ", shot_path)
@@ -1828,11 +1972,38 @@ func _morning_notes(m: Dictionary) -> void:
 		return
 	# los consejos de la temporada (una vez cada uno): el tablero el día 2 (después de la primera noche), las cuotas
 	# el día 3 (la primera se cobra esa noche); el de las mejoras sale con el primer estreno
+	var tipped := false   # --- POLISH FIX (F1): el consejo se lee antes del momento (no todo a la vez)
 	if Game.day >= 2 and Game.tip_once("board"):
 		hud.tip(Data.tip("board"), 6.0)
+		tipped = true
 	elif Game.day >= 3 and Game.tip_once("dues"):
 		hud.tip(Data.tip("dues"), 6.0)
+		tipped = true
+	if tipped and not Season.beats(Game.day, "morning").is_empty():
+		await get_tree().create_timer(2.5).timeout
+		if phase != Phase.MORNING or Game.day != day_now:
+			return
+	await _run_morning_beats()
+
+## --- POLISH FIX (F1): los momentos de la mañana, de a un llamador por vez (las notas de la mañana o la puerta): el
+## segundo espera a que termine el primero y después no encuentra nada pendiente.
+func _run_morning_beats() -> void:
+	while _beats_running:
+		await get_tree().process_frame
+		if phase != Phase.MORNING:
+			return
+	_beats_running = true
 	await _morning_beats()
+	_beats_running = false
+
+## --- POLISH FIX (F1): "interact" no cuenta todavía (ver MASH_GAP_MS).
+func _block_interact() -> void:
+	_interact_from_ms = Time.get_ticks_msec()
+	_interact_block_ms = _interact_from_ms + 1000
+
+func _interact_blocked() -> bool:
+	return Time.get_ticks_msec() < _interact_block_ms or UIKit.mash_from_before(_interact_from_ms)
+# --- end POLISH FIX
 
 func _morning_beats() -> void:
 	# (de a uno: cada momento puede cambiar las marcas que decide el siguiente)
@@ -2032,11 +2203,57 @@ func _race_call() -> void:
 	hud.banner("The Glasspan Derby", "Zib: \"%s\"" % String(SeasonData.RACE_LINES["call"]), 2.4)
 	Sfx.play("cheer", 0.02, -3.0)
 	await get_tree().create_timer(3.0).timeout
+	# --- POLISH LOOK (P14): el podio es el premio más grande de los días especiales: su cartel, su sello y la copa que
+	# aparece en el estante de trofeos (la cámara va hasta allí y vuelve, como el estreno de las mejoras)
+	var podium := String(r["result"]) == "podium"
+	if podium:
+		# (la línea del Derby con el ganador sale enseguida en el aviso de abajo: el cartel no la repite)
+		hud.banner("PODIUM!", "Secondhand Star bikes on the podium!", 2.2)
+		Sfx.play("stamp", 0.02, -3.0)
+		Sfx.play("cheer", 0.02, -4.0)
+		shop.set_story_prop("cup", false)   # (la copa espera a la cámara)
+		await get_tree().create_timer(1.0).timeout
+	# --- end POLISH LOOK
 	hud.toast(String(r["line"]), UIKit.GOOD if String(r["result"]) != "none" else UIKit.TEXT, 4.0)
+	if podium:
+		await _derby_cup()   # --- POLISH LOOK (P14)
 	if String(r.get("pipip_line", "")) != "":
 		await get_tree().create_timer(4.2).timeout
 		hud.toast("Pipip: \"%s\"" % String(r["pipip_line"]), UIKit.TEXT, 3.5)
 	_story_props()
+
+## --- POLISH LOOK (P14): la cámara va al estante de trofeos, la copa aparece con un saltito y vuelve a Nell. Espera a
+## que no haya nada abierto (la carrera llama a las 2 PM, haga lo que haga Nell); si no llega el momento en 40 s, o se
+## terminó el día, la copa aparece sin la vuelta de cámara.
+var derby_gliding := false
+func _derby_cup() -> void:
+	var t := 0.0
+	while not (can_walk() and phase == Phase.OPEN and world == shop and job.is_empty() and sale.is_empty() \
+			and hud.banner_rect().size.x <= 0.0) and t < 40.0:   # (y sin el cartel encima de la copa)
+		await get_tree().process_frame
+		t += get_process_delta_time()
+		if phase != Phase.OPEN:
+			return
+	if t >= 40.0 or not is_instance_valid(shop.story.get("cup")):
+		return
+	busy = true
+	derby_gliding = true
+	shop.cam_fixed = true
+	var back := shop.camera.position.x
+	await _glide_camera((shop.story["cup"] as Node3D).global_position.x - 0.6, 0.7)
+	var cup := shop.story["cup"] as Sprite3D
+	shop.set_story_prop("cup", true)
+	cup.scale = Vector3(0.2, 0.2, 0.2)
+	var tw := create_tween()
+	tw.tween_property(cup, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	Sfx.play("upgrade", 0.02, -4.0)
+	hud.toast("New: the Glasspan Derby cup, on the trophy shelf.", UIKit.GOOD, 2.2)
+	await get_tree().create_timer(1.4).timeout
+	await _glide_camera(back, 0.6)
+	shop.cam_fixed = false
+	shop.snap_camera()
+	derby_gliding = false
+	busy = false
 
 ## Cerrar antes (desde las 4 PM, sin nadie en la fila ni en el mostrador, sin trabajo y sin nadie más por llegar).
 func _can_close_early() -> bool:
@@ -2083,7 +2300,7 @@ func _after_hours() -> void:
 	while done < max_n and not Game.junk.is_empty() and phase == Phase.NIGHT:
 		var opts: Array = []
 		for i in mini(Game.junk.size(), 3):
-			opts.append({"id": "j%d" % i, "text": "Fix: %s" % BenchData.item_name(String(Game.junk[i]["item"])), "primary": i == 0, "min_w": 220})
+			opts.append({"id": "j%d" % i, "text": "Fix: %s" % _junk_label(i, 3), "primary": i == 0, "min_w": 220})   # --- POLISH FIX (F11)
 		opts.append({"id": "sleep", "text": String(SeasonData.TEXT["after_sleep"]), "min_w": 140})
 		dialogs.open({"kind": "talk", "who": "kettle", "title": String(SeasonData.TEXT["after_title"]),
 			"sub": "%d of %d tonight" % [done + 1, max_n], "line": String(SeasonData.TEXT["after_line"]),
@@ -2302,6 +2519,12 @@ func _prewarm_today() -> void:
 	for k in ["music", "amb"]:
 		if String(ed.get(k, "")) != "":
 			Sfx.prewarm_late(String(ed[k]))
+	# --- POLISH FIX (F9): los efectos del día (bajo el fundido de la mañana)
+	match Season.event():
+		"bigfall":
+			Sfx.prewarm_sfx("sfx_rumble")
+		"sandstorm":
+			Sfx.prewarm_sfx("sfx_gust")
 
 func _prewarm_tomorrow() -> void:
 	for alias in Season.tomorrow_loops(Game.day):

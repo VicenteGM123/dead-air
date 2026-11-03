@@ -37,6 +37,10 @@ var _fit_rows := {}           # fitting id -> {"btn": Button, "sub": Label, "pan
 var _asis_rows: Array = []    # [{"btn": Button, "panel"}]
 var _note_lbl: Label          # la línea de abajo (Dolly, Mags, "Choose one")
 var _flash_tw: Tween
+var _opened_ms := 0           # --- POLISH FIX (F1): cuándo se abrió (un momento de historia no se contesta con la ráfaga de antes)
+var _sliders: Array = []      # --- POLISH FIX (F8): las barras de volumen del menú ([0] música, [1] sonido)
+var _last_slider: HSlider     # la última que se tocó (← / → la mueven)
+const MENU_W := 560.0         # --- POLISH FIX (F8): el menú / los ajustes, al ancho de lo que tienen (era W = 780)
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -57,9 +61,12 @@ func open(s: Dictionary, cb := Callable()) -> void:
 	_fit_rows = {}   # --- SS2 SEASON
 	_asis_rows = []
 	_note_lbl = null
+	_sliders = []   # --- POLISH FIX (F8)
+	_last_slider = null
 	_cancel = String(spec.get("cancel", ""))
 	_build()
 	_open = true
+	_opened_ms = Time.get_ticks_msec()   # --- POLISH FIX (F1)
 	visible = true
 	mouse_filter = Control.MOUSE_FILTER_STOP
 
@@ -125,7 +132,7 @@ func _build() -> void:
 	_panel.reset_size()
 	var vs := get_viewport_rect().size
 	var sz := _panel.get_combined_minimum_size()
-	sz.x = maxf(sz.x, float(spec.get("width", W)))
+	sz.x = maxf(sz.x, float(spec.get("width", MENU_W if String(spec.get("kind", "")) == "menu" else W)))   # --- POLISH FIX (F8)
 	_panel.size = sz
 	if String(spec.get("kind", "talk")) == "talk":
 		_panel.position = Vector2((vs.x - sz.x) / 2.0, vs.y - sz.y - 64.0).round()
@@ -609,7 +616,7 @@ func _build_menu() -> void:
 	v.add_child(_options_box(opts))
 
 func _slider_row(label: String, value: float, on_change: Callable) -> Control:
-	var h := UIKit.hbox(14)
+	var h := UIKit.hbox(10)
 	var l := _ink(label, 20, UIKit.font_bold)
 	l.custom_minimum_size = Vector2(80, 0)
 	h.add_child(l)
@@ -619,16 +626,40 @@ func _slider_row(label: String, value: float, on_change: Callable) -> Control:
 	s.step = 0.05
 	s.value = value
 	s.focus_mode = Control.FOCUS_NONE
-	s.custom_minimum_size = Vector2(300, 28)
+	s.custom_minimum_size = Vector2(230, 28)   # (--- POLISH FIX (F8): 300 -> 230, con − y + a los lados)
 	s.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var pct := _ink("%d%%" % int(round(value * 100.0)), 18, UIKit.font_bold, INK_SOFT)
 	pct.custom_minimum_size = Vector2(56, 0)
 	s.value_changed.connect(func(x: float):
 		pct.text = "%d%%" % int(round(x * 100.0))
+		_last_slider = s   # --- POLISH FIX (F8)
 		on_change.call(x))
+	# --- POLISH FIX (F8): "−" y "+" (botones: el mando llega con LB / RB y los aprieta con A; el teclado, ← / →)
+	_sliders.append(s)
+	if _last_slider == null:
+		_last_slider = s
+	h.add_child(_step_button("–", s, -0.1))   # ("–": "−" U+2212 no está en las fuentes del juego; en la web, cajita)
 	h.add_child(s)
+	h.add_child(_step_button("+", s, 0.1))
+	# --- end POLISH FIX
 	h.add_child(pct)
 	return h
+
+## --- POLISH FIX (F8): un botón chico que mueve una barra de volumen un 10 %.
+func _step_button(text: String, s: HSlider, step: float) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_NONE
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.add_theme_font_size_override("font_size", 22)
+	b.custom_minimum_size = Vector2(44, 40)
+	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	b.pressed.connect(func():
+		Sfx.play("click", 0.05, -4.0)
+		_last_slider = s
+		s.value = clampf(snappedf(s.value + step, 0.05), 0.0, 1.0))
+	b.mouse_entered.connect(func(): Sfx.play("hover", 0.05, -14.0))
+	return b
 
 # ------------------------------------------------------------------ --- SS2 SEASON: el patio de Dolly
 
@@ -865,6 +896,14 @@ func _input(ev: InputEvent) -> void:
 		else:
 			handled = false
 	elif k == KEY_E or k == KEY_ENTER or k == KEY_KP_ENTER or k == KEY_SPACE:
+		# --- POLISH FIX (F1): un momento de historia recién abierto no se elige con la tecla que ya venía apretando
+		# (Espacio por la introducción, E por el tablero): 0.7 s para leerlo, y hasta 2.5 s si la ráfaga empezó antes.
+		# Los números, el clic y el bot sí.
+		var since := Time.get_ticks_msec() - _opened_ms
+		if spec.has("beat") and (since < 700 or (since < 2500 and UIKit.mash_from_before(_opened_ms))):
+			get_viewport().set_input_as_handled()
+			return
+		# --- end POLISH FIX
 		var done := false
 		for o in _opts:
 			if o["primary"] and not (o["btn"] as Button).disabled:
@@ -872,6 +911,11 @@ func _input(ev: InputEvent) -> void:
 				done = true
 				break
 		handled = done
+	elif (k == KEY_LEFT or k == KEY_RIGHT) and kind == "menu" and _last_slider != null:
+		# --- POLISH FIX (F8): ← / → mueven la última barra de volumen que se tocó (al abrir: la música)
+		_last_slider.value = clampf(snappedf(_last_slider.value + (0.1 if k == KEY_RIGHT else -0.1), 0.05), 0.0, 1.0)
+	elif (k == KEY_UP or k == KEY_DOWN) and kind == "menu" and _sliders.size() >= 2:
+		_last_slider = _sliders[0] if k == KEY_UP else _sliders[1]
 	elif k == KEY_0 and kind == "parts":
 		buy_asis(1)   # --- SS2 SEASON: la segunda cosa de "tal cual"
 	elif k == KEY_MINUS and kind == "parts":

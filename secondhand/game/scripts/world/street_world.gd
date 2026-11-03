@@ -19,7 +19,11 @@ const RAKER_POS := Vector3(0.5, 0.0, -2.7)
 const MAGS_POS := Vector3(5.85, 0.0, -2.7)
 const STATIONS := {
 	"door": {"x": -6.2, "face": -1, "zone": Vector2(-7.6, -4.8), "name": "Your shop", "y": 2.5, "ax": -6.2, "az": -4.0},
-	"pods": {"x": 1.45, "face": -1, "zone": Vector2(0.0, 3.5), "name": "Raker's pods", "y": 2.0, "ax": 0.5, "az": -2.7},
+	# --- POLISH FIX (F2): Nell se para delante de las cápsulas (x 2.3, ya no encima de Raker en 0.5) y el aviso va sobre
+	# el puesto; la zona de clic cubre a Raker y al puesto (RAKER_POS no se mueve: la gala lo toma prestado)
+	"pods": {"x": 2.3, "face": -1, "zone": Vector2(0.0, 3.5), "name": "Raker's pods", "y": 2.0, "ax": 1.6, "az": -2.7,
+		"pick": Vector3(3.0, 2.2, 1.2)},
+	# --- end POLISH FIX
 	"parts": {"x": 6.8, "face": -1, "zone": Vector2(5.0, 8.8), "name": "Mags's parts", "y": 2.0, "ax": 5.85, "az": -2.7},
 	# --- SS2 WORLD: las tres estaciones nuevas (x, zona e id de la ronda 2: S las usa)
 	"rival": {"x": -11.0, "face": -1, "zone": Vector2(-11.6, -9.9), "name": "Shine Again", "y": 2.4, "ax": -11.6, "az": -3.4},
@@ -41,7 +45,34 @@ var _day_nodes: Array = []
 var _lamps: Array = []
 var _beetle_parked: Sprite3D
 var _beetle_flyer := {}
-const SUN_DAY := 1.45
+const SUN_DAY := 1.32   # --- POLISH LOOK (P2): antes 1.45 (las fachadas de frente ya no se queman)
+# --- POLISH LOOK (P2): la luz de día en un solo lugar (la mañana, la vuelta después del Scour y de la noche). Antes
+# todo caía en la misma banda beige clara (cielo (0.86, 0.5, 0.3) arriba, arena casi blanca): ahora un cénit de polvo
+# más profundo, el horizonte ámbar de siempre, la arena un poco más oscura, más contraste y menos luz ambiente (las
+# sombras bajo los puestos se leen). Un solo sol, como siempre.
+const DAY_TOP := Vector3(0.62, 0.34, 0.22)       # antes (0.86, 0.5, 0.3)
+const DAY_HOR := Vector3(0.94, 0.7, 0.46)         # antes (1.0, 0.8, 0.55): el mismo ámbar, menos pálido
+const DAY_BRIGHT := 0.95                          # antes 1.05
+const DAY_AMB := Color(0.78, 0.7, 0.66)
+const DAY_AMB_E := 0.5                            # antes 0.62
+const DAY_BG := Color(0.98, 0.8, 0.56)
+const DAY_CONTRAST := 1.12                        # antes 1.08
+const DAY_EXPOSURE := 0.86                        # antes 0.94 (la arena y las paredes ya no se queman)
+const SAND_TINT := Color(0.8, 0.79, 0.77)        # antes blanco (la arena casi blanca)
+const RING_DAY := Color(0.8, 0.86, 0.98)          # antes (1.05, 0.95, 0.85): de día, acero pálido (no una mancha)
+const DRIFT_DAY := Color(1.3, 0.9, 0.56)          # --- POLISH LOOK (P4): la arena amontonada, tibia (no azulada)
+const STORM_SUN := Color(0.7, 0.55, 0.4)            # --- POLISH LOOK (P4): el sol tapado por el polvo (antes (1.0, 0.82, 0.6))
+# --- POLISH LOOK (P13): la franja lejana de dunas y mesetas (assets/props/horizon_strip.png, de ss_world.py horizon):
+# corta la línea recta del piso contra el cielo. Sin luz y con alfa recortada, como el sol y el anillo (nada que
+# compilar); malva polvoriento de día, violeta hondo de noche.
+const HORIZON_DAY := Color(0.8, 0.58, 0.5)
+const HORIZON_NIGHT := Color(0.2, 0.13, 0.27)
+var _horizon: Array = []
+# --- end POLISH LOOK
+const NIGHT_EXPOSURE := 0.94                      # la noche (la introducción, la gala) queda como estaba
+const NIGHT_CONTRAST := 1.08
+var _sand_mat: StandardMaterial3D                 # la arena: SAND_TINT de día, blanca de noche (como antes)
+# --- end POLISH LOOK
 
 func build() -> void:
 	for st in build_steps():
@@ -57,7 +88,7 @@ func _build_base() -> void:
 	setup_camera_env(false)
 	# la luz del sol de la mañana: arriba a la derecha y un poco desde delante (ilumina las fachadas)
 	sun.rotation_degrees = Vector3(-40.0, 44.0, 0.0)
-	sun.light_energy = 1.45
+	sun.light_energy = SUN_DAY   # --- POLISH LOOK (P2)
 	sun.light_color = Color(1.0, 0.88, 0.7)
 	cam_x0 = -6.0   # --- SS2 WORLD: la cámara llega a la vecina y al patio de Dolly (era -4.6 .. 4.4)
 	cam_x1 = 6.4
@@ -65,10 +96,10 @@ func _build_base() -> void:
 	cam_dist = 12.0
 	cam_look_y = 2.2
 	cam_look_z = -4.0
-	env.ambient_light_energy = 0.6
-	env.tonemap_exposure = 0.94
+	env.ambient_light_energy = DAY_AMB_E   # --- POLISH LOOK (P2): antes 0.6
+	env.tonemap_exposure = DAY_EXPOSURE   # --- POLISH LOOK (P2)
 	env.adjustment_saturation = 1.18
-	env.adjustment_contrast = 1.08
+	env.adjustment_contrast = DAY_CONTRAST   # --- POLISH LOOK (P2)
 	fill.position = Vector3(0.0, 3.4, 5.0)
 	fill.light_energy = 0.3
 
@@ -78,23 +109,31 @@ func _build_nell_kettle() -> void:
 	refresh_sign()
 
 func _build_ground_and_sky() -> void:
-	var sand := mat("res://assets/tex/sand.png", 0.45)
+	var sand := mat("res://assets/tex/sand.png", 0.45, SAND_TINT)   # --- POLISH LOOK (P2)
+	_sand_mat = sand
 	box_b(-60.0, 60.0, -0.2, 0.0, -70.0, 10.0, sand)
 	var sky := sky_backdrop(Vector2(170.0, 46.0), Vector3(0.0, 16.0, -52.0))
 	sky.name = "StreetSky"
 	var sm: ShaderMaterial = sky.material_override
-	sm.set_shader_parameter("day_top", Vector3(0.86, 0.5, 0.3))
-	sm.set_shader_parameter("day_hor", Vector3(1.0, 0.8, 0.55))
-	sm.set_shader_parameter("bright", 1.05)
+	sm.set_shader_parameter("day_top", DAY_TOP)   # --- POLISH LOOK (P2)
+	sm.set_shader_parameter("day_hor", DAY_HOR)
+	sm.set_shader_parameter("bright", DAY_BRIGHT)
 	# el anillo de restos (el astillero viejo) y el sol grande, ámbar
 	ring = prop("sky_ring", RING_POS, RING_PX, "center", 0, false)   # --- SS2 WORLD: el anillo v2 (fino, roto, inclinado)
 	ring.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
-	ring.modulate = Color(1.05, 0.95, 0.85)
+	ring.modulate = RING_DAY   # --- POLISH LOOK (P2)
 	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	sun_sprite = prop("sun", Vector3(15.5, 8.0, -51.0), 0.05, "center", 0, false)
 	sun_sprite.modulate = Color(1.25, 1.12, 0.95)
 	sun_sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_day_nodes.append(sun_sprite)
+	# --- POLISH LOOK (P13): dos tramos de 85 m, justo delante del fondo del cielo, apoyados bajo el piso
+	for hx in [-42.5, 42.5]:
+		var hz := sprite("res://assets/props/horizon_strip.png", 0.166, Vector3(hx, -0.35, -51.3), "bottom", null, false)
+		hz.modulate = HORIZON_DAY
+		hz.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_horizon.append(hz)
+	# --- end POLISH LOOK
 	# la lluvia de chatarra en el cielo (de noche)
 	setup_streaks(AABB(Vector3(-24.0, 7.0, -48.0), Vector3(44.0, 9.0, 1.0)), 11, 0.1)
 
@@ -257,16 +296,29 @@ func set_night(on: bool) -> void:
 		n.visible = not on
 	for l in _lamps:
 		(l as OmniLight3D).light_energy = 1.4 if on else 0.0
-	ring.modulate = Color(0.85, 0.85, 1.25) if on else Color(1.05, 0.95, 0.85)
-	env.ambient_light_color = Color(0.36, 0.36, 0.6) if on else Color(0.78, 0.7, 0.66)
-	env.ambient_light_energy = 0.55 if on else 0.62
-	env.background_color = Color(0.05, 0.04, 0.1) if on else Color(0.98, 0.8, 0.56)
+	# --- POLISH LOOK (P2): de día, las constantes DAY_* (la noche no cambia: la arena, la exposición y el contraste
+	# vuelven a los de antes en _apply_storm_light)
+	if _sand_mat:
+		_sand_mat.albedo_color = Color.WHITE if on else SAND_TINT
+	ring.modulate = Color(0.85, 0.85, 1.25) if on else RING_DAY
+	for hz in _horizon:   # --- POLISH LOOK (P13)
+		(hz as Sprite3D).modulate = HORIZON_NIGHT if on else HORIZON_DAY
+	env.ambient_light_color = Color(0.36, 0.36, 0.6) if on else DAY_AMB
+	env.ambient_light_energy = 0.55 if on else DAY_AMB_E
+	env.background_color = Color(0.05, 0.04, 0.1) if on else DAY_BG
 	for w in walkers:
 		(w["a"] as Actor).visible = not on and (w["a"] as Actor).get_meta("active", true)
 	_apply_sky2()   # --- SS2 WORLD: las lunas, las lámparas del anillo, las luces de la fiesta y del neón
 
 func _process(delta: float) -> void:
 	super._process(delta)
+	# --- POLISH FIX (F9): la Scour sopla: una ráfaga cada 12-18 s mientras se ve la calle de día
+	if _event == "sandstorm" and not night and visible:
+		_gust_t -= delta
+		if _gust_t <= 0.0:
+			_gust_t = randf_range(12.0, 18.0)
+			Sfx.play("gust", 0.08, -8.0)
+	# --- end POLISH FIX
 	# el escarabajo posado desaparece mientras despega (es el mismo)
 	if _beetle_parked and not _beetle_flyer.is_empty():
 		_beetle_parked.visible = not night and not (_beetle_flyer["s"] as Sprite3D).visible
@@ -317,6 +369,14 @@ const GALA_SPOTS := [Vector3(-5.2, 0.0, -1.1), Vector3(-4.8, 0.0, -2.7), Vector3
 	Vector3(-11.7, 0.0, -1.0), Vector3(-11.3, 0.0, -2.6)]
 
 var comet_sign: Sprite3D          # el cartel con el Brass Comet (sin luz: brilla); escondido hasta la gala / la corona
+# --- POLISH LOOK (P3): la noche del cometa (de noche y con el evento "finale": la gala, su calentamiento)
+var gala_key: OmniLight3D
+const GALA_KEY_POS := Vector3(-3.6, 1.6, 1.2)      # delante del público, a la altura del pecho
+const GALA_KEY_COL := Color(1.0, 0.74, 0.46)       # ámbar de farol
+const GALA_KEY_E := 1.2
+const GALA_AMB := Color(0.52, 0.42, 0.62)          # la noche de siempre es (0.36, 0.36, 0.6) a 0.55: más tibia y violeta
+const GALA_AMB_E := 0.62
+# --- end POLISH LOOK
 var moon_copper: Sprite3D
 var moon_tin: Sprite3D
 var ring_lamps: Array = []        # 7 Sprite3D (2 cuadros: encendida / apagada)
@@ -331,6 +391,7 @@ var _moon_kind := ""              # "" / "normal": Copper gibosa, Tin media; "fu
 var _ring_steady := -1            # cuántas lámparas del anillo fijas (-1: automático: la 7 si Old Seven tiene 3 núcleos)
 var _ring_rest := "blink"         # las demás: "blink" (titilan despacio, cada una a su ritmo) | "dark"
 var _event := ""
+var _gust_t := 5.0   # --- POLISH FIX (F9): la próxima ráfaga de la Scour (s)
 var _band_on := false
 var _extra_walkers: Array = []    # más gente paseando el día de la Gran Lluvia (y set_crowd)
 var _crowd := 0
@@ -357,6 +418,7 @@ var _night_only_ev: Array = []    # (del decorado de un evento) solo de noche
 var _bobbers: Array = []          # [Sprite3D, y] que suben y bajan despacio
 var _sand_layer: CanvasLayer      # the Scour: la arena que pasa delante de todo (2D, material por defecto)
 var _sand_rect: TextureRect
+var _drifts: Array = []           # --- POLISH LOOK (P4): la arena amontonada del Scour (su propio tinte, no el de _flats)
 var _sand_t := 0.0
 var _env_base := {}               # la luz de día de la calle (para volver después del Scour)
 var _flats: Array = []            # lo acostado en el piso sin luz (alfombra, arena): su color a mano de día y de noche
@@ -545,6 +607,15 @@ func _build_event_dressing() -> void:
 		lanterns.append(later(s))
 	lantern_light = toggle_omni(Vector3(-5.6, 3.6, -2.2), Color(1.0, 0.78, 0.5), 1.2, 9.0)
 	lantern_light.name = "LanternLight"
+	# --- POLISH LOOK (P3): la luz de frente de la noche del cometa (las caras del público: antes siluetas azul marino
+	# contra la fachada). Una omni más sin sombra; existe desde el arranque pero ESCONDIDA, no como toggle_omni (que
+	# _warm_world enciende en cada cuadro de calentamiento de la calle: una pasada de luz más sobre el piso, la fachada y
+	# la gente en ~20 cuadros, ~0,3 s de arranque en GL por software). _warm_gala_night la ve encendida por el evento
+	# (final + noche), la única vez que se prende: ahí se calientan sus variantes (bootjump gala_win/gala_lose = BASE).
+	gala_key = omni(GALA_KEY_POS, GALA_KEY_COL, GALA_KEY_E, 9.0)
+	gala_key.visible = false
+	gala_key.name = "GalaKeyLight"
+	# --- end POLISH LOOK
 	# más gente paseando por detrás el día de la Gran Lluvia
 	for spec in [["zib", 3.2, -8.9, 0.8], ["rook", 11.6, -9.2, 0.5], ["clatter", 7.6, -8.7, 0.35]]:
 		var a := make_actor(spec[0], Vector3(spec[1], 0.0, spec[2]), 1)
@@ -562,7 +633,8 @@ func _build_event_dressing() -> void:
 	for spec in [[Vector3(-7.4, 0.014, -3.4), 1.0], [Vector3(-3.0, 0.014, -3.2), 0.8], [Vector3(4.4, 0.014, -2.9), 1.2], [Vector3(9.4, 0.014, -2.95), 0.9]]:
 		var d := glow("sand_drift", spec[0], 0.03 * float(spec[1]), "center", 1, storm)
 		d.rotation_degrees.x = -90.0
-		_flats.append(d)
+		_drifts.append(d)   # --- POLISH LOOK (P4): antes en _flats (tinte (1.12, 1.0, 0.84): junto a la arena cálida se leían
+		# como charcos gris azulados); ahora DRIFT_DAY, del color de la arena al sol
 	_sand_layer = CanvasLayer.new()
 	_sand_layer.name = "SandOverlay"
 	_sand_layer.layer = 1
@@ -573,7 +645,16 @@ func _build_event_dressing() -> void:
 	_sand_rect.stretch_mode = TextureRect.STRETCH_TILE
 	_sand_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_sand_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_sand_rect.modulate = Color(1.0, 0.88, 0.7, 0.42)
+	# --- POLISH LOOK (P4): un velo de polvo tibio parejo debajo (ColorRect: el material 2D de siempre) y la arena que
+	# pasa más espesa (0.42 -> 0.55): el Scour se lee como tormenta
+	var veil := ColorRect.new()
+	veil.name = "DustVeil"
+	veil.color = Color(0.86, 0.6, 0.36, 0.16)
+	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	veil.size = Vector2(1920 + 512, 1080 + 512)
+	_sand_layer.add_child(veil)
+	_sand_rect.modulate = Color(1.0, 0.88, 0.7, 0.55)
+	# --- end POLISH LOOK
 	_sand_rect.size = Vector2(1920 + 512, 1080 + 512)
 	_sand_layer.add_child(_sand_rect)
 	# --- la inspección: el estandarte de la Tally Office en un poste entre los dos puestos
@@ -641,6 +722,14 @@ func _apply_sky2() -> void:
 		(s as Sprite3D).visible = fest
 		(s as Sprite3D).modulate = Color(1.55, 1.4, 1.2) if night else Color(1.0, 1.0, 1.0)
 	lantern_light.light_energy = 1.2 if night and fest else 0.0
+	# --- POLISH LOOK (P3): la luz de frente y el ambiente tibio solo la noche del cometa; si no, la noche de siempre
+	var gala_on := night and _event == "finale"
+	if gala_key:
+		gala_key.visible = gala_on   # --- POLISH LOOK (P3): escondida = ni una pasada de luz cuando no es la gala
+	if night:
+		env.ambient_light_color = GALA_AMB if gala_on else Color(0.36, 0.36, 0.6)
+		env.ambient_light_energy = GALA_AMB_E if gala_on else 0.55
+	# --- end POLISH LOOK
 	if _event == "finale":
 		# la Gran Lluvia: el anillo brilla cálido
 		ring.modulate = Color(1.25, 1.0, 0.82) if night else Color(1.25, 1.02, 0.84)
@@ -692,18 +781,21 @@ func _apply_storm_light() -> void:
 	if _sand_layer:
 		_sand_layer.visible = storm and visible
 	env.adjustment_saturation = 0.8 if storm else float(_env_base["sat"])
-	env.adjustment_contrast = 0.95 if storm else float(_env_base["con"])
-	env.tonemap_exposure = 0.88 if storm else float(_env_base["exp"])
+	# --- POLISH LOOK (P2): la base es la de día; de noche, los valores de siempre
+	env.adjustment_contrast = 0.95 if storm else (NIGHT_CONTRAST if night else float(_env_base["con"]))
+	env.tonemap_exposure = 0.88 if storm else (NIGHT_EXPOSURE if night else float(_env_base["exp"]))
+	for d in _drifts:   # --- POLISH LOOK (P4)
+		(d as Sprite3D).modulate = Color(0.38, 0.36, 0.5) if night else DRIFT_DAY
 	if night:
 		return
 	sun.light_color = Color(1.0, 0.66, 0.42) if storm else Color(1.0, 0.88, 0.7)
 	sun.light_energy = 0.95 if storm else SUN_DAY
-	env.ambient_light_color = Color(0.72, 0.56, 0.42) if storm else Color(0.78, 0.7, 0.66)
-	env.background_color = Color(0.76, 0.56, 0.38) if storm else Color(0.98, 0.8, 0.56)
-	sun_sprite.modulate = Color(1.0, 0.82, 0.6, 1.0) if storm else Color(1.25, 1.12, 0.95)
+	env.ambient_light_color = Color(0.72, 0.56, 0.42) if storm else DAY_AMB   # --- POLISH LOOK (P2): DAY_*
+	env.background_color = Color(0.76, 0.56, 0.38) if storm else DAY_BG
+	sun_sprite.modulate = STORM_SUN if storm else Color(1.25, 1.12, 0.95)   # --- POLISH LOOK (P4)
 	for sm in _sky_mats:
-		(sm as ShaderMaterial).set_shader_parameter("day_top", Vector3(0.56, 0.38, 0.26) if storm else Vector3(0.86, 0.5, 0.3))
-		(sm as ShaderMaterial).set_shader_parameter("day_hor", Vector3(0.8, 0.58, 0.38) if storm else Vector3(1.0, 0.8, 0.55))
+		(sm as ShaderMaterial).set_shader_parameter("day_top", Vector3(0.56, 0.38, 0.26) if storm else DAY_TOP)
+		(sm as ShaderMaterial).set_shader_parameter("day_hor", Vector3(0.8, 0.58, 0.38) if storm else DAY_HOR)
 
 ## La capa de arena 2D solo se ve con la calle activa.
 func activate(on: bool) -> void:

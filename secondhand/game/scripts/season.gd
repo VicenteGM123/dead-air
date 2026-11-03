@@ -297,6 +297,16 @@ func _free_part() -> String:
 func _needs_charity() -> bool:
 	if int(plan().get("pods", 2)) <= 0:
 		return false
+	# --- POLISH FIX (F6): el día del cometa nadie se queda sin cápsula por haber pagado la cuota de la noche 9: si no
+	# alcanza para la más barata (a precio de lista: regatear con lo justo no es una noche final) y no hay nada roto,
+	# Raker guarda una (sin mirar piezas ni los 3 días). (Con 0.7 x precio, el bot apurado con 15 cr no compraba nada.)
+	if Game.is_last_day() and Game.junk.is_empty() and not Game.pods_today.is_empty():
+		var cheapest := 9999
+		for p in Game.pods_today:
+			cheapest = mini(cheapest, int(p.get("price", 30)))
+		if Game.credits < cheapest:
+			return true
+	# --- end POLISH FIX
 	var c: Dictionary = SeasonData.CHARITY
 	return Game.credits < int(c["credits_below"]) and Game.parts_total() < int(c["parts_below"]) and Game.junk.is_empty() \
 		and Game.day - Game.charity_day >= int(c["every"])
@@ -497,6 +507,17 @@ func _brings_for(who: String) -> Array:
 			out.append(item)
 	return out
 
+# --- POLISH FIX (F4): un comprador sin nada que comprar encarga un arreglo de lo suyo (la misma partida, la misma cosa)
+func order_for(who: String, vid: int) -> Dictionary:
+	var items := _brings_for(who)
+	if items.is_empty():
+		return {}
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("%d-order-%d-%d" % [Game.run_seed, Game.day, vid])
+	var item := String(items[rng.randi() % items.size()])
+	return {"item": item, "fault": _fault(rng, item, plan())}
+# --- end POLISH FIX
+
 func _wants_for(who: String) -> Array:
 	var out: Array = []
 	var open := unlocked_items()
@@ -604,6 +625,9 @@ func _curtain_call(rng: RandomNumberGenerator, p: Dictionary) -> Array:
 		if String(out[i]["kind"]) == "repair" and not _wants_for(String(out[i]["who"])).is_empty():
 			out[i] = _buy_entry(rng, String(out[i]["who"]), float(out[i]["t"]))
 			bought += 1
+	# (POLISH FIX F4: aquí la última noche los compradores querían "cualquier cosa"; se quitó por el equilibrio: con
+	# dos ventas más en la noche que cuenta doble, el jugador humano ganaba el cometa en el 95 % de las simulaciones
+	# (el objetivo es 65-85 %). La última noche la cubre "Fix theirs instead", como los otros días.)
 	return out
 
 ## --- SS2 MERGE: el respaldo de familias (FAMILY_FALLBACK) ya no hace falta (las 5 familias existen); queda solo la
@@ -633,11 +657,44 @@ func pods_for(day: int) -> Array:
 	for i in count:
 		out.append(_roll_pod(rng, "pod-%d%02d" % [day, i + 1], p.get("pod_opts", {})))
 	# que no sean iguales en peso: una pesada y una liviana (la decisión tiene gracia)
-	if out.size() >= 2 and int(out[0].get("weight", 1)) == int(out[1].get("weight", 1)):
-		out.sort_custom(func(a, b): return int(a.get("price", 0)) > int(b.get("price", 0)))
+	# --- POLISH FIX (F3): antes solo se ordenaban (1 mañana de 4 ofrecía dos cápsulas idénticas). Ahora, con el mismo
+	# rng (la misma partida da las mismas cápsulas): se vuelve a tirar la segunda mientras pesen igual (hasta 6 veces);
+	# si siguen iguales, la segunda va al otro lado (pesada con algo roto, o liviana sin nada roto); si ninguna trae una
+	# cosa rota, la segunda es la pesada. La pesada va primero.
+	if out.size() >= 2:
+		var po: Dictionary = p.get("pod_opts", {})
+		var heavy := po.duplicate(true)
+		heavy.merge({"min_parts": 3, "broken_p": 1.0}, true)
+		var light := po.duplicate(true)
+		light.merge({"max_parts": 2, "broken_p": 0.0}, true)
+		var id2 := String(out[1].get("id", "pod-%d02" % day))
+		var tries := 0
+		while _pod_w(out[0]) == _pod_w(out[1]) and tries < 6:
+			out[1] = _roll_pod(rng, id2, po)
+			tries += 1
+		if _pod_w(out[0]) == _pod_w(out[1]):
+			out[1] = _roll_pod(rng, id2, heavy if _pod_w(out[0]) <= 2 else light)
+		if not _pod_has_item(out[0]) and not _pod_has_item(out[1]):
+			out[1] = _roll_pod(rng, id2, heavy)
+		if _pod_w(out[1]) > _pod_w(out[0]):
+			var a: Dictionary = out[0]
+			out[0] = out[1]
+			out[1] = a
+	# --- end POLISH FIX
 	for kind in p.get("extra_pods", []):
 		out.append(_special_pod(rng, String(kind), day))
 	return out
+
+# --- POLISH FIX (F3)
+func _pod_w(pod: Dictionary) -> int:
+	return int(pod.get("weight", 1))
+
+func _pod_has_item(pod: Dictionary) -> bool:
+	for c in pod.get("contents", []):
+		if c is Dictionary and c.has("item"):
+			return true
+	return false
+# --- end POLISH FIX
 
 func _special_pod(rng: RandomNumberGenerator, kind: String, day: int) -> Dictionary:
 	var price := int(SeasonData.POD_PRICES.get(kind, 40))

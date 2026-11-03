@@ -138,7 +138,7 @@ func _process(delta: float) -> void:
 	_shown = move_toward(_shown, _target, maxf(delta * 0.9, (_target - _shown) * minf(1.0, delta * 6.0)))
 	var w := maxf(0.0, _bar.size.x - 4.0)
 	_fill.size = Vector2(w * _shown, maxf(0.0, _bar.size.y - 4.0))
-	_label.modulate.a = 0.65 + 0.35 * sin(_t * 3.0)
+	_label.modulate.a = 0.85 + 0.15 * sin(_t * 3.0)   # --- POLISH LOOK (P12): respira sin perderse (antes bajaba a ~26 %)
 	if _spark:
 		_spark.position = Vector2(2.0 + w * _shown - 8.0, _bar.size.y * 0.5 - 8.0)
 		_spark.modulate.a = 0.55 + 0.45 * sin(_t * 7.0)

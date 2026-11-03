@@ -237,7 +237,7 @@ const INTRO := SeasonData.INTRO
 ## Consejos del primer día (cada uno sale una sola vez por partida). {key} = la tecla de interactuar del aparato.
 const TIPS := {
 	"walk": "Walk with {walk}. Buy a pod from Raker, then {key} Open shop at your door.",
-	"pods": "Heavy pods hold more parts. Rattling ones often hide a broken item.",
+	"pods": "Prices are a start: haggle! Weight and rattle are all you get to know.",   # --- POLISH FIX (F10): Raker ya dice la regla
 	"open": "Your first customer! Meet them at the counter.",
 	"counter": "Repair it: Nell fixes it at the bench while they wait.",
 	"clock": "The clock is running: we close at 6 PM.",
@@ -254,16 +254,17 @@ const TIPS := {
 const SCHEDULE := [
 	[
 		{"t": 3.0, "who": "gorrum", "kind": "repair", "item": "radio", "fault": "speaker"},
-		{"t": 55.0, "who": "zib", "kind": "buy", "wants": ["radio", "helperbot"]},
-		{"t": 100.0, "who": "pipip", "kind": "repair", "item": "helperbot", "fault": "cell"},
-		{"t": 150.0, "who": "clatter", "kind": "repair", "item": "helperbot", "fault": "servo"},
-		{"t": 162.0, "who": "rook", "kind": "repair", "item": "thruster", "fault": "nozzle"},
+		# --- POLISH FIX (F5): el día 1 sin el minuto muerto después del tutorial (Zib 55, Pipip 100, Clatter 150, Rook 162)
+		{"t": 25.0, "who": "zib", "kind": "buy", "wants": ["radio", "helperbot"]},
+		{"t": 70.0, "who": "pipip", "kind": "repair", "item": "helperbot", "fault": "cell"},
+		{"t": 120.0, "who": "clatter", "kind": "repair", "item": "helperbot", "fault": "servo"},
+		{"t": 140.0, "who": "rook", "kind": "repair", "item": "thruster", "fault": "nozzle"},
 		{"t": 228.0, "who": "oona", "kind": "repair", "item": "radio", "fault": "tuner"},
 	],
 	[
 		{"t": 4.0, "who": "zib", "kind": "repair", "item": "helperbot", "fault": "lens"},
 		{"t": 36.0, "who": "gorrum", "kind": "buy", "wants": ["thruster", "radio"]},
-		{"t": 78.0, "who": "rook", "kind": "repair", "item": "thruster", "fault": "coil"},
+		{"t": 58.0, "who": "rook", "kind": "repair", "item": "thruster", "fault": "coil"},   # --- POLISH FIX (F5): era 78
 		{"t": 86.0, "who": "oona", "kind": "buy", "wants": ["radio", "helperbot"]},
 		{"t": 95.0, "who": "pipip", "kind": "repair", "item": "thruster", "fault": "fan"},
 		{"t": 165.0, "who": "clatter", "kind": "repair", "item": "helperbot", "fault": "chip"},

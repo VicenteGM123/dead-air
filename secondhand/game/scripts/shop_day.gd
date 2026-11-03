@@ -33,6 +33,12 @@ var _arrivals: Array = []
 var _seq := 0
 var _over := false
 var _last_line := -1
+# --- POLISH FIX (F5): sin nadie en la tienda y Nell sin nada entre manos, la hora corre x3 (main pone idle_ok cada
+# cuadro: día abierto, sin trabajo ni venta, sin ventana, sin té). fast = se está adelantando este cuadro (el "»").
+const IDLE_K := 3.0
+var idle_ok := false
+var fast := false
+# --- end POLISH FIX
 
 func setup(w: ShopWorld, h: Hud) -> void:
 	world = w
@@ -374,9 +380,12 @@ func demo_fill(entries: Array, counter_e := {}) -> void:
 func _process(delta: float) -> void:
 	if not running:
 		return
+	fast = false   # --- POLISH FIX (F5)
 	if not paused:
 		if not hold:
-			shop_t = minf(shop_t + delta, Data.DAY_SECONDS)
+			# --- POLISH FIX (F5): la tienda vacía adelanta la hora
+			fast = idle_ok and line.is_empty() and counter.is_empty() and leaving.is_empty() and not closing
+			shop_t = minf(shop_t + delta * (IDLE_K if fast else 1.0), Data.DAY_SECONDS)
 		# llega quien tiene hora
 		while not closing and not _arrivals.is_empty() and float(_arrivals[0]["t"]) <= shop_t and not hold:
 			_arrive(_arrivals.pop_front())

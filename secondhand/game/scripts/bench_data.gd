@@ -562,6 +562,7 @@ func roll_pod_for(rng: RandomNumberGenerator, id: String, items: Array, parts: A
 	var kind := String(opts.get("kind", ""))
 	var n := rng.randi_range(POD_PARTS.x, POD_PARTS.y)
 	n = maxi(n, int(opts.get("min_parts", 0)))
+	n = mini(n, int(opts.get("max_parts", 99)))   # --- POLISH FIX (F3): la cápsula liviana (y la de regalo: max 2)
 	var contents: Array = []
 	for i in n:
 		contents.append({"part": part_pool[rng.randi() % part_pool.size()]})

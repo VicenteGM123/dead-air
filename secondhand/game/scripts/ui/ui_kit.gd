@@ -36,6 +36,25 @@ const FS_BUTTON := 21
 const FS_HEAD := 26
 const FS_TITLE := 40
 
+# --- POLISH FIX (F1): la ráfaga de pulsaciones de "interact" (E / Enter / Espacio / la A del mando). main._process la
+# anota; la puerta de la tienda y los momentos de historia no cuentan una pulsación que sigue una ráfaga empezada antes
+# de que aparecieran (Espacio por la introducción, E por el tablero).
+const MASH_GAP_MS := 2000
+static var mash_last_ms := -100000
+static var mash_start_ms := -100000
+
+static func note_press(now: int) -> void:
+	if now - mash_last_ms > MASH_GAP_MS:
+		mash_start_ms = now
+	mash_last_ms = now
+
+## Una pulsación de ahora sigue una ráfaga que empezó antes de t_ms (si main todavía no la anotó, se calcula igual).
+static func mash_from_before(t_ms: int) -> bool:
+	var now := Time.get_ticks_msec()
+	var start := mash_start_ms if now - mash_last_ms <= MASH_GAP_MS else now
+	return start < t_ms
+# --- end POLISH FIX
+
 static var font_regular: Font     # Inter Medium
 static var font_bold: Font        # Inter Bold
 static var font_italic: Font      # Inter Medium inclinada (FontVariation)
@@ -434,6 +453,8 @@ static func style_tooltips(t: Theme) -> void:
 ## Una tecla (o botón del mando) dibujada: caja clara con canto, letra oscura. Con el mando, un círculo verde "A".
 static func keycap(key: String, size := FS_BODY) -> Control:
 	load_fonts()
+	if PadCursor.pad_in_use and (key in PAD_NAMED or key in ["X", "Y"]):   # --- POLISH LOOK (P5): stick, LB / RB, Menu,
+		return pad_glyph(key, size)                                            # X / Y: dibujos del mismo alto que A / B
 	var pad_btn0 := key in ["A", "B"] and PadCursor.pad_in_use
 	var glyph := "res://assets/ui/glyph_pad_%s.png" % key.to_lower() if pad_btn0 else "res://assets/ui/glyph_key.png"
 	# --- SS CORE: todas las teclas del mismo alto y con el mismo pixel: escala entera mínima x2 desde letra 13
@@ -491,6 +512,79 @@ static func keycap(key: String, size := FS_BODY) -> Control:
 	l.custom_minimum_size.x = size * 0.7
 	p.add_child(l)
 	return p
+
+# --- POLISH LOOK (P5): los botones del mando que ART no dibujó (el stick, LB / RB, LT / RT y Menu, el ≡ del mando
+# Xbox; antes eran teclas claras con "Stick", "LB", "Start" escrito). Cajas StyleBoxFlat (el material 2D de siempre:
+# nada que compilar), del mismo alto que A / B (16 px x la misma escala entera), oscuras como un mando.
+const PAD_NAMED := ["Stick", "LB", "RB", "LT", "RT", "Menu", "Start"]
+const PAD_DARK := Color(0.17, 0.16, 0.16)
+const PAD_RIM := Color(0.6, 0.57, 0.52)            # canto claro: se lee sobre las placas oscuras
+const PAD_LIGHT := Color(0.93, 0.9, 0.84)
+
+static func pad_glyph(key: String, size := FS_BODY) -> Control:
+	load_fonts()
+	var s := maxi(2 if size >= 13 else 1, roundi(size * 1.5 / 16.0))   # (la misma escala que keycap: A / B)
+	var h := 16.0 * s
+	var root := Control.new()
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	root.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var w := h
+	match key:
+		"X", "Y":
+			# X / Y: el círculo de color con su letra, del mismo alto que A / B (antes un óvalo más chico)
+			var col := Color(0.3, 0.5, 0.86) if key == "X" else Color(0.9, 0.74, 0.26)
+			root.add_child(_pad_box(Rect2(0, 0, h, h), col, col.darkened(0.5), h / 2.0, s))
+			var lx := label(key, maxi(10, roundi(h * 0.56)), Color.WHITE if key == "X" else Color(0.2, 0.15, 0.08), font_bold, HORIZONTAL_ALIGNMENT_CENTER)
+			lx.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			lx.position = Vector2(0, -s * 0.5)
+			lx.size = Vector2(h, h)
+			root.add_child(lx)
+		"Stick":
+			# el stick visto desde arriba: el aro oscuro y la cabeza clara un poco corrida hacia arriba
+			root.add_child(_pad_box(Rect2(0, 0, h, h), PAD_DARK, PAD_RIM, h / 2.0, s))
+			var d := roundf(h * 0.5)
+			root.add_child(_pad_box(Rect2((h - d) / 2.0, (h - d) / 2.0 - s, d, d), Color(0.62, 0.6, 0.56), Color(0.1, 0.09, 0.09), d / 2.0, s))
+		"Menu", "Start":
+			# el botón Menu del mando Xbox: un círculo oscuro con tres rayitas (≡)
+			root.add_child(_pad_box(Rect2(0, 0, h, h), PAD_DARK, PAD_RIM, h / 2.0, s))
+			var bw := roundf(h * 0.44)
+			var bh := float(maxi(1, s))
+			var gap := float(maxi(2, 2 * s))
+			for i in 3:
+				var r := ColorRect.new()
+				r.color = PAD_LIGHT
+				r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				r.position = Vector2(roundf((h - bw) / 2.0), roundf(h / 2.0 - bh / 2.0 + (i - 1) * (gap + bh)))
+				r.size = Vector2(bw, bh)
+				root.add_child(r)
+		_:
+			# LB / RB / LT / RT: una píldora oscura con las letras claras
+			w = roundf(h * 1.6)
+			root.add_child(_pad_box(Rect2(0, 0, w, h), PAD_DARK, PAD_RIM, roundf(h * 0.42), s))
+			var l := label(key, maxi(10, roundi(h * 0.44)), PAD_LIGHT, font_bold, HORIZONTAL_ALIGNMENT_CENTER)
+			l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			l.position = Vector2(0, -s * 0.5)
+			l.size = Vector2(w, h)
+			root.add_child(l)
+	root.custom_minimum_size = Vector2(w, h)
+	root.size = root.custom_minimum_size
+	return root
+
+static func _pad_box(r: Rect2, bg: Color, rim: Color, radius: float, s: int) -> Panel:
+	var p := Panel.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.border_color = rim
+	sb.set_border_width_all(maxi(1, s))
+	sb.set_corner_radius_all(int(radius))
+	sb.anti_aliasing = true
+	p.add_theme_stylebox_override("panel", sb)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.position = r.position
+	p.size = r.size
+	return p
+# --- end POLISH LOOK
 
 ## [tecla] Acción, sobre una placa oscura. key "" = la tecla de interactuar del aparato en uso (E o A).
 static func prompt(key: String, action: String, size := FS_BODY) -> PanelContainer:

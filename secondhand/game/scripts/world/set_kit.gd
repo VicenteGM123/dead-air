@@ -52,6 +52,11 @@ var warm_extra: Array = []
 var toggle_lights: Array = []
 var _warm_energy: Array = []
 var flyer_event := ""            # las naves con "event" en su dict solo cruzan ese día (P1: las hoverbikes del Derby)
+# --- POLISH LOOK (P1): si es válido, blurt() no crea la etiqueta 3D: le pasa la frase a este Callable
+# (actor, texto, color, segundos, cuánto más arriba). main lo conecta solo en la calle (un globo de papel de la HUD,
+# legible sobre el tablero negro de salidas y siempre dentro de la pantalla); la tienda y las demos sin HUD siguen igual.
+var bubble_sink: Callable
+# --- end POLISH LOOK
 
 func _init() -> void:
 	var f := FileAccess.open("res://assets/props/props.json", FileAccess.READ)
@@ -398,6 +403,9 @@ func _update_flyers(delta: float) -> void:
 func blurt(a: Node3D, text: String, col := Color(1.0, 0.95, 0.85), secs := 2.6) -> void:
 	if not is_instance_valid(a) or text == "":
 		return
+	if bubble_sink.is_valid():   # --- POLISH LOOK (P1)
+		bubble_sink.call(a, text, col, secs, _blurt_lift(a))
+		return
 	var l := blurt_label(text, col)
 	a.add_child(l)
 	var head: float = a.call("top_height") if a.has_method("top_height") else 1.6
@@ -418,7 +426,7 @@ func blurt_label(text: String, col := Color(1.0, 0.95, 0.85)) -> Label3D:
 	l.font = UIKit.font_bold
 	l.font_size = 38
 	l.pixel_size = 0.0042 * maxf(1.0, cam_dist / 8.0)   # --- SS SHIP: en la calle (cámara a 12 m) la frase se veía chica; mismo tamaño en pantalla que en la tienda
-	l.outline_size = 12
+	l.outline_size = 14   # --- POLISH LOOK (P1): 12 -> 14 (las frases de la tienda, más firmes sobre el taller)
 	l.outline_modulate = Color(0.1, 0.06, 0.05)
 	l.modulate = Color(col.r, col.g, col.b, 0.0)
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED

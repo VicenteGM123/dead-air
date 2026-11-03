@@ -162,9 +162,9 @@ func play_pitched(name: String, pitch: float, db := 0.0) -> void:
 func blip(db := -6.0) -> void:
 	play("sfx_blip%d" % (1 + randi() % 3), 0.08, db)
 
-## Pasos: el contrato de audio no trae pasos; si algún día existen sfx_step1..3, suenan.
+## Pasos: sfx_step1..3 (--- POLISH FIX F9: ya existen; solo los de Nell, ver actor.gd; -12 -> -16 dB, suaves).
 func step() -> void:
-	play("sfx_step%d" % (1 + randi() % 3), 0.1, -12.0)
+	play("sfx_step%d" % (1 + randi() % 3), 0.1, -16.0)
 
 ## La música en bucle: "title", "shop", "market" (music_<nombre>.ogg) o "" para callar. Cambia con un fundido.
 func music(name: String) -> void:
@@ -266,6 +266,19 @@ func prewarm_one(n: String) -> float:
 	if not OS.has_feature("web"):
 		return 0.0
 	var st := _loop_stream(n)
+	if st == null or AudioServer.is_stream_registered_as_sample(st):
+		return 0.0
+	var t0 := Time.get_ticks_usec()
+	AudioServer.register_stream_as_sample(st)
+	prewarm_ms[n] = snappedf((Time.get_ticks_usec() - t0) / 1000.0, 0.1)
+	return prewarm_ms[n]
+
+## --- POLISH FIX (F9): precarga UN efecto corto en la web (sin tocar su loop, a diferencia de prewarm_one): los pasos
+## en un paso del arranque; el retumbe de Bigfall y la ráfaga de la Scour bajo el fundido de esa mañana.
+func prewarm_sfx(n: String) -> float:
+	if not OS.has_feature("web"):
+		return 0.0
+	var st := _stream(n)
 	if st == null or AudioServer.is_stream_registered_as_sample(st):
 		return 0.0
 	var t0 := Time.get_ticks_usec()

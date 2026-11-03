@@ -307,6 +307,39 @@ TEXTURES = {'sand': tex_sand, 'adobe': tex_adobe, 'metal_plate': tex_metal_plate
             'canopy_fabric_teal': lambda: tex_canopy(seed=53, a='#3e8a86'), 'wood': tex_wood}
 
 
+# --- POLISH LOOK (P13): una franja lejana de dunas y mesetas (512x40, blanca con alfa: el juego la tiñe de malva de día
+# y de violeta de noche). Se repite a lo ancho (los bordes izquierdo y derecho empalman) y no tiene degradés: pixel art.
+def horizon_strip(w=512, h=40, seed=71):
+    rng = np.random.RandomState(seed)
+    xs = np.arange(w)
+    # dunas suaves (dos senos que dan la vuelta) + mesetas de techo plano con flancos en escalón
+    base = 9 + 3.0 * np.sin(xs / w * 2 * math.pi * 3 + 0.7) + 2.0 * np.sin(xs / w * 2 * math.pi * 7 + 2.1)
+    top = base.copy()
+    for (cx, half, hgt) in ((70, 34, 24), (205, 22, 18), (330, 46, 29), (450, 18, 15)):
+        for x in range(w):
+            d = min(abs(x - cx), w - abs(x - cx))
+            if d <= half:
+                top[x] = max(top[x], hgt)
+            elif d <= half + 6:
+                top[x] = max(top[x], hgt - (d - half) * 2.2)
+    top += ndi.gaussian_filter1d(rng.rand(w), 2, mode='wrap') * 2.0
+    top = np.clip(np.round(top), 3, h - 1).astype(int)
+    a = np.zeros((h, w), bool)
+    for x in range(w):
+        a[h - top[x]:, x] = True
+    img = np.zeros((h, w, 4), np.uint8)
+    img[..., :3] = 255
+    # un canto apenas más claro arriba (la luz rasante) y el resto parejo: el color lo pone el juego
+    shade = np.full((h, w), 228, np.uint8)
+    for x in range(w):
+        shade[h - top[x], x] = 255
+    img[..., 0] = shade
+    img[..., 1] = shade
+    img[..., 2] = shade
+    img[..., 3] = np.where(a, 255, 0)
+    return Image.fromarray(img, 'RGBA')
+
+
 def build_tex(out):
     d = os.path.join(out, 'tex')
     os.makedirs(d, exist_ok=True)
@@ -326,4 +359,7 @@ if __name__ == '__main__':
         build_tex(out)
     if 'props' in what and 'build_props' in globals():
         build_props(out)
+    if 'horizon' in what:   # --- POLISH LOOK (P13): solo la franja del horizonte -> <out>/props/horizon_strip.png
+        os.makedirs(os.path.join(out, 'props'), exist_ok=True)
+        horizon_strip().save(os.path.join(out, 'props', 'horizon_strip.png'))
     print('ok world', what)

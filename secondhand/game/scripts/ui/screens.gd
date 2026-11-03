@@ -26,6 +26,7 @@ var _confirm_new := false
 var _new_btn: Button
 var suspended := false     # una ventana encima (los ajustes desde el título): no se ve ni escucha teclas
 var _title_logo: Control   # --- BOOT: el logo del título (la pantalla de carga vuela su logo hasta aquí)
+var _sound_plate: Control  # --- POLISH FIX (F12): "Sound is off: press any key or click once." (web, solo con el mando)
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -189,10 +190,28 @@ func show_title(can_continue: bool, note := "") -> void:
 	var foot := _outlined(String(SeasonData.TEXT["title_footer"]), 17, Color(1.0, 0.95, 0.86), 6, UIKit.font_regular)
 	UIKit.place(foot, Vector2(0.5, 1.0), Vector2(-300, -46), Vector2(600, 26), Control.GROW_DIRECTION_BOTH, Control.GROW_DIRECTION_BEGIN)
 	_root.add_child(foot)
+	# --- POLISH FIX (F12): en la web el navegador no cuenta un botón del mando como el permiso del sonido: quien entra
+	# solo con el mando ve esta placa (se arma con el título, escondida; main la muestra mientras haga falta)
+	var sp := PanelContainer.new()
+	sp.add_theme_stylebox_override("panel", UIKit.panel_style(Color(0.1, 0.07, 0.05, 0.9), UIKit.ACCENT, 2, 6, 10))
+	sp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sl := UIKit.label("Sound is off: press any key or click once.", 19, UIKit.ACCENT_BRIGHT, UIKit.font_bold, HORIZONTAL_ALIGNMENT_CENTER)
+	sl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sp.add_child(sl)
+	UIKit.place(sp, Vector2(0.5, 0.0), Vector2(-250, 548), Vector2(500, 44), Control.GROW_DIRECTION_BOTH)
+	sp.visible = false
+	_root.add_child(sp)
+	_sound_plate = sp
+	# --- end POLISH FIX
 	if note != "":
 		var nl := _outlined(note, 19, Color(1.0, 0.82, 0.46), 7, UIKit.font_bold)
 		UIKit.place(nl, Vector2(0.5, 1.0), Vector2(-420, -86), Vector2(840, 30), Control.GROW_DIRECTION_BOTH, Control.GROW_DIRECTION_BEGIN)
 		_root.add_child(nl)
+
+## --- POLISH FIX (F12): la placa del sonido del título (solo cambia si hace falta).
+func set_sound_plate(on: bool) -> void:
+	if current == "title" and is_instance_valid(_sound_plate) and _sound_plate.visible != on:
+		_sound_plate.visible = on
 
 ## --- BOOT: dónde está el logo del título (en coordenadas de la pantalla) y mostrarlo / esconderlo.
 func title_logo_rect() -> Rect2:
@@ -360,42 +379,66 @@ func show_ledger(s: Dictionary, _last := false) -> void:
 	# el Lantern Board (la noche final: "The Signal is counting...")
 	var bl := String(s.get("board_line", ""))
 	if bl != "":
-		_ledger_row(v, "rank", "Lantern Board", bl, "", Color(0.5, 0.32, 0.06))
-	# la cuota: la de esta noche o la próxima
-	var dues_t := int(s.get("dues_tonight", 0))
-	var cr := int(s.get("credits", 0))
-	var nd: Dictionary = s.get("dues_next", {})
-	var dh := UIKit.hbox(10)
-	var due_amt := dues_t if dues_t > 0 else int(nd.get("amount", 0)) + int(nd.get("debt", 0))
-	var dlabel := "Dues tonight" if dues_t > 0 else ("Next dues · night %d" % int(nd.get("night", 0)) if not bool(nd.get("upkeep", false)) else "Upkeep · night %d" % int(nd.get("night", 0)))
-	dh.add_child(_ink(dlabel, 18, UIKit.font_bold))
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dh.add_child(spacer)
-	dh.add_child(_ink("%s / %s cr" % [UIKit.num(cr), UIKit.num(due_amt)], 18, UIKit.font_bold))
-	v.add_child(dh)
-	var bar := ProgressBar.new()
-	bar.max_value = 1.0
-	bar.value = clampf(float(cr) / float(maxi(1, due_amt)), 0.0, 1.0)
-	bar.show_percentage = false
-	bar.custom_minimum_size = Vector2(0, 12)
-	var fill := StyleBoxFlat.new()
-	fill.bg_color = UIKit.GOOD.darkened(0.15) if cr >= due_amt else UIKit.ACCENT.darkened(0.1)
-	fill.set_corner_radius_all(4)
-	bar.add_theme_stylebox_override("fill", fill)
-	v.add_child(bar)
-	var dues_note := ""
-	if dues_t > 0:
-		dues_note = ("Dues tonight: %d. You have %d." % [dues_t, cr]) if cr < dues_t else "Dues tonight: %d. Covered!" % dues_t
-	elif String(s.get("dues_note", "")) != "":
-		dues_note = String(s["dues_note"])
-	elif due_amt > 0:
-		dues_note = "Covered! Anything more is yours." if cr >= due_amt else "%s cr to go." % UIKit.num(due_amt - cr)
-	var dn := _ink(dues_note, 15, UIKit.font_bold, Color(0.6, 0.22, 0.14) if dues_t > 0 and cr < dues_t else INK_SOFT)
-	dn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	dn.custom_minimum_size = Vector2(500, 0)
-	v.add_child(dn)
+		# --- POLISH LOOK (P12): "+20 ★ tonight · #27" en tinta (el ocre sobre el papel casi no se leía) y la flecha
+		# aparte, verde oscuro si subió, rojo si bajó
+		var ai := -1
+		for ch in ["▲", "▼"]:
+			if bl.find(ch) >= 0:
+				ai = bl.find(ch)
+		if ai > 0:
+			_ledger_row(v, "rank", "Lantern Board", bl.substr(0, ai).strip_edges(), "", INK)
+			var up := bl.substr(ai, 1) == "▲"
+			var arl := _ink(bl.substr(ai).strip_edges(), 19, UIKit.font_bold, Color(0.1, 0.48, 0.22) if up else Color(0.72, 0.2, 0.14))
+			(v.get_child(v.get_child_count() - 1) as HBoxContainer).add_child(arl)
+		else:
+			_ledger_row(v, "rank", "Lantern Board", bl, "", INK)
+		# --- end POLISH LOOK
+	# --- POLISH FIX (F6): la noche del cometa no tiene cuota (la de mantenimiento es del modo sin fin): en su lugar,
+	# lo que importa esta noche ("Tonight the Signal counts every star twice.")
+	var finale_note := String(s.get("finale_note", ""))
+	var dues_t := 0
+	if finale_note != "":
+		var fnl := _ink(finale_note, 18, UIKit.font_bold, Color(0.5, 0.32, 0.06))
+		fnl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		fnl.custom_minimum_size = Vector2(500, 0)
+		v.add_child(fnl)
+	else:
+		# la cuota: la de esta noche o la próxima
+		dues_t = int(s.get("dues_tonight", 0))
+		var cr := int(s.get("credits", 0))
+		var nd: Dictionary = s.get("dues_next", {})
+		var dh := UIKit.hbox(10)
+		var due_amt := dues_t if dues_t > 0 else int(nd.get("amount", 0)) + int(nd.get("debt", 0))
+		var dlabel := "Dues tonight" if dues_t > 0 else ("Next dues · night %d" % int(nd.get("night", 0)) if not bool(nd.get("upkeep", false)) else "Upkeep · night %d" % int(nd.get("night", 0)))
+		dh.add_child(_ink(dlabel, 18, UIKit.font_bold))
+		var spacer := Control.new()
+		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		dh.add_child(spacer)
+		dh.add_child(_ink("%s / %s cr" % [UIKit.num(cr), UIKit.num(due_amt)], 18, UIKit.font_bold))
+		v.add_child(dh)
+		var bar := ProgressBar.new()
+		bar.max_value = 1.0
+		bar.value = clampf(float(cr) / float(maxi(1, due_amt)), 0.0, 1.0)
+		bar.show_percentage = false
+		bar.custom_minimum_size = Vector2(0, 12)
+		var fill := StyleBoxFlat.new()
+		fill.bg_color = UIKit.GOOD.darkened(0.15) if cr >= due_amt else UIKit.ACCENT.darkened(0.1)
+		fill.set_corner_radius_all(4)
+		bar.add_theme_stylebox_override("fill", fill)
+		v.add_child(bar)
+		var dues_note := ""
+		if dues_t > 0:
+			dues_note = ("Dues tonight: %d. You have %d." % [dues_t, cr]) if cr < dues_t else "Dues tonight: %d. Covered!" % dues_t
+		elif String(s.get("dues_note", "")) != "":
+			dues_note = String(s["dues_note"])
+		elif due_amt > 0:
+			dues_note = "Covered! Anything more is yours." if cr >= due_amt else "%s cr to go." % UIKit.num(due_amt - cr)
+		var dn := _ink(dues_note, 15, UIKit.font_bold, Color(0.6, 0.22, 0.14) if dues_t > 0 and cr < dues_t else INK_SOFT)
+		dn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		dn.custom_minimum_size = Vector2(500, 0)
+		v.add_child(dn)
+	# --- end POLISH FIX
 	# lo de mañana (y Kettle la noche antes de Bronzemoon)
 	var pv := String(s.get("preview", ""))
 	if String(s.get("kettle", "")) != "":
