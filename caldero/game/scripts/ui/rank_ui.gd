@@ -403,6 +403,11 @@ static func my_path_note() -> Control:
 	var ch := PathChart.new()
 	ch.custom_minimum_size = Vector2(380, 74)
 	v.add_child(ch)
+	# --- POLISH FIX F12: una meta a la vista cada noche: la tienda de delante y cuántos puntos faltan
+	var nx := next_goal_text()
+	if nx != "":
+		v.add_child(PaperKit.hand(nx, 26, PaperKit.INK, true, HORIZONTAL_ALIGNMENT_LEFT, 400))
+	# --- end
 	# lo que sumó ayer, en iconos: ventas, estrellas, renombre, medalla
 	if not mv.is_empty():
 		var parts: Dictionary = mv.get("parts", {})
@@ -420,6 +425,20 @@ static func my_path_note() -> Control:
 			row.add_child(mi)
 	PaperKit.decor(n, "paper_pin_green", Vector2(0.5, 0.0), Vector2(-10, -12))
 	return n
+
+## --- POLISH FIX F12: «Next: <tienda> · <n> pts» (la que va justo delante y los puntos que le faltan para pasarla) o,
+## en el puesto 1, «Top of the Guild!».
+static func next_goal_text() -> String:
+	var o: Array = Ranking.order()
+	var i := o.find(Ranking.ME)
+	if i < 0:
+		return ""
+	if i == 0:
+		return "Top of the Guild!"
+	var ahead := String(o[i - 1])
+	var gap := maxi(1, Ranking.score(ahead) - Ranking.score(Ranking.ME) + 1)
+	return "Next: %s · %s pts" % [Ranking.shop_name(ahead), RankUI.fmt(gap)]
+# --- end
 
 ## La línea de sus puestos (1 arriba, el último abajo) en los últimos días.
 class PathChart extends Control:
@@ -670,7 +689,7 @@ static func credits(ov, done: Callable) -> Control:
 	var st := UIKit.shadow(PaperKit.hand("Number One in the Arvendal Apothecaries' Guild Rankings", 40, Color("eadbb8"), false, HORIZONTAL_ALIGNMENT_CENTER), 2)
 	root.add_child(st)
 	var sc := ScrollContainer.new()
-	sc.custom_minimum_size = Vector2(1500, 520)
+	sc.custom_minimum_size = Vector2(1500, 474)   # --- POLISH LOOK P14: (era 520) deja sitio al hueco antes del botón
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	sc.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -691,6 +710,7 @@ static func credits(ov, done: Callable) -> Control:
 	var thanks := UIKit.shadow(PaperKit.hand("Thanks for playing", 52, UIKit.GOLD_BRIGHT, true, HORIZONTAL_ALIGNMENT_CENTER), 3)
 	inner.add_child(thanks)
 	inner.add_child(PaperKit.gap(300))
+	root.add_child(PaperKit.gap(46))   # --- POLISH LOOK P14: aire entre los créditos y el botón
 	var b := PaperKit.wood_button("Keep playing", func():
 		ov.close(false)
 		done.call(), 38)
@@ -699,11 +719,33 @@ static func credits(ov, done: Callable) -> Control:
 	root.add_child(b)
 	ov.set_default(b)   # --- R6 UI
 	# los créditos suben solos (la rueda del ratón o el stick derecho también los mueven)
+	# --- POLISH LOOK P14: arriba y abajo los créditos se desvanecen (cada tarjeta según su altura en la ventanita) en
+	# vez de cortarse: antes asomaba una fila de cabezas cortadas sobre «Keep playing». Solo modulate (nada que compilar).
+	var fading: Array = grid.get_children()
+	fading.append(thanks)
 	sc.ready.connect(func():
+		_credits_fade(sc, fading)
 		var tw := sc.create_tween()
 		tw.tween_interval(1.2)
-		tw.tween_method(func(y: float): sc.scroll_vertical = int(y), 0.0, 2600.0, 34.0))
+		tw.tween_method(func(y: float):
+			sc.scroll_vertical = int(y)
+			_credits_fade(sc, fading), 0.0, 2600.0, 34.0))
 	return root
+
+const CREDITS_FADE := 120.0   # --- POLISH LOOK P14: alto de la franja que se desvanece arriba y abajo
+
+static func _credits_fade(sc: ScrollContainer, items: Array) -> void:
+	if not is_instance_valid(sc):
+		return
+	var r := sc.get_global_rect()
+	for c in items:
+		if not is_instance_valid(c):
+			continue
+		var cr: Rect2 = (c as Control).get_global_rect()
+		var top := clampf((cr.position.y + cr.size.y * 0.5 - r.position.y) / CREDITS_FADE, 0.0, 1.0)
+		var bot := clampf((r.end.y - cr.position.y - cr.size.y * 0.75) / CREDITS_FADE, 0.0, 1.0)
+		(c as Control).modulate.a = minf(top, bot)
+# --- end POLISH LOOK P14
 
 ## El elenco para los créditos: [sprite, nombre, oficio]. Ella y Miga primero; Fizz, al final.
 static func cast_list() -> Array:

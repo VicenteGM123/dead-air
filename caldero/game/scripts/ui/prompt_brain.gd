@@ -147,7 +147,7 @@ func _counter(w: ShopWorld, cam: Camera3D) -> void:
 	var cv: Dictionary = main._counter_v
 	var head := _over(main.customer, cam, 0.66)   # por encima de su reloj de arena
 	var ordered := bool(cv.get("ordered", false)) and String(cur.get("kind", "")) != "return"
-	if ordered and not Game.potions.is_empty():
+	if ordered and not Game.potions.is_empty() and not _tutorial_hold():   # --- POLISH FIX F6
 		var give := _give_spec()
 		if Glyphs.device == "mouse" and ui.potion_panel.is_visible_in_tree():
 			# con el ratón: se habla tocando a la persona y se da la poción tocándola en el estante
@@ -159,6 +159,12 @@ func _counter(w: ShopWorld, cam: Camera3D) -> void:
 		_acts["alt"] = main._on_customer_clicked
 	else:
 		_add("counter", head, [["interact", "Talk"]], {"interact": main._on_customer_clicked})
+
+## --- POLISH FIX F6: en el tutorial, mientras no embotelló la poción que se le pidió (main.tutorial_step < 2), la placa
+## no ofrece dar lo que haya en el estante (contradecía el consejo: «Give [Bálsamo Helado]» a quien quiere Sueño
+## Profundo): solo «Talk». Los días normales no cambian (dar es adivinar, a propósito).
+func _tutorial_hold() -> bool:
+	return bool(main.current.get("tutorial", false)) and int(main.tutorial_step) < 2
 
 ## «Give» con el icono de la poción si en el estante hay una sola clase (E se la da enseguida); si hay varias,
 ## «Give potion» (E abre el estante para elegir).
@@ -200,7 +206,7 @@ func _bench_shelf_hint() -> void:
 		if is_instance_valid(g) and g.running and not g.over and String(g.kind) == "concurso":
 			verb = "Present"
 	elif main.customer_ready and is_instance_valid(main.customer) and bool(main._counter_v.get("ordered", false)) \
-			and String(main.current.get("kind", "")) != "return":
+			and String(main.current.get("kind", "")) != "return" and not _tutorial_hold():   # --- POLISH FIX F6
 		verb = "Give"
 	if verb == "":
 		return
@@ -311,6 +317,10 @@ func _avoid_world(w: ShopWorld, cam: Camera3D) -> void:
 		var t1 := _pt(cam, c + Vector3(wm, hm, 0.0))
 		_avoid.append(Rect2(t0, Vector2.ZERO).expand(t1))
 	# --- end R6 SHIP
+	# --- POLISH LOOK P3: los globos de lo que dicen (GameUI.bubble) tampoco se tapan con las placas
+	if ui.has_method("bubble_rects"):
+		_avoid.append_array(ui.bubble_rects())
+	# --- end POLISH LOOK P3
 
 ## Los paneles del HUD que estén a la vista.
 func _avoid_hud() -> void:

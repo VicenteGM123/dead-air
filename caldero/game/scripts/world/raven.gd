@@ -220,9 +220,17 @@ func set_wait(frac: float) -> void:
 ## desde el mostrador, la ventanilla queda en el borde izquierdo: así se lee en las dos vistas.
 const LINE_SIZE := 50
 const LINE_PX := 0.0056
+var bubble_ui = null   # --- POLISH LOOK P3: el GameUI (main._bs_wire): lo que dice sale en un globo de papel
+
 func say(text: String, secs := 3.2) -> void:
 	if is_instance_valid(_line):
 		_line.queue_free()
+	# --- POLISH LOOK P3: un globo sobre su cabeza (antes letras sueltas sobre el estante, al lado de la ventanilla)
+	if bubble_ui != null and is_instance_valid(bubble_ui):
+		bubble_ui.bubble(self, text, PaperKit.INK, secs, 0.15)
+		talk(minf(1.4, secs * 0.5))
+		return
+	# --- end POLISH LOOK P3
 	PaperKit.load_fonts()
 	var font: Font = PaperKit.font_hand_bold
 	var l := Label3D.new()
@@ -231,7 +239,7 @@ func say(text: String, secs := 3.2) -> void:
 	l.font_size = LINE_SIZE
 	l.pixel_size = LINE_PX
 	l.outline_size = 18
-	l.outline_modulate = Color(0.07, 0.04, 0.1)
+	l.outline_modulate = Color(0.07, 0.04, 0.1, 0.0)   # --- POLISH FIX F8: el contorno aparece y se va con la letra
 	l.modulate = Color(1.0, 0.93, 0.78)
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	l.no_depth_test = true
@@ -253,8 +261,10 @@ func say(text: String, secs := 3.2) -> void:
 	var tw := l.create_tween()
 	tw.set_parallel(true)
 	tw.tween_property(l, "modulate:a", 1.0, 0.2)
+	tw.tween_property(l, "outline_modulate:a", 1.0, 0.2)   # --- POLISH FIX F8
 	tw.tween_property(l, "position:y", y0 + 0.06, secs)
 	tw.tween_property(l, "modulate:a", 0.0, 0.45).set_delay(secs - 0.45)
+	tw.tween_property(l, "outline_modulate:a", 0.0, 0.45).set_delay(secs - 0.45)   # --- POLISH FIX F8
 	tw.chain().tween_callback(l.queue_free)
 	talk(minf(1.4, secs * 0.5))
 

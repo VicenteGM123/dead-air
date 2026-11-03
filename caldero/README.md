@@ -11,8 +11,23 @@ Antes, después de la pantalla de Godot la página se quedaba en negro unos segu
 - La página y el juego muestran la misma imagen («Midnight Cauldron» con el emblema) y una barra dorada que avanza: primero mientras baja el juego, después mientras se prepara. Nada de negro ni del logo de Godot.
 - La tienda se arma y se muestra por partes, unos pocos materiales nuevos por cuadro: la página sigue respondiendo y la barra se mueve.
 - Todo se prepara bajo la pantalla de carga, antes del título: primero lo que se ve en el título y después lo demás (la biblioteca, los efectos, las letras de los eventos, el mercado), siempre repartido en cuadros cortos. Al aparecer el título no queda nada pendiente: **Continue** y **Start** entran directo (antes, lo demás se preparaba con el título en pantalla y al apretar Continue de inmediato el juego se podía pegar). Los eventos siguen empezando sin tirones.
-- Medido en un navegador sin tarjeta gráfica: la primera imagen del juego sale a los ~1,6 s (antes ~5 s, y era negra), el cuadro más largo antes del título bajó de 4,7 s a 1,4 s y el título necesita 149 programas de shader en vez de 203 (como mucho 16 por cuadro, antes 105). Con una tarjeta gráfica normal todo es bastante más rápido; la segunda vez, más aún (el navegador guarda los shaders ya compilados).
+- Medido en un navegador sin tarjeta gráfica: la primera imagen del juego sale a los ~2 s (antes ~5 s, y era negra) y el cuadro más largo antes del título bajó de 4,7 s a ~1,5 s. Todos los programas de shader del juego (unos 230) se compilan bajo la pantalla de carga, como mucho 16 por cuadro (antes, 105 en un solo cuadro): al aparecer el título no queda ninguno pendiente. Con una tarjeta gráfica normal todo es bastante más rápido; la segunda vez, más aún (el navegador guarda los shaders ya compilados).
 - `index.wasm` (37,7 MB, ~10 MB comprimido) es el motor de Godot tal como viene: no se puede achicar sin compilar Godot a medida.
+
+## Novedades (ronda 7: pulido)
+
+- **Una calle al otro lado de la ventana y de la puerta:** casas con postigos, flores y tejados, y un farol junto a la puerta. De día la calle está soleada; de noche se encienden algunas ventanas y el farol. Antes la puerta mostraba un cielo de noche a mediodía y, de noche, algo parecido al mar.
+- **Noches más acogedoras:** de noche la tienda se oscurece de verdad, con las velas y el fuego más cálidos, y los farolillos de luciérnagas (la mejora de Mabel) brillan en vez de parecer dados.
+- **Globos de diálogo:** lo que dicen los clientes al irse y lo que dice Squawk sale en un globo de papel sobre su cabeza, siempre entero y nunca tapado por un aviso de botón.
+- **El banco del caldero:** las teclas de los botones se leen aunque el botón esté apagado; una fila de 7 puntos muestra la calidad de la poción; un removido perfecto enciende el punto siguiente y, si alcanza, sube una estrella (**Perfect! ★ up!**). **Nicely stirred!** ahora es dorado y la cuchara ya no tapa las estrellas.
+- **Botones que responden:** al pasar el ratón (o el cursor del mando) crecen un poco y brillan; al pulsarlos se hunden.
+- **Eventos más limpios:** con la tarjeta del jurado o la de la medalla en pantalla se esconde el HUD de la tienda; el cartel del concurso se lee entero; los puntos del concurso van en una fila de fichas que ya no tapa el cartel FIZZ!. Al ganar una medalla o subir de nivel saltan chispas doradas y suena una **fanfarria** corta (la música baja mientras suena).
+- **El puesto 1, más cerca:** las otras tiendas empiezan con menos puntos (un buen jugador llega al 1 hacia el día 21, antes hacia el 26) y el **Guild Rankings** dice a quién pasas después y cuántos puntos faltan (**Next: … · 80 pts**). Las partidas ya empezadas conservan su tabla.
+- **La partida se guarda más seguido:** al embotellar, al cobrar, al cerrar un puesto o volver del mercado, al ir al título y al cambiar de pestaña o cerrarla. **Continue** vuelve a la mañana de ese día con el oro, los ingredientes y las pociones guardados, y lo avisa.
+- **Textos según el aparato:** ya no dice «Tap» con teclado o mando; el consejo para caminar del primer día dice `A`/`D`, la cruceta o el clic según lo que uses.
+- **El tutorial ya no confunde:** el primer día, el aviso del mostrador no ofrece dar una poción equivocada antes de preparar la que se pidió.
+- **Arreglos pequeños:** en la web el título ya no tiene **Quit** (congelaba la página); en el título queda una sola línea, y solo en la web mientras el sonido espera el primer clic; el pie de los papeles dice **Enter Select**; los puestos del mercado dicen **have 4** (cuántos tienes); el relojito de arena sale solo sobre quien se está impacientando; la planta ya no tapa la ventanilla del cuervo; la gente del mercado no se amontona encima de la alquimista; en la fiesta del puesto 1 se ven todas las caras; los créditos aparecen y se van con un fundido; más frases distintas al entregar pociones (sin repetirse); al llegar el cuervo sale un solo aviso; los pensamientos ya no parpadean en negro; un adiós que muy de vez en cuando se quedaba abierto ahora se cierra con un clic o una tecla.
+- Las partidas guardadas siguen funcionando.
 
 ## Novedades (ronda 6)
 
@@ -75,7 +90,7 @@ El mando lleva un cursor dorado que hace de ratón: aparece al usar el mando y s
 | LT / RT | pasar las hojas del recetario y del diario |
 | Stick derecho | desplazar listas |
 
-En el navegador, el sonido empieza con el primer clic o tecla: los navegadores no cuentan el mando como interacción (la pantalla de título lo avisa).
+En el navegador, el sonido empieza con el primer clic o tecla: los navegadores no cuentan el mando como interacción (la pantalla de título lo avisa con «Sound starts with your first click or key»). En la web el título no tiene **Quit**: para salir basta cerrar la pestaña (la partida se guarda sola).
 
 ## Versión web
 
@@ -86,3 +101,8 @@ GODOT=/ruta/a/godot sh caldero/tools/export_web.sh
 ```
 
 Usa el preset "Web" del proyecto (renderizador Compatibility / WebGL 2, sin hilos, para que funcione en GitHub Pages) y deja el resultado en `web/`. Además arregla el audio web de Godot 4.7 en `index.js` (los sonidos en bucle, como la música, el fuego y los grillos, se repiten en el hilo de audio: sin cortes aunque el juego vaya lento) pone «Midnight Cauldron» como título de la pestaña (el nombre interno del proyecto sigue siendo «Caldero Nocturno»: nombra la carpeta de las partidas guardadas, también en el navegador), usa una página propia (`game/tools/web/shell.html`: la de Godot con el color, la imagen y la barra del juego) y no exporta si algún script usa `AudioServer.add_bus()`, que en la web deja el juego sin sonido (los buses se crean agrandando `AudioServer.bus_count`, ver `game/scripts/sfx.gd`).
+
+## Problemas conocidos
+
+- En la web, cada guardado llega al almacenamiento del navegador un momento después de la acción (en un PC normal, menos de un segundo; en un navegador muy lento, varios segundos). Si la página se recarga o se cierra justo en ese momento, esa última acción se pierde y **Continue** vuelve al guardado anterior.
+- Las partidas empezadas antes de esta ronda conservan su tabla del Guild Rankings: el puesto 1 más cercano se nota en las partidas nuevas.

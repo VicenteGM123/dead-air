@@ -287,9 +287,26 @@ func _visit(o: Dictionary) -> void:
 	_hurried = false
 	Sfx.play("kraa", 0.06, -4.0)
 	raven.say(Story.pick(Data.RAVEN_LINES["arrive"]), 2.4)
-	main.ui.toast("Squawk is at the window!", UIKit.GOLD_BRIGHT, 2.6)
+	if _window_out_of_sight():   # --- POLISH FIX F7: junto a la ventanilla ya bastan el graznido y su frase
+		main.ui.toast("Squawk is at the window!", UIKit.GOLD_BRIGHT, 2.6)
 	orders_changed.emit()
 	raven_changed.emit()
+
+## --- POLISH FIX F7: el aviso de arriba solo cuando ella no ve la ventanilla: no está en la estación «ventanilla» y,
+## además, está a más de 5 m o la percha queda fuera de la pantalla (también en el mercado). La cámara puede estar
+## moviéndose cuando el cuervo llega: por eso cuenta primero la estación y la distancia, no solo la proyección.
+func _window_out_of_sight() -> bool:
+	if main.in_market or not is_instance_valid(world) or world.walker == null:
+		return true
+	if String(world.walker.current) == "ventanilla":
+		return false
+	if absf(float(world.walker.x) - float(ShopWorld.KRAPIDO_STATION["x"])) > 5.0:
+		return true
+	var cam: Camera3D = world.camera
+	if cam == null or cam.is_position_behind(ShopWorld.KRAPIDO_PERCH):
+		return true
+	return not world.get_viewport().get_visible_rect().has_point(cam.unproject_position(ShopWorld.KRAPIDO_PERCH))
+# --- end
 
 ## Se fue sin nada: pedido perdido y una reseña de una pluma.
 func _lost() -> void:
@@ -392,7 +409,7 @@ func _hand_over(i: int) -> void:
 	Sfx.play("kraa", 0.06, -6.0)
 	if ok:
 		main._purr()
-		main._think(Story.pick(Data.INTUITION["give_match"]))
+		main._think(Story.pick_fresh(Data.INTUITION["give_match"]))   # --- POLISH FIX F11
 	main.busy = false
 	orders_changed.emit()
 	raven_changed.emit()

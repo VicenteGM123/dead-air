@@ -179,6 +179,13 @@ class Chip extends HBoxContainer:
 	var where := "right"          # (attach_chip) dónde va en el botón: "right", "corner" o "topleft"
 	var inset := Vector2(14, 0)
 	var _gen := -1
+	# --- POLISH FIX F1: la tecla de un botón desactivado ya no se vuelve transparente (gris sobre gris quedaba en
+	# blanco): toma un tono cálido apagado con la letra oscura y legible. keep_lit = siempre a todo color (el Esc del
+	# sello de cerrar: el sello ya muestra que está ocupado y la tecla es la salida).
+	const DIM := Color(0.80, 0.76, 0.72, 1.0)
+	var keep_lit := false
+	var _dim := -1                # -1 = sin decidir; 0 = normal; 1 = apagado (solo se escribe al cambiar)
+	# --- end
 
 	func _init(a := "", sm := false, kom := false) -> void:
 		action = a
@@ -195,7 +202,12 @@ class Chip extends HBoxContainer:
 		if _gen != Glyphs.gen:
 			_rebuild()
 		if host is BaseButton:
-			modulate.a = 0.4 if (host as BaseButton).disabled else 1.0
+			# --- POLISH FIX F1: tono apagado opaco en vez de alfa 0.4, y solo cuando cambia el estado
+			var d := 1 if ((host as BaseButton).disabled and not keep_lit) else 0
+			if d != _dim:
+				_dim = d
+				modulate = DIM if d == 1 else Color.WHITE
+			# --- end
 
 	## (attach_chip) se coloca en su botón: "right" a la derecha y centrado, "corner" arriba a la derecha, "topleft"
 	## arriba a la izquierda.

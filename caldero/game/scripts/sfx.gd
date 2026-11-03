@@ -29,6 +29,7 @@ func _ready() -> void:
 	music = _make_loop("music_tienda", "Music", -4.0)
 	fire = _make_loop("fire_loop", "SFX", -16.0)
 	night = _make_loop("crickets_loop", "SFX", -60.0)
+	_fanfare_setup()   # --- POLISH FIX F13
 	apply_volumes()
 
 func _setup_buses() -> void:
@@ -140,6 +141,58 @@ func set_place(place: String) -> void:
 			market_amb.stream_paused = true
 			market_music.stream_paused = true)
 # --- end WORLD
+
+# --- POLISH FIX F13: la fanfarria de los momentos grandes (la medalla de un evento, la subida de renombre, la fiesta
+# del puesto 1). assets/audio/fanfare.ogg (tools/arte/polish_audio.py, 6,6 s, Re mayor como la música de la tienda).
+# Suena en el bus SFX y, mientras dura, la música baja FANFARE_DUCK_DB y después vuelve sola (tweens, como set_place;
+# nada de buses nuevos). En la web la muestra se registra al arrancar (se decodifica ahí, no en la tarjeta de la medalla).
+const FANFARE_DUCK_DB := 12.0
+var fanfare_player: AudioStreamPlayer
+var _duck_tween: Tween
+
+func _fanfare_setup() -> void:
+	fanfare_player = AudioStreamPlayer.new()
+	fanfare_player.bus = "SFX"
+	fanfare_player.volume_db = -2.0
+	if ResourceLoader.exists("res://assets/audio/fanfare.ogg"):
+		fanfare_player.stream = load("res://assets/audio/fanfare.ogg")
+	add_child(fanfare_player)
+	if OS.has_feature("web") and fanfare_player.stream and AudioServer.has_method("register_stream_as_sample") \
+			and not AudioServer.is_stream_registered_as_sample(fanfare_player.stream):
+		AudioServer.register_stream_as_sample(fanfare_player.stream)
+
+func fanfare() -> void:
+	if fanfare_player == null or fanfare_player.stream == null:
+		play("levelup", 0.0, -2.0)
+		return
+	fanfare_player.stop()
+	fanfare_player.play()
+	var dur := fanfare_player.stream.get_length()
+	if _duck_tween and _duck_tween.is_valid():
+		_duck_tween.kill()
+	_duck_tween = create_tween().set_parallel(true)
+	for p in _music_players():
+		_duck_tween.tween_property(p, "volume_db", _music_base(p) - FANFARE_DUCK_DB, 0.3)
+	_duck_tween.chain().tween_interval(maxf(0.5, dur - 1.8))
+	_duck_tween.chain().tween_callback(_unduck)
+
+func _unduck() -> void:
+	_duck_tween = create_tween().set_parallel(true)
+	for p in _music_players():
+		_duck_tween.tween_property(p, "volume_db", _music_base(p), 1.2)
+
+func _music_players() -> Array:
+	var out: Array = [music]
+	if market_music:
+		out.append(market_music)
+	return out
+
+## El volumen de siempre de cada música según el lugar (el mismo que deja set_place).
+func _music_base(p: AudioStreamPlayer) -> float:
+	if p == music:
+		return SHOP_MUSIC_DB if _place == "shop" else -50.0
+	return MARKET_MUSIC_DB if _place == "market" else -60.0
+# --- end POLISH FIX F13
 
 # --- MAGIC: sonidos del grimorio (tools/arte/magic_audio.py). Se cargan la primera vez que se usan (magic_load).
 const MAGIC_SOUNDS := ["rune_node", "rune_done", "quill", "grimoire"]

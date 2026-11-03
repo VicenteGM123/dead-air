@@ -20,7 +20,7 @@ const DPAD_SPEED := 480.0    # cruceta mantenida
 const SNAP_DIST := 60.0      # al soltar el stick cerca de algo tocable, el cursor se acerca solo
 const PAD_DEVICE := 77       # marca los eventos que inventa el mando (para no confundirlos con el ratón y el teclado)
 const PAD_HINT := "A tap · B back · X next · Y recipes · View journal"   # --- R3 MERGE: dieta de texto
-const WEB_SOUND_HINT := "Sound: click or press a key"   # --- R3 MERGE: dieta de texto
+const WEB_SOUND_HINT := "Sound starts with your first click or key"   # --- R3 MERGE: dieta de texto (POLISH FIX F9: = Overlays.SOUND_HINT)
 
 static var active := false          # el cursor del mando está a la vista (y el del sistema, escondido)
 static var where := Vector2.ZERO    # dónde está, en coordenadas del lienzo (los tooltips lo usan)
@@ -414,6 +414,7 @@ func _refresh_hint() -> void:
 	if t != _hint:
 		_hint = t
 		ov.set_pad_hint(t)
+	ov.set_sound_hint(needs_gesture)   # --- POLISH FIX F9: el título avisa cómo empieza el sonido (web), con o sin mando
 
 # --- R6 UI: A según lo que hay, y el cursor guardado ---------------------------------------------------------------
 ## Qué hace A: "space" (el diálogo se escribe o espera: avanza), "click" (toca donde está el cursor) o "done" (ya hizo

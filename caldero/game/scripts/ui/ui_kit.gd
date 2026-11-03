@@ -397,3 +397,106 @@ static func clock_words(minutes: int) -> String:
 	var ampm := "AM" if h24 < 12 else "PM"
 	return ("%d %s" % [h, ampm]) if m == 0 else ("%d:%02d %s" % [h, m, ampm])
 # --- end R5 EN-UI
+
+# --- POLISH LOOK P8: botones que responden. Con el ratón (o el cursor del mando, que mueve el ratón) encima, el botón
+# crece un 3 % y se aclara un poco; al pulsarlo se hunde (0.97) y al soltarlo vuelve. Solo toca scale y self_modulate
+# del propio botón (el pulso de los iconos del HUD usa modulate y no se pisan); un botón desactivado vuelve al momento
+# a su tamaño y color (el aspecto de desactivado es el de F1). Sin shaders nuevos: un tween corto por cambio de estado.
+const JUICE_HOVER := Vector2(1.03, 1.03)
+const JUICE_DOWN := Vector2(0.97, 0.97)
+const JUICE_LIT := Color(1.12, 1.12, 1.12)
+
+static func juice(b: BaseButton) -> void:
+	if b == null or b.has_meta("juice"):
+		return
+	b.set_meta("juice", true)
+	b.mouse_entered.connect(func(): _juice_to(b, "hover"))
+	b.mouse_exited.connect(func(): _juice_to(b, "rest"))
+	b.button_down.connect(func(): _juice_to(b, "down"))
+	b.button_up.connect(func(): _juice_to(b, "hover" if b.is_hovered() else "rest"))
+	b.resized.connect(func(): b.pivot_offset = b.size / 2.0)
+	b.draw.connect(func():
+		if b.disabled and (b.scale != Vector2.ONE or b.self_modulate != Color.WHITE):
+			_juice_stop(b)
+			b.scale = Vector2.ONE
+			b.self_modulate = Color.WHITE)
+
+static func _juice_stop(b: BaseButton) -> void:
+	if not b.has_meta("juice_tw"):
+		return
+	var old = b.get_meta("juice_tw")
+	if old is Tween and (old as Tween).is_valid():
+		(old as Tween).kill()
+
+static func _juice_to(b: BaseButton, st: String) -> void:
+	if not is_instance_valid(b) or not b.is_inside_tree():
+		return
+	if b.disabled:
+		st = "rest"
+	var sc := JUICE_HOVER if st == "hover" else (JUICE_DOWN if st == "down" else Vector2.ONE)
+	var col := JUICE_LIT if st == "hover" else (Color(1.05, 1.05, 1.05) if st == "down" else Color.WHITE)
+	_juice_stop(b)
+	b.pivot_offset = b.size / 2.0
+	if b.scale == sc and b.self_modulate == col:
+		return
+	var tw := b.create_tween().set_parallel(true)
+	tw.tween_property(b, "scale", sc, 0.08).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(b, "self_modulate", col, 0.08)
+	b.set_meta("juice_tw", tw)
+# --- end POLISH LOOK P8
+
+# --- POLISH LOOK P12: un estallido de chispas detrás de una tarjeta (el nuevo título de Renombre, la medalla). Unas
+# chispas (assets/fx/sparkle.png, píxeles grandes y dorados) salen del centro de la tarjeta hacia fuera, asoman por sus
+# bordes, giran y se apagan en ~1 s, y se borran solas. Son TextureRect normales (el mismo programa de lienzo que
+# PerfWarmup ya dibuja con draw_texture_rect bajo la pantalla de carga): nada que compilar, nada de partículas.
+# parent: el contenedor a pantalla completa de la tarjeta; at: el índice donde va (debajo de la tarjeta).
+static func sparkle_burst(parent: Control, at := 0, n := 18) -> void:
+	if not is_instance_valid(parent):
+		return
+	var tex: Texture2D = load("res://assets/fx/sparkle.png")
+	if tex == null:
+		return
+	var burst := Control.new()
+	burst.name = "Burst"
+	burst.set_anchors_preset(Control.PRESET_FULL_RECT)
+	burst.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(burst)
+	parent.move_child(burst, clampi(at, 0, parent.get_child_count() - 1))
+	var c := parent.size / 2.0
+	for i in n:
+		var s := TextureRect.new()
+		s.texture = tex
+		s.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		s.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		s.stretch_mode = TextureRect.STRETCH_SCALE
+		s.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var sz := randf_range(42.0, 77.0)   # (el dibujo es de 7 px: múltiplos enteros, se ve nítido)
+		sz = roundf(sz / 7.0) * 7.0
+		s.size = Vector2(sz, sz)
+		s.pivot_offset = s.size / 2.0
+		s.position = c - s.size / 2.0
+		# por encima de 1: la cruz de la chispa sale casi blanca y dorada (el lienzo multiplica y recorta)
+		s.modulate = Color(1.7, randf_range(1.3, 1.55), randf_range(0.55, 0.85), 1.0)
+		burst.add_child(s)
+		var ang := TAU * float(i) / float(n) + randf_range(-0.12, 0.12)
+		var to := c + Vector2(cos(ang) * randf_range(470.0, 640.0), sin(ang) * randf_range(320.0, 440.0)) - s.size / 2.0
+		var dur := randf_range(0.9, 1.25)
+		var wait := randf_range(0.0, 0.12)
+		var tw := s.create_tween().set_parallel(true)
+		tw.tween_property(s, "position", to, dur).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT).set_delay(wait)
+		tw.tween_property(s, "rotation", randf_range(-2.5, 2.5), dur).set_delay(wait)
+		tw.tween_property(s, "modulate:a", 0.0, dur * 0.35).set_delay(wait + dur * 0.65)
+	var end := burst.create_tween()
+	end.tween_interval(1.5)
+	end.tween_callback(burst.queue_free)
+
+## El salto de un icono importante (la gema del nuevo título): de pequeño a un poco más grande y a su tamaño.
+static func pop_icon(c: Control, from := 0.3) -> void:
+	if not is_instance_valid(c):
+		return
+	c.pivot_offset = c.size / 2.0
+	c.scale = Vector2(from, from)
+	var tw := c.create_tween()
+	tw.tween_property(c, "scale", Vector2(1.15, 1.15), 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(c, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+# --- end POLISH LOOK P12

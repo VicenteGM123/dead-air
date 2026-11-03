@@ -518,10 +518,172 @@ func _build_outside() -> void:
 	# --- WORLD: más ancho, para que también se vea por el ventanal de la biblioteca
 	sh.set_shader_parameter("hills_repeat", 3.4)
 	sh.set_shader_parameter("aspect", 50.0 / 14.0)
-	var q := _quad(Vector2(50, 14), Vector3(-5.0, 4.0, -10.0), sh)
+	# --- POLISH LOOK P1: el cielo va detrás de las casas de enfrente (antes en z = -10, donde ahora están sus fondos) y
+	# más bajo: por encima de los tejados asoma la franja de abajo (las colinas)
+	var q := _quad(Vector2(60, 14), Vector3(-4.0, 3.2, -14.5), sh)
+	sh.set_shader_parameter("aspect", 60.0 / 14.0)
+	sh.set_shader_parameter("hills_repeat", 4.0)
+	# --- end POLISH LOOK P1
 	q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var grass := _mat("res://assets/tex/cobble.png", "", 0.5, 1.0, Color(0.85, 0.9, 0.8))
-	_box_b(-30.0, 20.0, -0.25, -0.02, -10.0, -4.3, grass)
+	# --- POLISH LOOK P1: los adoquines de la calle (los del mercado, cálidos; antes el «cobble» verdoso parecía agua)
+	var grass := _mat("res://assets/tex/cobble_street.png", "", 0.5, 0.95, Color(1.0, 0.94, 0.86))
+	_box_b(-30.0, 20.0, -0.25, -0.02, -14.0, -4.3, grass)
+	_build_street()
+	# --- end POLISH LOOK P1
+
+# --- POLISH LOOK P1: la calle de enfrente. Antes por la ventana se veía un crema liso (el pie del degradado del cielo),
+# por la puerta un cielo de noche a mediodía y de noche un arco azul sobre un suelo que parecía mar. Ahora, al otro lado
+# de la calle, una hilera de casas como las del mercado (sus mismas texturas y dibujos), con ventanas que se encienden
+# al anochecer y una farola junto a la puerta. Mismos materiales y montajes que la tienda (ningún programa nuevo); las
+# alumbra una fila de luces que solo ven la calle (STREET_LAYER, ver _street_mat). Cubren x -17,5..10,5: todo lo que se ve por el ventanal de
+# la biblioteca, la ventanilla del cuervo, la ventana y la puerta, con la cámara en cualquier punto de su carril.
+# Reglas: nada da sombra (el sol entra por la ventana desde detrás de estas casas: no debe cortar sus rayos); las
+# fachadas empiezan bajo los adoquines (y = -0,3: ninguna cara a ras de la calle); cada casa en su propio plano
+# (z -7,45..-7,9, a 5 cm o más); los clientes salen hasta P_OUTSIDE (z = -6,2), delante de todo.
+const STREET_HOUSES := [
+	# x0, x1, z de la fachada, alto de pared, color del yeso, tejado, ventanas, puerta [x, color], ventanas [[x, encendida]],
+	# letrero colgante [x, dibujo]. Las x de puertas y ventanas están puestas para lo que se ve desde dentro: la ventana
+	# de la biblioteca da a la de -11,7; la ventanilla del cuervo a la de -6,85; la ventana a la de 1,95 y la puerta a la
+	# puerta verde de 5,45 con la farola.
+	[-17.5, -12.55, -7.70, 3.3, Color(0.86, 0.9, 0.98), "roof_slate", "blue", [-15.2, "brown"], [[-13.75, true], [-16.6, false]], []],
+	[-12.6, -8.2, -7.45, 2.75, Color(0.98, 0.9, 0.78), "roof_red", "red", [-9.55, "green"], [[-11.7, true]], []],
+	[-8.25, -3.6, -7.90, 3.6, Color(0.95, 0.85, 0.62), "roof_red", "green", [-5.2, "brown"], [[-6.85, false], [-4.25, true]], []],
+	[-3.65, 1.25, -7.60, 3.1, Color(0.84, 0.92, 0.82), "roof_plum", "plum", [-1.2, "blue"], [[-2.65, true], [0.25, true]], []],
+	[1.2, 4.75, -7.45, 2.75, Color(0.97, 0.92, 0.8), "roof_red", "green", [], [[1.95, true], [3.65, false]], []],
+	[4.7, 10.5, -7.75, 3.25, Color(0.78, 0.86, 0.96), "roof_slate", "red", [5.45, "green"], [[7.05, true], [8.85, false]], [6.35, "hsign_pan"]],
+]
+const STREET_LAMP := Vector3(4.45, 0.0, -6.95)   # la farola: delante del hueco entre las dos casas de la puerta
+var bubble_ui = null             # --- POLISH LOOK P3: el GameUI (main._bs_wire): blurt() sale como globo
+var _street_panes: Array = []    # [Sprite3D, encendida]
+var _street_lamp: Sprite3D
+var _street_halo: Sprite3D
+var _street_sprites: Array = []  # los dibujos de las fachadas (puertas, marcos, letrero)
+var _street_lights: Array = []   # las luces que solo alumbran la calle (STREET_LAYER)
+var _street_lamp_light: OmniLight3D
+## La capa de la calle: sus mallas y dibujos están en la capa 1 (la cámara y el sol) y en esta; sus luces solo alumbran
+## esta capa, así que no tocan nada de dentro de la tienda aunque no tengan sombra.
+const STREET_LAYER := 1 << 17
+const STREET_LIGHT_X := [-15.5, -10.9, -6.3, -1.7, 2.9, 7.5]
+
+## Las fachadas miran a la tienda y el sol les da por detrás (entra por la ventana): solo con el ambiente quedaban
+## grises y oscuras. Las alumbra una fila de luces propias delante de ellas (solo la capa de la calle) cuyo color y
+## fuerza pone la hora (_street_time). Los materiales son los de siempre (_mat: las mismas texturas y opciones que las
+## paredes de la tienda y del mercado), y luz de sol + luces sin sombra es lo mismo que tienen las paredes de dentro: no
+## enlaza ningún programa nuevo. (Una primera versión, sin luz y con color por hora, enlazaba 6 programas más en la web.)
+func _street_mat(tex: String, normal: String, scale: float, rough: float, col := Color.WHITE) -> StandardMaterial3D:
+	return _mat(tex, normal, scale, rough, col)
+
+func _build_street() -> void:
+	var street := Node3D.new()
+	street.name = "Street"
+	add_child(street)
+	var stone := _street_mat("res://assets/tex/stone.png", "res://assets/tex/stone_n.png", 0.5, 0.9)
+	var beam := _street_mat("res://assets/tex/wood_dark.png", "res://assets/tex/wood_dark_n.png", 1.0, 0.8)
+	var roofs := {}
+	for r in ["roof_red", "roof_slate", "roof_plum"]:
+		roofs[r] = _street_mat("res://assets/tex/%s.png" % r, "", 0.6, 0.9)
+	for h in STREET_HOUSES:
+		_street_house(street, h, stone, beam, roofs[h[5]])
+	# la farola (el mismo dibujo que en el mercado); de noche brilla su farolillo y alumbra un poco las fachadas
+	_street_lamp = _sprite("res://assets/props/lamppost.png", 0.046, STREET_LAMP, street, "bottom", false)
+	# su halo de noche (el mismo montaje que el brillo de la bola de cristal: sin luz, mezcla alfa)
+	_street_halo = _sprite("res://assets/props/glow_soft.png", 0.05, STREET_LAMP + Vector3(0, 2.36, 0.14), street, "center", false)
+	_street_halo.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
+	_street_halo.modulate = Color(1, 0.8, 0.5, 0.0)
+	for n in street.find_children("*", "GeometryInstance3D", true, false):
+		var g := n as GeometryInstance3D
+		g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		g.layers = 1 | STREET_LAYER
+	for x in STREET_LIGHT_X:
+		_street_lights.append(_street_light(street, Vector3(x, 3.3, -5.25), 7.5))
+	_street_lamp_light = _street_light(street, STREET_LAMP + Vector3(0.0, 2.25, 0.35), 3.6)
+	_street_lamp_light.light_color = Color(1.0, 0.72, 0.42)
+
+## Una luz que solo alumbra la calle (sin sombra; fuera de interior_lights: su fuerza la pone _street_time).
+func _street_light(parent: Node3D, pos: Vector3, rng: float) -> OmniLight3D:
+	var l := OmniLight3D.new()
+	l.position = pos
+	l.omni_range = rng
+	l.omni_attenuation = 0.6
+	l.shadow_enabled = false
+	l.light_cull_mask = STREET_LAYER
+	l.light_volumetric_fog_energy = 0.0
+	parent.add_child(l)
+	return l
+
+func _street_house(parent: Node3D, h: Array, stone: Material, beam: Material, roof: Material) -> void:
+	var x0: float = h[0]
+	var x1: float = h[1]
+	var fz: float = h[2]
+	var hh: float = h[3]
+	var w := x1 - x0
+	var depth := 3.0
+	var plaster := _street_mat("res://assets/tex/plaster.png", "res://assets/tex/plaster_n.png", 0.25, 0.95, h[4])
+	_box_b(x0, x1, -0.3, hh, fz - depth, fz, plaster, parent)
+	_box_b(x0 + 0.02, x1 - 0.02, -0.3, 0.6, fz - 0.25, fz + 0.05, stone, parent)   # zócalo
+	# entramado: postes en las esquinas, viga sobre el zócalo y viga del alero
+	for x in [x0 + 0.1, x1 - 0.1]:
+		_box_b(x - 0.08, x + 0.08, 0.6, hh, fz, fz + 0.07, beam, parent)
+	_box_b(x0 + 0.18, x1 - 0.18, 0.6, 0.72, fz, fz + 0.07, beam, parent)
+	_box_b(x0 + 0.02, x1 - 0.02, hh - 0.16, hh, fz, fz + 0.1, beam, parent)
+	# tejado a dos aguas (cumbrera paralela a la calle), como en el mercado
+	var rh := depth * 0.5 * 1.2
+	var pr := PrismMesh.new()
+	pr.size = Vector3(depth + 0.7, rh, w + 0.3)
+	var rm := MeshInstance3D.new()
+	rm.mesh = pr
+	rm.material_override = roof
+	rm.position = Vector3((x0 + x1) / 2.0, hh + rh / 2.0, fz - depth / 2.0)
+	rm.rotation_degrees = Vector3(0, 90, 0)
+	parent.add_child(rm)
+	# la puerta, las ventanas de abajo y el letrero colgante (si tiene); a sus lados, postes del entramado
+	var posts: Array = []
+	var door: Array = h[7]
+	if not door.is_empty():
+		posts.append_array([door[0] - 0.66, door[0] + 0.66])
+	for wv in h[8]:
+		posts.append_array([wv[0] - 0.6, wv[0] + 0.6])
+	for px in posts:
+		if px - 0.06 > x0 + 0.2 and px + 0.06 < x1 - 0.2:
+			_box_b(px - 0.06, px + 0.06, 0.72, hh - 0.16, fz, fz + 0.07, beam, parent)
+	if not door.is_empty():
+		_street_sprites.append(_sprite("res://assets/props/door_%s.png" % door[1], 0.046, Vector3(door[0], 0.0, fz + 0.1), parent))
+	for wv in h[8]:
+		var wx: float = wv[0]
+		# el cristal (detrás: lo tiñe la hora) y el marco con las contraventanas y la jardinera (delante)
+		var pane := _sprite("res://assets/props/street_pane.png", 0.034, Vector3(wx, 1.36, fz + 0.04), parent, "bottom", false)
+		_street_panes.append([pane, bool(wv[1])])
+		_street_sprites.append(_sprite("res://assets/props/street_win_%s.png" % h[6], 0.034, Vector3(wx, 1.0, fz + 0.11), parent))
+	var sign: Array = h[9]
+	if not sign.is_empty():
+		_street_sprites.append(_sprite("res://assets/props/%s.png" % sign[1], 0.04, Vector3(sign[0], 1.85, fz + 0.3), parent))
+
+## La hora en la calle: de día una luz de sombra clara (el sol les da por detrás), al atardecer rosada, de noche una luz
+## de luna azul y floja; al anochecer se encienden las ventanas que tienen a alguien en casa y el farolillo de la farola.
+func _street_time(t: float, s: Dictionary) -> void:
+	var night := smoothstep(0.55, 0.92, t)
+	var light: Color = s["hills"]
+	light.a = 1.0
+	var e := lerpf(STREET_DAY_E, STREET_NIGHT_E, night)
+	for l in _street_lights:
+		(l as OmniLight3D).light_color = light
+		(l as OmniLight3D).light_energy = e
+	if _street_lamp_light:
+		_street_lamp_light.light_energy = 1.6 * night
+		_street_lamp_light.visible = night > 0.01
+	var day_glass := Color(0.4, 0.5, 0.64).lerp(Color(0.16, 0.2, 0.34), night)
+	var warm := Color(1.5, 0.95, 0.45)
+	for p in _street_panes:
+		var sp: Sprite3D = p[0]
+		sp.modulate = day_glass.lerp(warm, night) if p[1] else day_glass
+	if _street_lamp:
+		var lit := Color(light.r, light.g, light.b) * lerpf(0.75, 0.45, night)
+		_street_lamp.modulate = lit.lerp(Color(1.8, 1.5, 1.05), night)
+		_street_halo.modulate = Color(1.0, 0.78, 0.45, 0.55 * night)
+		_street_halo.visible = night > 0.01
+const STREET_DAY_E := 1.6
+const STREET_NIGHT_E := 0.5
+# --- end POLISH LOOK P1
 
 func _build_shelves() -> void:
 	var wood := _mat("res://assets/tex/wood.png", "res://assets/tex/wood_n.png", 1.0, 0.8)
@@ -785,7 +947,10 @@ func _build_decor() -> void:
 	_sprite("res://assets/props/crate.png", 0.04, Vector3(6.55, 0.52, -3.35))
 	_sprite("res://assets/props/sack.png", 0.04, Vector3(5.15, 0, -3.1))
 	# plantas a los lados
-	_sprite("res://assets/props/fern.png", 0.05, Vector3(-5.7, 0, 0.2))
+	# --- POLISH LOOK P5: el helecho de delante iba en x -5,7, justo delante de la ventanilla del cuervo (la estación está
+	# en x -6,15): en la bola de cristal solo se le veía el sombrero. Ahora va en la juntura biblioteca/caldero, un poco
+	# más adelante: no tapa ninguna estación (ni al gato del cojín, que quedaría detrás en x -4,3).
+	_sprite("res://assets/props/fern.png", 0.05, Vector3(-8.35, 0, 0.35))
 	_sprite("res://assets/props/fern.png", 0.05, Vector3(6.0, 0, -0.3))
 	_krapido_moved = [_sprite("res://assets/props/barrel.png", 0.04, Vector3(-6.6, 0, -1.2)),
 		_sprite("res://assets/props/sack.png", 0.04, Vector3(-6.0, 0, -0.9))]   # --- R4 RAVEN: (con Krápido se corren: _krapido_refresh)
@@ -822,7 +987,30 @@ func _build_decor() -> void:
 		j.modulate = Color(1.4, 1.5, 1.1)
 		var l := _omni(p + Vector3(0, 0.3, 0.3), Color(0.8, 1.0, 0.55), 0.7, 3.0, false, lamps)
 		l.light_volumetric_fog_energy = 0.8
+		# --- POLISH LOOK P2: un halo suave detrás de cada farolillo (el montaje del brillo de la bola de cristal: sin
+		# luz, mezcla alfa; nace escondido con la mejora y BootWarm lo calienta con las copias de lo escondido). Late
+		# despacio (_firefly_pulse) y de noche brilla más (_apply_time).
+		var halo := _sprite("res://assets/props/glow_soft.png", 0.03, p + Vector3(0, 0.2, -0.04), lamps, "center", false)
+		halo.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
+		halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		halo.modulate = Color(0.8, 1.0, 0.45, 0.0)
+		_firefly_halos.append(halo)
+		# --- end POLISH LOOK P2
 	_register_upgrade("farolillos", lamps)
+
+# --- POLISH LOOK P2: los halos de los farolillos de luciérnagas
+var _firefly_halos: Array = []
+var _firefly_night := 0.0
+
+## Un latido lento (cada halo a su ritmo), más fuerte de noche. Solo toca el modulate: nada nuevo por cuadro.
+func _firefly_pulse() -> void:
+	if _firefly_halos.is_empty() or not (_firefly_halos[0] as Sprite3D).is_visible_in_tree():
+		return
+	for i in _firefly_halos.size():
+		var h: Sprite3D = _firefly_halos[i]
+		var k := 0.5 + 0.5 * sin(_t * (1.3 + 0.27 * i) + i * 2.1)
+		h.modulate.a = (0.16 + 0.34 * _firefly_night) * (0.65 + 0.35 * k)
+# --- end POLISH LOOK P2
 
 func _build_characters() -> void:
 	alchemist = Actor.new()
@@ -1079,8 +1267,10 @@ const TOD := [
 		"top": Color(0.36, 0.56, 0.92), "bot": Color(1.0, 0.8, 0.56), "hills": Color(0.95, 0.9, 0.9), "stars": 0.0, "moon": 0.0, "lights": 0.7, "fog": Color(1.0, 0.88, 0.72)},
 	{"t": 0.7, "sun": Color(1.0, 0.5, 0.36), "sun_e": 3.0, "pitch": -24.0, "yaw": -146.0, "amb": Color(0.46, 0.38, 0.58), "amb_e": 0.32,
 		"top": Color(0.24, 0.2, 0.46), "bot": Color(1.0, 0.52, 0.38), "hills": Color(0.55, 0.42, 0.6), "stars": 0.25, "moon": 0.0, "lights": 1.0, "fog": Color(1.0, 0.7, 0.6)},
-	{"t": 1.0, "sun": Color(0.52, 0.62, 1.0), "sun_e": 1.6, "pitch": -38.0, "yaw": -155.0, "amb": Color(0.26, 0.3, 0.55), "amb_e": 0.34,
-		"top": Color(0.03, 0.04, 0.13), "bot": Color(0.1, 0.13, 0.3), "hills": Color(0.26, 0.3, 0.48), "stars": 1.0, "moon": 1.0, "lights": 1.3, "fog": Color(0.7, 0.78, 1.0)},
+	# --- POLISH LOOK P2: la medianoche más acogedora (antes casi tan clara como el día: ambiente 0,34, luna 1,6, luces
+	# 1,3): menos ambiente y menos luna, y las luces de dentro (velas, faroles, el caldero) un poco más fuertes
+	{"t": 1.0, "sun": Color(0.52, 0.62, 1.0), "sun_e": 0.8, "pitch": -38.0, "yaw": -155.0, "amb": Color(0.26, 0.3, 0.55), "amb_e": 0.19,
+		"top": Color(0.03, 0.04, 0.13), "bot": Color(0.1, 0.13, 0.3), "hills": Color(0.26, 0.3, 0.48), "stars": 1.0, "moon": 1.0, "lights": 1.5, "fog": Color(0.7, 0.78, 1.0)},
 ]
 
 func _tod_sample(t: float) -> Dictionary:
@@ -1118,6 +1308,8 @@ func _apply_time(t: float) -> void:
 		l.light_energy = pair[1] * s["lights"]
 	cauldron.base_energy = 1.6 + 0.8 * s["lights"]
 	fill.light_energy = 0.45 + 0.15 * (1.0 - t)
+	_street_time(t, s)   # --- POLISH LOOK P1
+	_firefly_night = smoothstep(0.55, 0.95, t)   # --- POLISH LOOK P2
 	Sfx.set_night_amount(smoothstep(0.65, 1.0, t))
 
 func set_time(t: float, animate := true) -> void:
@@ -1152,6 +1344,7 @@ func _process(delta: float) -> void:
 		camera.look_at(_cam_target + off, Vector3.UP)
 	_update_flap(delta)   # --- R3 WORLD3
 	_krapido_process(delta)   # --- R4 RAVEN: la bola late y la tapa de la ventanilla se abre
+	_firefly_pulse()   # --- POLISH LOOK P2
 
 # --- R3 WORLD3: la trampilla se levanta (hacia la pared) cuando ella se acerca al hueco y baja cuando ya pasó.
 func _update_flap(delta: float) -> void:
@@ -1588,6 +1781,8 @@ func hourglass_for(a: Actor) -> Sprite3D:
 	var top: float = a.top_height() if a.has_method("top_height") else a.height()
 	s.position = Vector3(0.0, top + 0.3, 0.08)
 	s.set_meta("base", s.position)
+	s.modulate.a = 0.0   # --- POLISH LOOK P4: nace escondido; set_hourglass lo muestra cuando se impacienta
+	s.set_meta("vis", 0.0)
 	a.add_child(s)
 	return s
 
@@ -1596,8 +1791,21 @@ func set_hourglass(s: Sprite3D, p: float, t: float) -> void:
 	if not is_instance_valid(s) or _hourglass_tex.is_empty():
 		return
 	var a := s.get_parent() as Actor
-	if a and a.emote_sprite:
-		s.modulate.a = 0.0 if a.emote_sprite.visible else 1.0
+	# --- POLISH LOOK P4: el reloj solo sobre quien se está impacientando (antes, una fila de 4-6 relojes iguales sobre
+	# toda la cola: ruido, y el aviso útil se perdía). Con la mitad o más de paciencia no se ve; por debajo aparece en
+	# unos 0,4 s (crece desde el 60 %), ámbar y luego rojo y temblando como antes. Escondido mientras hay un globo de
+	# emoción (como antes). Sin tweens: avanza con el tiempo que pasa entre llamadas (main._pace_hud, cada cuadro).
+	var want := 1.0 if p < 0.5 else 0.0
+	if a and a.emote_sprite and a.emote_sprite.visible:
+		want = 0.0
+	var last: float = s.get_meta("t", t)
+	var dt := clampf(t - last, 0.0, 0.1)
+	s.set_meta("t", t)
+	var vis: float = move_toward(float(s.get_meta("vis", 0.0)), want, dt / 0.4)
+	s.set_meta("vis", vis)
+	s.modulate.a = vis   # (recorte alfa: se ve desde la mitad; lo suave lo pone la escala)
+	s.scale = Vector3.ONE * (0.6 + 0.4 * smoothstep(0.5, 1.0, vis))
+	# --- end POLISH LOOK P4
 	s.texture = _hourglass_tex[clampi(int(ceil(p * 4.0 - 0.001)), 0, 4)]
 	var base: Vector3 = s.get_meta("base", s.position)
 	var alpha := s.modulate.a
@@ -1616,6 +1824,12 @@ func set_hourglass(s: Sprite3D, p: float, t: float) -> void:
 func blurt(a: Node3D, text: String, col := Color(1.0, 0.93, 0.82)) -> void:
 	if not is_instance_valid(a) or text == "":
 		return
+	# --- POLISH LOOK P3: con el HUD puesto (main.gd: bubble_ui), un globo de papel; si no (pruebas sin HUD), las
+	# letras 3D de siempre. El rojo de enfado pasa a tinta roja.
+	if bubble_ui != null and is_instance_valid(bubble_ui):
+		bubble_ui.bubble(a, text, PaperKit.RED_INK if col.g < 0.6 else PaperKit.INK, 2.4)
+		return
+	# --- end POLISH LOOK P3
 	UIKit.load_fonts()
 	var l := Label3D.new()
 	l.text = text
@@ -1623,7 +1837,7 @@ func blurt(a: Node3D, text: String, col := Color(1.0, 0.93, 0.82)) -> void:
 	l.font_size = 40
 	l.pixel_size = 0.0045
 	l.outline_size = 12
-	l.outline_modulate = Color(0.08, 0.05, 0.12)
+	l.outline_modulate = Color(0.08, 0.05, 0.12, 0.0)   # --- POLISH FIX F8: el contorno aparece y se va con la letra
 	l.modulate = Color(col.r, col.g, col.b, 0.0)
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	l.no_depth_test = true
@@ -1637,8 +1851,10 @@ func blurt(a: Node3D, text: String, col := Color(1.0, 0.93, 0.82)) -> void:
 	var tw := l.create_tween()
 	tw.set_parallel(true)
 	tw.tween_property(l, "modulate:a", 1.0, 0.2)
+	tw.tween_property(l, "outline_modulate:a", 1.0, 0.2)   # --- POLISH FIX F8
 	tw.tween_property(l, "position:y", y0 + 0.25, 2.4)
 	tw.tween_property(l, "modulate:a", 0.0, 0.45).set_delay(1.95)
+	tw.tween_property(l, "outline_modulate:a", 0.0, 0.45).set_delay(1.95)   # --- POLISH FIX F8
 	tw.chain().tween_callback(l.queue_free)
 # --- end R4 PACE
 

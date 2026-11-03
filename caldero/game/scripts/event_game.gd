@@ -709,7 +709,7 @@ func on_bottled(pid: String, potency: int, perfect: bool) -> void:
 		"concurso":
 			if _first_present_tip and running:
 				_first_present_tip = false
-				main._bench_say("Tap it on the shelf to present it", UIKit.GOLD_BRIGHT)
+				main._bench_say("Present it from your shelf", UIKit.GOLD_BRIGHT)   # --- POLISH FIX F4
 
 ## main.gd: tocó la poción i del estante.
 func on_shelf_click(i: int) -> void:
@@ -1039,7 +1039,7 @@ func _set_board() -> void:
 			eui.set_board("\n".join(rows))
 		"concurso":
 			if round_i >= 1 and round_i <= themes.size():
-				eui.set_board("[b]Round %d of %d[/b]\n[font_size=40]“%s”[/font_size]\n[color=#5e4632]Tap it on the shelf to present it[/color]" % [round_i, themes.size(), String(themes[round_i - 1]["text"])])
+				eui.set_board("[b]Round %d of %d[/b]\n[font_size=40]“%s”[/font_size]\n[color=#5e4632]Present it from your shelf.[/color]" % [round_i, themes.size(), String(themes[round_i - 1]["text"])])   # --- POLISH FIX F4: sin «Tap» (el punto deja aire a la «f» de Caveat, que se salía de la nota)
 
 func _img(path: String, h: int) -> String:
 	return "[img=%d]%s[/img]" % [h, path] if ResourceLoader.exists(path) else ""

@@ -431,7 +431,8 @@ func _build_close() -> void:
 		close())
 	close_btn.mouse_entered.connect(func(): Sfx.play("hover", 0.05, -14.0))
 	root.add_child(close_btn)
-	Glyphs.attach_chip(close_btn, "back", "corner", true, Vector2(-4, 74))   # --- R6 UI: Esc (B del mando), debajo del sello
+	var esc_chip := Glyphs.attach_chip(close_btn, "back", "corner", true, Vector2(-4, 74))   # --- R6 UI: Esc (B del mando), debajo del sello
+	esc_chip.keep_lit = true   # --- POLISH FIX F1: la salida siempre legible
 
 ## La medalla del HUD (abajo a la izquierda): la bolita, cuántos pedidos hay y el reloj de Graznido si espera.
 func _build_badge() -> void:

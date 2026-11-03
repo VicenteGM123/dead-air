@@ -519,11 +519,20 @@ func _step_text() -> void:
 	if is_instance_valid(eui) and eui.has_method("_outlined"):
 		labels.append(eui.call("_outlined", "3 2 1 Go! Time! Done!", 120, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold))
 		labels.append(eui.call("_outlined", "+0123456789 ★ time", 40, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold))
-	var bench := UIKit.label("ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 !?.,'’+-%:()",
+	var bench := UIKit.label("ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 !?.,'’+-%:() ★",   # --- POLISH FIX F5: + ★ («Perfect! ★ up!»)
 		34, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold)
 	bench.add_theme_color_override("font_outline_color", Color(0.1, 0.06, 0.12))
 	bench.add_theme_constant_override("outline_size", 10)
 	labels.append(bench)
+	# --- POLISH LOOK P3: los globos de lo que dice la gente (GameUI.bubble): el papel, la colita y sus letras
+	var bub := PaperKit.panel("bubble", Vector2(22, 7))
+	bub.add_child(PaperKit.hand("ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz\n0123456789 !?.,:;'’…-—()",
+		GameUI.BUBBLE_FONT, PaperKit.INK, true, HORIZONTAL_ALIGNMENT_CENTER))
+	var tail := GameUI._BubbleTail.new()
+	tail.size = GameUI.BUBBLE_TAIL
+	bub.add_child(tail)
+	labels.append(bub)
+	# --- end POLISH LOOK P3
 	for l in labels:
 		var c := l as Control
 		c.scale = Vector2(0.25, 0.25)   # que quepa en la SubViewport (la caché va por tamaño de letra, no por escala)

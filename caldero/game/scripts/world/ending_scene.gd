@@ -10,11 +10,14 @@ class_name EndingScene
 const TROPHY_POS := Vector3(ShopWorld.COUNTER_X, ShopWorld.COUNTER_TOP, -2.05)   # sobre el mostrador, detrás de donde se atiende
 const TROPHY_PX := 0.0145
 ## Quién viene a celebrar (sprite id) y dónde se para (del lado de los clientes, de cara a ella).
+## --- POLISH LOOK P15: más separados (1 m en la fila de delante, 0,95 m detrás), las filas más lejos una de otra
+## (delante z -0,5..-0,65, detrás -2,3..-2,4) y la de detrás al tresbolillo (entre los de delante): ya no se tapan las
+## caras. Cada uno sigue en su propio plano (los vecinos a 5 cm o más en z, como en R5: nada coplanar).
 const CROWD := [
-	["panadera", Vector3(2.35, 0, -0.85)], ["bram", Vector3(3.15, 0, -0.7)], ["fizz", Vector3(3.95, 0, -0.8)],
-	["granjero", Vector3(4.75, 0, -0.75)], ["anciano", Vector3(1.95, 0, -2.15)], ["lirien", Vector3(2.75, 0, -2.25)],
-	["mabel", Vector3(3.55, 0, -2.2)], ["nyra", Vector3(4.35, 0, -2.25)], ["borin", Vector3(5.15, 0, -2.15)],
-	["tobias", Vector3(5.95, 0, -2.25)],
+	["panadera", Vector3(2.3, 0, -0.65)], ["bram", Vector3(3.3, 0, -0.5)], ["fizz", Vector3(4.3, 0, -0.6)],
+	["granjero", Vector3(5.3, 0, -0.55)], ["anciano", Vector3(1.85, 0, -2.3)], ["lirien", Vector3(2.8, 0, -2.4)],
+	["mabel", Vector3(3.8, 0, -2.35)], ["nyra", Vector3(4.8, 0, -2.4)], ["borin", Vector3(5.75, 0, -2.3)],
+	["tobias", Vector3(6.6, 0, -2.4)],
 ]
 const PIP_SPOT := Vector3(1.5, 0, -0.65)
 
@@ -106,7 +109,7 @@ func play(m) -> void:
 	await _line(Story.char_name("fizz"), "Congratulations. I say that without scorn… almost. Next year, that cauldron is mine.")
 	# 3) la fiesta: confeti, todos saltan, Miga sube al mostrador
 	_confetti()
-	Sfx.play("levelup", 0.0, -2.0)
+	Sfx.fanfare()   # --- POLISH FIX F13: la fiesta del puesto 1 con su fanfarria (la música baja mientras suena)
 	Sfx.play("sparkle", 0.02, -3.0)
 	var k := 0
 	for id in _actors:

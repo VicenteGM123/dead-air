@@ -100,6 +100,7 @@ func _ready() -> void:
 		BootScreen.close(0.0)
 		_run_demo()
 		return
+	_web_save_hook()   # --- POLISH FIX F3: en la web, guardar al esconderse o cerrarse la página
 	_boot()
 	# --- end BOOT
 
@@ -179,6 +180,11 @@ func _bs_krapido() -> void:
 	# --- end R4 RAVEN
 
 func _bs_wire() -> void:
+	# --- POLISH LOOK P3: lo que dicen los clientes y el cuervo sale en globos de papel del HUD
+	world.bubble_ui = ui
+	if krapido and is_instance_valid(krapido.raven):
+		krapido.raven.bubble_ui = ui
+	# --- end POLISH LOOK P3
 	world.jar_clicked.connect(_on_jar_clicked)
 	world.jar_hover.connect(func(id):
 		if not ov.is_open() and not world.hover_blocked():   # --- R3 SHIP: no con el banco abierto (selección vieja)
@@ -443,6 +449,7 @@ func _show_title() -> void:
 	ov.show_title(Game.has_save())
 
 func _to_title() -> void:
+	_save_now()   # --- POLISH FIX F3: lo del caldero vuelve a la despensa en lo guardado (antes se perdía al ir al título)
 	_ev_abort()   # --- R4 EVENTS: si estaba en un evento, vuelve todo a la tienda
 	_clear_customer()
 	contents.clear()
@@ -473,9 +480,25 @@ func _continue() -> void:
 	if not Game.load_game():
 		_start_new()
 		return
+	var was_midday := Game.midday   # --- POLISH FIX F3: se guardó a media jornada (la mañana vuelve a empezar)
+	_skip_harvest = was_midday      # --- POLISH FIX F3: el huerto de hoy ya está en la despensa guardada
 	Sfx.apply_volumes()
 	_refresh_all()
 	_begin_day()
+	# --- POLISH FIX F3: un cartelito junto al «Day N», para que no parezca que se perdió algo
+	if was_midday:
+		# --- POLISH LOOK (regresión de fin de carril): sale cuando el cartel «Day N» ya se fue (antes se pisaban ~2 s)
+		get_tree().create_timer(2.3).timeout.connect(_continue_toast.bind(Game.day))
+	# --- end
+
+# --- POLISH LOOK (regresión de fin de carril): el aviso de «seguir» después del cartel del día (y de un papel abierto)
+func _continue_toast(day: int) -> void:
+	while ov.is_open():   # (sin esperar a la señal: un papel también se puede cerrar sin emitirla)
+		await get_tree().create_timer(0.25).timeout
+	if phase == Phase.TITLE or Game.day != day:
+		return
+	ui.toast("Back to the morning of Day %d. Your gold and potions are safe." % day, UIKit.GOLD_BRIGHT, 5.0)
+# --- end
 
 func _refresh_all() -> void:
 	world.refresh_trophies()   # --- R4 EVENTS
@@ -516,6 +539,7 @@ func _begin_day() -> void:
 	_jar_queue.clear()
 	_jar_trip = false   # --- INTEGRATE
 	# --- end WORLD
+	Game.midday = false   # --- POLISH FIX F3: el guardado del principio del día
 	Game.save_game()
 	# --- R3 MAGIC3: una partida vieja tenía pergaminos o papel: Tobías los compró (el oro ya está en la bolsa)
 	if Game.legacy_refund > 0:
@@ -523,7 +547,8 @@ func _begin_day() -> void:
 		Game.legacy_refund = 0
 	# --- end R3 MAGIC3
 	ui.show_banner("Day %d" % Game.day, "Market day" if Game.pace_market_day() and not Events.today_is_event() else "Morning")   # --- R4 PACE (R4 MERGE: no el día de un evento)
-	var got := Game.morning_harvest()
+	var got: Array = [] if _skip_harvest else Game.morning_harvest()   # --- POLISH FIX F3: (al seguir una partida de media jornada, ya cosechó)
+	_skip_harvest = false
 	if got.size() > 0:
 		ui.toast("Garden: +2 roots, +2 tears", UIKit.GOOD, 3.0)   # --- R3 BENCH: aviso corto
 	_update_top_buttons()   # --- WORLD
@@ -547,7 +572,8 @@ func _begin_day() -> void:
 	# --- WORLD: ya no se abre el panel del mercado: el mercado es un lugar (se va por la puerta)
 	# --- R3 BENCH: consejos de una línea (cada uno sale una vez: día 1 y día 2)
 	if Game.day == 1 and not Game.tutorial_done:
-		ui.show_tip("Walk with [b]A/D[/b] or a click. Then, [b]Open shop[/b].", 14.0)   # --- R6 UI: el botón se llama así ahora
+		# --- POLISH FIX F4: el único consejo que nombra teclas, escrito para cada dispositivo (se rehace si cambia)
+		ui.show_tip(WALK_TIP, 14.0)
 	elif Game.day == 2 and not in_market:
 		ui.show_tip("Every morning: go shopping at the [b]market[/b] (out the door).", 12.0)
 	# --- end R3 BENCH
@@ -980,6 +1006,7 @@ func brew_bottle() -> void:
 	var is_new := not Game.discovered.has(pid)
 	Game.add_potion(pid, potency)
 	var idx := Game.potion_index(pid, potency)
+	_save_now()   # --- POLISH FIX F3: la poción embotellada ya está guardada
 	world.cauldron.set_liquid(Color("3b3156"))
 	world.cauldron.set_activity(0.1)
 	Sfx.play("plop", 0.05, -2.0)
@@ -995,6 +1022,7 @@ func brew_bottle() -> void:
 	world.refresh_rack()
 	if is_new:
 		ui.show_banner("New recipe!", Data.POTIONS[pid]["name"])
+		ui.pulse_icon("book")   # --- POLISH LOOK P16: el recetario late (la receta nueva ya está dentro)
 		Sfx.play("sparkle", 0.0, -2.0)
 	else:
 		ui.toast("%s %s" % [Data.POTIONS[pid]["name"], "★".repeat(Game.stars_for(potency))])
@@ -1013,7 +1041,7 @@ func brew_bottle() -> void:
 		await _go_counter()
 	if tutorial_step == 1:
 		tutorial_step = 2
-		ui.show_tip("Tap it on the [b]shelf[/b] to hand it over.", 0.0)
+		ui.show_tip("Hand it over from your [b]shelf[/b].", 0.0)   # --- POLISH FIX F4: sin «Tap» (vale para todos)
 # --- end R3 BENCH
 
 # ------------------------------------------------------------------ entregas
@@ -1118,7 +1146,7 @@ func _hand_over(item: Dictionary) -> void:
 			col = Data.POTIONS[item["id"]]["color"]   # --- R3 MAGIC3: (sin el color de los hechizos: ya no hay pergaminos)
 		world.spawn_sparkles(customer.global_position + Vector3(0, 1.05, 0.2), Color(col.r * 1.6, col.g * 1.6, col.b * 1.6), 14)
 		_purr()
-		_think(Story.pick(Data.INTUITION["give_match"]))
+		_think(Story.pick_fresh(Data.INTUITION["give_match"]))   # --- POLISH FIX F11: sin repetirse
 	else:
 		customer.emote("question", 1.8)   # lee la etiqueta: no es lo que imaginaba (pero confía en ella)
 	# --- R3 SHIP: el recordatorio solo el día 1 (en la entrega del tutorial ya lo dice el consejo de arriba)
@@ -1141,6 +1169,7 @@ func _hand_over(item: Dictionary) -> void:
 		get_tree().create_timer(16.0).timeout.connect(func():
 			if tutorial_step == 3:
 				ui.hide_tip())
+	_save_now()   # --- POLISH FIX F3: cobrado y guardado (antes, recién cuando el cliente se iba)
 
 ## --- R3 MAGIC3: la intuición al encantar una poción con un cliente esperando: si ya es lo que pidió (poción y runas),
 ## Miga ronronea y ella lo piensa. Lo llama el grimorio al cerrar el libro.
@@ -1148,7 +1177,7 @@ func intuition_after_enchant(p: Dictionary) -> void:
 	if customer_ready and is_instance_valid(customer) and current.get("kind", "") != "return":
 		if String(p.get("id", "")) == Story.wanted(current) and Game.next_rune_for(p, current) == "":
 			_purr()
-			_think(Story.pick(Data.INTUITION["brew_match"]).replace("{n}", _char_name(current["who"])))
+			_think(Story.pick_fresh(Data.INTUITION["brew_match"]).replace("{n}", _char_name(current["who"])))   # --- POLISH FIX F11
 
 ## Al terminar una poción con un cliente esperando: si es lo que pidió, brilla en el estante, Miga ronronea y ella lo
 ## piensa en voz baja. Si no, una duda. Es una corazonada, no una certeza: la respuesta llega con las noticias.
@@ -1170,9 +1199,9 @@ func _intuition_brew(pid: String, idx: int) -> void:
 				ui.show_tip("Add the rune at the library [b]grimoire[/b].")   # --- R3 MERGE: corto
 			return
 		# --- end R3 MAGIC3
-		_think(Story.pick(Data.INTUITION["brew_match"]).replace("{n}", cname))
+		_think(Story.pick_fresh(Data.INTUITION["brew_match"]).replace("{n}", cname))   # --- POLISH FIX F11
 	else:
-		_think(Story.pick(Data.INTUITION["brew_unsure"]).replace("{n}", cname), false)
+		_think(Story.pick_fresh(Data.INTUITION["brew_unsure"]).replace("{n}", cname), false)   # --- POLISH FIX F11
 
 ## --- R3 MERGE: la poción del estante idx es la del pedido del cliente que espera y aún le falta una runa.
 func _needs_rune(idx: int) -> bool:
@@ -1221,7 +1250,7 @@ func _think(text: String, good := true) -> void:
 	l.font_size = 44
 	l.pixel_size = 0.005
 	l.outline_size = 12
-	l.outline_modulate = Color(0.08, 0.05, 0.12)
+	l.outline_modulate = Color(0.08, 0.05, 0.12, 0.0)   # --- POLISH FIX F8: el contorno aparece con la letra (antes, un cuadro negro)
 	l.modulate = Color(1.0, 0.9, 0.62) if good else Color(0.84, 0.8, 0.95)
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	l.no_depth_test = true
@@ -1238,8 +1267,10 @@ func _think(text: String, good := true) -> void:
 	var tw := l.create_tween()
 	tw.set_parallel(true)
 	tw.tween_property(l, "modulate:a", 1.0, 0.25)
+	tw.tween_property(l, "outline_modulate:a", 1.0, 0.25)   # --- POLISH FIX F8
 	tw.tween_property(l, "position:y", y0 + 0.2, 3.6)
 	tw.tween_property(l, "modulate:a", 0.0, 0.5).set_delay(3.1)
+	tw.tween_property(l, "outline_modulate:a", 0.0, 0.5).set_delay(3.1)   # --- POLISH FIX F8
 	tw.chain().tween_callback(l.queue_free)
 
 ## Quien vuelve a la tienda a contar cómo le fue: la noticia, lo que trae (propina, renombre, regalos, una página
@@ -1262,6 +1293,7 @@ func _talk_return() -> void:
 				ui.fly_coins(world.screen_pos(customer.global_position + Vector3(0, 1.4, 0)), clampi(gold_in / 3, 3, 10))
 		if res.get("journal", false):
 			ui.toast("New page in the Journal", UIKit.GOLD_BRIGHT, 3.0)   # --- R3 BENCH
+			ui.pulse_icon("journal")   # --- POLISH LOOK P16: su icono late
 		Game.save_game()
 	var line := Story.reward_line(current["result"])
 	var text: String = current["visit_text"] + ("\n" + line if line != "" else "")
@@ -1389,7 +1421,7 @@ func _on_menu(id: String) -> void:
 			# --- WORLD: por la mañana el mercado es un lugar; durante el día, un encargo (Pip trae los ingredientes)
 			if phase == Phase.MORNING:
 				if in_market:
-					ui.toast("Tap a stall")   # --- R3 BENCH
+					ui.toast("Pick a stall")   # --- R3 BENCH (POLISH FIX F4: sin «Tap»)
 				else:
 					_go_market()
 			else:
@@ -1401,7 +1433,8 @@ func _on_menu(id: String) -> void:
 			ov.show_ranking()   # --- R4 RANK: el tablón del Gremio
 
 func _on_overlay_closed(_id: String) -> void:
-	pass
+	if _id == "market":
+		_save_now()   # --- POLISH FIX F3: lo comprado en el puesto (o en el encargo de Pip) queda guardado
 
 func _on_upgrades_changed() -> void:
 	ui.refresh_potions()
@@ -1419,7 +1452,73 @@ func _notification(what: int) -> void:
 		for id in contents:
 			Game.return_ingredient(id)
 		contents.clear()
+		Game.midday = true   # --- POLISH FIX F3
 		Game.save_game()
+
+# --- POLISH FIX F3: guardados en los que se puede confiar --------------------------------------------------------
+# En la web, recargar o cerrar la pestaña después de comprar y preparar volvía a la mañana con el oro y la despensa
+# del principio del día (solo se guardaba al empezar el día y cuando un cliente se iba). Ahora se guarda también al
+# volver del mercado y al cerrar el papel de un puesto, al embotellar y al cobrar; y, en la web, cuando la página se
+# esconde o se cierra (visibilitychange / pagehide: un extra, porque el navegador pasa el archivo a IndexedDB en el
+# cuadro siguiente y al cerrar puede no haberlo). Lo guardado es «como si se vaciara el caldero»: lo que hay dentro
+# vuelve a la despensa y la poción removida va al estante, pero solo en el archivo: lo de ahora no cambia.
+var _skip_harvest := false   # (al seguir una partida de media jornada, el huerto de hoy ya se cosechó)
+# --- POLISH FIX F4: el consejo de caminar del día 1, uno por dispositivo (GameUI.show_tip lo rehace si cambia)
+const WALK_TIP := {"keys": "Walk with [b]A/D[/b]. Then, [b]Open shop[/b].",
+	"pad": "Walk with the [b]D-pad[/b]. Then, [b]Open shop[/b].",
+	"mouse": "Click the floor to walk. Then, [b]Open shop[/b]."}
+var _js_page_cb = null       # (web) el callback de JavaScriptBridge: se guarda aquí para que siga vivo
+
+func _save_now() -> void:
+	if phase != Phase.MORNING and phase != Phase.OPEN and phase != Phase.CLOSING:
+		return
+	if _ending_running or Events.today_is_event() or Game.ev_done_day == Game.day:
+		return   # (nunca el día de un evento ni durante el final)
+	var keep_stock: Dictionary = Game.stock.duplicate()
+	var keep_pots: Array = Game.potions.duplicate()
+	var keep_disc: Dictionary = Game.discovered.duplicate()
+	var keep_brewed := int(Game.stats.get("brewed", 0))
+	for id in contents:
+		Game.stock[id] = int(Game.stock.get(id, 0)) + 1
+	if not brew_ready.is_empty():
+		var pid := String(brew_ready["potion"])
+		var pot := int(brew_ready["potency"])
+		Game.potions.append({"id": pid, "potency": pot})
+		Game.sort_potions()
+		Game.discovered[pid] = maxi(int(Game.discovered.get(pid, 0)), pot)
+		Game.stats["brewed"] = keep_brewed + 1
+	Game.midday = true
+	Game.save_game()
+	# lo de ahora, tal cual (los mismos diccionarios y la misma lista: nadie se queda con una copia vieja)
+	Game.stock.clear()
+	Game.stock.merge(keep_stock)
+	Game.potions.clear()
+	Game.potions.append_array(keep_pots)
+	Game.discovered.clear()
+	Game.discovered.merge(keep_disc)
+	Game.stats["brewed"] = keep_brewed
+
+## (web) Avisa a la página: cuando se esconde (otra pestaña, minimizar) o se va (recargar, cerrar), se guarda.
+func _web_save_hook() -> void:
+	if not OS.has_feature("web") or DisplayServer.get_name() == "headless":
+		return
+	var doc = JavaScriptBridge.get_interface("document")
+	var win = JavaScriptBridge.get_interface("window")
+	if doc == null or win == null:
+		return
+	_js_page_cb = JavaScriptBridge.create_callback(_on_page_hidden)
+	doc.addEventListener("visibilitychange", _js_page_cb)
+	win.addEventListener("pagehide", _js_page_cb)
+
+func _on_page_hidden(args: Array = []) -> void:
+	if OS.has_feature("web") and not args.is_empty() and args[0] != null:
+		var kind := str(args[0].type)
+		if kind == "visibilitychange":
+			var doc = JavaScriptBridge.get_interface("document")
+			if doc != null and not bool(doc.hidden):
+				return   # (volvió a verse: nada que guardar)
+	_save_now()
+# --- end POLISH FIX F3
 
 func _unhandled_input(ev: InputEvent) -> void:
 	if not _booted:   # --- BOOT: todavía armándose
@@ -1564,7 +1663,7 @@ func _go_market() -> void:
 	ui.show_banner("Market Square")   # --- R3 SHIP: sin el subtítulo («Mañana de mercado» repetía lo mismo)
 	if not _market_tip_shown:
 		_market_tip_shown = true
-		ui.show_tip("Tap a [b]stall[/b] to buy.", 10.0)   # --- R3 BENCH
+		ui.show_tip("Pick a [b]stall[/b] to buy.", 10.0)   # --- R3 BENCH (POLISH FIX F4: sin «Tap»)
 	_trip_busy = false
 
 ## Vuelve a la tienda: camina hasta su puerta en la calle, fundido, y entra por la puerta de la tienda.
@@ -1595,6 +1694,7 @@ func _leave_market() -> void:
 	world.close_door()
 	_trip_busy = false
 	_update_top_buttons()
+	_save_now()   # --- POLISH FIX F3: de vuelta del mercado, las compras quedan guardadas
 	if Game.day >= 2:
 		_grimoire_tip()   # --- R3 MERGE: de vuelta del mercado, el recordatorio del grimorio
 
@@ -2691,6 +2791,7 @@ func _ev_pad_tap(at: Vector2) -> void:
 ## («AUTOPLAY ATASCO ...»: qué panel, el banco, la bola, el cuervo, el reloj...), lo cuenta como error y desatasca
 ## (cierra paneles, la bola y el banco). Solo para las pruebas: el juego normal no lo usa.
 var _bot_stuck := 0
+var _bot_at := ""   # --- POLISH LOOK (regresión): dónde espera el bot ahora mismo (lo imprime el aviso de ATASCO)
 func _bot_watchdog() -> void:
 	var last_day := -1
 	var last_phase := -1
@@ -2712,6 +2813,17 @@ func _bot_watchdog() -> void:
 			" reloj=", "%.0f" % shop_t, " pausa=", clock_paused(), " cerrando=", _pace_closing, " mostrador=",
 			String(_counter_v.get("state", "")) if not _counter_v.is_empty() else "-", " fila=", line.size(),
 			" cliente_listo=", customer_ready, " evento=", is_instance_valid(ev_game))
+		# --- POLISH FIX F14: qué diálogo quedó abierto (texto, respuestas, si escribe o espera un clic) y el cliente
+		var ids: Array = []
+		for c in ui.dialog_choices.get_children():
+			ids.append(String(c.get_meta("choice", "?")))
+		var cv := {}
+		for k in ["id", "ordered", "handed", "told", "declined", "serving", "tutorial"]:
+			cv[k] = _counter_v.get(k, null)
+		print("AUTOPLAY ATASCO diálogo «", ui.dialog_text.text.left(90).replace("\n", " / "), "» respuestas=", ids,
+			" escribe=", ui._typing, " espera_clic=", ui._waiting_click, " mostrador=", cv, " tipo=", current.get("kind", ""),
+			" cliente=", is_instance_valid(customer), " bot_en=", _bot_at)   # --- POLISH LOOK: + dónde espera el bot
+		# --- end
 		if ov.is_open():
 			ov.close(false)
 		if _ball_open():
@@ -2947,6 +3059,9 @@ func _run_demo() -> void:
 	if _demo.begins_with("m6_"):   # --- R6 MERGE: las pruebas de la unión (bloque R6 MERGE, al final)
 		_m6_demo(_demo)
 		return
+	if _demo.begins_with("pol_"):   # --- POLISH FIX: las pruebas de la ronda de pulido (bloque POLISH, al final)
+		_pol_demo(_demo)
+		return
 	match _demo:
 		"title":
 			_show_title()
@@ -3070,7 +3185,7 @@ func _demo_scene(name: String) -> void:
 			ui.order_who = who
 			ui.show_order(Story.char_name(who), current["text"], current["hint"], ["prisa", "calma"] if name == "ticket" else [])
 			if name == "hud":
-				ui.show_tip("Tap it on the [b]shelf[/b] to hand it over.", 0.0)
+				ui.show_tip("Hand it over from your [b]shelf[/b].", 0.0)   # --- POLISH FIX F4: sin «Tap» (vale para todos)
 		# --- end R3 BENCH
 		# --- WORLD: el mercado es un lugar; "upgrades" abre el puesto de Mabel
 		"market", "upgrades", "vendor":
@@ -3083,7 +3198,12 @@ func _demo_scene(name: String) -> void:
 				market.snap_camera()
 				market.walker.go_to(9.0)
 			else:
-				ov.show_market("morning", "mabel" if name == "upgrades" else "ilse")
+				# --- POLISH LOOK P10: --vendor=<puesto> (lupo, borin, tobias...) para ver otros puestos
+				var vend := "mabel" if name == "upgrades" else "ilse"
+				for a in OS.get_cmdline_user_args():
+					if a.begins_with("--vendor="):
+						vend = a.substr(9)
+				ov.show_market("morning", vend if Data.VENDORS.has(vend) else "ilse")
 		"trip":
 			phase = Phase.MORNING
 			_update_top_buttons()
@@ -3302,6 +3422,8 @@ func _demo_scene(name: String) -> void:
 			world.set_time(1.0, false)
 			ov.show_summary(3, Game.today)
 		"levelup":
+			if "--late" in OS.get_cmdline_user_args():   # --- POLISH LOOK P12: 1 s más tarde (capturas del estallido)
+				await get_tree().create_timer(1.0).timeout
 			ov.show_level_up(2)
 		# --- R4 RANK: el Escalafón del Gremio. "ranking": el tablón a mitad de camino (día 12); "rankmail": el correo con la
 		# línea del Escalafón; "gaceta": la Gaceta del día 10; "ranksummary": la hoja de la noche con el puesto;
@@ -4701,11 +4823,14 @@ func _bot_open_day(rune_stats: Dictionary) -> int:
 		# --- R4 RAVEN (merge: moved here from the old serve loop): la ventanilla primero (Graznido espera un minuto);
 		# si no hay nadie en el mostrador, prepara lo que el cuervo vendrá a buscar
 		if krapido.active() and not busy and not ui.dialog_open() and not ov.is_open():
+			_bot_at = "krapido"
 			if await _bot_krapido():
 				continue
 		# --- end R4 RAVEN
+		_bot_at = "loop"
 		if customer_ready and ui.dialog_open():
 			if not busy:
+				_bot_at = "answer"
 				await _bot_answer()
 			continue
 		if customer_ready and not busy and _counter_v.get("ordered", false) and current.has("potion"):
@@ -4780,6 +4905,7 @@ func _bot_answer() -> void:
 
 ## Prepara una poción en el banco del caldero, con los tiempos del perfil. false si no se pudo (alguien habló).
 func _bot_brew(combo: Array) -> bool:
+	_bot_at = "brew_start"
 	if not brew_ready.is_empty():
 		await brew_bottle()
 	if not contents.is_empty():
@@ -4799,6 +4925,7 @@ func _bot_brew(combo: Array) -> bool:
 		if _brew_open() and not brew.is_busy():
 			await brew.close()
 		return false
+	_bot_at = "brew_stir"
 	_on_brew()
 	await _bot_wait("stir")
 	if brew._stir:
@@ -4809,10 +4936,13 @@ func _bot_brew(combo: Array) -> bool:
 	while busy and w2 < 10.0:
 		await get_tree().create_timer(0.2).timeout
 		w2 += 0.2
+	_bot_at = "brew_bottle"
 	if not brew_ready.is_empty():
 		await brew_bottle()
+	_bot_at = "brew_close"
 	if _brew_open():
 		await brew.close()
+	_bot_at = "brew_done"
 	return true
 
 ## Deja hechas hasta k pociones de las que más se piden (sin llenar el estante: quedan 2 huecos), solo con lo que hay.
@@ -4900,12 +5030,14 @@ func _bot_krapido() -> bool:
 		if have >= 0:
 			var r := Game.next_rune_for(Game.potions[have], req)
 			if r != "" and Game.enchant_problem(have, r) == "" and krapido.raven_left > 30.0:
+				_bot_at = "k_enchant"
 				var res: Dictionary = await grimoire.bot_enchant(have, r)
 				if res.is_empty():
 					print("AUTOPLAY: krapido no pudo encantar ", want, " con ", r)
 					_bot_k["errors"] += 1
 				return true
 			if not world.at_station("ventanilla"):
+				_bot_at = "k_walk"
 				if not await world.go_station("ventanilla"):
 					return true   # (la interrumpieron, p. ej. llegó un cliente: se reintenta)
 			if not world.at_station("ventanilla") or not krapido.raven_waiting():
@@ -6188,7 +6320,7 @@ func _m6_fontprobe() -> void:
 	await _r6_wait(1.0)
 	_m6_font_state("2bench")
 	print("M6MARK tip ", Time.get_ticks_msec())
-	brew.say("Tap it on the shelf to present it", UIKit.GOLD_BRIGHT)
+	brew.say("Present it from your shelf", UIKit.GOLD_BRIGHT)   # --- POLISH FIX F4
 	await _r6_wait(1.0)
 	_m6_font_state("3tip")
 	print("M6MARK end ", Time.get_ticks_msec(), " perf:end")
@@ -6354,3 +6486,505 @@ func _m6_evprompt() -> void:
 	print("M6TEST tiempos (s de juego) negro=", _m6_log.get("black"), " vista=", vis, " anfitrión=", dl, " corriendo=", run, " aviso E=", act)
 	print("M6TEST ", "OK" if _m6_bad == 0 else "FALLO (%d)" % _m6_bad)
 # --- end R6 MERGE
+
+# --- POLISH FIX: demos y pruebas de la ronda de pulido (--demo=pol_*) ----------------------------------------------
+func _pol_demo(name: String) -> void:
+	match name:
+		"pol_savetest":
+			await _pol_savetest()
+		"pol_fanfare":   # (F13) la fanfarria y cómo baja y vuelve la música (sin pantalla)
+			await _pol_fanfare()
+		"pol_ranksim":   # (F12) --pts=a.json,b.json [--seeds=20] [--scale=S --top=N]: el día del puesto 1, sin pantalla
+			_pol_ranksim()
+		"pol_think":   # (F8) --out=<carpeta>: cada cuadro del «This should work…» al aparecer (con pantalla)
+			await _pol_think()
+		"pol_crow":   # (F7) Graznido llega a la ventanilla; --far: ella está en el mostrador
+			await _pol_crow()
+		"pol_tutgive":   # (F6) el tutorial: Greta pide Sueño Profundo y en el estante hay Bálsamo Helado
+			await _pol_tutgive()
+		"pol_stir":   # (F5) --pot=N (calidad antes de remover) --at=before|pop|after: un removido perfecto forzado
+			await _pol_stir()
+		"pol_walktip":   # (F4) la mañana del día 1 con el consejo de caminar (--glyphs=keys|pad|mouse)
+			Game.new_game_state()
+			_refresh_all()
+			_begin_day()
+		"pol_bubbleperf":   # (P3) el primer globo, con (--warm) o sin el precalentamiento de BootWarm (con pantalla)
+			await _pol_bubbleperf()
+		"pol_crowd":   # (P11) ella quieta en el mercado: cuántos cuadros alguien la tapa o dos vecinos se apilan (sin pantalla)
+			await _pol_crowd()
+		"pol_conttoast":   # (POLISH LOOK, fin de carril) seguir a media mañana y abrir enseguida: ningún aviso sobre el cartel
+			await _pol_conttoast()
+		_:
+			print("POL demo desconocida: ", name)
+			get_tree().quit()
+
+## Lo que hay ahora en el archivo guardado ({} si no hay).
+func _pol_saved() -> Dictionary:
+	var f := FileAccess.open(Game.SAVE_PATH, FileAccess.READ)
+	if f == null:
+		return {}
+	var d = JSON.parse_string(f.get_as_text())
+	return d if d is Dictionary else {}
+
+func _pol_saved_potions(d: Dictionary, pid: String) -> int:
+	var n := 0
+	for p in d.get("potions", []):
+		if p is Dictionary and String(p.get("id", "")) == pid:
+			n += 1
+	return n
+
+## --demo=pol_fanfare (F13): suena Sfx.fanfare() con la música de la tienda puesta; imprime el volumen de la música
+## antes, durante y después (debe bajar ~12 dB y volver) y si el reproductor sonó. POLFAN OK / FALLO.
+func _pol_fanfare() -> void:
+	await get_tree().create_timer(1.0).timeout
+	var base := Sfx.music.volume_db
+	var st := Sfx.fanfare_player.stream
+	Sfx.fanfare()
+	await get_tree().create_timer(1.0).timeout
+	var mid := Sfx.music.volume_db
+	var playing := Sfx.fanfare_player.playing
+	await get_tree().create_timer(7.5).timeout
+	var after := Sfx.music.volume_db
+	print("POLFAN largo=", st.get_length() if st else -1.0, " música antes=", base, " durante=", mid, " después=", after, " sonaba=", playing)
+	print("POLFAN ", "OK" if st and playing and mid <= base - 10.0 and absf(after - base) < 0.6 else "FALLO")
+	get_tree().quit()
+
+## --demo=pol_ranksim (F12): los puntos de ella día a día (un .json con una lista, sacada de un bot largo) pasan por el
+## Escalafón de verdad (Ranking.reset y _advance_rivals, con la persecución de Fizz) con --seeds semillas; imprime el
+## primer día en el puesto 1 (mín / mediana / máx; 99 = nunca). --scale y --top prueban otra escala de los puntos de
+## salida de las N primeras rivales (sin tocar el juego).
+func _pol_ranksim() -> void:
+	var files: Array = []
+	var seeds := 20
+	var scale := -1.0
+	var topn := 30
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--pts="):
+			files = a.substr(6).split(",")
+		elif a.begins_with("--seeds="):
+			seeds = int(a.substr(8))
+		elif a.begins_with("--scale="):
+			scale = float(a.substr(8))
+		elif a.begins_with("--top="):
+			topn = int(a.substr(6))
+	for path in files:
+		var arr = JSON.parse_string(FileAccess.get_file_as_string(String(path)))
+		if not (arr is Array):
+			print("POLRANK no se pudo leer ", path)
+			continue
+		var firsts: Array = []
+		var fizz_pos: Array = []
+		for k in seeds:
+			Ranking.reset()
+			Ranking.seed0 = 1000 + k * 7919
+			if scale > 0.0:
+				var start: Array = Ranking.SHOPS.filter(func(sh): return not sh.get("me", false))
+				start.sort_custom(func(x, y): return float(x["score"]) > float(y["score"]))
+				for i in mini(topn, start.size()):
+					var id := String(start[i]["id"])
+					Ranking.scores[id] = float(start[i]["score"]) * scale
+			var first := 99
+			for d in range(1, arr.size() + 1):
+				var her := float(arr[d - 1])
+				var rng := RandomNumberGenerator.new()
+				rng.seed = hash([Ranking.seed0, d])
+				Ranking._advance_rivals(d, her, rng)
+				Ranking.scores[Ranking.ME] = float(Ranking.scores.get(Ranking.ME, 0.0)) + her
+				if first == 99 and Ranking.position() == 1:
+					first = d
+			firsts.append(first)
+			fizz_pos.append(Ranking.position("fizz"))
+		firsts.sort()
+		print("POLRANK ", String(path).get_file(), " escala=", scale, " top=", topn, " primer_dia_1: min=", firsts[0],
+			" mediana=", firsts[firsts.size() / 2], " max=", firsts[-1], " nunca=", firsts.count(99), "/", firsts.size(),
+			" todos=", firsts, " fizz_final=", fizz_pos)
+	get_tree().quit()
+
+## --demo=pol_think (F8): la entrega de «react» (la intuición acierta: ella piensa «This should work…») y una
+## captura por cuadro de los 14 primeros cuadros del pensamiento en --out (con pantalla, no headless). Imprime
+## POLTHINK con dónde está su cabeza en la pantalla (para recortar).
+func _pol_think() -> void:
+	var out := ""
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--out="):
+			out = a.substr(6)
+	DirAccess.make_dir_recursive_absolute(out)
+	_demo_scene("react")   # (sin await: _hand_over y _think ya pasaron cuando vuelve)
+	var head := world.screen_pos(world.alchemist.global_position + Vector3(0, 2.1, 0))
+	print("POLTHINK cabeza=", head, " pensando=", is_instance_valid(_thought))
+	for i in 14:
+		await RenderingServer.frame_post_draw
+		if out != "":
+			get_viewport().get_texture().get_image().save_png("%s/t%02d.png" % [out, i])
+	print("POLTHINK listo")
+	get_tree().quit()
+
+## --demo=pol_crow (F7): Graznido llega con ella en la ventanilla (sin aviso arriba: el graznido y su frase bastan) o,
+## con --far, con ella en el mostrador (la ventanilla fuera de la pantalla: el aviso sale). Imprime POLCROW OK / FALLO.
+func _pol_crow() -> void:
+	var far := OS.get_cmdline_user_args().has("--far")
+	_demo_scene("krapido_arrive")   # (sin await: vuelve en su primera espera, ya puesta en la ventanilla)
+	if far:
+		world.walker.teleport(ShopWorld.P_ALCH_COUNTER.x, 1)
+		world.snap_camera()
+	var w := 0.0
+	while krapido.raven_state != "waiting" and w < 20.0:
+		await get_tree().create_timer(0.2).timeout
+		w += 0.2
+	await get_tree().create_timer(0.3).timeout
+	var toasts: Array = []
+	for c in ui.toast_box.get_children():
+		toasts.append(String((c.get_child(0) as Label).text))
+	var shown := toasts.has("Squawk is at the window!")
+	print("POLCROW lejos=", far, " estación=", world.walker.current, " cuervo=", krapido.raven_state, " avisos=", toasts)
+	print("POLCROW ", "OK" if shown == far and krapido.raven_state == "waiting" else "FALLO")
+	if _shot_path != "":
+		_shot_frames = _frame + 3
+	else:
+		get_tree().quit()
+
+## --demo=pol_tutgive (F6): el día 1, la clienta del tutorial en el mostrador y una poción que no es la suya en el
+## estante: la placa dice solo «Talk» hasta que embotella la del tutorial (tutorial_step 2); después vuelve «Give».
+## Imprime POLTUT plate=[...] y POLTUT OK / FALLO. Con --frames la captura es la placa del tutorial.
+func _pol_tutgive() -> void:
+	Engine.time_scale = 3.0
+	Game.delete_save()
+	Game.new_game_state()
+	_refresh_all()
+	_begin_day()
+	await get_tree().create_timer(3.0).timeout
+	ui.hide_tip()
+	_open_shop()
+	var w := 0.0
+	while not customer_ready and w < 40.0:
+		await get_tree().create_timer(0.5).timeout
+		w += 0.5
+	await get_tree().create_timer(1.5).timeout
+	ui._advance()
+	_on_choice("prepare")
+	Game.potions = [{"id": "balsamo_helado", "potency": 5}]
+	Game.potions_changed.emit()
+	Engine.time_scale = 1.0
+	await get_tree().create_timer(0.8).timeout
+	var p1 := _r6_prompt("counter")
+	var s1 := _r6_prompt("shelf")
+	print("POLTUT plate=[", p1, "] estante=[", s1, "] paso=", tutorial_step, " tutorial=", current.get("tutorial", false), " pide=", Story.wanted(current))
+	tutorial_step = 2   # (como si ya hubiera embotellado la del tutorial)
+	await get_tree().create_timer(0.5).timeout
+	var p2 := _r6_prompt("counter")
+	print("POLTUT después de embotellar: plate=[", p2, "]")
+	var ok := p1 == "Talk" and s1 == "" and p2.begins_with("Give")
+	print("POLTUT ", "OK" if ok else "FALLO")
+	tutorial_step = 0
+	await get_tree().create_timer(0.5).timeout
+	if _shot_path != "":
+		_shot_frames = _frame + 3
+	else:
+		Game.delete_save()
+		get_tree().quit()
+
+## --demo=pol_stir (F5): el banco con dos ingredientes de verdad cuya calidad es --pot=N (4: el perfecto cruza el
+## escalón de la 2.ª estrella; 5: solo enciende un puntito), y un removido perfecto forzado. --at=before (antes de
+## remover), pop (justo después de «¡Perfecto!») o after (la poción lista). Imprime POLSTIR.
+func _pol_stir() -> void:
+	var want := 4
+	var at := "after"
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--pot="):
+			want = int(a.substr(6))
+		elif a.begins_with("--at="):
+			at = a.substr(5)
+	Game.new_game_state()
+	Game.tutorial_done = true
+	Game.day = 3
+	Game.gold = 120
+	Game.renombre = 14
+	for id in Data.INGREDIENT_ORDER:
+		Game.stock[id] = 4 if Game.ingredient_unlocked(id) else 0
+	var pair: Array = []
+	var pid := ""
+	for i in Data.INGREDIENT_ORDER:
+		for j in Data.INGREDIENT_ORDER:
+			if pair.is_empty() and Game.ingredient_unlocked(i) and Game.ingredient_unlocked(j):
+				var r := Game.evaluate([i, j])
+				if String(r.get("potion", "")) != "" and int(r["potency"]) + Game.potency_bonus() == want:
+					pair = [i, j]
+					pid = String(r["potion"])
+	if pid != "":
+		Game.discovered[pid] = want
+	phase = Phase.OPEN
+	_refresh_all()
+	ui.set_gameplay_visible(true)
+	world.set_time(0.45, false)
+	world.walker.teleport(ShopWorld.STATIONS["caldero"]["x"], -1)
+	world.snap_camera()
+	await get_tree().create_timer(0.3).timeout
+	open_brew()
+	await get_tree().create_timer(0.4).timeout
+	for id in pair:
+		brew.throw(id)
+		await get_tree().create_timer(0.3).timeout
+	await get_tree().create_timer(0.8).timeout
+	print("POLSTIR par=", pair, " poción=", pid, " calidad=", brew._fc_potency, " estrellas=", brew._fc_stars_n)
+	if at == "before":
+		_shot_frames = _frame + 3
+		return
+	_on_brew()
+	await get_tree().create_timer(0.8).timeout
+	var g: StirGame = brew._stir
+	if g:
+		g.angle = g.zone_start + g.zone_size * 0.5
+		g.press()
+	if at == "pop":
+		await get_tree().create_timer(0.12).timeout
+		print("POLSTIR pop: calidad=", brew._fc_potency, " estrellas=", brew._fc_stars_n, " dice=", brew.msg.text)
+		_shot_frames = _frame + 2
+		return
+	await get_tree().create_timer(1.6).timeout
+	print("POLSTIR después: calidad=", brew._fc_potency, " estrellas=", brew._fc_stars_n, " lista=", brew_ready, " dice=", brew.msg.text)
+	_shot_frames = _frame + 3
+
+## --demo=pol_savetest (F3): compra en el mercado y vuelve, embotella, deja dos ingredientes en el caldero y la página
+## se esconde, deja una poción removida sin embotellar y la página se esconde, y cobra a un cliente: después de cada
+## paso, el archivo guardado ya lo tiene (y lo de ahora no cambió). Imprime POLSAVE OK o POLSAVE FALLO.
+func _pol_savetest() -> void:
+	Engine.time_scale = 4.0
+	var bad: Array = []
+	Game.delete_save()
+	Game.new_game_state()
+	Game.tutorial_done = true
+	Game.day = 2
+	Game.gold = 60
+	_refresh_all()
+	phase = Phase.MORNING
+	ui.set_gameplay_visible(true)
+	world.walker.teleport(ShopWorld.P_ALCH_COUNTER.x, 1)
+	world.snap_camera()
+	var root := "raiz_mandragora"
+	# 1) el mercado: dos raíces y de vuelta a la tienda
+	await _go_market()
+	var r0 := int(Game.stock.get(root, 0))
+	var bought := Game.buy_ingredient(root, 2)
+	await get_tree().create_timer(0.5).timeout
+	await _leave_market()
+	var d := _pol_saved()
+	var sr := int(d.get("stock", {}).get(root, -1))
+	print("POLSAVE mercado: compra=", bought, " vivo=", Game.stock.get(root, 0), " guardado=", sr, " midday=", d.get("midday"))
+	if not bought or sr != r0 + 2 or not bool(d.get("midday", false)):
+		bad.append("mercado")
+	# 2) embotellar (la poción removida va al estante y al archivo)
+	brew_ready = {"potion": "sueno_profundo", "potency": 5, "perfect": false}
+	await brew_bottle()
+	d = _pol_saved()
+	var np := _pol_saved_potions(d, "sueno_profundo")
+	print("POLSAVE embotellar: vivas=", Game.potions.size(), " guardadas sueno_profundo=", np)
+	if np != 1:
+		bad.append("embotellar")
+	# 3) dos ingredientes en el caldero; la página se esconde: en el archivo vuelven a la despensa, el caldero sigue igual
+	var s0 := int(Game.stock.get(root, 0))
+	var a1 := brew_add(root)
+	var a2 := brew_add(root)
+	var live := int(Game.stock.get(root, 0))
+	_on_page_hidden([])
+	d = _pol_saved()
+	sr = int(d.get("stock", {}).get(root, -1))
+	print("POLSAVE caldero: echados=", [a1, a2], " caldero=", contents, " vivo=", live, " (después ", Game.stock.get(root, 0), ") guardado=", sr)
+	if a1 != "" or a2 != "" or contents.size() != 2 or sr != s0 or int(Game.stock.get(root, 0)) != live or live != s0 - 2:
+		bad.append("caldero")
+	_on_empty()
+	# 4) una poción removida sin embotellar; la página se esconde: está en el archivo, no en el estante de ahora
+	var live_pots := Game.potions.size()
+	var disc := JSON.stringify(Game.discovered)
+	brew_ready = {"potion": "balsamo_helado", "potency": 6, "perfect": true}
+	_on_page_hidden([])
+	d = _pol_saved()
+	var nb := _pol_saved_potions(d, "balsamo_helado")
+	print("POLSAVE removida: guardadas balsamo_helado=", nb, " estante vivo=", Game.potions.size(), " (antes ", live_pots, ") descubiertas guardadas=", d.get("discovered"))
+	if nb != 1 or Game.potions.size() != live_pots or JSON.stringify(Game.discovered) != disc or not d.get("discovered", {}).has("balsamo_helado"):
+		bad.append("removida")
+	brew_ready = {}
+	# 5) cobrar: el oro ya está en el archivo al pagar (antes, recién cuando el cliente salía)
+	phase = Phase.OPEN
+	_magic_customer("panadera", ["prisa"])
+	var it := {"kind": "potion", "id": String(Story.wanted(current)), "potency": 5}
+	var g0 := Game.gold
+	_hand_over(it)
+	d = _pol_saved()
+	print("POLSAVE cobro: oro ", g0, " -> ", Game.gold, " guardado=", d.get("gold"))
+	if int(d.get("gold", -1)) != Game.gold or Game.gold <= g0:
+		bad.append("cobro")
+	# 6) seguir la partida: la mañana vuelve con todo y el aviso; el guardado del principio del día ya no es de media jornada
+	ui.hide_dialog()
+	_clear_customer()
+	var gold_saved := Game.gold
+	_continue()
+	await get_tree().create_timer(2.8).timeout   # --- POLISH LOOK: el aviso sale a los 2,3 s (después del cartel del día)
+	for _i in 8:   # --- POLISH LOOK: y después del correo de la mañana, si se abrió: se cierra como lo haría el jugador
+		if not ov.is_open():
+			break
+		ov.close()
+		await get_tree().create_timer(0.6).timeout
+	d = _pol_saved()
+	var toasts: Array = []
+	for c in ui.toast_box.get_children():
+		toasts.append(String((c.get_child(0) as Label).text))
+	print("POLSAVE seguir: oro=", Game.gold, " (guardado antes ", gold_saved, ") midday ahora=", d.get("midday"), " avisos=", toasts)
+	if Game.gold != gold_saved or bool(d.get("midday", true)) or not toasts.any(func(t): return String(t).begins_with("Back to the morning")):
+		bad.append("seguir")
+	Game.delete_save()
+	print("POLSAVE ", "OK" if bad.is_empty() else "FALLO " + str(bad))
+	get_tree().quit()
+# --- end POLISH FIX
+
+# --- POLISH LOOK (regresión de fin de carril): --demo=pol_conttoast [--openat=S]: una partida guardada a media mañana,
+# «Continue» y la tienda abierta a los S s de juego (1,2 por defecto: el cartel «Day N / Morning» todavía se ve). Mira
+# cada cuadro durante 12 s: ningún aviso visible mientras se ve el cartel, y salen los dos avisos («Back to the morning...»
+# y «Open!...»). Con un --fixed-fps bajo (2-3) imita la página web lenta. Imprime POLTOAST OK / FALLO. Sin pantalla.
+func _pol_conttoast() -> void:
+	var open_at := 1.2
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--openat="):
+			open_at = float(a.substr(9))
+	Game.new_game_state()
+	_refresh_all()
+	phase = Phase.MORNING
+	_save_now()   # el guardado de media mañana (como al volver del mercado)
+	print("POLTOAST guardado midday=", _pol_saved().get("midday"))
+	phase = Phase.TITLE
+	_continue()
+	var t := 0.0
+	var opened := false
+	var overlap := 0
+	var banner_last := -1.0   # el último cuadro con el cartel a la vista
+	var seen := {}
+	while t < 12.0:
+		await get_tree().process_frame
+		t += get_process_delta_time()
+		if not opened and t >= open_at:
+			opened = true
+			print("POLTOAST abre a ", snappedf(t, 0.01), " s con el cartel a ", snappedf(ui.banner.modulate.a, 0.01))
+			_open_shop()
+		var vis: Array = []
+		for c in ui.toast_box.get_children():
+			if c is Control and (c as Control).modulate.a > 0.01:
+				vis.append(String((c.get_child(0) as Label).text))
+		for s in vis:
+			if not seen.has(s):
+				seen[s] = snappedf(t, 0.01)
+		if ui.banner.modulate.a > 0.01:
+			banner_last = snappedf(t, 0.01)
+			if not vis.is_empty():
+				overlap += 1
+	print("POLTOAST cartel hasta ", banner_last, " s; avisos (primer cuadro visible, s)=", seen, " cuadros con aviso y cartel a la vez=", overlap)
+	var ok := overlap == 0 and seen.keys().any(func(k): return String(k).begins_with("Back to the morning")) \
+		and seen.keys().any(func(k): return String(k).begins_with("Open!"))
+	Game.delete_save()
+	print("POLTOAST ", "OK" if ok else "FALLO")
+	get_tree().quit()
+# --- end POLISH LOOK
+
+# --- POLISH LOOK P3: --demo=pol_bubbleperf [--warm]: el primer globo de papel (ShopWorld.blurt -> GameUI.bubble) y lo
+# que tarda su cuadro. Con --warm antes corre el precalentamiento entero (BootWarm, como bajo la pantalla de carga).
+# Imprime POLBUB con el tiempo de CPU del cuadro del globo (proceso + dibujo) frente a la mediana de los 30 anteriores.
+func _pol_bubbleperf() -> void:
+	var warm := OS.get_cmdline_user_args().has("--warm")
+	if warm:
+		await _warm_places()
+		fade.color.a = 0.0
+	Game.new_game_state()
+	_refresh_all()
+	_begin_day()
+	ui.hide_dialog()
+	await _frames(40)
+	var times: Array = []
+	var t_prev := Time.get_ticks_usec()
+	for i in 30:
+		await RenderingServer.frame_post_draw
+		var t := Time.get_ticks_usec()
+		times.append((t - t_prev) / 1000.0)
+		t_prev = t
+	times.sort()
+	var med: float = times[times.size() / 2]
+	var g0 := _pol_glyphs()
+	var t0 := Time.get_ticks_usec()
+	world.blurt(world.alchemist, "Tomorrow, then. Back tomorrow!")
+	PerfLog.mark("pol:bubble")
+	await RenderingServer.frame_post_draw   # el cuadro en que se arma y se dibuja por primera vez
+	var t1 := Time.get_ticks_usec()
+	await RenderingServer.frame_post_draw
+	var t2 := Time.get_ticks_usec()
+	var g1 := _pol_glyphs()
+	print("POLBUB warm=%s first_frame_ms=%.1f next_frame_ms=%.1f median_before_ms=%.1f bubbles=%d new_glyphs=%d (%d -> %d)" % [warm,
+		(t1 - t0) / 1000.0, (t2 - t1) / 1000.0, med, ui.bubble_rects().size(), g1 - g0, g0, g1])
+	if _shot_path != "":
+		_shot_frames = _frame + 10
+	else:
+		get_tree().quit()
+
+## Cuántas letras tiene ya dibujadas (en su caché) la Caveat de los globos, a su tamaño, en todas sus variantes.
+func _pol_glyphs() -> int:
+	var base: FontFile = load("res://assets/fonts/Caveat-VariableFont_wght.ttf")
+	var n := 0
+	for ci in base.get_cache_count():
+		for sz in base.get_size_cache_list(ci):
+			if (sz as Vector2i).x == GameUI.BUBBLE_FONT:
+				n += base.get_glyph_list(ci, sz).size()
+	return n
+# --- end POLISH LOOK P3
+
+# --- POLISH LOOK P11: --demo=pol_crowd [--at=8.2] [--secs=60] [--seed=N]: ella quieta en la calle del mercado; cada
+# cuadro mira si algún vecino quieto en los carriles de delante (más cerca de la cámara) está a menos de 0,6 m de ella
+# (la tapa) y cuántas parejas de vecinos quietos del mismo carril están a menos de 0,5 m (apilados). Imprime POLCROWD.
+func _pol_crowd() -> void:
+	var at := 8.2
+	var secs := 60.0
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--at="):
+			at = float(a.substr(5))
+		elif a.begins_with("--secs="):
+			secs = float(a.substr(7))
+		elif a.begins_with("--seed="):
+			seed(int(a.substr(7)))
+	Game.new_game_state()
+	Game.tutorial_done = true
+	Game.day = 3
+	phase = Phase.MORNING
+	_refresh_all()
+	_switch_place(true, false)
+	market.walker.teleport(at, 1)
+	market.snap_camera()
+	await get_tree().create_timer(0.5).timeout
+	var frames := 0
+	var covered := 0
+	var stack_frames := 0
+	var pairs_sum := 0
+	var t := 0.0
+	while t < secs:
+		await get_tree().process_frame
+		t += get_process_delta_time()
+		frames += 1
+		var me: float = market.alchemist.position.x
+		var cov := false
+		var pairs := 0
+		var ns: Array = market.npcs
+		for i in ns.size():
+			var n: Dictionary = ns[i]
+			if n["pass"] or float(n["wait"]) <= 0.0:
+				continue
+			if float(n["z"]) > MarketWorld.LANE_Z and absf(float(n["x"]) - me) < 0.6:
+				cov = true
+			for j in range(i + 1, ns.size()):
+				var m: Dictionary = ns[j]
+				if m["pass"] or float(m["wait"]) <= 0.0:
+					continue
+				if absf(float(m["z"]) - float(n["z"])) < 0.3 and absf(float(m["x"]) - float(n["x"])) < 0.5:
+					pairs += 1
+		if cov:
+			covered += 1
+		if pairs > 0:
+			stack_frames += 1
+		pairs_sum += pairs
+	print("POLCROWD at=%.1f cuadros=%d tapada=%d (%.1f%%) apilados=%d (%.1f%%) parejas=%d" % [at, frames, covered,
+		100.0 * covered / maxf(1, frames), stack_frames, 100.0 * stack_frames / maxf(1, frames), pairs_sum])
+	get_tree().quit()
+# --- end POLISH LOOK P11

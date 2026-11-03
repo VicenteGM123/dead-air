@@ -27,6 +27,11 @@ var lucky := false
 var cat_petted_day := 0
 var stats := {"sold": 0, "brewed": 0, "earned": 0, "perfect": 0}
 var tutorial_done := false
+# --- POLISH FIX F3: guardado a media jornada (después del mercado, de embotellar o de cobrar). Clave opcional "midday":
+# las partidas viejas no la tienen (false). Al seguir una partida guardada así, la mañana vuelve a empezar con el oro,
+# el estante y la despensa de ese momento, y main.gd lo avisa con un cartelito.
+var midday := false
+# --- end
 var music_volume := 0.7
 var sfx_volume := 0.8
 
@@ -57,6 +62,7 @@ func new_game_state() -> void:
 	cat_petted_day = 0
 	stats = {"sold": 0, "brewed": 0, "earned": 0, "perfect": 0}
 	tutorial_done = false
+	midday = false   # --- POLISH FIX F3
 	magic_reset()   # --- MAGIC (R3 MAGIC3: runas)
 	story_reset()   # --- STORY
 	pace_reset()    # --- R4 PACE: boca a boca y consejos del reloj
@@ -800,6 +806,7 @@ func save_game() -> void:
 		"hero_last_day": hero_last_day, "journal": journal, "lucky": lucky, "cat_petted_day": cat_petted_day,
 		"stats": stats, "tutorial_done": tutorial_done, "music_volume": music_volume, "sfx_volume": sfx_volume,
 	}
+	d["midday"] = midday   # --- POLISH FIX F3 (clave opcional)
 	d["magic"] = magic_save()   # --- MAGIC
 	d["story"] = story_save()   # --- STORY: noticias pendientes, quién vino, quién está ofendido
 	d["pace"] = pace_save()     # --- R4 PACE: el boca a boca y los consejos ya vistos
@@ -858,6 +865,7 @@ func load_game() -> bool:
 	for k in stats:
 		stats[k] = int(st.get(k, 0))
 	tutorial_done = bool(d.get("tutorial_done", true))
+	midday = bool(d.get("midday", false))   # --- POLISH FIX F3: las partidas viejas no la tienen
 	music_volume = float(d.get("music_volume", music_volume))
 	sfx_volume = float(d.get("sfx_volume", sfx_volume))
 	var md = d.get("magic", {})   # --- MAGIC

@@ -72,6 +72,7 @@ var tip_panel: PanelContainer
 var tip_text: RichTextLabel
 var _tip_gen := 0
 var banner: Label
+var _toast_gen := 0   # --- POLISH LOOK (fin de carril): clear_toasts() descarta los avisos que esperan al cartel
 
 func _ready() -> void:
 	layer = 5
@@ -93,6 +94,7 @@ func _ready() -> void:
 	_build_tooltip()
 	_build_toasts()
 	_build_banner()
+	_build_bubbles()   # --- POLISH LOOK P3
 	Game.gold_changed.connect(func(_v): refresh_hud())
 	Game.renombre_changed.connect(func(_a, _b): refresh_hud())
 	Game.potions_changed.connect(refresh_potions)
@@ -117,6 +119,12 @@ func _build_hud() -> void:
 	hud_panel.add_child(v)
 	var top := UIKit.hbox(10)
 	v.add_child(top)
+	# --- POLISH LOOK P13: un hueco vacío al principio (la separación de la fila, 10): «Día n» ya no pisa el adorno de
+	# la esquina de la placa
+	var nudge := Control.new()
+	nudge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(nudge)
+	# --- end POLISH LOOK P13
 	day_label = UIKit.shadow(UIKit.label("Day 1", 30, UIKit.GOLD_BRIGHT, UIKit.font_sc_bold))
 	top.add_child(day_label)
 	time_icon = UIKit.icon("res://assets/ui/tod_manana.png", 3.0)
@@ -212,6 +220,50 @@ func _build_menu() -> void:
 			b.add_child(tag)
 			market_x2 = tag
 		# --- end R3 MERGE
+
+# --- POLISH LOOK P16: una noticia hace latir su icono de la barra (el Diario, las Recetas, el Escalafón): dos destellos
+# dorados (modulate, como el del Escalafón) y una onda dorada que sale del botón (un hijo propio, el aro del mando):
+# no toca scale ni self_modulate, que son del P8 (encima / pulsado).
+var _pulse_wait: Array = []   # iconos que latirán en cuanto se vea la barra (la receta nueva llega con el banco abierto)
+
+func pulse_icon(id: String, times := 2) -> void:
+	var b: Control = null
+	for c in menu_box.get_children():
+		if String(c.get_meta("menu", "")) == id:
+			b = c
+	if b == null:
+		return
+	if not b.is_visible_in_tree():
+		if not _pulse_wait.has(id):
+			_pulse_wait.append(id)
+		return
+	var tw := b.create_tween()
+	for i in times:
+		tw.tween_property(b, "modulate", Color(1.7, 1.45, 0.8), 0.24)
+		tw.tween_property(b, "modulate", Color.WHITE, 0.3)
+	for i in times:
+		var ring := NinePatchRect.new()
+		ring.texture = PaperKit.tex("r6_focus9")
+		ring.patch_margin_left = 15
+		ring.patch_margin_right = 15
+		ring.patch_margin_top = 15
+		ring.patch_margin_bottom = 15
+		ring.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ring.position = Vector2(-6, -6)
+		ring.size = b.size + Vector2(12, 12)
+		ring.pivot_offset = ring.size / 2.0
+		ring.modulate.a = 0.0
+		b.add_child(ring)
+		var rt := ring.create_tween()
+		rt.tween_interval(0.54 * i)
+		rt.tween_property(ring, "modulate:a", 1.0, 0.06)
+		rt.set_parallel(true)
+		rt.tween_property(ring, "scale", Vector2(1.35, 1.35), 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		rt.tween_property(ring, "modulate:a", 0.0, 0.5)
+		rt.set_parallel(false)
+		rt.tween_callback(ring.queue_free)
+# --- end POLISH LOOK P16
 
 ## --- R4 RANK: el botón del Escalafón brilla un momento (la primera línea del Escalafón en el correo).
 var rank_btn: Button
@@ -542,6 +594,12 @@ func _advance() -> void:
 		_waiting_click = false
 		dialog_more.visible = false
 		dialog_advanced.emit()
+	# --- POLISH FIX F14: un diálogo «muerto» (a la vista, sin respuestas, ya no escribe ni espera un clic: su clic ya
+	# se dio y nadie lo cerró, p. ej. la despedida de «I can't» si el del mostrador cambió) se cierra al tocarlo. Antes
+	# ni el clic ni las teclas lo quitaban y, al cerrar la tienda, el día no terminaba (el «ATASCO» del bot).
+	elif dialog.visible and dialog_choices.get_child_count() == 0:
+		hide_dialog()
+	# --- end
 
 func _process(delta: float) -> void:
 	if _typing:
@@ -555,7 +613,14 @@ func _process(delta: float) -> void:
 	if tooltip.visible:
 		_place_tooltip()
 	_pace_process_ui(delta)   # --- R4 PACE: el reloj late en la última hora; la barra, cuando se acaba la paciencia
+	if not _pulse_wait.is_empty() and menu_box.is_visible_in_tree():   # --- POLISH LOOK P16: el latido pendiente
+		var ids := _pulse_wait.duplicate()
+		_pulse_wait.clear()
+		for id in ids:
+			pulse_icon(String(id))
 	_pick_process()   # --- R6 UI: el estante para elegir se cierra solo si ya no tiene sentido
+	_tip_device_process()   # --- POLISH FIX F4
+	_bubbles_process(delta)   # --- POLISH LOOK P3
 
 # ------------------------------------------------------------------ caldero (compatibilidad)
 
@@ -719,7 +784,15 @@ func _build_tip() -> void:
 	h.add_child(tip_text)
 	tip_panel.visible = false
 
-func show_tip(text: String, secs := 10.0) -> void:
+func show_tip(text, secs := 10.0) -> void:
+	# --- POLISH FIX F4: el consejo puede venir por dispositivo ({"keys", "pad", "mouse"}): se rehace si cambia
+	if text is Dictionary:
+		_tip_dev = text
+		_tip_dev_gen = Glyphs.gen
+		text = _tip_for_device()
+	else:
+		_tip_dev = {}
+	# --- end
 	tip_text.text = text
 	tip_panel.visible = true
 	_fit_tip()
@@ -755,7 +828,24 @@ func _resize_later(c: Control) -> void:
 	if is_instance_valid(c):
 		c.reset_size()
 
+# --- POLISH FIX F4: el consejo que nombra teclas (caminar) se escribe para el dispositivo de ahora
+var _tip_dev: Dictionary = {}
+var _tip_dev_gen := -1
+
+func _tip_for_device() -> String:
+	return String(_tip_dev.get(Glyphs.device, _tip_dev.get("keys", "")))
+
+func _tip_device_process() -> void:
+	if _tip_dev.is_empty() or _tip_dev_gen == Glyphs.gen:
+		return
+	_tip_dev_gen = Glyphs.gen
+	if tip_panel.visible:
+		tip_text.text = _tip_for_device()
+		_fit_tip()
+# --- end
+
 func hide_tip() -> void:
+	_tip_dev = {}   # --- POLISH FIX F4
 	_tip_gen += 1
 	tip_panel.visible = false
 	tip_panel.modulate.a = 1.0
@@ -866,6 +956,17 @@ func _build_toasts() -> void:
 	root.add_child(toast_box)
 
 func toast(text: String, color := UIKit.TEXT, duration := 2.6) -> void:
+	# --- POLISH LOOK (regresión de fin de carril): un aviso no se pinta encima del cartel grande («Day N / Morning»,
+	# «Closing time!»...): espera a que el cartel se vaya (antes se pisaban ~2 s). clear_toasts() descarta los que esperan.
+	if banner and banner.modulate.a > 0.01:
+		var gen := _toast_gen
+		var waited := 0.0
+		while banner.modulate.a > 0.01 and waited < 4.0:
+			await get_tree().create_timer(0.1).timeout
+			waited += 0.1
+		if gen != _toast_gen:
+			return
+	# --- end
 	var p := PanelContainer.new()
 	p.add_theme_stylebox_override("panel", UIKit.panel_style(Color(0.06, 0.05, 0.1, 0.9), UIKit.GOLD, 1, 18, 12))
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -885,6 +986,7 @@ func toast(text: String, color := UIKit.TEXT, duration := 2.6) -> void:
 
 ## --- R4 MERGE: quita los avisos que queden (p. ej. «¡Inscrita!» al aceptar la invitación, justo antes del correo).
 func clear_toasts() -> void:
+	_toast_gen += 1   # --- POLISH LOOK: también los que esperan a que se vaya el cartel
 	for c in toast_box.get_children():
 		c.queue_free()
 
@@ -1295,3 +1397,148 @@ func _pick_process() -> void:
 		_pick_i = Game.potions.size() - 1
 		_pick_show()
 # --- end R6 UI
+
+# --- POLISH LOOK P3: los globos de lo que dice la gente en la tienda (los clientes al irse o al enfadarse, el cuervo).
+# Antes eran letras 3D sueltas sobre la cabeza (ShopWorld.blurt, Raven.say): sin fondo, y la placa de acción del
+# mostrador les tapaba el principio («...morrow, then.»). Ahora cada frase es un globo de papel (el nine-patch «bubble»
+# de los papeles, el del saludo de los puestos del mercado) con letra a mano y una colita hacia quien habla. Va en su
+# propia capa de lienzo (3): por encima del 3D y del desenfoque (capa 0) y por debajo del banco del caldero y de la bola
+# (capa 4) y del HUD (capa 5), como las letras 3D de antes. Cada cuadro se coloca sobre la cabeza de quien habla; si
+# taparía una placa de acción, sube por encima de ella (y se queda arriba el resto de su vida: no salta); varios globos
+# a la vez se apilan con 8 px de aire; si quien habla no está a la vista, no se dibuja. PromptBrain también los evita
+# (bubble_rects). Nada de esto recibe el ratón ni el cursor del mando. Las letras (Caveat negrita 32) y el papel se
+# calientan bajo la pantalla de carga (BootWarm._step_text).
+const BUBBLE_FONT := 32
+const BUBBLE_GAP := 8.0
+const BUBBLE_MARGIN := 14.0
+const BUBBLE_TAIL := Vector2(22, 18)
+var bubble_layer: CanvasLayer
+var _bubble_root: Control
+var _bubbles: Array = []        # [{"node", "panel", "tail", "actor", "secs", "age", "up", "lift"}]
+
+func _build_bubbles() -> void:
+	bubble_layer = CanvasLayer.new()
+	bubble_layer.name = "Bubbles"
+	bubble_layer.layer = 3
+	add_child(bubble_layer)
+	_bubble_root = Control.new()
+	_bubble_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_bubble_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bubble_root.theme = UIKit.theme()
+	bubble_layer.add_child(_bubble_root)
+
+## Un globo sobre la cabeza de actor (un Actor o el cuervo) durante secs segundos. up: metros sobre lo alto del dibujo.
+func bubble(actor: Node3D, text: String, ink := PaperKit.INK, secs := 2.4, up := 0.3) -> void:
+	if not is_instance_valid(actor) or text == "":
+		return
+	PaperKit.load_fonts()
+	for b in _bubbles:   # una frase por persona: la nueva reemplaza a la anterior
+		if b["actor"] == actor and is_instance_valid(b["node"]):
+			(b["node"] as Control).queue_free()
+	_bubbles = _bubbles.filter(func(b): return b["actor"] != actor)
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.modulate.a = 0.0
+	var panel := PaperKit.panel("bubble", Vector2(22, 7))
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(PaperKit.hand(Raven.two_lines(text), BUBBLE_FONT, ink, true, HORIZONTAL_ALIGNMENT_CENTER))
+	holder.add_child(panel)
+	var tail := _BubbleTail.new()
+	tail.size = BUBBLE_TAIL
+	holder.add_child(tail)
+	_bubble_root.add_child(holder)
+	panel.reset_size()
+	_bubbles.append({"node": holder, "panel": panel, "tail": tail, "actor": actor, "secs": secs, "age": 0.0,
+		"up": up, "lift": 0.0})
+
+## Lo que ocupan ahora los globos (PromptBrain no les pone encima las placas).
+func bubble_rects() -> Array:
+	var out := []
+	for b in _bubbles:
+		var n: Control = b["node"]
+		if is_instance_valid(n) and n.visible and n.modulate.a > 0.05:
+			out.append(Rect2(n.position, (b["panel"] as Control).size))
+	return out
+
+## Quita todos los globos (al cambiar de lugar: mercado, evento, título).
+func clear_bubbles() -> void:
+	for b in _bubbles:
+		if is_instance_valid(b["node"]):
+			(b["node"] as Control).queue_free()
+	_bubbles.clear()
+
+func _bubbles_process(delta: float) -> void:
+	if _bubbles.is_empty():
+		return
+	var cam := get_viewport().get_camera_3d()
+	var area := _bubble_root.size
+	var plates: Array = []
+	if prompts:
+		for v in prompts.visible_prompts():
+			plates.append((v["rect"] as Rect2).grow(BUBBLE_GAP))
+	var placed: Array = []
+	var keep: Array = []
+	for b in _bubbles:
+		var n: Control = b["node"]
+		var a: Node3D = b["actor"]
+		b["age"] = float(b["age"]) + delta
+		var secs: float = b["secs"]
+		var age: float = b["age"]
+		if not is_instance_valid(n) or not is_instance_valid(a) or age >= secs:
+			if is_instance_valid(n):
+				n.queue_free()
+			continue
+		keep.append(b)
+		var top: float = a.call("top_height") if a.has_method("top_height") else 1.0
+		var wp := a.global_position + Vector3(0.0, top + float(b["up"]), 0.0)
+		if cam == null or cam.is_position_behind(wp) or not a.is_visible_in_tree():
+			n.visible = false
+			continue
+		var at := cam.unproject_position(wp)
+		if at.x < -40.0 or at.x > area.x + 40.0 or at.y < -40.0 or at.y > area.y + 40.0:
+			n.visible = false
+			continue
+		n.visible = true
+		n.modulate.a = clampf(age / 0.2, 0.0, 1.0) * clampf((secs - age) / 0.45, 0.0, 1.0)
+		var panel: Control = b["panel"]
+		var sz := panel.size
+		var rise := 14.0 * age / secs
+		var pos := Vector2(at.x - sz.x * 0.5, at.y - sz.y - BUBBLE_TAIL.y + 2.0 - rise - float(b["lift"]))
+		pos.x = clampf(pos.x, BUBBLE_MARGIN, maxf(BUBBLE_MARGIN, area.x - sz.x - BUBBLE_MARGIN))
+		# encima de las placas y de los otros globos (sube lo justo; lo que sube ya no baja)
+		for _i in 4:
+			var r := Rect2(pos, sz)
+			var hit := false
+			for o in plates + placed:
+				var orr: Rect2 = o
+				if r.intersects(orr):
+					var dy := pos.y - (orr.position.y - sz.y - BUBBLE_GAP)
+					if dy > 0.0:
+						pos.y -= dy
+						b["lift"] = float(b["lift"]) + dy
+						hit = true
+			if not hit:
+				break
+		if pos.y < BUBBLE_MARGIN:
+			pos.y = BUBBLE_MARGIN   # arriba del todo: no se sale de la pantalla
+		n.position = pos.round()
+		placed.append(Rect2(n.position, sz).grow(BUBBLE_GAP * 0.5))
+		# la colita: abajo, apuntando a quien habla (solo si el globo quedó cerca de su cabeza)
+		var tail: Control = b["tail"]
+		tail.visible = float(b["lift"]) < 6.0
+		tail.position = Vector2(clampf(at.x - n.position.x - BUBBLE_TAIL.x * 0.5, 16.0, maxf(16.0, sz.x - 16.0 - BUBBLE_TAIL.x)),
+			sz.y - 11.0).round()   # tapa el borde de abajo del papel (el nine-patch tiene 8 px de sombra y aire)
+	_bubbles = keep
+
+## La colita del globo: un triángulo de papel con su borde de tinta (dibujado: ninguna textura nueva).
+class _BubbleTail extends Control:
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var w := size.x
+		var h := size.y
+		var pts := PackedVector2Array([Vector2(0, 0), Vector2(w, 0), Vector2(w * 0.42, h)])
+		draw_colored_polygon(pts, Color8(246, 238, 218))   # el papel y el borde de paper_bubble9.png
+		draw_polyline(PackedVector2Array([Vector2(0, 1), Vector2(w * 0.42, h), Vector2(w, 1)]), Color8(185, 155, 107), 2.0)
+# --- end POLISH LOOK P3

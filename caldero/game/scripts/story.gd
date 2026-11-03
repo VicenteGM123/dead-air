@@ -11,6 +11,29 @@ static func pick(v) -> String:
 		return "" if v.is_empty() else String(v.pick_random())
 	return "" if v == null else String(v)
 
+# --- POLISH FIX F11: elegir sin repetirse. Cada lista se recorre entera, en orden al azar, antes de repetir una frase,
+# y al empezar otra vuelta no sale primero la última. La memoria es por lista (por su contenido) y vive mientras el
+# juego está abierto (no se guarda). Para lo que se lee seguido: las reacciones al recibir la poción y la intuición.
+static var _bags := {}
+static var _last := {}
+
+static func pick_fresh(v) -> String:
+	if not (v is Array) or (v as Array).size() < 2:
+		return pick(v)
+	var arr: Array = v
+	var key := arr.hash()
+	var bag: Array = _bags.get(key, [])
+	if bag.is_empty():
+		bag = range(arr.size())
+		bag.shuffle()
+		if int(bag[0]) == int(_last.get(key, -1)):
+			bag.append(bag.pop_front())
+	var i := int(bag.pop_front())
+	_bags[key] = bag
+	_last[key] = i
+	return String(arr[i])
+# --- end
+
 static func char_name(who: String) -> String:
 	return String(Data.CHARACTERS.get(who, {}).get("name", who.capitalize()))
 
@@ -78,26 +101,26 @@ static func reaction(req: Dictionary, item: Dictionary, ok: bool) -> String:
 	var kind := String(item.get("kind", "potion"))
 	var id := String(item.get("id", ""))
 	var stars := Game.stars_for(int(item.get("potency", 5)))
-	var sense := pick(Data.REACTIONS.get(id, Data.REACTIONS["_potion"]))   # --- R3 MAGIC3
+	var sense := pick_fresh(Data.REACTIONS.get(id, Data.REACTIONS["_potion"]))   # --- R3 MAGIC3 (POLISH FIX F11: sin repetirse)
 	var parts: Array = []
 	if ok and String(req.get("kind", "")) == "hero" and req.has("react"):
 		if stars == 3:
-			parts.append(pick(Data.REACTION_QUALITY[3]))
+			parts.append(pick_fresh(Data.REACTION_QUALITY[3]))   # --- POLISH FIX F11
 		parts.append(String(req["react"]))
 		return " ".join(parts)
 	# --- R3 MERGE: dieta de texto: dos frases cortas. Lo que nota (la calidad si brilla o si salió floja; si no, el
 	# olor o la etiqueta) y luego la runa de la etiqueta (MAGIC3) o lo que piensa hacer. Sin despedida: ya la dice el botón.
 	if ok:
 		if stars == 3 or stars == 1:
-			parts.append(pick(Data.REACTION_QUALITY[stars]))
+			parts.append(pick_fresh(Data.REACTION_QUALITY[stars]))   # --- POLISH FIX F11
 		elif randf() < 0.3:
-			parts.append(pick(Data.REACTION_LABEL["right"]).replace("{p}", item_name(kind, id)))
+			parts.append(pick_fresh(Data.REACTION_LABEL["right"]).replace("{p}", item_name(kind, id)))   # --- POLISH FIX F11
 		else:
 			parts.append(sense)
 		var rr := rune_react(req, item)   # --- R3 MAGIC3: lo que ve en la etiqueta (la runa que pidió, o que falta)
 		parts.append(rr if rr != "" else plan_line(req))
 	else:
-		parts.append(pick(Data.REACTION_LABEL["wrong"]).replace("{p}", item_name(kind, id)))
+		parts.append(pick_fresh(Data.REACTION_LABEL["wrong"]).replace("{p}", item_name(kind, id)))   # --- POLISH FIX F11
 		parts.append(plan_line(req))
 	return " ".join(parts.filter(func(s): return s != ""))
 	# --- end R3 MERGE

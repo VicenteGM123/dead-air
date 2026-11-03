@@ -25,7 +25,13 @@ var _market_vendor := ""    # --- WORLD: puesto del mercado cuyo panel está abi
 var pad_hint := ""          # controles del mando ("" = ratón y teclado); lo pone PadCursor
 var _hint_label: Label
 
-const MOUSE_HINT := "Click to play   ·   Space: next"   # --- R3 PAPER: más corto
+# --- POLISH FIX F9: la línea de abajo del título ya no lista controles (la del ratón hablaba de «next» y no decía nada
+# en el título; la del mando listaba cinco botones). En la web, mientras el navegador no deja sonar nada todavía
+# (PadCursor.needs_gesture), avisa cómo empieza el sonido; si no, queda vacía. set_pad_hint sigue igual (pad_hint
+# también dice si hay mando).
+const SOUND_HINT := "Sound starts with your first click or key"
+var _sound_hint := false
+# --- end
 
 func _ready() -> void:
 	layer = 10
@@ -193,11 +199,15 @@ func show_title(has_save: bool) -> void:
 	btns.add_child(n)
 	if not has_save:
 		set_default(n)   # --- R6 UI
-	var q := PaperKit.wood_button("Quit", func(): get_tree().quit(), 30)
-	q.custom_minimum_size = Vector2(360, 62)
-	q.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	btns.add_child(q)
-	var credit := UIKit.label(pad_hint if pad_hint != "" else MOUSE_HINT, 18, UIKit.MUTED, UIKit.font_italic)
+	# --- POLISH FIX F2: en la web no hay «Quit» (detenía el motor y la página quedaba congelada con un error; la
+	# pestaña del navegador ya es la salida). En el escritorio sigue igual.
+	if not OS.has_feature("web"):
+		var q := PaperKit.wood_button("Quit", func(): get_tree().quit(), 30)
+		q.custom_minimum_size = Vector2(360, 62)
+		q.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		btns.add_child(q)
+	# --- end
+	var credit := UIKit.label(_title_hint_text(), 18, UIKit.MUTED, UIKit.font_italic)   # --- POLISH FIX F9
 	UIKit.place(credit, Vector2(0, 1), Vector2(130, -58), Vector2(1400, 30))
 	holder.add_child(credit)
 	# --- end R3 PAPER
@@ -211,8 +221,21 @@ func show_title(has_save: bool) -> void:
 ## Textos de controles: los del mando cuando hay uno conectado o en uso (ver pad_cursor.gd).
 func set_pad_hint(text: String) -> void:
 	pad_hint = text
+	_title_hint_refresh()   # --- POLISH FIX F9
+
+# --- POLISH FIX F9: la línea del título (solo el aviso del sonido en la web, o nada)
+func set_sound_hint(on: bool) -> void:
+	if on != _sound_hint:
+		_sound_hint = on
+		_title_hint_refresh()
+
+func _title_hint_text() -> String:
+	return SOUND_HINT if _sound_hint else ""
+
+func _title_hint_refresh() -> void:
 	if is_instance_valid(_hint_label):
-		_hint_label.text = text if text != "" else MOUSE_HINT
+		_hint_label.text = _title_hint_text()
+# --- end
 
 func _confirm_new(has_save: bool) -> void:
 	if not has_save:
@@ -883,10 +906,13 @@ func _ingredient_good(id: String, refresh: Callable, day_order: bool) -> Control
 		price.add_child(was)
 		price.move_child(was, 1)
 	# --- end R3 SHIP
-	var have := PaperKit.icon_text("paper_i_bag", str(int(Game.stock.get(id, 0))), 32, PaperKit.INK_SOFT, 3.0)
-	have.tooltip_text = "You have"
-	have.mouse_filter = Control.MOUSE_FILTER_PASS
+	# --- POLISH FIX F10: «have 4» escrito a mano (antes una bolsa con un número, que se leía como precio y cantidad a
+	# la venta y solo se explicaba con un tooltip del ratón). La misma letra y tamaño que el nombre de la tarjeta.
+	var have := PaperKit.hand("have %d" % int(Game.stock.get(id, 0)), 30, PaperKit.INK_SOFT, true)
+	have.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	have.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	pr.add_child(have)
+	# --- end
 	var bh := UIKit.hbox(10)
 	bh.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_child(bh)
@@ -1034,6 +1060,17 @@ func _show_vendor(vendor: String) -> void:
 	head.add_child(purse)
 	var cloth := PaperKit.panel("cloth_" + awning, Vector2(26, 18))
 	cloth.mouse_filter = Control.MOUSE_FILTER_PASS
+	# --- POLISH LOOK P10: el mantel del tamaño de lo que hay encima (mínimo 3 huecos), centrado en el puesto. Antes
+	# era siempre de lado a lado: Ilse, con dos cosas, enseñaba un 60 % de cuadros vacíos. Lo bloqueado que el puesto
+	# venderá más adelante ya sale en su lista (tarjeta gris «???» con candado y el nivel de Renombre, sin botones:
+	# el Tab y el mando no se paran ahí); si un puesto no tiene más, el mantel solo se encoge.
+	if not Data.VENDORS[vendor].get("upgrades", false):
+		var n := vendor_ingredients(vendor).size() + vendor_items(vendor).size()
+		if n < 4:
+			var slots := maxi(3, n)
+			cloth.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+			cloth.custom_minimum_size.x = slots * 262.0 + (slots - 1) * 18.0 + 52.0
+	# --- end POLISH LOOK P10
 	v.add_child(cloth)
 	var btns := UIKit.hbox(16)
 	btns.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -1688,7 +1725,7 @@ func _ledger_stamp(text: String, col: Color) -> Control:
 
 ## --- R3 PAPER: un diploma: la gema, el nuevo título y lo que trae (dibujos de lo nuevo, sin frases).
 func show_level_up(lv: int) -> void:
-	Sfx.play("levelup", 0.0, -2.0)
+	Sfx.fanfare()   # --- POLISH FIX F13: el nuevo título con su fanfarria
 	var p := PaperKit.panel("card", Vector2(64, 42))
 	p.custom_minimum_size = Vector2(680, 0)
 	var v := UIKit.vbox(10)
@@ -1710,7 +1747,12 @@ func show_level_up(lv: int) -> void:
 	v.add_child(b)
 	PaperKit.decor(p, "paper_pin_brass", Vector2(0.5, 0.0), Vector2(-10, -12))
 	PaperKit.attach(p, PaperKit.seal(str(lv), "paper_seal_gold", 3.0), Vector2(1, 1), Vector2(-96, -100))
-	_open("levelup", p)
+	var holder = await _open("levelup", p)
+	# --- POLISH LOOK P12: chispas que salen de detrás de la tarjeta y la gema que salta
+	if is_instance_valid(holder) and current == "levelup":
+		UIKit.sparkle_burst(holder, 1)   # (encima del velo oscuro, debajo de la tarjeta)
+		UIKit.pop_icon(gem)
+	# --- end POLISH LOOK P12
 
 ## Lo nuevo de un nivel de renombre: ingredientes del mercado, mejoras de Mabel y +1 cliente (si lo hay).
 func _level_rewards(lv: int) -> Control:
@@ -1916,7 +1958,7 @@ func _find_default(n: Node) -> BaseButton:
 # Mayús+Tab recorren los botones del papel abierto en orden de lectura (los «+1» del mercado, las pestañas, Open shop,
 # New game, Quit...) con el aro dorado de los botones del HUD, e Intro / Espacio pulsan el marcado; sin marca, Intro
 # pulsa el principal (set_default). Abajo al centro, mientras se usa el teclado y el papel tiene más de un botón, la
-# placa «Tab  Choose · Enter  Press». El ratón o el mando quitan la marca; cambiar de papel también.
+# placa «Tab  Choose · Enter  Select». El ratón o el mando quitan la marca; cambiar de papel también.
 var _kf_i := -1
 var _kf_paper := ""
 var _kf_ring: Control
@@ -2024,7 +2066,7 @@ class _KfRing extends Control:
 		if what == NOTIFICATION_RESIZED:
 			queue_redraw()
 
-## La placa de abajo: «Tab  Choose · Enter  Press» (las teclas de pergamino de Glyphs sobre la placa oscura).
+## La placa de abajo: «Tab  Choose · Enter  Select» (las teclas de pergamino de Glyphs sobre la placa oscura).
 func _kf_make_hint() -> Control:
 	var panel := PanelContainer.new()
 	var sb := StyleBoxTexture.new()
@@ -2042,7 +2084,7 @@ func _kf_make_hint() -> Control:
 	panel.z_index = 100
 	var row := UIKit.hbox(10)
 	panel.add_child(row)
-	var parts := [["Tab", "Choose"], ["Enter", "Press"]]
+	var parts := [["Tab", "Choose"], ["Enter", "Select"]]   # --- POLISH FIX F9: «Select» (antes «Press»)
 	for i in parts.size():
 		if i > 0:
 			var dot := UIKit.label("·", 22, Color(0.79, 0.63, 0.35), UIKit.font_bold)

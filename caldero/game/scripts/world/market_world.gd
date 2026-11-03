@@ -1108,11 +1108,15 @@ func _build_crowd() -> void:
 func _scatter_crowd() -> void:
 	var i := 0
 	for n in npcs:
-		n["x"] = randf_range(X0 + 2.0, X1 + 2.0) if i % 2 == 0 else randf_range(1.0, 12.0)
-		i += 1
 		n["z"] = NPC_LANES.pick_random() if not n["pass"] else NPC_LANES[1 + randi() % 2]
-		if absf(n["x"] - SHOP_DOOR_X) < 2.5:
-			n["x"] += 4.0
+		n["tz"] = n["z"]   # --- POLISH LOOK P11: el carril primero (el hueco se busca en su carril)
+		for k in 5:   # --- POLISH LOOK P11: hasta 5 intentos de no caer encima de otro (0,7 m en el mismo carril)
+			n["x"] = randf_range(X0 + 2.0, X1 + 2.0) if i % 2 == 0 else randf_range(1.0, 12.0)
+			if absf(n["x"] - SHOP_DOOR_X) < 2.5:
+				n["x"] += 4.0
+			if _spot_free(n, n["x"], n["z"]):
+				break
+		i += 1
 		n["tx"] = n["x"]
 		n["tz"] = n["z"]
 		n["wait"] = randf_range(0.0, 3.0)
@@ -1131,14 +1135,36 @@ func _npc_next(n: Dictionary) -> void:
 		n["tx"] = X1 + 5.5 if n["x"] < 10.0 else X0 - 8.5
 		n["tz"] = n["z"]
 		return
-	if randf() < 0.4:
-		# a mirar un puesto
-		var v: String = STALL_X.keys().pick_random()
-		n["tx"] = float(STALL_X[v]) + randf_range(-0.9, 0.9)
-		n["tz"] = NPC_LANES[0]   # --- R5 WORLD: (era + randf_range(-0.1, 0.1): ahora la variedad la pone "dz")
-	else:
-		n["tx"] = clampf(n["x"] + randf_range(-8.0, 8.0), X0 + 1.5, X1 + 1.0)
-		n["tz"] = NPC_LANES[randi() % NPC_LANES.size()]   # --- R5 WORLD: (era + randf_range(-0.12, 0.12))
+	for k in 5:   # --- POLISH LOOK P11: hasta 5 intentos de un sitio libre (nadie a menos de 0,7 m en su carril)
+		if randf() < 0.4:
+			# a mirar un puesto
+			var v: String = STALL_X.keys().pick_random()
+			n["tx"] = float(STALL_X[v]) + randf_range(-0.9, 0.9)
+			n["tz"] = NPC_LANES[0]   # --- R5 WORLD: (era + randf_range(-0.1, 0.1): ahora la variedad la pone "dz")
+		else:
+			n["tx"] = clampf(n["x"] + randf_range(-8.0, 8.0), X0 + 1.5, X1 + 1.0)
+			n["tz"] = NPC_LANES[randi() % NPC_LANES.size()]   # --- R5 WORLD: (era + randf_range(-0.12, 0.12))
+		if _spot_free(n, n["tx"], n["tz"]):
+			break
+
+# --- POLISH LOOK P11: la gente del mercado no se amontona. Un sitio está libre si nadie (quieto allí o yendo allí)
+# está a menos de 0,7 m en x en el mismo carril y, en los carriles de delante de ella (más cerca de la cámara que su
+# calle), si ella no está a menos de 0,7 m: así nadie se planta delante tapándola.
+const SPACING := 0.7
+const HER_CLEAR := 0.6
+
+func _spot_free(n: Dictionary, x: float, z: float) -> bool:
+	for m in npcs:
+		if is_same(m, n) or m["pass"]:
+			continue
+		if absf(float(m["tz"]) - z) < 0.3 and absf(float(m["tx"]) - x) < SPACING:
+			return false
+		if absf(float(m["z"]) - z) < 0.3 and absf(float(m["x"]) - x) < SPACING:
+			return false
+	if z > LANE_Z and alchemist and absf(alchemist.position.x - x) < SPACING:
+		return false
+	return true
+# --- end POLISH LOOK P11
 
 func _npc_arrive(n: Dictionary) -> void:
 	var a: Actor = n["a"]
@@ -1177,6 +1203,15 @@ func _update_crowd(delta: float) -> void:
 				n["greet"] = randf_range(18.0, 30.0)
 				a.face(1 if me.x > n["x"] else -1)
 				a.emote(["heart", "note"].pick_random(), 1.4)
+			# --- POLISH LOOK P11: quieto delante de ella (carriles de delante, a menos de 0,6 m): tras un momento se aparta
+			if not n["pass"] and n["z"] > LANE_Z and absf(me.x - n["x"]) < HER_CLEAR:
+				n["aside"] = float(n.get("aside", 0.0)) + delta
+				if n["aside"] > 0.7:
+					n["aside"] = 0.0
+					n["wait"] = 0.0
+			else:
+				n["aside"] = 0.0
+			# --- end POLISH LOOK P11
 			if n["wait"] <= 0.0:
 				_npc_next(n)
 			continue

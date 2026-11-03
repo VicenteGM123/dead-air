@@ -60,6 +60,7 @@ func setup(kind_: String, text_: String, icon_name: String, action: String, cb: 
 	mouse_entered.connect(func():
 		if not disabled:
 			Sfx.play("hover", 0.05, -14.0))
+	UIKit.juice(self)   # --- POLISH LOOK P8: encima crece y se aclara; al pulsar, se hunde
 	if action != "":
 		chip = Glyphs.Chip.new(action, false, true)
 		add_child(chip)

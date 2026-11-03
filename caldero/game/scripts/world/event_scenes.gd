@@ -1316,7 +1316,10 @@ func _con_stage() -> void:
 	title.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# --- R5 WORLD: capas separadas de delante a atrás (antes las guirnaldas vecinas compartían plano y se tapaban, y el
 	# letrero quedaba a 1 cm): el estandarte, el letrero a 2 cm, las guirnaldas a 4,5 / 6 cm (alternas) y los banderines
-	_label("Oakdale Potion Contest", Vector3(-0.3, 4.17, -6.40), 64, 0.0062, Color(0.62, 0.14, 0.18), true).outline_modulate = Color(1.0, 0.95, 0.82)
+	# --- POLISH LOOK P6: el letrero, 25 cm más abajo (era y 4,17): las guirnaldas cuelgan del travesaño hasta y 4,08 y le
+	# tapaban la mitad de arriba de las letras. Mismo plano (z -6,40), misma letra y tamaño (ya calientes).
+	_label("Oakdale Potion Contest", Vector3(-0.3, 3.92, -6.40), 64, 0.0062, Color(0.62, 0.14, 0.18), true).outline_modulate = Color(1.0, 0.95, 0.82)
+	# --- end POLISH LOOK P6
 	for i in 5:
 		var g := _ev("con_garland", 0.04, Vector3(-4.9 + i * 2.5, 4.72, -6.375 + 0.015 * (i % 2)), null, "top")
 		g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

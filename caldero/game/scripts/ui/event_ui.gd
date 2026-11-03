@@ -55,6 +55,11 @@ var _line_sig := ""
 var _line_cards: Array = []   # [{card, bar, fill, icon}]
 var _last_sec := -1
 var _head_cache := {}
+# --- POLISH LOOK P7: los puntos del concurso en fichas bajas y lo que esconden las tarjetas
+var _score_mode := false      # concurso: la «fila» son puntos (fichas bajas en una sola fila), no clientes
+var _card_hid := {}           # lo que escondió la tarjeta del jurado / de resultados: {"root", "hud", "shelf"}; vacío = nada
+const CARD_KINDS := ["jury", "results"]
+# --- end POLISH LOOK P7
 
 func setup(m) -> void:
 	main = m
@@ -126,12 +131,13 @@ func _build_plate() -> void:
 
 func _build_board() -> void:
 	board = PaperKit.panel("note", Vector2(22, 8))
-	UIKit.place(board, Vector2(0, 0), Vector2(252, 14), Vector2(10, 10))
+	UIKit.place(board, Vector2(0, 0), Vector2(268, 14), Vector2(10, 10))   # --- POLISH LOOK P7: 252 -> 268, aire junto a la placa del día
 	board.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(board)
 	board_txt = PaperKit.rich(34, INK)
 	board_txt.fit_content = true
 	board_txt.autowrap_mode = TextServer.AUTOWRAP_OFF
+	board_txt.clip_contents = false   # --- POLISH FIX F4: la manuscrita sobresale de su ancho (la «f» final, las comillas de cierre): que se vea entera
 	board.add_child(board_txt)
 	PaperKit.decor(board, "paper_pin_green", Vector2(0.5, 0.0), Vector2(-10, -12))
 
@@ -186,10 +192,16 @@ func show_hud(kind: String) -> void:
 	_line_sig = ""
 	for c in line_box.get_children():
 		c.queue_free()
+	# --- POLISH LOOK P7: el concurso, fichas de puntos; sin «Ronda 1/3 ★ 0» bajo el reloj (la ronda ya está en la
+	# pizarra y tus estrellas en tu ficha): la fila de fichas tiene aire y la franja de arriba queda limpia.
+	_score_mode = kind == "concurso"
+	goal_card.visible = not _score_mode
+	# --- end POLISH LOOK P7
 	_line_cards.clear()
 	set_time(0.0, 1.0)
 
 func hide_hud() -> void:
+	_card_restore()   # --- POLISH LOOK P7: tras la tarjeta de resultados, el HUD de la tienda vuelve (ya en negro)
 	root.visible = false
 	bench_btn.visible = false
 	_last_sec = -1
@@ -241,7 +253,7 @@ func set_line(entries: Array) -> void:
 			c.queue_free()
 		_line_cards.clear()
 		for e in entries:
-			_line_cards.append(_line_card(e))
+			_line_cards.append(_score_chip(e) if _score_mode else _line_card(e))   # --- POLISH LOOK P7: el concurso, fichas
 	for i in mini(entries.size(), _line_cards.size()):
 		var e: Dictionary = entries[i]
 		var lc: Dictionary = _line_cards[i]
@@ -315,6 +327,39 @@ func _line_card(e: Dictionary) -> Dictionary:
 		PaperKit.attach(card, no, Vector2(1, 0), Vector2(-30, -6))
 	line_box.add_child(card)
 	return {"card": card, "fill": fill, "icon": icon}
+
+# --- POLISH LOOK P7: una ficha baja del concurso: la cara (o el sello de la tienda), el nombre y sus estrellas. Las
+# cuatro en una sola fila arriba a la derecha (antes, tarjetas altas que tapaban el cartel de FIZZ!). Las mismas letras
+# y tamaños que las tarjetas de antes (manuscrita negrita 22 y 26, sello 3.0): nada nuevo que calentar, y se arma con
+# la pantalla en negro (EventGame.prepare) como antes.
+func _score_chip(e: Dictionary) -> Dictionary:
+	var card := PaperKit.panel("card", Vector2(16, 3))   # (16: la «w» de Caveat sobresale de su ancho)
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var h := UIKit.hbox(8)
+	card.add_child(h)
+	var who := String(e.get("who", ""))
+	if who == "":
+		var sl := PaperKit.seal(String(e.get("name", "?")).left(1), "paper_seal", 3.0)
+		sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		h.add_child(sl)
+	else:
+		var face := TextureRect.new()
+		face.texture = _head(who)
+		face.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		face.stretch_mode = TextureRect.STRETCH_SCALE
+		face.custom_minimum_size = Vector2(48, 48)
+		face.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		face.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		h.add_child(face)
+	var tv := UIKit.vbox(-6)
+	tv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(tv)
+	tv.add_child(PaperKit.hand(String(e.get("name", "")), 22, PaperKit.INK_SOFT, true))
+	tv.add_child(PaperKit.hand(String(e.get("label", "")), 26, INK, true))
+	line_box.add_child(card)
+	return {"card": card, "fill": null, "icon": null}
+# --- end POLISH LOOK P7
 
 ## La cara de un personaje (como el ticket del pedido): un cuadrado desde la primera fila con píxeles.
 func _head(who: String) -> Texture2D:
@@ -409,8 +454,10 @@ func press_default() -> bool:
 	return false
 
 func _open_modal(kind: String, panel: Control, dim_a := 0.55) -> Control:
-	_close_modal()
+	_close_modal(not (kind in CARD_KINDS))   # --- POLISH LOOK P7: de una tarjeta a otra, sin que el HUD asome en medio
 	_modal_kind = kind
+	if kind in CARD_KINDS:
+		_card_hide()   # --- POLISH LOOK P7
 	modal.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var holder := Control.new()
 	holder.name = "Card"
@@ -423,19 +470,52 @@ func _open_modal(kind: String, panel: Control, dim_a := 0.55) -> Control:
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	holder.add_child(dim)
-	holder.add_child(UIKit.center(panel))
+	var cc := UIKit.center(panel)
+	if kind == "jury":
+		cc.offset_top = 120.0   # --- POLISH LOOK P7: la tarjeta del jurado, un poco más abajo: el cartel del concurso se lee entero
+	holder.add_child(cc)
 	await get_tree().process_frame
 	if is_instance_valid(panel):
 		UIKit.pop_in(panel)
 	return holder
 
-func _close_modal() -> void:
+func _close_modal(restore := true) -> void:
 	_modal_kind = ""
 	_modal_btn = null
+	if restore:
+		_card_restore()   # --- POLISH LOOK P7
 	for c in modal.get_children():
 		if c.name.begins_with("Card"):
 			c.name = "Gone"
 			c.queue_free()
+
+# --- POLISH LOOK P7: con la tarjeta del jurado o la de resultados abierta, solo se ve la tarjeta sobre el escenario:
+# sin la placa del día, la barra de iconos, el estante vacío ni el reloj (que marcaba 0:00). Al cerrar el jurado vuelve
+# todo como estaba; tras los resultados el evento ya terminó y vuelve en hide_hud() (main.gd, con la pantalla en negro).
+func _card_hide() -> void:
+	if not _card_hid.is_empty():
+		return
+	_card_hid = {"root": root.visible}
+	root.visible = false
+	var ui = main.ui if main != null and main.get("ui") != null else null
+	if ui:
+		_card_hid["hud"] = ui.hud_panel.visible
+		_card_hid["shelf"] = ui.potion_panel.visible
+		ui.set_menu_visible(false)
+		ui.potion_panel.visible = false
+		ui.hide_tooltip()
+
+func _card_restore() -> void:
+	if _card_hid.is_empty():
+		return
+	var h := _card_hid
+	_card_hid = {}
+	root.visible = bool(h.get("root", root.visible))
+	var ui = main.ui if main != null and main.get("ui") != null else null
+	if ui and h.has("hud"):
+		ui.set_menu_visible(bool(h["hud"]))
+		ui.potion_panel.visible = bool(h.get("shelf", true))
+# --- end POLISH LOOK P7
 
 func _unhandled_input(ev: InputEvent) -> void:
 	if _modal_kind == "" or not (ev is InputEventKey and ev.pressed and not ev.echo):
@@ -541,8 +621,9 @@ func show_jury(d: Dictionary) -> void:
 	var fl := String(d.get("fizz_line", ""))
 	if fl != "":
 		v.add_child(PaperKit.hand("Fizz: “%s”" % fl, 28, PaperKit.INK_SOFT, false, HORIZONTAL_ALIGNMENT_CENTER))
-	var b := PaperKit.wood_button("See results" if d.get("last", false) else "Next round", func():
-		_close_modal()
+	var last_round := bool(d.get("last", false))
+	var b := PaperKit.wood_button("See results" if last_round else "Next round", func():
+		_close_modal(not last_round)   # --- POLISH LOOK P7: tras la última ronda vienen los resultados (el HUD sigue escondido)
 		jury_closed.emit(), 32)
 	b.custom_minimum_size = Vector2(320, 66)
 	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -626,14 +707,19 @@ func show_results(d: Dictionary) -> void:
 	rt.text = "[center]%s[/center]" % reward_bb(rw)
 	strip.add_child(rt)
 	var b := PaperKit.wood_button("Head home", func():
-		_close_modal()
+		_close_modal(false)   # --- POLISH LOOK P7: el evento terminó; el HUD vuelve en hide_hud(), ya en negro
 		results_closed.emit(), 34)
 	b.custom_minimum_size = Vector2(340, 70)
 	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	v.add_child(b)
 	PaperKit.decor(p, "paper_pin_brass", Vector2(0.5, 0.0), Vector2(-10, -12))
-	Sfx.play("levelup" if medal != "none" else "sad", 0.0, -2.0)
-	await _open_modal("results", p, 0.6)
+	if medal != "none":
+		Sfx.fanfare()   # --- POLISH FIX F13: la medalla con su fanfarria (antes el sonido de subir de nivel)
+	else:
+		Sfx.play("sad", 0.0, -2.0)
+	var holder = await _open_modal("results", p, 0.6)
+	if medal != "none" and is_instance_valid(holder) and _modal_kind == "results":
+		UIKit.sparkle_burst(holder, 1)   # --- POLISH LOOK P12: chispas detrás de la tarjeta (encima del velo, debajo del papel)
 	_modal_btn = b
 	Glyphs.attach_chip(b, "confirm", "right", false, Vector2(16, 0))   # --- R6 UI: su tecla (Intro / A)
 	if medal != "none":
@@ -900,12 +986,16 @@ class _ScoreBar extends Control:
 		var mx := maxf(1.0, float(cuts.get("max", 1)))
 		var r := Rect2(Vector2(14, 30), Vector2(size.x - 28, 16))
 		draw_rect(r.grow(4), Color(0.16, 0.1, 0.07, 0.92))
-		draw_rect(r, Color(0.92, 0.86, 0.72))
+		# --- POLISH LOOK P7: un canal hundido (antes una tira crema plana que parecía vacía) y un hilo dorado desde 0
+		draw_rect(r, Color(0.27, 0.19, 0.14))
+		draw_rect(Rect2(r.position, Vector2(r.size.x, 3)), Color(0.1, 0.06, 0.05, 0.9))
 		var f := clampf(float(score) / mx, 0.0, 1.0)
 		var medal := Events.medal_for(score, cuts)
-		var col: Color = Events.MEDAL_COLOR.get(medal, Color("8f8698")) if medal != "none" else Color("9a8a74")
-		draw_rect(Rect2(r.position, Vector2(r.size.x * f, r.size.y)), col)
-		draw_rect(Rect2(r.position, Vector2(r.size.x * f, 4)), col.lightened(0.35))
+		var col: Color = Events.MEDAL_COLOR.get(medal, Color("8f8698")) if medal != "none" else Color("e9cf8a")
+		var fw := maxf(4.0, r.size.x * f)
+		draw_rect(Rect2(r.position, Vector2(fw, r.size.y)), col)
+		draw_rect(Rect2(r.position, Vector2(fw, 4)), col.lightened(0.35))
+		# --- end POLISH LOOK P7
 		for m in ["bronze", "silver", "gold"]:
 			var x := r.position.x + r.size.x * clampf(float(cuts.get(m, 0)) / mx, 0.0, 1.0)
 			draw_rect(Rect2(Vector2(x - 1.5, r.position.y - 3), Vector2(3, r.size.y + 6)), Color(0.16, 0.1, 0.07))

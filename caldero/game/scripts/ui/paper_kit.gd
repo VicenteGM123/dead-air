@@ -262,6 +262,7 @@ static func _button_base(text: String, cb: Callable, size: int) -> Button:
 		Sfx.play("click", 0.05, -4.0)
 		cb.call())
 	b.mouse_entered.connect(func(): Sfx.play("hover", 0.05, -14.0))
+	UIKit.juice(b)   # --- POLISH LOOK P8: los botones de papel y de madera responden al ratón y al mando
 	return b
 
 ## Botón de papel (una tarjetita con texto a tinta). kind: "card", "note", "tag", "tab"...

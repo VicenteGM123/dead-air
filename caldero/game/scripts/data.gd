@@ -996,11 +996,18 @@ const REACTIONS := {
 	"pocion_clima": ["It's warm on one side and cold on the other. How strange and how pretty!", "It changes color when you turn it: pink, red, violet…", "It smells like a summer storm."],
 	"_potion": ["It smells lovely.", "What a pretty color."],
 }
+# --- POLISH FIX F11: más frases por calidad (en el bot de 3 días «I've never seen such a pretty potion.» salía 4 veces);
+# Story.pick_fresh las recorre todas antes de repetir una
 const REACTION_QUALITY := [
 	[],
-	["It's a little cloudy, isn't it? Well, I'm sure it works.", "Looks a bit weak, but you know what you're doing.", "It has a few lumps… they give it character."],
-	["Clearly well made.", "What a lovely color.", "It looks made with love."],
-	["And look how it shines! Too pretty to use.", "It sparkles like a jewel!", "I've never seen such a pretty potion."],
+	["It's a little cloudy, isn't it? Well, I'm sure it works.", "Looks a bit weak, but you know what you're doing.", "It has a few lumps… they give it character.",
+		"A bit pale… but pale things can be brave too.", "It's rather thin. I'll give it a good shake first.", "Not the prettiest, but it smells honest.",
+		"A little murky. Like Grandma's soup, and that cured everything."],
+	["Clearly well made.", "What a lovely color.", "It looks made with love.",
+		"Nice and clear. You've got steady hands.", "Well corked, well brewed. Just right.", "It catches the light so nicely."],
+	["And look how it shines! Too pretty to use.", "It sparkles like a jewel!", "I've never seen such a pretty potion.",
+		"Look at it glow! I almost don't want to open it.", "It's like holding a little star.", "So clear I can see my own smile in it.",
+		"My, my. This one goes on the mantelpiece first."],
 ]
 const REACTION_LABEL := {
 	"right": ["“{p},” says the label. Sounds like just what I need!", "“{p}”… even the name sounds good."],
@@ -1069,7 +1076,7 @@ const RETURN_VISITS := {
 const INTUITION := {
 	"brew_match": ["This should work…", "I've got a good feeling about this one.", "I think it's just what {n} needs.", "Smells like a hit."],
 	"brew_unsure": ["Hmm… not sure it's what {n} wants.", "Pretty potion… but is it the right one?", "Something tells me to think twice."],
-	"give_match": ["This should work.", "I've got a good feeling.", "Hope it goes well. I think so."],
+	"give_match": ["This should work.", "I've got a good feeling.", "Fingers crossed. This one feels right."],   # --- POLISH FIX F11
 }
 # --- end STORY
 

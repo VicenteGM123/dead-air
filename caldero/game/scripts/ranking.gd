@@ -25,7 +25,13 @@ const FIZZ_CHASE := 0.90       # desde ese día suma al menos esta parte del dí
 const FIZZ_DEBUT := 35.0       # la inauguración de su laboratorio
 ## Puntos de una medalla de evento (Game.today["event"]["medal"]); "oro"/"gold", "plata"/"silver", "bronce"/"bronze".
 const MEDAL_POINTS := {"oro": 100, "plata": 65, "bronce": 35, "ninguna": -10}   # --- R4 MERGE: antes 150 / 95 / 50 / -10 (ver day_points)
-const MEDAL_NAMES := {"oro": "Gold", "plata": "Silver", "bronce": "Bronze"}   # --- R5 EN-UI: lo que se lee («Gold Medal for ...»); las claves son ids
+const MEDAL_NAMES := {"oro": "Gold", "plata": "Silver", "bronce": "Bronze"}
+## --- POLISH FIX F12: los puntos de salida de las rivales (SHOPS "score") se multiplican por esto en una partida nueva:
+## con los de antes, una buena alquimista llegaba al puesto 1 el día ~26 y una tranquila seguía segunda el día 36. Con
+## 0.72 (--demo=pol_ranksim, 20 semillas, con los puntos del bot bueno de 36 días de esta ronda y los del bot lento de
+## la ronda 4 rebajados un 4 %): bot bueno día 21-23 (mediana 22), bot lento 31-35 (mediana 32). El orden de la tabla y
+## el ritmo diario no cambian; las partidas guardadas conservan su tabla (los puntos se guardan).
+const START_SCALE := 0.72   # --- R5 EN-UI: lo que se lee («Gold Medal for ...»); las claves son ids
 
 ## Pueblos de Arvendal que aparecen en el Escalafón (una línea cada uno).
 const TOWNS := {
@@ -159,7 +165,7 @@ func reset() -> void:
 	scores = {}
 	pace = {}
 	for s in SHOPS:
-		scores[s["id"]] = float(s["score"])
+		scores[s["id"]] = float(s["score"]) * START_SCALE   # --- POLISH FIX F12
 		pace[s["id"]] = float(s["pace"])
 	_ready_state = true
 	snaps = []

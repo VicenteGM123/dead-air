@@ -330,16 +330,18 @@ LANTERN = """
 ..MMMMMM..
 ...MMMM...
 """
+# --- POLISH LOOK P2: el farolillo de luciérnagas (antes cristal casi negro con 4 puntos: parecía un dado): corcho
+# con su cordel, cristal claro con un brillo, y dentro una luz verde-ámbar con las luciérnagas más claras
 FIREFLY_JAR = """
-...CCCC...
+...cCCc...
 ...CCCC...
 ..GGGGGG..
-.GxxxxxxG.
+.GwxxxxxG.
+.GwyxxyxG.
+.GxxxYxxG.
 .GxyxxxxG.
 .GxxxxyxG.
-.GxxyxxxG.
-.GxxxxxxG.
-.GyxxxyxG.
+.GzxyxxzG.
 ..GGGGGG..
 """
 BELL = """
@@ -488,7 +490,8 @@ if __name__ == '__main__':
         'crate': art(CRATE, {'W': ('#9a6a42', None), 'w': ('#6a4428', None, 'flat')}),
         'sack': art(SACK, {'S': ('#d8c8a4', None), 'T': ('#a8784a', None), 'F': ('#b0a080', None, 'flat')}),
         'lantern': art(LANTERN, {'H': ('#4a4656', None), 'M': ('#5a5668', None, 'top'), 'G': ('#ffd88a', None, 'flat'), 'Y': ('#ffe9a8', None, 'flat'), 'O': ('#fff8e0', None, 'flat')}),
-        'firefly_jar': art(FIREFLY_JAR, {'C': ('#a8774a', None), 'G': ('#cfe6ee', None, 'flat'), 'x': ('#2a3a3a', None, 'flat'), 'y': ('#e6ff8a', None, 'flat')}),
+        'firefly_jar': art(FIREFLY_JAR, {'C': ('#b8844e', None), 'c': ('#7a5030', None, 'flat'), 'G': ('#e4f2ec', None, 'flat'), 'w': ('#ffffff', None, 'flat'),
+                                         'x': ('#c2d864', None, 'flat'), 'z': ('#98b44a', None, 'flat'), 'y': ('#fbffc8', None, 'flat'), 'Y': ('#ffffff', None, 'flat')}),   # --- POLISH LOOK P2
         'bell': art(BELL, {'S': ('#7a6a5a', None), 'B': ('#f0c050', None, 'shine')}),
         'mortar': art(MORTAR, {'M': ('#9a96a8', None, 'top'), 'P': ('#c8b8a0', None)}),
         'crystal_ball': art(CRYSTAL_BALL, {'G': ('#9fd8ff', None, 'flat'), 'w': ('#ffffff', None, 'flat'), 'g': ('#d0a8ff', None, 'flat'), 'B': ('#7a5a3a', None, 'top')}),

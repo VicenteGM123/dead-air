@@ -62,6 +62,25 @@ var fc_glow: TextureRect
 var fc_icon: TextureRect
 var fc_name: Label
 var fc_stars: HBoxContainer
+# --- POLISH FIX F5: la calidad en puntitos bajo las estrellas (1 a 7; el 5 y el 7, con borde dorado, son los escalones de
+# estrella). «¡Perfecto!» enciende el siguiente; si cruza un escalón, la estrella nueva salta. Solo ColorRect e iconos
+# que ya estaban (sin shaders nuevos). Las estrellas ya no se rehacen: se les cambia la textura.
+const PIP_N := 7
+const PIP_STEPS := [5, 7]
+const PIP_SIZE := Vector2(20, 14)
+const PIP_GAP := 5.0
+const PIP_ON := Color(1.0, 0.87, 0.5)
+const PIP_OFF := Color(0.33, 0.28, 0.38)
+const PIP_EDGE := Color(0.05, 0.03, 0.07)
+const PIP_EDGE_STEP := Color(0.96, 0.74, 0.3)
+var fc_pips: Control
+var _pips: Array = []          # [borde, relleno] (ColorRect) de cada puntito
+var _fc_star_tr: Array = []    # las 3 estrellas (TextureRect)
+var _fc_potency := -1          # la calidad que se ve ahora (-1 = nada a la vista)
+var _fc_stars_n := 0
+var _star_on: Texture2D
+var _star_off: Texture2D
+# --- end
 var btns := {}                 # "stir" / "bottle" / "ink" / "empty" -> Button
 var btn_icons := {}
 var btn_row: Control
@@ -353,6 +372,7 @@ func _build_forecast() -> void:
 	fc.size = Vector2(440, 170)
 	fc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fc.modulate.a = 0.0
+	fc.z_index = 10   # --- POLISH LOOK P9: la visión (nombre, estrellas y puntitos) por delante del cucharón al remover
 	stage.add_child(fc)
 	fc_glow = _art("res://assets/fx/glow.png", Vector2(220 - 96, -46), fc, 6.0)
 	fc_icon = TextureRect.new()
@@ -374,25 +394,93 @@ func _build_forecast() -> void:
 	fc_stars.size = Vector2(144, 48)
 	fc_stars.alignment = BoxContainer.ALIGNMENT_CENTER
 	fc.add_child(fc_stars)
+	# --- POLISH FIX F5: las tres estrellas (fijas) y la fila de puntitos debajo
+	_star_on = load("res://assets/icons/emote_star.png")
+	_star_off = load("res://assets/icons/emote_star_empty.png")
+	for i in 3:
+		var st := UIKit.icon("res://assets/icons/emote_star_empty.png", 3.0)
+		st.pivot_offset = st.custom_minimum_size / 2.0
+		fc_stars.add_child(st)
+		_fc_star_tr.append(st)
+	fc_pips = Control.new()
+	fc_pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var row_w := PIP_N * PIP_SIZE.x + (PIP_N - 1) * PIP_GAP
+	fc_pips.position = Vector2(220.0 - row_w / 2.0, 164)
+	fc_pips.size = Vector2(row_w, PIP_SIZE.y)
+	fc.add_child(fc_pips)
+	var track := ColorRect.new()   # una tira oscura detrás: se lee sobre el vapor y sobre el borde del caldero
+	track.color = Color(0.05, 0.03, 0.08, 0.62)
+	track.position = Vector2(-7, -5)
+	track.size = Vector2(row_w + 14, PIP_SIZE.y + 10)
+	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fc_pips.add_child(track)
+	for i in PIP_N:
+		var edge := ColorRect.new()
+		edge.color = PIP_EDGE_STEP if (i + 1) in PIP_STEPS else PIP_EDGE
+		edge.position = Vector2(i * (PIP_SIZE.x + PIP_GAP), 0)
+		edge.size = PIP_SIZE
+		edge.pivot_offset = PIP_SIZE / 2.0
+		edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var fill := ColorRect.new()
+		fill.color = PIP_OFF
+		fill.position = Vector2(2, 2)
+		fill.size = PIP_SIZE - Vector2(4, 4)
+		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		edge.add_child(fill)
+		fc_pips.add_child(edge)
+		_pips.append([edge, fill])
+	fc_pips.visible = false
+	# --- end
 
-func _set_forecast(icon: String, name: String, stars: int, col: Color, ready := false) -> void:
+func _set_forecast(icon: String, name: String, stars: int, col: Color, ready := false, potency := -1) -> void:
 	if icon == "":
 		create_tween().tween_property(fc, "modulate:a", 0.0, 0.2)
+		_fc_potency = -1   # --- POLISH FIX F5
+		_fc_stars_n = 0
 		return
 	var was_hidden := fc.modulate.a < 0.05
 	fc_icon.texture = _tex(icon)
 	fc_name.text = name
 	fc_glow.modulate = Color(col.r, col.g, col.b, 0.75 if ready else 0.45)
-	for c in fc_stars.get_children():
-		c.queue_free()
-	if stars > 0:
-		for i in 3:
-			fc_stars.add_child(UIKit.icon("res://assets/icons/emote_star.png" if i < stars else "res://assets/icons/emote_star_empty.png", 3.0))
+	_show_quality(stars, potency, false, was_hidden)   # --- POLISH FIX F5
 	create_tween().tween_property(fc, "modulate:a", 1.0, 0.2)
 	if was_hidden or ready:
 		fc_icon.pivot_offset = Vector2(40, 40)
 		fc_icon.scale = Vector2(0.6, 0.6)
 		create_tween().tween_property(fc_icon, "scale", Vector2(1.25, 1.25) if ready else Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+# --- POLISH FIX F5: estrellas y puntitos de calidad ------------------------------------------------------------
+## Pone las estrellas (stars) y los puntitos (potency, 1-7) a la vista. Si la calidad sube respecto de la que se veía
+## (otro ingrediente, «¡Perfecto!», la suerte de Miga), los puntitos nuevos y la estrella nueva saltan; sparkle = con
+## el destello sonoro (solo el removido perfecto). fresh = la visión acaba de aparecer (nada salta).
+func _show_quality(stars: int, potency: int, sparkle := false, fresh := false) -> void:
+	var old_p := -1 if fresh else _fc_potency
+	var old_s := 0 if fresh else _fc_stars_n
+	fc_stars.visible = stars > 0
+	for i in _fc_star_tr.size():
+		(_fc_star_tr[i] as TextureRect).texture = _star_on if i < stars else _star_off
+	var grow := old_p > 0 and potency > old_p and stars > 0
+	if grow and old_s > 0 and stars > old_s:
+		for i in range(old_s, mini(stars, _fc_star_tr.size())):
+			_pop(_fc_star_tr[i], 1.5)
+	fc_pips.visible = stars > 0 and potency > 0
+	var fill := clampi(potency, 0, PIP_N)
+	for i in PIP_N:
+		(_pips[i][1] as ColorRect).color = PIP_ON if i < fill else PIP_OFF
+		if grow and i < fill and i >= old_p:
+			_pop(_pips[i][0], 1.9)
+	if fill < PIP_N:
+		fc_pips.modulate = Color.WHITE
+	if sparkle and grow:
+		Sfx.play("sparkle", 0.05, -4.0)
+	_fc_potency = potency if stars > 0 else -1
+	_fc_stars_n = stars
+
+func _pop(c: Control, from: float) -> void:
+	c.scale = Vector2(from, from)
+	var tw := c.create_tween()
+	tw.tween_property(c, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+# --- end POLISH FIX F5
 
 # ------------------------------------------------------------------ los huecos del caldero
 
@@ -492,6 +580,7 @@ func _build_buttons() -> void:
 				Sfx.play("hover", 0.05, -14.0))
 		btn_row.add_child(b)
 		btns[id] = b
+		UIKit.juice(b)   # --- POLISH LOOK P8: Remover, Embotellar, Tinta y Vaciar responden al ratón y al mando
 		# --- R6 UI: Remover y Embotellar van con Espacio (X del mando): su tecla en la esquina
 		if id == "stir" or id == "bottle":
 			Glyphs.attach_chip(b, "stir", "corner", true, Vector2(8, -10))
@@ -577,7 +666,8 @@ func _build_close() -> void:
 		close())
 	close_btn.mouse_entered.connect(func(): Sfx.play("hover", 0.05, -14.0))
 	root.add_child(close_btn)
-	Glyphs.attach_chip(close_btn, "back", "corner", true, Vector2(-4, 74))   # --- R6 UI: Esc (B del mando), debajo del sello
+	var esc_chip := Glyphs.attach_chip(close_btn, "back", "corner", true, Vector2(-4, 74))   # --- R6 UI: Esc (B del mando), debajo del sello
+	esc_chip.keep_lit = true   # --- POLISH FIX F1: la salida siempre legible
 
 # ------------------------------------------------------------------ abrir y cerrar
 
@@ -657,7 +747,7 @@ func refresh() -> void:
 		pot.col = Data.POTIONS[pid]["color"]
 		pot.shine = 1.0
 		pot.activity = 0.8
-		_set_forecast("res://assets/icons/pot_%s.png" % pid, Data.POTIONS[pid]["name"], Game.stars_for(int(ready["potency"])), pot.col, true)
+		_set_forecast("res://assets/icons/pot_%s.png" % pid, Data.POTIONS[pid]["name"], Game.stars_for(int(ready["potency"])), pot.col, true, int(ready["potency"]))   # --- POLISH FIX F5: con su calidad
 		tubes.set_mix({}, [])
 	else:
 		pot.shine = 0.0
@@ -676,7 +766,7 @@ func refresh() -> void:
 			var known: bool = Game.discovered.has(pid)
 			var pot_n := Game.potency_bonus() + int(r["potency"])
 			_set_forecast("res://assets/icons/pot_%s.png" % (pid if known else "desconocida"),
-				Data.POTIONS[pid]["name"] if known else "New recipe?", Game.stars_for(pot_n), Data.POTIONS[pid]["color"])
+				Data.POTIONS[pid]["name"] if known else "New recipe?", Game.stars_for(pot_n), Data.POTIONS[pid]["color"], false, pot_n)   # --- POLISH FIX F5: con su calidad
 	_update_buttons()
 
 # ------------------------------------------------------------------ echar, sacar, vaciar
@@ -813,11 +903,19 @@ func stir(difficulty := 1.0, kind := "potion") -> bool:
 	_stir = g
 	_catcher.visible = true
 	pot.stirring = true
-	say("Tap on the gold!", UIKit.TEXT, 6.0)
+	say("Hit the gold!", UIKit.TEXT, 6.0)   # --- POLISH FIX F4: sin «Tap» (teclado, mando o ratón)
+	var q0 := _fc_potency   # --- POLISH FIX F5: la calidad que se veía antes de remover
 	var perfect: bool = await g.finished
 	_catcher.visible = false
 	pot.stirring = false
-	say("Perfect!  +1" if perfect else "Nicely stirred!", UIKit.GOLD_BRIGHT if perfect else UIKit.TEXT, 1.4)
+	# --- POLISH FIX F5: «¡Perfecto!» enciende el siguiente puntito ya (y la estrella, si cruza un escalón)
+	if perfect and kind == "potion" and q0 > 0:
+		var up := Game.stars_for(q0 + 1) > Game.stars_for(q0)
+		say("Perfect!  ★ up!" if up else ("Perfect!  Top quality!" if q0 >= PIP_N else "Perfect!  +1 quality"), UIKit.GOLD_BRIGHT, 1.4)
+		_show_quality(Game.stars_for(q0 + 1), q0 + 1, true)
+	else:
+		say("Perfect!  +1" if perfect else "Nicely stirred!", UIKit.GOLD_BRIGHT if perfect else UIKit.GOLD, 1.4)   # --- POLISH LOOK P9: dorado (antes gris sobre el vapor gris)
+	# --- end
 	await get_tree().create_timer(0.7).timeout
 	if is_instance_valid(g):
 		g.queue_free()
@@ -922,6 +1020,10 @@ func _process(delta: float) -> void:
 	fc.position.y = 204.0 + sin(_t * 1.8) * 5.0
 	if not main.brew_ready.is_empty():
 		fc_glow.modulate.a = 0.6 + 0.25 * sin(_t * 4.0)
+	# --- POLISH FIX F5: la fila de calidad llena (7) late dorada
+	if _fc_potency >= PIP_N and fc_pips.visible:
+		fc_pips.modulate = Color(1, 1, 1).lerp(Color(1.4, 1.25, 0.9), 0.5 + 0.5 * sin(_t * 4.0))
+	# --- end
 		var b: Button = btns["bottle"]
 		if not b.disabled:
 			b.modulate = Color(1, 1, 1).lerp(Color(1.25, 1.15, 0.9), 0.5 + 0.5 * sin(_t * 5.0))
